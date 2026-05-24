@@ -1,0 +1,503 @@
+{% raw %}
+/**
+* CP45 Payment Gateway — Signal Store cho trạng thái thanh toán.
+*
+* Sử dụng @ngneat/signal-store để quản lý trạng thái theo mô hình Signal
+* của Angular hiện đại. Store này chứa:
+* - Danh sách phương thức thanh toán
+* - Lịch sử giao dịch (phân trang)
+* - Thống kê tổng quan
+* - Trạng thái đang tải / lỗi
+*
+* Không import midicoder.* — chỉ dùng Angular & ngneat/signal-store.
+*/
+
+import { inject } from '@angular/core';
+import {
+signalStore,
+state,
+signal,
+computed,
+method,
+withHooks,
+type SignalStoreResult,
+} from '@ngneat/signal-store';
+import {
+patchState,
+getMethod,
+computedSignal,
+} from '@ngneat/signal-store';
+import {
+switchMap,
+tap,
+map,
+catchError,
+finalize,
+take,
+} from 'rxjs/operators';
+import { of } from 'rxjs';
+
+import { PaymentService } from './payment.service';
+import {
+PaymentMethod,
+PaymentTransactionSummary,
+PaymentStats,
+PaymentHistoryFilters,
+PaginationParams,
+PaginatedResult,
+CreatePaymentMethodDto,
+UpdatePaymentMethodDto,
+InitiatePaymentDto,
+RefundPaymentDto,
+PaymentStatus,
+} from './payment-types';
+
+/** Trạng thái đang tải — từng domain riêng biệt */
+interface LoadingState {
+/** Đang tải phương thức thanh toán */
+methods: boolean;
+/** Đang tải lịch sử giao dịch */
+history: boolean;
+/** Đang tải thống kê */
+stats: boolean;
+/** Đang thực hiện giao dịch */
+transacting: boolean;
+}
+
+/** Trạng thái lỗi */
+interface ErrorState {
+/** Thông báo lỗi hiện tại (null nếu không lỗi) */
+currentError: string | null;
+}
+
+/** Dữ liệu phương thức thanh toán */
+interface MethodsState {
+/** Danh sách phương thức */
+list: PaymentMethod[];
+/** Phương thức mặc định */
+defaultMethod: PaymentMethod | null;
+}
+
+/** Dữ liệu lịch sử giao dịch */
+interface HistoryState {
+/** Danh sách giao dịch (trang hiện tại) */
+transactions: PaymentTransactionSummary[];
+/** Tổng số bản ghi */
+total: number;
+/** Tổng số trang */
+totalPages: number;
+/** Bộ lọc đang áp dụng */
+filters: PaymentHistoryFilters;
+/** Phân trang đang áp dụng */
+pagination: PaginationParams;
+}
+
+/** Dữ liệu thống kê */
+interface StatsState {
+/** Thống kê tổng quan */
+data: PaymentStats | null;
+}
+
+/**
+* PaymentStore — store tín hiệu cho CP45 Payment Gateway.
+*
+* Pattern: signalStore + state + computed + method + withHooks
+*/
+export const PaymentStore = signalStore(
+
+// ---------------------------------------------------------------
+// 1. Khai báo state
+// ---------------------------------------------------------------
+state<MethodsState>({
+    list: [],
+    defaultMethod: null,
+    }),
+
+    state<HistoryState>({
+        transactions: [],
+        total: 0,
+        totalPages: 0,
+        filters: {},
+        pagination: { page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' },
+        }),
+
+        state<StatsState>({
+            data: null,
+            }),
+
+            state<LoadingState>({
+                methods: false,
+                history: false,
+                stats: false,
+                transacting: false,
+                }),
+
+                state<ErrorState>({
+                    currentError: null,
+                    }),
+
+                    // ---------------------------------------------------------------
+                    // 2. Computed signals — dữ liệu dẫn xuất
+                    // ---------------------------------------------------------------
+
+                    /** Số lượng phương thức đang kích hoạt */
+                    computed((store) => {
+                    const activeMethodsCount = computed(() => {
+                    return store.list().filter((m) => m.isActive).length;
+                    });
+                    return { activeMethodsCount };
+                    }),
+
+                    /** Có đang tải dữ liệu nào không */
+                    computed((store) => {
+                    const isLoading = computedSignal((signaler) => {
+                    return (
+                    store.methods() ||
+                    store.history() ||
+                    store.stats() ||
+                    store.transacting()
+                    );
+                    });
+                    return { isLoading };
+                    }),
+
+                    /** Phương thức có sẵn để chọn (loại bỏ đã vô hiệu hóa) */
+                    computed((store) => {
+                    const availableMethods = computed(() => {
+                    return store.list().filter((m) => m.isActive);
+                    });
+                    return { availableMethods };
+                    }),
+
+                    /** Có dữ liệu lịch sử hay không */
+                    computed((store) => {
+                    const hasHistory = computed(() => {
+                    return store.transactions().length > 0;
+                    });
+                    return { hasHistory };
+                    }),
+
+                    // ---------------------------------------------------------------
+                    // 3. Methods — hành động
+                    // ---------------------------------------------------------------
+
+                    // --- Phương thức thanh toán ---
+
+                    method([
+                    (store) => {
+                    const paymentService = inject(PaymentService);
+
+                    /** Tải danh sách phương thức thanh toán */
+                    function loadPaymentMethods(): void {
+                    patchState(store, { methods: true, currentError: null });
+
+                    paymentService.getPaymentMethods().pipe(
+                    tap((methods) => {
+                    const defaultMethod = methods.find((m) => m.isDefault) ?? null;
+                    patchState(store, {
+                    list: methods,
+                    defaultMethod,
+                    });
+                    }),
+                    catchError((error: Error) => {
+                    patchState(store, { currentError: error.message });
+                    return of([]);
+                    }),
+                    finalize(() => patchState(store, { methods: false })),
+                    ).subscribe();
+                    }
+
+                    /** Tạo phương thức thanh toán mới */
+                    function createPaymentMethod(dto: CreatePaymentMethodDto): void {
+                    patchState(store, { methods: true, currentError: null });
+
+                    paymentService.createPaymentMethod(dto).pipe(
+                    tap((newMethod) => {
+                    patchState(store, (s) => ({
+                    list: [...s.list, newMethod],
+                    }));
+                    // Nếu đây là phương thức đầu tiên, đặt làm mặc định
+                    if (!s.defaultMethod) {
+                    patchState(store, { defaultMethod: newMethod });
+                    }
+                    }),
+                    catchError((error: Error) => {
+                    patchState(store, { currentError: error.message });
+                    return of(null);
+                    }),
+                    finalize(() => patchState(store, { methods: false })),
+                    ).subscribe();
+                    }
+
+                    /** Cập nhật phương thức thanh toán */
+                    function updatePaymentMethod(id: string, dto: UpdatePaymentMethodDto): void {
+                    patchState(store, { methods: true, currentError: null });
+
+                    paymentService.updatePaymentMethod(id, dto).pipe(
+                    tap((updated) => {
+                    patchState(store, (s) => ({
+                    list: s.list.map((m) => (m.id === id ? updated : m)),
+                    defaultMethod:
+                    updated.isDefault ? updated : s.defaultMethod,
+                    }));
+                    }),
+                    catchError((error: Error) => {
+                    patchState(store, { currentError: error.message });
+                    return of(null);
+                    }),
+                    finalize(() => patchState(store, { methods: false })),
+                    ).subscribe();
+                    }
+
+                    /** Xóa phương thức thanh toán */
+                    function deletePaymentMethod(id: string): void {
+                    patchState(store, { methods: true, currentError: null });
+
+                    paymentService.deletePaymentMethod(id).pipe(
+                    tap(() => {
+                    patchState(store, (s) => ({
+                    list: s.list.filter((m) => m.id !== id),
+                    defaultMethod:
+                    s.defaultMethod?.id === id ? null : s.defaultMethod,
+                    }));
+                    }),
+                    catchError((error: Error) => {
+                    patchState(store, { currentError: error.message });
+                    return of(null);
+                    }),
+                    finalize(() => patchState(store, { methods: false })),
+                    ).subscribe();
+                    }
+
+                    /** Đặt phương thức làm mặc định */
+                    function setDefaultMethod(id: string): void {
+                    patchState(store, { methods: true, currentError: null });
+
+                    paymentService.setDefaultPaymentMethod(id).pipe(
+                    tap((updated) => {
+                    patchState(store, (s) => ({
+                    list: s.list.map((m) => ({
+                    ...m,
+                    isDefault: m.id === id,
+                    })),
+                    defaultMethod: updated,
+                    }));
+                    }),
+                    catchError((error: Error) => {
+                    patchState(store, { currentError: error.message });
+                    return of(null);
+                    }),
+                    finalize(() => patchState(store, { methods: false })),
+                    ).subscribe();
+                    }
+
+                    return {
+                    loadPaymentMethods,
+                    createPaymentMethod,
+                    updatePaymentMethod,
+                    deletePaymentMethod,
+                    setDefaultMethod,
+                    };
+                    },
+                    ]),
+
+                    // --- Lịch sử giao dịch ---
+
+                    method([
+                    (store) => {
+                    const paymentService = inject(PaymentService);
+
+                    /** Tải lịch sử giao dịch với bộ lọc và phân trang */
+                    function loadPaymentHistory(
+                    filtersOverride?: Partial<PaymentHistoryFilters>,
+                        paginationOverride?: Partial<PaginationParams>,
+                            ): void {
+                            const filters = { ...store.filters(), ...filtersOverride };
+                            const pagination = { ...store.pagination(), ...paginationOverride };
+
+                            patchState(store, { history: true, currentError: null, filters, pagination });
+
+                            paymentService.getPaymentHistory(filters, pagination).pipe(
+                            tap((result) => {
+                            patchState(store, {
+                            transactions: result.items,
+                            total: result.total,
+                            totalPages: result.totalPages,
+                            });
+                            }),
+                            catchError((error: Error) => {
+                            patchState(store, { currentError: error.message });
+                            return of(null);
+                            }),
+                            finalize(() => patchState(store, { history: false })),
+                            ).subscribe();
+                            }
+
+                            /** Cập nhật bộ lọc và tải lại (trang 1) */
+                            function updateFilters(newFilters: Partial<PaymentHistoryFilters>): void {
+                                patchState(store, { filters: { ...store.filters(), ...newFilters } });
+                                loadPaymentHistory(undefined, { page: 1 });
+                                }
+
+                                /** Chuyển trang */
+                                function goToPage(page: number): void {
+                                loadPaymentHistory(undefined, { page });
+                                }
+
+                                /** Sắp xếp theo trường */
+                                function sortBy(field: string): void {
+                                const current = store.pagination();
+                                const sortOrder =
+                                current.sortBy === field && current.sortOrder === 'asc'
+                                ? 'desc'
+                                : 'asc';
+                                loadPaymentHistory(undefined, { sortBy: field, sortOrder });
+                                }
+
+                                /** Xóa toàn bộ bộ lọc và tải lại */
+                                function clearFilters(): void {
+                                patchState(store, { filters: {} });
+                                loadPaymentHistory();
+                                }
+
+                                return {
+                                loadPaymentHistory,
+                                updateFilters,
+                                goToPage,
+                                sortBy,
+                                clearFilters,
+                                };
+                                },
+                                ]),
+
+                                // --- Giao dịch ---
+
+                                method([
+                                (store) => {
+                                const paymentService = inject(PaymentService);
+
+                                /** Khởi tạo thanh toán mới */
+                                function initiatePayment(dto: InitiatePaymentDto): void {
+                                patchState(store, { transacting: true, currentError: null });
+
+                                paymentService.initiatePayment(dto).pipe(
+                                tap(() => {
+                                // Sau khi thanh toán thành công, tải lại lịch sử
+                                getMethod(store, 'loadPaymentHistory')();
+                                }),
+                                catchError((error: Error) => {
+                                patchState(store, { currentError: error.message });
+                                return of(null);
+                                }),
+                                finalize(() => patchState(store, { transacting: false })),
+                                ).subscribe();
+                                }
+
+                                /** Hoàn tiền giao dịch */
+                                function refundPayment(
+                                transactionId: string,
+                                dto: RefundPaymentDto,
+                                ): void {
+                                patchState(store, { transacting: true, currentError: null });
+
+                                paymentService.refundPayment(transactionId, dto).pipe(
+                                tap(() => {
+                                getMethod(store, 'loadPaymentHistory')();
+                                getMethod(store, 'loadPaymentStats')();
+                                }),
+                                catchError((error: Error) => {
+                                patchState(store, { currentError: error.message });
+                                return of(null);
+                                }),
+                                finalize(() => patchState(store, { transacting: false })),
+                                ).subscribe();
+                                }
+
+                                /** Hủy giao dịch */
+                                function cancelTransaction(transactionId: string): void {
+                                patchState(store, { transacting: true, currentError: null });
+
+                                paymentService.cancelTransaction(transactionId).pipe(
+                                tap(() => {
+                                getMethod(store, 'loadPaymentHistory')();
+                                }),
+                                catchError((error: Error) => {
+                                patchState(store, { currentError: error.message });
+                                return of(null);
+                                }),
+                                finalize(() => patchState(store, { transacting: false })),
+                                ).subscribe();
+                                }
+
+                                return {
+                                initiatePayment,
+                                refundPayment,
+                                cancelTransaction,
+                                };
+                                },
+                                ]),
+
+                                // --- Thống kê ---
+
+                                method([
+                                (store) => {
+                                const paymentService = inject(PaymentService);
+
+                                /** Tải thống kê tổng quan */
+                                function loadPaymentStats(): void {
+                                patchState(store, { stats: true, currentError: null });
+
+                                paymentService.getPaymentStats().pipe(
+                                tap((stats) => {
+                                patchState(store, { data: stats });
+                                }),
+                                catchError((error: Error) => {
+                                patchState(store, { currentError: error.message });
+                                return of(null);
+                                }),
+                                finalize(() => patchState(store, { stats: false })),
+                                ).subscribe();
+                                }
+
+                                return { loadPaymentStats };
+                                },
+                                ]),
+
+                                // --- Tiện ích chung ---
+
+                                method([
+                                (store) => {
+                                /** Xóa lỗi hiện tại */
+                                function clearError(): void {
+                                patchState(store, { currentError: null });
+                                }
+
+                                /** Tải lại toàn bộ dữ liệu */
+                                function reloadAll(): void {
+                                getMethod(store, 'loadPaymentMethods')();
+                                getMethod(store, 'loadPaymentHistory')();
+                                getMethod(store, 'loadPaymentStats')();
+                                }
+
+                                return { clearError, reloadAll };
+                                },
+                                ]),
+
+                                // ---------------------------------------------------------------
+                                // 4. Hooks — vòng đời
+                                // ---------------------------------------------------------------
+                                withHooks({
+                                /** OnStoreInit: tải dữ liệu ban đầu khi store được khởi tạo */
+                                onInit(storeResult: SignalStoreResult<typeof PaymentStore>) => {
+                                    // Lưu reference để gọi methods
+                                    const methods = storeResult as any;
+                                    // Chờ một tick để đảm bảo các methods đã sẵn sàng
+                                    queueMicrotask(() => {
+                                    methods.loadPaymentMethods?.();
+                                    methods.loadPaymentStats?.();
+                                    methods.loadPaymentHistory?.();
+                                    });
+                                    },
+                                    }),
+                                    );
+                                    {% endraw %}

@@ -1,0 +1,680 @@
+{% raw %}/**
+ * Payment DTOs — các Data Transfer Objects cho thao tác thanh toán.
+ *
+ * Định nghĩa các DTO cho việc tạo, cập nhật, tìm kiếm và phản hồi
+ * giao dịch thanh toán, phương thức thanh toán, và hoàn tiền.
+ *
+ * CP45: Payment Gateway
+ */
+
+import {
+  IsString,
+  IsOptional,
+  IsNotEmpty,
+  IsNumber,
+  IsPositive,
+  IsIn,
+  IsUUID,
+  IsObject,
+  IsEnum,
+  IsDateString,
+  Min,
+  MaxLength,
+  ValidateNested,
+  IsInt,
+} from "class-validator";
+import { Type } from "class-transformer";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { PaymentStatus, PaymentMethodType, RefundStatus } from "./payment.entity";
+
+// ============================================================================
+// Hằng số xác thực
+// ============================================================================
+
+/** Số tiền tối đa cho một giao dịch (đơn vị: smallest currency unit) */
+export const MAX_PAYMENT_AMOUNT = 999999999999;
+
+/** Số tiền tối thiểu cho một giao dịch */
+export const MIN_PAYMENT_AMOUNT = 100;
+
+/** Độ dài tối đa cho externalId */
+export const MAX_EXTERNAL_ID_LENGTH = 255;
+
+/** Độ dài tối đa cho mô tả giao dịch */
+export const MAX_DESCRIPTION_LENGTH = 500;
+
+/** Độ dài tối đa cho lý do hoàn tiền */
+export const MAX_REFUND_REASON_LENGTH = 500;
+
+/** Số lượng mỗi trang mặc định */
+export const DEFAULT_PAGE_SIZE = 20;
+
+/** Số lượng mỗi trang tối đa */
+export const MAX_PAGE_SIZE = 100;
+
+// ============================================================================
+// Payment Metadata DTO
+// ============================================================================
+
+/**
+ * DTO cho metadata bổ sung của giao dịch.
+ *
+ * Cho phép truyền dữ liệu tùy chỉnh dạng key-value.
+ */
+export class PaymentMetadataDto {
+  /**
+   * Các trường metadata tùy chỉnh.
+   */
+  @ApiPropertyOptional({
+    description: "Dữ liệu metadata tùy chỉnh dạng JSON",
+    example: { invoice_number: "INV-2024-001", promotion_code: "SAVE10" },
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+// ============================================================================
+// CreatePaymentDto
+// ============================================================================
+
+/**
+ * DTO để tạo mới giao dịch thanh toán.
+ *
+ * Sử dụng khi POST /payments.
+ *
+ * Required fields:
+ * - amount: số tiền thanh toán
+ * - currency: mã tiền tệ ISO 4217
+ * - gateway: cổng thanh toán (vnpay, mozart, stripe)
+ * - customerId: ID khách hàng
+ * - idempotencyKey: khóa đảm bảo idempotency
+ *
+ * Optional fields:
+ * - paymentMethodId: phương thức thanh toán
+ * - orderId: ID đơn hàng liên quan
+ * - description: mô tả giao dịch
+ * - metadata: dữ liệu bổ sung
+ * - expiresAt: thời hạn thanh toán
+ */
+export class CreatePaymentDto {
+  /**
+   * Số tiền thanh toán (đơn vị: smallest currency unit, vd: cents cho USD, VND cho Việt Nam).
+   */
+  @ApiProperty({
+    description: "Số tiền thanh toán (đơn vị smallest currency unit)",
+    example: 1500000,
+    minimum: MIN_PAYMENT_AMOUNT,
+    maximum: MAX_PAYMENT_AMOUNT,
+  })
+  @IsNumber()
+  @IsPositive()
+  @Min(MIN_PAYMENT_AMOUNT)
+  @Max(MAX_PAYMENT_AMOUNT)
+  amount: number;
+
+  /**
+   * Mã tiền tệ ISO 4217.
+   */
+  @ApiProperty({
+    description: "Mã tiền tệ ISO 4217",
+    example: "VND",
+    enum: ["VND", "USD", "EUR", "GBP", "JPY", "SGD", "THB"],
+  })
+  @IsString()
+  @IsNotEmpty({ message: "Mã tiền tệ không được để trống" })
+  currency: string;
+
+  /**
+   * Cổng thanh toán sẽ xử lý giao dịch.
+   */
+  @ApiProperty({
+    description: "Cổng thanh toán xử lý giao dịch",
+    example: "vnpay",
+    enum: ["vnpay", "mozart", "stripe"],
+  })
+  @IsString()
+  @IsNotEmpty({ message: "Cổng thanh toán không được để trống" })
+  gateway: string;
+
+  /**
+   * ID khách hàng thực hiện thanh toán.
+   */
+  @ApiProperty({
+    description: "ID khách hàng",
+    example: "cust_abc123",
+  })
+  @IsString()
+  @IsNotEmpty({ message: "Customer ID không được để trống" })
+  customerId: string;
+
+  /**
+   * Khóa idempotency để đảm bảo không tạo trùng giao dịch.
+   *
+   * Client nên dùng UUID hoặc giá trị duy nhất cho mỗi yêu cầu thanh toán.
+   * Nếu gửi lại cùng idempotencyKey, hệ thống trả về giao dịch cũ.
+   */
+  @ApiProperty({
+    description: "Khóa idempotency để tránh tạo trùng giao dịch",
+    example: "idemp_key_abc123",
+  })
+  @IsString()
+  @IsNotEmpty({ message: "Idempotency key không được để trống" })
+  idempotencyKey: string;
+
+  /**
+   * ID phương thức thanh toán được sử dụng.
+   */
+  @ApiPropertyOptional({
+    description: "ID phương thức thanh toán",
+    example: "pm_550e8400-e29b-41d4-a716-446655440000",
+  })
+  @IsOptional()
+  @IsUUID("4")
+  paymentMethodId?: string;
+
+  /**
+   * ID đơn hàng liên quan đến giao dịch này.
+   */
+  @ApiPropertyOptional({
+    description: "ID đơn hàng liên quan",
+    example: "order_123456",
+  })
+  @IsOptional()
+  @IsString()
+  orderId?: string;
+
+  /**
+   * Mô tả giao dịch.
+   */
+  @ApiPropertyOptional({
+    description: "Mô tả giao dịch",
+    example: "Thanh toán đơn hàng #123456",
+    maxLength: MAX_DESCRIPTION_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_DESCRIPTION_LENGTH)
+  description?: string;
+
+  /**
+   * Thời hạn thanh toán. Sau thời điểm này, giao dịch sẽ bị hết hạn.
+   */
+  @ApiPropertyOptional({
+    description: "Thời hạn thanh toán (ISO 8601)",
+    type: "string",
+    format: "date-time",
+  })
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
+
+  /**
+   * Dữ liệu metadata tùy chỉnh.
+   */
+  @ApiPropertyOptional({
+    description: "Dữ liệu metadata tùy chỉnh",
+    example: { invoice_number: "INV-001" },
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+
+  /**
+   * Tenant ID.
+   */
+  @ApiPropertyOptional({
+    description: "Tenant ID",
+    type: "string",
+    format: "uuid",
+  })
+  @IsOptional()
+  @IsUUID("4")
+  tenantId?: string;
+}
+
+// ============================================================================
+// ConfirmPaymentDto
+// ============================================================================
+
+/**
+ * DTO để xác nhận giao dịch thanh toán.
+ *
+ * Sử dụng khi POST /payments/:id/confirm.
+ * Thường được gọi sau khi redirect từ payment gateway.
+ */
+export class ConfirmPaymentDto {
+  /**
+   * Dữ liệu xác nhận từ payment gateway.
+   */
+  @ApiProperty({
+    description: "Dữ liệu xác nhận từ payment gateway",
+    example: { vnp_TransactionNo: "1234567", vnp_ResponseCode: "00" },
+  })
+  @IsObject()
+  @IsNotEmpty({ message: "Dữ liệu xác nhận không được để trống" })
+  gatewayData: Record<string, any>;
+
+  /**
+   * Ký hiệu xác thực webhook (nếu có).
+   */
+  @ApiPropertyOptional({
+    description: "Ký hiệu xác thực từ gateway",
+    example: "hmac_sha256_signature_here",
+  })
+  @IsOptional()
+  @IsString()
+  signature?: string;
+}
+
+// ============================================================================
+// CancelPaymentDto
+// ============================================================================
+
+/**
+ * DTO để hủy giao dịch thanh toán.
+ *
+ * Sử dụng khi POST /payments/:id/cancel.
+ */
+export class CancelPaymentDto {
+  /**
+   * Lý do hủy giao dịch.
+   */
+  @ApiPropertyOptional({
+    description: "Lý do hủy giao dịch",
+    example: "Khách hàng yêu cầu hủy",
+    maxLength: MAX_DESCRIPTION_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_DESCRIPTION_LENGTH)
+  reason?: string;
+}
+
+// ============================================================================
+// CreatePaymentMethodDto
+// ============================================================================
+
+/**
+ * DTO để tạo mới phương thức thanh toán.
+ *
+ * Sử dụng khi POST /payment-methods.
+ */
+export class CreatePaymentMethodDto {
+  /**
+   * Loại phương thức thanh toán.
+   */
+  @ApiProperty({
+    description: "Loại phương thức thanh toán",
+    enum: PaymentMethodType,
+    example: PaymentMethodType.CREDIT_CARD,
+  })
+  @IsEnum(PaymentMethodType)
+  type: PaymentMethodType;
+
+  /**
+   * Cổng thanh toán liên kết.
+   */
+  @ApiProperty({
+    description: "Cổng thanh toán liên kết",
+    example: "stripe",
+  })
+  @IsString()
+  @IsNotEmpty()
+  gateway: string;
+
+  /**
+   * Token từ gateway (ví dụ: token thẻ từ Stripe).
+   */
+  @ApiProperty({
+    description: "Token phương thức thanh toán từ gateway",
+    example: "pm_1N5qR2L3k4M5n6O7p8Q9r0S1",
+  })
+  @IsString()
+  @IsNotEmpty()
+  gatewayToken: string;
+
+  /**
+   * Nhãn hiển thị.
+   */
+  @ApiPropertyOptional({
+    description: "Nhãn hiển thị phương thức thanh toán",
+    example: "VISA **** 4242",
+  })
+  @IsOptional()
+  @IsString()
+  label?: string;
+
+  /**
+   * Đặt làm phương thức mặc định.
+   */
+  @ApiPropertyOptional({
+    description: "Đặt làm phương thức thanh toán mặc định",
+    example: true,
+  })
+  @IsOptional()
+  isDefault?: boolean;
+
+  /**
+   * ID khách hàng.
+   */
+  @ApiProperty({
+    description: "ID khách hàng",
+    example: "cust_abc123",
+  })
+  @IsString()
+  @IsNotEmpty()
+  customerId: string;
+
+  /**
+   * Dữ liệu metadata.
+   */
+  @ApiPropertyOptional({
+    description: "Dữ liệu metadata tùy chỉnh",
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+
+  /**
+   * Tenant ID.
+   */
+  @ApiPropertyOptional({
+    description: "Tenant ID",
+    type: "string",
+    format: "uuid",
+  })
+  @IsOptional()
+  @IsUUID("4")
+  tenantId?: string;
+}
+
+// ============================================================================
+// CreateRefundDto
+// ============================================================================
+
+/**
+ * DTO để tạo yêu cầu hoàn tiền.
+ *
+ * Sử dụng khi POST /payments/:id/refunds.
+ */
+export class CreateRefundDto {
+  /**
+   * Số tiền hoàn (phải <= số tiền giao dịch gốc).
+   */
+  @ApiProperty({
+    description: "Số tiền hoàn (smallest currency unit)",
+    example: 500000,
+    minimum: MIN_PAYMENT_AMOUNT,
+  })
+  @IsNumber()
+  @IsPositive()
+  @Min(MIN_PAYMENT_AMOUNT)
+  amount: number;
+
+  /**
+   * Lý do hoàn tiền.
+   */
+  @ApiPropertyOptional({
+    description: "Lý do hoàn tiền",
+    example: "Khách hàng trả hàng",
+    maxLength: MAX_REFUND_REASON_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_REFUND_REASON_LENGTH)
+  reason?: string;
+
+  /**
+   * Dữ liệu metadata.
+   */
+  @ApiPropertyOptional({
+    description: "Dữ liệu metadata tùy chỉnh",
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+// ============================================================================
+// PaymentQueryDto
+// ============================================================================
+
+/**
+ * DTO cho tham số tìm kiếm giao dịch thanh toán.
+ *
+ * Sử dụng khi GET /payments với query params.
+ */
+export class PaymentQueryDto {
+  /**
+   * Lọc theo trạng thái.
+   */
+  @ApiPropertyOptional({
+    description: "Lọc theo trạng thái",
+    enum: PaymentStatus,
+  })
+  @IsOptional()
+  @IsEnum(PaymentStatus)
+  status?: PaymentStatus;
+
+  /**
+   * Lọc theo customer ID.
+   */
+  @ApiPropertyOptional({
+    description: "Lọc theo customer ID",
+  })
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+
+  /**
+   * Lọc theo order ID.
+   */
+  @ApiPropertyOptional({
+    description: "Lọc theo order ID",
+  })
+  @IsOptional()
+  @IsString()
+  orderId?: string;
+
+  /**
+   * Lọc theo cổng thanh toán.
+   */
+  @ApiPropertyOptional({
+    description: "Lọc theo cổng thanh toán",
+  })
+  @IsOptional()
+  @IsString()
+  gateway?: string;
+
+  /**
+   * Số lượng mỗi trang.
+   */
+  @ApiPropertyOptional({
+    description: "Số lượng mỗi trang",
+    minimum: 1,
+    maximum: MAX_PAGE_SIZE,
+    default: DEFAULT_PAGE_SIZE,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE_SIZE)
+  limit?: number;
+
+  /**
+   * Offset phân trang.
+   */
+  @ApiPropertyOptional({
+    description: "Offset phân trang",
+    minimum: 0,
+    default: 0,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  offset?: number;
+
+  /**
+   * Tenant ID.
+   */
+  @ApiPropertyOptional({
+    description: "Tenant ID để lọc",
+    type: "string",
+    format: "uuid",
+  })
+  @IsOptional()
+  @IsUUID("4")
+  tenantId?: string;
+}
+
+// ============================================================================
+// PaymentResponseDto
+// ============================================================================
+
+/**
+ * DTO cho phản hồi giao dịch thanh toán.
+ */
+export class PaymentResponseDto {
+  @ApiProperty({ description: "ID giao dịch", example: "550e8400-e29b-41d4-a716-446655440000" })
+  id: string;
+
+  @ApiProperty({ description: "ID giao dịch bên ngoài" })
+  externalId: string;
+
+  @ApiProperty({ description: "Khóa idempotency" })
+  idempotencyKey: string;
+
+  @ApiProperty({ description: "Số tiền thanh toán" })
+  amount: number;
+
+  @ApiProperty({ description: "Mã tiền tệ" })
+  currency: string;
+
+  @ApiProperty({ description: "Trạng thái giao dịch", enum: PaymentStatus })
+  status: PaymentStatus;
+
+  @ApiPropertyOptional({ description: "ID phương thức thanh toán", nullable: true })
+  paymentMethodId: string | null;
+
+  @ApiProperty({ description: "Cổng thanh toán" })
+  gateway: string;
+
+  @ApiPropertyOptional({ description: "ID giao dịch từ gateway", nullable: true })
+  gatewayTransactionId: string | null;
+
+  @ApiProperty({ description: "Phản hồi từ gateway", type: "object" })
+  gatewayResponse: Record<string, any>;
+
+  @ApiProperty({ description: "Mô tả giao dịch" })
+  description: string;
+
+  @ApiProperty({ description: "Dữ liệu metadata", type: "object" })
+  metadata: Record<string, any>;
+
+  @ApiProperty({ description: "Customer ID" })
+  customerId: string;
+
+  @ApiPropertyOptional({ description: "Tenant ID", nullable: true })
+  tenantId: string | null;
+
+  @ApiPropertyOptional({ description: "Order ID", nullable: true })
+  orderId: string | null;
+
+  @ApiPropertyOptional({ description: "Thời hạn thanh toán", nullable: true, type: "string", format: "date-time" })
+  expiresAt: string | null;
+
+  @ApiProperty({ description: "Thời điểm tạo", type: "string", format: "date-time" })
+  createdAt: string;
+
+  @ApiProperty({ description: "Thời điểm cập nhật", type: "string", format: "date-time" })
+  updatedAt: string;
+
+  @ApiPropertyOptional({ description: "URL thanh toán (nếu có)", nullable: true })
+  paymentUrl?: string | null;
+}
+
+// ============================================================================
+// PaymentMethodResponseDto
+// ============================================================================
+
+/**
+ * DTO cho phản hồi phương thức thanh toán.
+ */
+export class PaymentMethodResponseDto {
+  @ApiProperty({ description: "ID phương thức thanh toán" })
+  id: string;
+
+  @ApiProperty({ description: "Loại phương thức", enum: PaymentMethodType })
+  type: PaymentMethodType;
+
+  @ApiProperty({ description: "Cổng thanh toán" })
+  gateway: string;
+
+  @ApiProperty({ description: "Nhãn hiển thị" })
+  label: string;
+
+  @ApiProperty({ description: "Có phải mặc định không" })
+  isDefault: boolean;
+
+  @ApiProperty({ description: "Đã xác minh chưa" })
+  isVerified: boolean;
+
+  @ApiProperty({ description: "Customer ID" })
+  customerId: string;
+
+  @ApiProperty({ description: "Dữ liệu metadata", type: "object" })
+  metadata: Record<string, any>;
+
+  @ApiProperty({ description: "Thời điểm tạo", type: "string", format: "date-time" })
+  createdAt: string;
+
+  @ApiProperty({ description: "Thời điểm cập nhật", type: "string", format: "date-time" })
+  updatedAt: string;
+}
+
+// ============================================================================
+// RefundResponseDto
+// ============================================================================
+
+/**
+ * DTO cho phản hồi hoàn tiền.
+ */
+export class RefundResponseDto {
+  @ApiProperty({ description: "ID hoàn tiền" })
+  id: string;
+
+  @ApiProperty({ description: "ID giao dịch gốc" })
+  transactionId: string;
+
+  @ApiProperty({ description: "ID hoàn tiền bên ngoài" })
+  externalId: string;
+
+  @ApiProperty({ description: "Số tiền hoàn" })
+  amount: number;
+
+  @ApiProperty({ description: "Mã tiền tệ" })
+  currency: string;
+
+  @ApiProperty({ description: "Trạng thái hoàn tiền", enum: RefundStatus })
+  status: RefundStatus;
+
+  @ApiPropertyOptional({ description: "ID hoàn tiền từ gateway", nullable: true })
+  gatewayRefundId: string | null;
+
+  @ApiProperty({ description: "Phản hồi từ gateway", type: "object" })
+  gatewayResponse: Record<string, any>;
+
+  @ApiProperty({ description: "Lý do hoàn tiền" })
+  reason: string;
+
+  @ApiProperty({ description: "Dữ liệu metadata", type: "object" })
+  metadata: Record<string, any>;
+
+  @ApiProperty({ description: "Thời điểm tạo", type: "string", format: "date-time" })
+  createdAt: string;
+
+  @ApiProperty({ description: "Thời điểm cập nhật", type: "string", format: "date-time" })
+  updatedAt: string;
+}
+{% endraw %}

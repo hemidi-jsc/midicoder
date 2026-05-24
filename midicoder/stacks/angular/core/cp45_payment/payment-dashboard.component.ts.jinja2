@@ -1,0 +1,472 @@
+{% raw %}
+/**
+* CP45 Payment Gateway — Dashboard Component
+*
+* Hiển thị bảng điều khiển thanh toán với:
+* - Các chỉ số chính (tổng doanh thu, số giao dịch, tỷ lệ thành công)
+* - Biểu đồ phân bổ theo phương thức thanh toán
+* - Biểu đồ xu hướng theo thời gian
+* - Trạng thái phương thức mặc định
+*
+* Sử dụng Signal Store và Angular signals hiện đại.
+*/
+
+import {
+Component,
+ChangeDetectionStrategy,
+inject,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+import { PaymentStore } from './payment.store';
+import { PaymentMethodBreakdown, PaymentPeriodBreakdown, PaymentStats } from './payment-types';
+
+@Component({
+selector: 'app-payment-dashboard',
+standalone: true,
+imports: [CommonModule],
+changeDetection: ChangeDetectionStrategy.OnPush,
+template: `
+<div class="payment-dashboard">
+    <!-- Tiêu đề -->
+    <header class="dashboard-header">
+        <h1>Bảng Điều Khiển Thanh Toán</h1>
+        <p class="subtitle">CP45: Payment Gateway</p>
+        <button class="refresh-btn" (click)="onRefresh()" [disabled]="isLoading()">
+            {{ isLoading() ? 'Đang tải...' : 'Làm mới' }}
+        </button>
+    </header>
+
+    <!-- Hiển thị lỗi nếu có -->
+    <div *ngIf="error()" class="error-banner">
+        <strong>Lỗi:</strong> {{ error() }}
+        <button (click)="onClearError()">Đóng</button>
+    </div>
+
+    <!-- Đang tải toàn bộ -->
+    <div *ngIf="isLoading() && !stats()" class="loading-state">
+        <p>Đang tải dữ liệu thanh toán...</p>
+    </div>
+
+    <!-- Nội dung chính -->
+    <ng-container *ngIf="stats() as statsData">
+        <!-- Hàng chỉ số chính -->
+        <section class="kpi-row">
+            <div class="kpi-card">
+                <span class="kpi-label">Tổng Doanh Thu</span>
+                <span class="kpi-value primary">{{ formatCurrency(statsData.successfulAmount) }} VND</span>
+                <span class="kpi-sub">{{ statsData.successfulCount }} giao dịch thành công</span>
+            </div>
+
+            <div class="kpi-card">
+                <span class="kpi-label">Tổng Giao Dịch</span>
+                <span class="kpi-value">{{ statsData.totalTransactions }}</span>
+                <span class="kpi-sub">Tỷ lệ thành công: {{ (statsData.successRate * 100 | number:'1.1-1') }}%</span>
+            </div>
+
+            <div class="kpi-card">
+                <span class="kpi-label">Đang Chờ Xử Lý</span>
+                <span class="kpi-value warning">{{ formatCurrency(statsData.pendingAmount) }} VND</span>
+                <span class="kpi-sub">{{ statsData.failedCount }} giao dịch thất bại</span>
+            </div>
+
+            <div class="kpi-card">
+                <span class="kpi-label">Số Tiền Hoàn Lại</span>
+                <span class="kpi-value danger">{{ formatCurrency(statsData.refundedAmount) }} VND</span>
+                <span class="kpi-sub">Tổng giá trị hoàn tiền</span>
+            </div>
+        </section>
+
+        <!-- Phương thức mặc định -->
+        <section class="default-method-section">
+            <h2>Phương Thức Mặc Định</h2>
+            <div *ngIf="defaultMethod() as method; else noDefault">
+                <div class="method-badge">
+                    <span class="method-icon">{{ getMethodIcon(method.type) }}</span>
+                    <span class="method-name">{{ method.displayName }}</span>
+                    <span class="method-type-label">{{ getMethodLabel(method.type) }}</span>
+                </div>
+            </div>
+            <ng-template #noDefault>
+                <p class="empty-text">Chưa có phương thức mặc định nào.</p>
+            </ng-template>
+        </section>
+
+        <!-- Phân bổ theo phương thức -->
+        <section class="breakdown-section">
+            <h2>Phân Bổ Theo Phương Thức</h2>
+            <div class="method-bars">
+                <div *ngFor="let b of statsData.byMethod" class="method-bar-row">
+                    <span class="bar-label">{{ getMethodLabel(b.methodType) }}</span>
+                    <div class="bar-track">
+                        <div class="bar-fill" [style.width.%]="calculatePercent(b.amount, statsData.successfulAmount)">
+                        </div>
+                    </div>
+                    <span class="bar-value">
+                        {{ b.count }} giao dịch — {{ formatCurrency(b.amount) }} VND
+                    </span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Xu hướng theo thời gian -->
+        <section class="trend-section">
+            <h2>Xu Hướng Theo Thời Gian</h2>
+            <div class="trend-bars">
+                <div *ngFor="let p of statsData.byPeriod" class="trend-bar-col">
+                    <div class="trend-bar" [style.height.px]="calculateTrendHeight(p.amount, maxPeriodAmount())"
+                        [title]="p.period + ': ' + formatCurrency(p.amount) + ' VND'"></div>
+                    <span class="trend-label">{{ p.period }}</span>
+                    <span class="trend-count">{{ p.count }}</span>
+                </div>
+            </div>
+            <p *ngIf="!statsData.byPeriod.length" class="empty-text">
+                Chưa có dữ liệu theo thời gian.
+            </p>
+        </section>
+
+        <!-- Số lượng phương thức -->
+        <section class="methods-summary">
+            <h2>Tổng Quan Phương Thức</h2>
+            <div class="methods-count-grid">
+                <div class="count-item">
+                    <span class="count-number">{{ activeMethodsCount() }}</span>
+                    <span class="count-label">Đang Kích Hoạt</span>
+                </div>
+                <div class="count-item">
+                    <span class="count-number">{{ list().length }}</span>
+                    <span class="count-label">Tổng Số</span>
+                </div>
+                <div class="count-item">
+                    <span class="count-number">{{ list().length - activeMethodsCount() }}</span>
+                    <span class="count-label">Bị Vô Hiệu Hóa</span>
+                </div>
+            </div>
+        </section>
+    </ng-container>
+</div>
+`,
+styles: [`
+.payment-dashboard {
+padding: 20px;
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+max-width: 1200px;
+margin: 0 auto;
+}
+.dashboard-header {
+display: flex;
+align-items: center;
+gap: 16px;
+margin-bottom: 24px;
+}
+.dashboard-header h1 {
+margin: 0;
+font-size: 24px;
+color: #1a1a1a;
+}
+.subtitle {
+margin: 0;
+color: #888;
+font-size: 14px;
+}
+.refresh-btn {
+margin-left: auto;
+padding: 8px 16px;
+background: #1976d2;
+color: #fff;
+border: none;
+border-radius: 6px;
+cursor: pointer;
+font-size: 14px;
+}
+.refresh-btn:hover:not(:disabled) { background: #1565c0; }
+.refresh-btn:disabled {
+background: #bbb;
+cursor: not-allowed;
+}
+.error-banner {
+padding: 12px 16px;
+background: #ffebee;
+color: #c62828;
+border-radius: 6px;
+margin-bottom: 16px;
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+.error-banner button {
+background: none;
+border: none;
+color: #c62828;
+cursor: pointer;
+text-decoration: underline;
+}
+.loading-state {
+text-align: center;
+padding: 48px 0;
+color: #888;
+}
+
+/* KPI cards */
+.kpi-row {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+gap: 16px;
+margin-bottom: 32px;
+}
+.kpi-card {
+background: #fff;
+border: 1px solid #e0e0e0;
+border-radius: 8px;
+padding: 20px;
+display: flex;
+flex-direction: column;
+gap: 4px;
+}
+.kpi-label {
+font-size: 12px;
+color: #888;
+text-transform: uppercase;
+letter-spacing: 0.5px;
+}
+.kpi-value {
+font-size: 24px;
+font-weight: 700;
+color: #1a1a1a;
+}
+.kpi-value.primary { color: #2e7d32; }
+.kpi-value.warning { color: #e65100; }
+.kpi-value.danger { color: #c62828; }
+.kpi-sub {
+font-size: 12px;
+color: #888;
+}
+
+/* Sections chung */
+h2 {
+font-size: 18px;
+color: #333;
+margin-bottom: 12px;
+}
+section {
+margin-bottom: 32px;
+background: #fff;
+border: 1px solid #e0e0e0;
+border-radius: 8px;
+padding: 20px;
+}
+
+/* Default method */
+.method-badge {
+display: flex;
+align-items: center;
+gap: 12px;
+padding: 12px;
+background: #f5f5f5;
+border-radius: 6px;
+}
+.method-icon { font-size: 24px; }
+.method-name { font-weight: 600; }
+.method-type-label {
+margin-left: auto;
+font-size: 12px;
+color: #888;
+background: #e0e0e0;
+padding: 2px 8px;
+border-radius: 12px;
+}
+
+/* Method bars */
+.method-bar-row {
+display: flex;
+align-items: center;
+gap: 12px;
+margin-bottom: 8px;
+}
+.bar-label {
+min-width: 140px;
+font-size: 14px;
+}
+.bar-track {
+flex: 1;
+height: 24px;
+background: #f0f0f0;
+border-radius: 12px;
+overflow: hidden;
+}
+.bar-fill {
+height: 100%;
+background: #1976d2;
+border-radius: 12px;
+transition: width 0.3s ease;
+}
+.bar-value {
+min-width: 200px;
+font-size: 13px;
+color: #555;
+text-align: right;
+}
+
+/* Trend bars */
+.trend-bars {
+display: flex;
+align-items: flex-end;
+gap: 8px;
+height: 160px;
+padding: 0 8px;
+}
+.trend-bar-col {
+flex: 1;
+display: flex;
+flex-direction: column;
+align-items: center;
+height: 100%;
+justify-content: flex-end;
+}
+.trend-bar {
+width: 100%;
+max-width: 48px;
+background: #43a047;
+border-radius: 4px 4px 0 0;
+transition: height 0.3s ease;
+min-height: 4px;
+}
+.trend-label {
+font-size: 11px;
+color: #888;
+margin-top: 4px;
+}
+.trend-count {
+font-size: 10px;
+color: #aaa;
+}
+
+/* Methods count */
+.methods-count-grid {
+display: flex;
+gap: 24px;
+}
+.count-item {
+display: flex;
+flex-direction: column;
+align-items: center;
+gap: 4px;
+}
+.count-number {
+font-size: 28px;
+font-weight: 700;
+color: #1976d2;
+}
+.count-label {
+font-size: 12px;
+color: #888;
+}
+
+.empty-text {
+color: #888;
+font-style: italic;
+}
+`],
+})
+export class PaymentDashboardComponent {
+/* ---------------------------------------------------------------
+* SignalStore — inject theo kiểu hiện đại
+* --------------------------------------------------------------- */
+
+/** Store — inject để truy cập signals và methods */
+private readonly store = inject(PaymentStore);
+
+/** Dữ liệu thống kê */
+readonly stats = this.store.data;
+
+/** Danh sách phương thức */
+readonly list = this.store.list;
+
+/** Phương thức mặc định */
+readonly defaultMethod = this.store.defaultMethod;
+
+/** Số phương thức kích hoạt */
+readonly activeMethodsCount = this.store.activeMethodsCount;
+
+/** Đang tải */
+readonly isLoading = this.store.isLoading;
+
+/** Thông báo lỗi */
+readonly error = this.store.currentError;
+
+/* ---------------------------------------------------------------
+* Lifecycle
+* --------------------------------------------------------------- */
+
+constructor() {
+// Dữ liệu đã được tự động tải từ PaymentStore.onInit hook
+}
+
+/* ---------------------------------------------------------------
+* Methods
+* --------------------------------------------------------------- */
+
+/** Làm mới tất cả dữ liệu */
+onRefresh(): void {
+this.store.reloadAll();
+}
+
+/** Xóa thông báo lỗi */
+onClearError(): void {
+this.store.clearError();
+}
+
+/** Tính phần trăm so với tổng */
+calculatePercent(value: number, total: number): number {
+if (total === 0) return 0;
+return Math.round((value / total) * 100);
+}
+
+/** Tính chiều cao tối đa của thanh xu hướng */
+maxPeriodAmount(): number {
+const stats = this.stats();
+if (!stats || !stats.byPeriod.length) return 100;
+return Math.max(...stats.byPeriod.map((p) => p.amount), 1);
+}
+
+/** Tính chiều cao thanh xu hướng */
+calculateTrendHeight(amount: number, max: number): number {
+if (max === 0) return 4;
+return Math.max(Math.round((amount / max) * 140), 4);
+}
+
+/** Định dạng tiền tệ */
+formatCurrency(value: number): string {
+return value.toLocaleString('vi-VN', {
+minimumFractionDigits: 0,
+maximumFractionDigits: 0,
+});
+}
+
+/** Lấy icon cho loại phương thức */
+getMethodIcon(type: string): string {
+const icons: Record<string, string> = {
+    card: '\uD83D\uDCB3',
+    bank_transfer: '\uD83C\uDFE6',
+    e_wallet: '\uD83D\uDCB0',
+    cod: '\uD83D\uDCB1',
+    qr_code: '\uD83D\uDD0D',
+    voucher: '\uD83C\uDF81',
+    };
+    return icons[type] ?? '\uD83D\uDCB2';
+    }
+
+    /** Lấy nhãn tiếng Việt cho loại phương thức */
+    getMethodLabel(type: string): string {
+    const labels: Record<string, string> = {
+        card: 'Thẻ tín dụng / ghi nợ',
+        bank_transfer: 'Chuyển khoản ngân hàng',
+        e_wallet: 'Ví điện tử',
+        cod: 'Thanh toán khi nhận hàng',
+        qr_code: 'Mã QR',
+        voucher: 'Mã giảm giá',
+        };
+        return labels[type] ?? type;
+        }
+        }
+        {% endraw %}

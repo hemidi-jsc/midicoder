@@ -1,0 +1,431 @@
+{% raw %}/**
+ * Payment Entities — các thực thể TypeORM cho hệ thống thanh toán.
+ *
+ * Bao gồm:
+ * - PaymentTransaction: ghi nhận mỗi giao dịch thanh toán
+ * - PaymentMethod: lưu trữ phương thức thanh toán của người dùng
+ * - PaymentRefund: xử lý hoàn tiền cho giao dịch
+ *
+ * CP45: Payment Gateway
+ */
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+} from "typeorm";
+
+/**
+ * Các trạng thái của giao dịch thanh toán.
+ */
+export enum PaymentStatus {
+  PENDING = "pending",
+  PROCESSING = "processing",
+  SUCCEEDED = "succeeded",
+  FAILED = "failed",
+  CANCELLED = "cancelled",
+  REFUNDING = "refunding",
+  REFUNDED = "refunded",
+  EXPIRED = "expired",
+}
+
+/**
+ * Các phương thức thanh toán được hỗ trợ.
+ */
+export enum PaymentMethodType {
+  CREDIT_CARD = "credit_card",
+  DEBIT_CARD = "debit_card",
+  BANK_TRANSFER = "bank_transfer",
+  E_WALLET = "e_wallet",
+  QR_CODE = "qr_code",
+  CRYPTO = "crypto",
+  CASH_ON_DELIVERY = "cash_on_delivery",
+}
+
+/**
+ * Các trạng thái hoàn tiền.
+ */
+export enum RefundStatus {
+  PENDING = "pending",
+  PROCESSING = "processing",
+  SUCCEEDED = "succeeded",
+  FAILED = "failed",
+  CANCELLED = "cancelled",
+}
+
+/**
+ * Interface cho PaymentTransaction properties.
+ */
+export interface IPaymentTransaction {
+  id: string;
+  externalId: string;
+  idempotencyKey: string;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  paymentMethodId: string | null;
+  gateway: string;
+  gatewayTransactionId: string | null;
+  gatewayResponse: Record<string, any>;
+  description: string;
+  metadata: Record<string, any>;
+  customerId: string;
+  tenantId: string | null;
+  orderId: string | null;
+  expiresAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Interface cho PaymentMethod properties.
+ */
+export interface IPaymentMethod {
+  id: string;
+  type: PaymentMethodType;
+  gateway: string;
+  gatewayToken: string;
+  label: string;
+  isDefault: boolean;
+  isVerified: boolean;
+  metadata: Record<string, any>;
+  customerId: string;
+  tenantId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Interface cho PaymentRefund properties.
+ */
+export interface IPaymentRefund {
+  id: string;
+  transactionId: string;
+  externalId: string;
+  amount: number;
+  currency: string;
+  status: RefundStatus;
+  gatewayRefundId: string | null;
+  gatewayResponse: Record<string, any>;
+  reason: string;
+  metadata: Record<string, any>;
+  tenantId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ============================================================================
+// PaymentTransaction Entity
+// ============================================================================
+
+/**
+ * PaymentTransaction Entity.
+ *
+ * Ghi nhận mỗi giao dịch thanh toán:
+ * - id: UUID chính
+ * - externalId: ID giao dịch ở hệ thống bên ngoài
+ * - idempotencyKey: khóa để đảm bảo idempotency
+ * - amount: số tiền (đơn vị smallest currency unit, vd: cents)
+ * - currency: mã tiền tệ ISO 4217 (VND, USD, EUR)
+ * - status: trạng thái giao dịch
+ * - paymentMethodId: phương thức thanh toán được sử dụng
+ * - gateway: cổng thanh toán xử lý (vnpay, mozart, stripe)
+ * - gatewayTransactionId: ID giao dịch từ gateway
+ * - gatewayResponse: phản hồi nguyên bản từ gateway
+ * - description: mô tả giao dịch
+ * - metadata: dữ liệu bổ sung dạng JSON
+ * - customerId: ID khách hàng
+ * - tenantId: tenant ID (NULL = global)
+ * - orderId: ID đơn hàng liên quan
+ * - expiresAt: thời hạn thanh toán
+ *
+ * Indexes:
+ * - (externalId) - tìm theo ID bên ngoài
+ * - (idempotencyKey) - đảm bảo idempotency
+ * - (customerId) - tìm giao dịch theo khách hàng
+ * - (orderId) - tìm giao dịch theo đơn hàng
+ * - (status) - lọc theo trạng thái
+ * - (gateway) - lọc theo cổng thanh toán
+ * - (tenantId) - lọc theo tenant
+ */
+@Entity("payment_transactions")
+@Index("idx_payment_external_id", ["externalId"])
+@Index("idx_payment_idempotency_key", ["idempotencyKey"], { unique: true })
+@Index("idx_payment_customer_id", ["customerId"])
+@Index("idx_payment_order_id", ["orderId"])
+@Index("idx_payment_status", ["status"])
+@Index("idx_payment_gateway", ["gateway"])
+@Index("idx_payment_tenant_id", ["tenantId"])
+export class PaymentTransaction implements IPaymentTransaction {
+  @PrimaryGeneratedColumn("uuid")
+  id: string;
+
+  @Column({ name: "external_id", type: "varchar", length: 255 })
+  externalId: string;
+
+  @Column({ name: "idempotency_key", type: "varchar", length: 255, unique: true })
+  idempotencyKey: string;
+
+  @Column({ name: "amount", type: "bigint" })
+  amount: number;
+
+  @Column({ name: "currency", type: "varchar", length: 3, default: "VND" })
+  currency: string;
+
+  @Column({ name: "status", type: "varchar", length: 20, default: PaymentStatus.PENDING })
+  status: PaymentStatus;
+
+  @Column({ name: "payment_method_id", type: "uuid", nullable: true })
+  paymentMethodId: string | null;
+
+  @Column({ name: "gateway", type: "varchar", length: 50 })
+  gateway: string;
+
+  @Column({ name: "gateway_transaction_id", type: "varchar", length: 255, nullable: true })
+  gatewayTransactionId: string | null;
+
+  @Column({ name: "gateway_response", type: "jsonb", default: () => "'{}'::jsonb" })
+  gatewayResponse: Record<string, any>;
+
+  @Column({ name: "description", type: "varchar", length: 500, default: "" })
+  description: string;
+
+  @Column({ name: "metadata", type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  @Column({ name: "customer_id", type: "varchar", length: 255 })
+  customerId: string;
+
+  @Column({ name: "tenant_id", type: "uuid", nullable: true })
+  tenantId: string | null;
+
+  @Column({ name: "order_id", type: "varchar", length: 255, nullable: true })
+  orderId: string | null;
+
+  @Column({ name: "expires_at", type: "timestamp", nullable: true })
+  expiresAt: Date | null;
+
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  @OneToMany(() => PaymentRefund, (refund) => refund.transaction)
+  refunds: PaymentRefund[];
+
+  /**
+   * Kiểm tra giao dịch có thành công không.
+   */
+  isSuccess(): boolean {
+    return this.status === PaymentStatus.SUCCEEDED;
+  }
+
+  /**
+   * Kiểm tra giao dịch có đang chờ xử lý không.
+   */
+  isPending(): boolean {
+    return this.status === PaymentStatus.PENDING || this.status === PaymentStatus.PROCESSING;
+  }
+
+  /**
+   * Kiểm tra giao dịch có thất bại không.
+   */
+  isFailed(): boolean {
+    return this.status === PaymentStatus.FAILED || this.status === PaymentStatus.CANCELLED || this.status === PaymentStatus.EXPIRED;
+  }
+
+  /**
+   * Kiểm tra giao dịch có đã hết hạn không.
+   */
+  isExpired(): boolean {
+    if (!this.expiresAt) return false;
+    return new Date() > this.expiresAt;
+  }
+
+  /**
+   * String representation cho debugging.
+   */
+  toString(): string {
+    return `<PaymentTransaction(id="${this.id}", externalId="${this.externalId}", amount=${this.amount} ${this.currency}, status="${this.status}")>`;
+  }
+}
+
+// ============================================================================
+// PaymentMethod Entity
+// ============================================================================
+
+/**
+ * PaymentMethod Entity.
+ *
+ * Lưu trữ phương thức thanh toán của người dùng:
+ * - id: UUID chính
+ * - type: loại phương thức thanh toán
+ * - gateway: cổng thanh toán liên kết
+ * - gatewayToken: token từ gateway (vd: Stripe customer card token)
+ * - label: nhãn hiển thị (vd: "VISA **** 4242")
+ * - isDefault: có phải phương thức mặc định không
+ * - isVerified: đã được xác minh chưa
+ * - metadata: dữ liệu bổ sung (masked card number, expiry, v.v.)
+ * - customerId: ID khách hàng
+ * - tenantId: tenant ID (NULL = global)
+ *
+ * Indexes:
+ * - (customerId) - tìm phương thức theo khách hàng
+ * - (gatewayToken) - tìm theo token từ gateway
+ * - (tenantId) - lọc theo tenant
+ */
+@Entity("payment_methods")
+@Index("idx_payment_method_customer_id", ["customerId"])
+@Index("idx_payment_method_gateway_token", ["gatewayToken"])
+@Index("idx_payment_method_tenant_id", ["tenantId"])
+export class PaymentMethod implements IPaymentMethod {
+  @PrimaryGeneratedColumn("uuid")
+  id: string;
+
+  @Column({ name: "type", type: "varchar", length: 50 })
+  type: PaymentMethodType;
+
+  @Column({ name: "gateway", type: "varchar", length: 50 })
+  gateway: string;
+
+  @Column({ name: "gateway_token", type: "varchar", length: 500 })
+  gatewayToken: string;
+
+  @Column({ name: "label", type: "varchar", length: 200, default: "" })
+  label: string;
+
+  @Column({ name: "is_default", type: "boolean", default: false })
+  isDefault: boolean;
+
+  @Column({ name: "is_verified", type: "boolean", default: false })
+  isVerified: boolean;
+
+  @Column({ name: "metadata", type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  @Column({ name: "customer_id", type: "varchar", length: 255 })
+  customerId: string;
+
+  @Column({ name: "tenant_id", type: "uuid", nullable: true })
+  tenantId: string | null;
+
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  /**
+   * String representation cho debugging.
+   */
+  toString(): string {
+    return `<PaymentMethod(id="${this.id}", type="${this.type}", label="${this.label}", gateway="${this.gateway}")>`;
+  }
+}
+
+// ============================================================================
+// PaymentRefund Entity
+// ============================================================================
+
+/**
+ * PaymentRefund Entity.
+ *
+ * Xử lý hoàn tiền cho giao dịch:
+ * - id: UUID chính
+ * - transactionId: ID giao dịch gốc
+ * - externalId: ID hoàn tiền từ hệ thống bên ngoài
+ * - amount: số tiền hoàn (<= tổng amount của giao dịch gốc)
+ * - currency: mã tiền tệ
+ * - status: trạng thái hoàn tiền
+ * - gatewayRefundId: ID hoàn tiền từ gateway
+ * - gatewayResponse: phản hồi nguyên bản từ gateway
+ * - reason: lý do hoàn tiền
+ * - metadata: dữ liệu bổ sung
+ * - tenantId: tenant ID (NULL = global)
+ *
+ * Indexes:
+ * - (transactionId) - tìm hoàn tiền theo giao dịch
+ * - (externalId) - tìm theo ID bên ngoài
+ * - (status) - lọc theo trạng thái
+ * - (tenantId) - lọc theo tenant
+ */
+@Entity("payment_refunds")
+@Index("idx_refund_transaction_id", ["transactionId"])
+@Index("idx_refund_external_id", ["externalId"])
+@Index("idx_refund_status", ["status"])
+@Index("idx_refund_tenant_id", ["tenantId"])
+export class PaymentRefund implements IPaymentRefund {
+  @PrimaryGeneratedColumn("uuid")
+  id: string;
+
+  @Column({ name: "transaction_id", type: "uuid" })
+  transactionId: string;
+
+  @Column({ name: "external_id", type: "varchar", length: 255 })
+  externalId: string;
+
+  @Column({ name: "amount", type: "bigint" })
+  amount: number;
+
+  @Column({ name: "currency", type: "varchar", length: 3, default: "VND" })
+  currency: string;
+
+  @Column({ name: "status", type: "varchar", length: 20, default: RefundStatus.PENDING })
+  status: RefundStatus;
+
+  @Column({ name: "gateway_refund_id", type: "varchar", length: 255, nullable: true })
+  gatewayRefundId: string | null;
+
+  @Column({ name: "gateway_response", type: "jsonb", default: () => "'{}'::jsonb" })
+  gatewayResponse: Record<string, any>;
+
+  @Column({ name: "reason", type: "varchar", length: 500, default: "" })
+  reason: string;
+
+  @Column({ name: "metadata", type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  @Column({ name: "tenant_id", type: "uuid", nullable: true })
+  tenantId: string | null;
+
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  @ManyToOne(() => PaymentTransaction, (transaction) => transaction.refunds, {
+    onDelete: "CASCADE",
+  })
+  @JoinColumn({ name: "transaction_id" })
+  transaction: PaymentTransaction;
+
+  /**
+   * Kiểm tra hoàn tiền có thành công không.
+   */
+  isSuccess(): boolean {
+    return this.status === RefundStatus.SUCCEEDED;
+  }
+
+  /**
+   * Kiểm tra hoàn tiền có đang chờ xử lý không.
+   */
+  isPending(): boolean {
+    return this.status === RefundStatus.PENDING || this.status === RefundStatus.PROCESSING;
+  }
+
+  /**
+   * String representation cho debugging.
+   */
+  toString(): string {
+    return `<PaymentRefund(id="${this.id}", transactionId="${this.transactionId}", amount=${this.amount} ${this.currency}, status="${this.status}")>`;
+  }
+}
+{% endraw %}

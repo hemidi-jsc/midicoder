@@ -1,0 +1,488 @@
+{% raw %}/**
+ * PaymentController — REST Controller cho API thanh toán.
+ *
+ * Cung cấp các endpoint REST cho việc quản lý giao dịch thanh toán,
+ * phương thức thanh toán, và hoàn tiền:
+ * - CRUD cho giao dịch thanh toán (create, confirm, cancel)
+ * - Quản lý phương thức thanh toán
+ * - Xử lý hoàn tiền
+ * - Tìm kiếm và phân trang
+ *
+ * CP45: Payment Gateway
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  HttpStatus,
+  HttpCode,
+  ParseUUIDPipe,
+  ValidationPipe,
+  ParseEnumPipe,
+} from "@nestjs/common";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiParam,
+} from "@nestjs/swagger";
+import {
+  PaymentService,
+  PaginatedPayments,
+} from "./payment.service";
+import {
+  CreatePaymentDto,
+  ConfirmPaymentDto,
+  CancelPaymentDto,
+  CreateRefundDto,
+  CreatePaymentMethodDto,
+  PaymentQueryDto,
+  PaymentResponseDto,
+  PaymentMethodResponseDto,
+  RefundResponseDto,
+} from "./payment.dto";
+import { PaymentStatus } from "./payment.entity";
+
+/**
+ * PaymentController — quản lý giao dịch thanh toán qua REST API.
+ *
+ * API Routes:
+ *
+ * Giao dịch thanh toán:
+ * - POST   /payments              - Tạo mới giao dịch thanh toán
+ * - GET    /payments              - List giao dịch (có phân trang, lọc)
+ * - GET    /payments/:id          - Lấy chi tiết giao dịch
+ * - POST   /payments/:id/confirm  - Xác nhận giao dịch thành công
+ * - POST   /payments/:id/cancel   - Hủy giao dịch
+ *
+ * Hoàn tiền:
+ * - POST   /payments/:id/refunds  - Tạo yêu cầu hoàn tiền
+ * - GET    /payments/:id/refunds  - List hoàn tiền của giao dịch
+ * - GET    /payments/refunds/:refundId - Chi tiết hoàn tiền
+ *
+ * Phương thức thanh toán:
+ * - POST   /payment-methods       - Tạo mới phương thức thanh toán
+ * - GET    /payment-methods       - List phương thức của khách hàng
+ * - DELETE /payment-methods/:id   - Xóa phương thức thanh toán
+ */
+@ApiTags("Payment")
+@ApiBearerAuth()
+@Controller("payments")
+export class PaymentController {
+  constructor(
+    private readonly paymentService: PaymentService,
+  ) {}
+
+  // ========================================================================
+  // Payment Transaction Endpoints
+  // ========================================================================
+
+  /**
+   * Tạo mới giao dịch thanh toán.
+   *
+   * Client gửi thông tin giao dịch, server tạo transaction và trả về
+   * paymentUrl để redirect người dùng đến trang thanh toán.
+   *
+   * Sử dụng idempotencyKey để đảm bảo không tạo trùng giao dịch
+   * khi client retry.
+   *
+   * @param createDto - CreatePaymentDto
+   * @returns PaymentResponseDto chứa paymentUrl
+   */
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo mới giao dịch thanh toán",
+    description:
+      "Tạo giao dịch thanh toán mới và trả về URL thanh toán để redirect người dùng. " +
+      "Sử dụng idempotencyKey để đảm bảo không tạo trùng khi retry.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Giao dịch đã được tạo thành công",
+    type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ hoặc gateway không khả dụng",
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: "Idempotency key đã tồn tại (trả về giao dịch cũ)",
+  })
+  async createPayment(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    createDto: CreatePaymentDto,
+  ): Promise<PaymentResponseDto> {
+    return this.paymentService.createPayment(createDto);
+  }
+
+  /**
+   * List tất cả giao dịch thanh toán với phân trang và lọc.
+   *
+   * @param query - PaymentQueryDto
+   * @returns PaginatedPayments
+   */
+  @Get()
+  @ApiOperation({
+    summary: "List giao dịch thanh toán",
+    description:
+      "Lấy danh sách giao dịch thanh toán với phân trang và lọc. " +
+      "Hỗ trợ lọc theo status, customerId, orderId, gateway, tenantId.",
+  })
+  @ApiQuery({ name: "status", required: false, enum: PaymentStatus })
+  @ApiQuery({ name: "customerId", required: false })
+  @ApiQuery({ name: "orderId", required: false })
+  @ApiQuery({ name: "gateway", required: false })
+  @ApiQuery({ name: "limit", required: false, example: 20 })
+  @ApiQuery({ name: "offset", required: false, example: 0 })
+  @ApiQuery({ name: "tenantId", required: false, type: "string", format: "uuid" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List giao dịch thành công",
+  })
+  async findPayments(
+    @Query(new ValidationPipe({ transform: true }))
+    query: PaymentQueryDto,
+  ): Promise<PaginatedPayments> {
+    return this.paymentService.findPayments(query);
+  }
+
+  /**
+   * Lấy chi tiết giao dịch theo ID.
+   *
+   * @param id - Transaction ID
+   * @returns PaymentResponseDto
+   */
+  @Get(":id")
+  @ApiOperation({
+    summary: "Lấy chi tiết giao dịch thanh toán",
+    description: "Lấy thông tin chi tiết của một giao dịch thanh toán theo ID.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "Transaction ID",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Tìm thấy giao dịch",
+    type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy giao dịch",
+  })
+  async getPayment(
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<PaymentResponseDto> {
+    return this.paymentService.getPayment(id);
+  }
+
+  /**
+   * Xác nhận giao dịch thanh toán thành công.
+   *
+   * Được gọi sau khi người dùng hoàn tất thanh toán trên gateway
+   * và quay lại ứng dụng (redirect URL).
+   *
+   * @param id - Transaction ID
+   * @param confirmDto - ConfirmPaymentDto
+   * @returns PaymentResponseDto đã cập nhật
+   */
+  @Post(":id/confirm")
+  @ApiOperation({
+    summary: "Xác nhận giao dịch thanh toán",
+    description:
+      "Xác nhận giao dịch thanh toán thành công sau khi người dùng hoàn tất " +
+      "thanh toán trên payment gateway.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "Transaction ID cần xác nhận",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Giao dịch đã được xác nhận",
+    type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Không thể xác nhận (trạng thái không hợp lệ hoặc gateway error)",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy giao dịch",
+  })
+  async confirmPayment(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    confirmDto: ConfirmPaymentDto,
+  ): Promise<PaymentResponseDto> {
+    return this.paymentService.confirmPayment(id, confirmDto);
+  }
+
+  /**
+   * Hủy giao dịch thanh toán.
+   *
+   * Chỉ có thể hủy giao dịch ở trạng thái PENDING hoặc PROCESSING.
+   *
+   * @param id - Transaction ID
+   * @param cancelDto - CancelPaymentDto
+   * @returns PaymentResponseDto đã cập nhật
+   */
+  @Post(":id/cancel")
+  @ApiOperation({
+    summary: "Hủy giao dịch thanh toán",
+    description:
+      "Hủy giao dịch thanh toán đang chờ xử lý. " +
+      "Chỉ có thể hủy giao dịch ở trạng thái PENDING hoặc PROCESSING.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "Transaction ID cần hủy",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Giao dịch đã được hủy",
+    type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Không thể hủy (trạng thái không hợp lệ)",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy giao dịch",
+  })
+  async cancelPayment(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    cancelDto: CancelPaymentDto,
+  ): Promise<PaymentResponseDto> {
+    return this.paymentService.cancelPayment(id, cancelDto);
+  }
+
+  // ========================================================================
+  // Refund Endpoints
+  // ========================================================================
+
+  /**
+   * Tạo yêu cầu hoàn tiền cho giao dịch.
+   *
+   * Số tiền hoàn phải <= số tiền giao dịch gốc.
+   * Tổng số tiền hoàn (bao gồm các lần hoàn trước đó) không vượt quá
+   * số tiền giao dịch.
+   *
+   * @param id - Transaction ID
+   * @param createRefundDto - CreateRefundDto
+   * @returns RefundResponseDto
+   */
+  @Post(":id/refunds")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo yêu cầu hoàn tiền",
+    description:
+      "Tạo yêu cầu hoàn tiền cho giao dịch thanh toán đã thành công. " +
+      "Số tiền hoàn không được vượt quá số tiền giao dịch gốc.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "Transaction ID cần hoàn tiền",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Yêu cầu hoàn tiền đã được tạo",
+    type: RefundResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description:
+      "Giao dịch chưa thành công hoặc số tiền hoàn vượt quá giới hạn",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy giao dịch",
+  })
+  async createRefund(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    createRefundDto: CreateRefundDto,
+  ): Promise<RefundResponseDto> {
+    return this.paymentService.createRefund(id, createRefundDto);
+  }
+
+  /**
+   * List tất cả hoàn tiền của một giao dịch.
+   *
+   * @param id - Transaction ID
+   * @returns List RefundResponseDto
+   */
+  @Get(":id/refunds")
+  @ApiOperation({
+    summary: "List hoàn tiền của giao dịch",
+    description: "Lấy danh sách tất cả yêu cầu hoàn tiền của một giao dịch.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "Transaction ID",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List hoàn tiền thành công",
+    type: [RefundResponseDto],
+  })
+  async getRefunds(
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<RefundResponseDto[]> {
+    return this.paymentService.getRefundsForTransaction(id);
+  }
+
+  /**
+   * Lấy chi tiết hoàn tiền theo refund ID.
+   *
+   * @param refundId - Refund ID
+   * @returns RefundResponseDto
+   */
+  @Get("refunds/:refundId")
+  @ApiOperation({
+    summary: "Lấy chi tiết hoàn tiền",
+    description: "Lấy thông tin chi tiết của một yêu cầu hoàn tiền.",
+  })
+  @ApiParam({
+    name: "refundId",
+    description: "Refund ID",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Tìm thấy hoàn tiền",
+    type: RefundResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy hoàn tiền",
+  })
+  async getRefund(
+    @Param("refundId", new ParseUUIDPipe()) refundId: string,
+  ): Promise<RefundResponseDto> {
+    return this.paymentService.getRefund(refundId);
+  }
+
+  // ========================================================================
+  // Payment Method Endpoints
+  // ========================================================================
+
+  /**
+   * Tạo mới phương thức thanh toán.
+   *
+   * @param createDto - CreatePaymentMethodDto
+   * @returns PaymentMethodResponseDto
+   */
+  @Post("methods")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo mới phương thức thanh toán",
+    description:
+      "Tạo phương thức thanh toán mới cho khách hàng. " +
+      "Nếu đặt isDefault = true, phương thức này sẽ là mặc định.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Phương thức thanh toán đã được tạo",
+    type: PaymentMethodResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ",
+  })
+  async createPaymentMethod(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    createDto: CreatePaymentMethodDto,
+  ): Promise<PaymentMethodResponseDto> {
+    return this.paymentService.createPaymentMethod(createDto);
+  }
+
+  /**
+   * Lấy tất cả phương thức thanh toán của khách hàng.
+   *
+   * @param customerId - Customer ID (query param)
+   * @returns List PaymentMethodResponseDto
+   */
+  @Get("methods")
+  @ApiOperation({
+    summary: "List phương thức thanh toán của khách hàng",
+    description: "Lấy danh sách tất cả phương thức thanh toán của một khách hàng.",
+  })
+  @ApiQuery({
+    name: "customerId",
+    description: "Customer ID",
+    required: true,
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List phương thức thanh toán thành công",
+    type: [PaymentMethodResponseDto],
+  })
+  async getPaymentMethods(
+    @Query("customerId") customerId: string,
+  ): Promise<PaymentMethodResponseDto[]> {
+    return this.paymentService.getCustomerPaymentMethods(customerId);
+  }
+
+  /**
+   * Xóa phương thức thanh toán.
+   *
+   * @param id - Payment Method ID
+   * @returns void
+   */
+  @Delete("methods/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: "Xóa phương thức thanh toán",
+    description:
+      "Xóa phương thức thanh toán. Không thể xóa phương thức mặc định.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "Payment Method ID",
+    type: "string",
+    format: "uuid",
+  })
+  @ApiResponse({
+    status: HttpStatus.NO_CONTENT,
+    description: "Phương thức thanh toán đã được xóa",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Không thể xóa phương thức mặc định",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy phương thức thanh toán",
+  })
+  async removePaymentMethod(
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<void> {
+    const deleted = await this.paymentService.removePaymentMethod(id);
+    if (!deleted) {
+      throw new Error(`Không tìm thấy phương thức thanh toán: ${id}`);
+    }
+  }
+}
+{% endraw %}

@@ -1,0 +1,164 @@
+/**
+* PaymentModule — NestJS Module cho Payment Gateway (CP45).
+*
+* Khởi tạo và kết nối tất cả component của hệ thống thanh toán:
+* - TypeORM entities: PaymentTransaction, PaymentMethod, PaymentRefund
+* - PaymentService: logic nghiệp vụ thanh toán với Strategy Pattern
+* - PaymentController: REST API cho client
+* - PaymentWebhookController: nhận webhook từ payment gateway
+* - GatewayRegistry: đăng ký và quản lý payment gateway strategy
+*
+* Package: {{ package_name }}
+*
+* Cấu hình gateway:
+* {% if gateways %}
+* Gateways đã cấu hình: {{ gateways | join(", ") }}
+* {% else %}
+* Không có gateway nào được cấu hình — cần thêm gateway strategy.
+* {% endif %}
+*
+* CP45: Payment Gateway
+*/
+
+{% raw %}
+import { Module, Global } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import {
+PaymentTransaction,
+PaymentMethod,
+PaymentRefund,
+} from "./payment.entity";
+import { PaymentService, GatewayRegistry } from "./payment.service";
+import { PaymentController } from "./payment.controller";
+import { PaymentWebhookController } from "./payment-webhook.controller";
+{% endraw %}
+
+// ============================================================================
+// Gateway Strategy Imports
+// ============================================================================
+{% if gateways %}
+{% if "vnpay" in gateways %}
+{% raw %}import { VnpayGatewayStrategy } from "./vnpay-gateway.strategy";{% endraw %}
+{% endif %}
+{% if "mozart" in gateways %}
+{% raw %}import { MozartGatewayStrategy } from "./mozart-gateway.strategy";{% endraw %}
+{% endif %}
+{% if "stripe" in gateways %}
+{% raw %}import { StripeGatewayStrategy } from "./stripe-gateway.strategy";{% endraw %}
+{% endif %}
+{% endif %}
+
+{% raw %}
+
+/**
+* PaymentModule — module cho payment gateway abstraction layer.
+*
+* Structure:
+* - Imports:
+* - TypeOrmModule.forFeature() — các entity database
+*
+* - Controllers:
+* - PaymentController — REST API chính cho client
+* - PaymentWebhookController — nhận webhook từ gateway
+*
+* - Providers:
+* - PaymentService — logic nghiệp vụ với Strategy Pattern
+* - GatewayRegistry — container cho gateway strategies (qua useFactory)
+*
+* - Exports:
+* - PaymentService — để module khác có thể gọi thanh toán
+* - "GATEWAY_REGISTRY" — để module khác có thể truy vấn gateway
+*
+* Usage trong AppModule:
+* @Module({
+* imports: [
+* PaymentModule,
+* ],
+* })
+* export class AppModule {}
+*
+* Usage để tạo payment từ module khác:
+* constructor(
+* private readonly paymentService: PaymentService,
+* ) {}
+*
+* const payment = await this.paymentService.createPayment({
+* amount: 1500000,
+* currency: "VND",
+* gateway: "vnpay",
+* customerId: "cust_123",
+* idempotencyKey: "unique_key_here",
+* });
+*/
+@Global()
+@Module({
+imports: [
+// TypeORM — quản lý các entity thanh toán
+TypeOrmModule.forFeature([
+PaymentTransaction,
+PaymentMethod,
+PaymentRefund,
+]),
+],
+controllers: [
+// REST API chính cho client — tạo payment, refund, quản lý payment method
+PaymentController,
+
+// Nhận webhook callback từ các payment gateway
+PaymentWebhookController,
+],
+providers: [
+// Service chính — logic nghiệp vụ với Strategy Pattern
+PaymentService,
+
+// Gateway Registry — container cho các gateway strategy
+// Sử dụng useFactory để đăng ký các gateway strategy động
+{
+provide: "GATEWAY_REGISTRY",
+useFactory: (): GatewayRegistry => {
+const registry = new GatewayRegistry();
+{% endraw %}
+
+{% if gateways %}
+{% for gateway in gateways %}
+// Đăng ký {{ gateway | capitalize }} Gateway Strategy
+{% raw %} registry.register(new {% endraw %}{{ gateway | capitalize }}{% raw %}GatewayStrategy());{% endraw %}
+{% endfor %}
+{% endif %}
+
+{% raw %}
+return registry;
+},
+},
+{% endraw %}
+
+{% if gateways %}
+{% if "vnpay" in gateways %}
+{% raw %} // VNPAY Gateway Strategy — xử lý thanh toán qua VNPAY
+VnpayGatewayStrategy,{% endraw %}
+{% endif %}
+{% if "mozart" in gateways %}
+{% raw %}
+
+// Mozart Bank Gateway Strategy — xử lý thanh toán qua Mozart Bank
+MozartGatewayStrategy,{% endraw %}
+{% endif %}
+{% if "stripe" in gateways %}
+{% raw %}
+
+// Stripe Gateway Strategy — xử lý thanh toán qua Stripe
+StripeGatewayStrategy,{% endraw %}
+{% endif %}
+{% endif %}
+
+{% raw %}
+],
+exports: [
+// Export để module khác có thể inject
+PaymentService,
+"GATEWAY_REGISTRY",
+TypeOrmModule,
+],
+})
+export class PaymentModule {}
+{% endraw %}

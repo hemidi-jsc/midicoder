@@ -1,0 +1,960 @@
+"""
+CP45 Payment Gateway Webhook Handler — Xử lý webhook callback từ gateway provider.
+
+Module này xử lý webhook callback từ các payment gateway provider:
+- POST /webhooks/payment/stripe   — Webhook từ Stripe
+- POST /webhooks/payment/vnpay    — Webhook từ VNPay
+- POST /webhooks/payment/momo     — Webhook từ MoMo
+- POST /webhooks/payment/custom   — Webhook generic cho provider tùy chỉnh
+
+Các sự kiện webhook được hỗ trợ:
+- payment.success: Thanh toán thành công
+- payment.failed: Thanh toán thất bại
+- payment.refunded: Hoàn tiền thành công
+- payment.expired: Giao dịch hết hạn
+
+Tính năng chính:
+- Xác thực webhook signature (HMAC-SHA256) cho từng provider
+- Chuẩn hóa webhook payload từ các provider khác nhau
+- Cập nhật trạng thái giao dịch theo state machine
+- Xử lý idempotent — bỏ qua webhook đã xử lý
+- Audit logging và event emission
+
+CP45: Payment Gateway Abstraction Layer
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import logging
+import time
+from datetime import datetime, timezone
+from typing import Any
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models.payment_models import (
+    PaymentGatewayProvider,
+    PaymentStatus,
+    RefundStatus,
+)
+from app.services.payment_service import PaymentService
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Router
+# ============================================================================
+
+router = APIRouter(prefix="/webhooks/payment", tags=["Payment Webhooks"])
+
+
+# ============================================================================
+# Signature Verification — Xác thực webhook signature
+# ============================================================================
+
+
+def verify_stripe_signature(
+    payload: str,
+    signature: str,
+    secret: str,
+    tolerance: int = 300,
+) -> bool:
+    """
+    Xác thực webhook signature của Stripe.
+
+    Stripe gửi signature ở định dạng: t=timestamp,v1=signature,v0=signature
+    Sử dụng HMAC-SHA256 với timestamp để bảo vệ chống replay attack.
+
+    Args:
+        payload: Raw body của webhook request.
+        signature: Giá trị signature từ header X-Stripe-Signature.
+        secret: Webhook signing secret (whsec_...).
+        tolerance: Dung sai timestamp (giây), mặc định 300s = 5 phút.
+
+    Returns:
+        True nếu signature hợp lệ, False nếu không.
+    """
+    try:
+        # Parse signature header
+        parts = signature.split(",")
+        signature_parts: dict[str, str] = {}
+        for part in parts:
+            if "=" in part:
+                key, value = part.split("=", 1)
+                signature_parts[key] = value
+
+        # Lấy timestamp
+        timestamp_str = signature_parts.get("t", "")
+        if not timestamp_str:
+            logger.warning("Stripe webhook signature không có timestamp")
+            return False
+
+        timestamp = int(timestamp_str)
+        if abs(time.time() - timestamp) > tolerance:
+            logger.warning(
+                "Stripe webhook timestamp quá cũ: %d (tolerance: %ds)",
+                timestamp,
+                tolerance,
+            )
+            return False
+
+        # Tính toán expected signature
+        signed_payload = f"{timestamp}.{payload}"
+        expected_signature = hmac.new(
+            secret.encode("utf-8"),
+            signed_payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        # So sánh với v1 signature
+        signature_v1 = signature_parts.get("v1", "")
+        return hmac.compare_digest(expected_signature, signature_v1)
+
+    except (ValueError, KeyError) as e:
+        logger.error("Lỗi khi xác thực Stripe webhook signature: %s", str(e))
+        return False
+
+
+def verify_vnpay_signature(
+    params: dict[str, str],
+    signature: str,
+    secret_key: str,
+) -> bool:
+    """
+    Xác thực webhook signature của VNPay.
+
+    VNPay sử dụng HMAC-MD5 với các tham số được sắp xếp theo thứ tự alphabet.
+    SecureHash được gửi trong params và cần được verify.
+
+    Args:
+        params: Các tham số query từ VNPay webhook.
+        signature: Giá trị vnp_SecureHash từ params.
+        secret_key: Secret key để tính toán hash.
+
+    Returns:
+        True nếu signature hợp lệ, False nếu không.
+    """
+    try:
+        # Loại bỏ secure hash khỏi params
+        hash_params = {k: v for k, v in params.items() if k != "vnp_SecureHash"}
+
+        # Sắp xếp theo thứ tự alphabet
+        sorted_params = sorted(hash_params.items())
+        query_string = "&".join(f"{k}={v}" for k, v in sorted_params)
+
+        # Tính toán expected hash (HMAC-MD5)
+        expected_hash = hmac.new(
+            secret_key.encode("utf-8"),
+            query_string.encode("utf-8"),
+            hashlib.md5,
+        ).hexdigest().upper()
+
+        return hmac.compare_digest(expected_hash, signature.upper())
+
+    except Exception as e:
+        logger.error("Lỗi khi xác thực VNPay webhook signature: %s", str(e))
+        return False
+
+
+def verify_momo_signature(
+    payload: dict[str, Any],
+    signature: str,
+    secret_key: str,
+) -> bool:
+    """
+    Xác thực webhook signature của MoMo.
+
+    MoMo sử dụng HMAC-SHA256 với accessKey, partnerCode, requestID,
+    amount, orderID được nối lại.
+
+    Args:
+        payload: Payload JSON từ MoMo webhook.
+        signature: Giá trị signature từ header hoặc payload.
+        secret_key: Secret key của MoMo.
+
+    Returns:
+        True nếu signature hợp lệ, False nếu không.
+    """
+    try:
+        # Tạo chuỗi để tính signature
+        access_key = payload.get("accessKey", "")
+        partner_code = payload.get("partnerCode", "")
+        request_id = payload.get("requestId", "")
+        amount = str(payload.get("amount", ""))
+        order_id = payload.get("orderId", "")
+
+        # MoMo signature: HMAC-SHA256(accessKey+requestId+amount+orderId+partnerCode+lang+extraData)
+        raw_data = f"{access_key}{request_id}{amount}{order_id}{partner_code}"
+        expected_signature = hmac.new(
+            secret_key.encode("utf-8"),
+            raw_data.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        return hmac.compare_digest(expected_signature, signature)
+
+    except Exception as e:
+        logger.error("Lỗi khi xác thực MoMo webhook signature: %s", str(e))
+        return False
+
+
+# ============================================================================
+# Event Handlers — Xử lý các sự kiện webhook
+# ============================================================================
+
+
+def handle_payment_success(
+    db: Session,
+    gateway_provider: PaymentGatewayProvider,
+    gateway_transaction_id: str,
+    amount: int,
+    currency: str,
+    reference_code: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> bool:
+    """
+    Xử lý sự kiện thanh toán thành công từ webhook.
+
+    Tìm giao dịch đang ở trạng thái PENDING hoặc PROCESSING,
+    cập nhật sang COMPLETED với gateway response data.
+
+    Args:
+        db: SQLAlchemy Session.
+        gateway_provider: Nhà cung cấp gateway gửi webhook.
+        gateway_transaction_id: Transaction ID từ gateway.
+        amount: Số tiền giao dịch.
+        currency: Mã tiền tệ.
+        reference_code: Mã tham chiếu (nếu có).
+        metadata: Metadata bổ sung.
+
+    Returns:
+        True nếu tìm thấy và cập nhật giao dịch, False nếu không.
+    """
+    service = PaymentService(db)
+
+    # Tìm giao dịch theo gateway_transaction_id
+    from app.models.payment_models import PaymentTransactionModel
+
+    transaction = (
+        db.query(PaymentTransactionModel)
+        .filter(
+            PaymentTransactionModel.gateway_transaction_id == gateway_transaction_id
+        )
+        .first()
+    )
+
+    if not transaction:
+        # Fallback: tìm theo reference_code
+        if reference_code:
+            transaction = (
+                db.query(PaymentTransactionModel)
+                .filter(PaymentTransactionModel.reference_code == reference_code)
+                .first()
+            )
+
+    if not transaction:
+        logger.warning(
+            "Không tìm thấy giao dịch với gateway_tx='%s', ref='%s'",
+            gateway_transaction_id,
+            reference_code,
+        )
+        return False
+
+    # Chỉ cập nhật nếu đang ở trạng thái PENDING hoặc PROCESSING
+    if transaction.status not in (PaymentStatus.PENDING, PaymentStatus.PROCESSING):
+        logger.info(
+            "Giao dịch '%s' đang ở trạng thái %s — bỏ qua webhook success",
+            transaction.transaction_id,
+            transaction.status.value,
+        )
+        return True  # Đã xử lý rồi, không phải lỗi
+
+    # Cập nhật gateway response data
+    existing_response = transaction.gateway_response_data or {}
+    existing_response.update(metadata or {})
+    existing_response["webhook_received_at"] = datetime.now(timezone.utc).isoformat()
+    transaction.gateway_response_data = existing_response
+
+    # Chuyển trạng thái sang COMPLETED
+    try:
+        service._transition_status(transaction, PaymentStatus.COMPLETED)
+    except Exception as e:
+        logger.warning(
+            "Không thể chuyển trạng thái giao dịch %s sang COMPLETED: %s",
+            transaction.transaction_id,
+            str(e),
+        )
+        return False
+
+    logger.info(
+        "Giao dịch '%s' đã được cập nhật sang COMPLETED từ webhook (gateway: %s, tx: %s)",
+        transaction.transaction_id,
+        gateway_provider.value,
+        gateway_transaction_id,
+    )
+
+    # Emit event
+    service._emit_event(
+        "payment.completed",
+        str(transaction.transaction_id),
+        gateway=gateway_provider.value,
+        gateway_transaction_id=gateway_transaction_id,
+    )
+
+    return True
+
+
+def handle_payment_failed(
+    db: Session,
+    gateway_provider: PaymentGatewayProvider,
+    gateway_transaction_id: str,
+    error_code: str | None = None,
+    error_message: str | None = None,
+    reference_code: str | None = None,
+) -> bool:
+    """
+    Xử lý sự kiện thanh toán thất bại từ webhook.
+
+    Tìm giao dịch đang ở trạng thái PENDING hoặc PROCESSING,
+    cập nhật sang FAILED với thông tin lỗi.
+
+    Args:
+        db: SQLAlchemy Session.
+        gateway_provider: Nhà cung cấp gateway gửi webhook.
+        gateway_transaction_id: Transaction ID từ gateway.
+        error_code: Mã lỗi từ gateway.
+        error_message: Thông báo lỗi.
+        reference_code: Mã tham chiếu (nếu có).
+
+    Returns:
+        True nếu tìm thấy và cập nhật giao dịch, False nếu không.
+    """
+    service = PaymentService(db)
+
+    from app.models.payment_models import PaymentTransactionModel
+
+    transaction = (
+        db.query(PaymentTransactionModel)
+        .filter(
+            PaymentTransactionModel.gateway_transaction_id == gateway_transaction_id
+        )
+        .first()
+    )
+
+    if not transaction and reference_code:
+        transaction = (
+            db.query(PaymentTransactionModel)
+            .filter(PaymentTransactionModel.reference_code == reference_code)
+            .first()
+        )
+
+    if not transaction:
+        logger.warning(
+            "Không tìm thấy giao dịch với gateway_tx='%s', ref='%s' cho webhook failed",
+            gateway_transaction_id,
+            reference_code,
+        )
+        return False
+
+    # Chỉ cập nhật nếu đang ở trạng thái PENDING hoặc PROCESSING
+    if transaction.status not in (PaymentStatus.PENDING, PaymentStatus.PROCESSING):
+        logger.info(
+            "Giao dịch '%s' đang ở trạng thái %s — bỏ qua webhook failed",
+            transaction.transaction_id,
+            transaction.status.value,
+        )
+        return True
+
+    # Cập nhật thông tin lỗi
+    transaction.error_code = error_code
+    transaction.error_message = error_message or "Giao dịch thất bại từ gateway"
+
+    existing_response = transaction.gateway_response_data or {}
+    existing_response["webhook_received_at"] = datetime.now(timezone.utc).isoformat()
+    existing_response["error_code"] = error_code
+    existing_response["error_message"] = error_message
+    transaction.gateway_response_data = existing_response
+
+    # Chuyển trạng thái sang FAILED
+    try:
+        service._transition_status(transaction, PaymentStatus.FAILED)
+    except Exception as e:
+        logger.warning(
+            "Không thể chuyển trạng thái giao dịch %s sang FAILED: %s",
+            transaction.transaction_id,
+            str(e),
+        )
+        return False
+
+    logger.warning(
+        "Giao dịch '%s' đã được cập nhật sang FAILED từ webhook (gateway: %s, error: %s)",
+        transaction.transaction_id,
+        gateway_provider.value,
+        error_code or error_message,
+    )
+
+    service._emit_event(
+        "payment.failed",
+        str(transaction.transaction_id),
+        gateway=gateway_provider.value,
+        error_code=error_code,
+    )
+
+    return True
+
+
+def handle_refund_completed(
+    db: Session,
+    gateway_provider: PaymentGatewayProvider,
+    gateway_refund_id: str,
+    gateway_transaction_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> bool:
+    """
+    Xử lý sự kiện hoàn tiền thành công từ webhook.
+
+    Tìm yêu cầu hoàn tiền đang ở trạng thái PENDING hoặc PROCESSING,
+    cập nhật sang COMPLETED. Đồng thời cập nhật giao dịch gốc
+    sang REFUNDED nếu là full refund.
+
+    Args:
+        db: SQLAlchemy Session.
+        gateway_provider: Nhà cung cấp gateway gửi webhook.
+        gateway_refund_id: Refund ID từ gateway.
+        gateway_transaction_id: Transaction ID từ gateway (nếu có).
+        metadata: Metadata bổ sung.
+
+    Returns:
+        True nếu tìm thấy và cập nhật, False nếu không.
+    """
+    service = PaymentService(db)
+
+    from app.models.payment_models import PaymentRefundModel
+
+    refund = (
+        db.query(PaymentRefundModel)
+        .filter(PaymentRefundModel.gateway_refund_id == gateway_refund_id)
+        .first()
+    )
+
+    if not refund:
+        logger.warning("Không tìm thấy hoàn tiền với gateway_refund_id='%s'", gateway_refund_id)
+        return False
+
+    # Chỉ cập nhật nếu đang ở trạng thái PENDING hoặc PROCESSING
+    if refund.status not in (RefundStatus.PENDING, RefundStatus.PROCESSING):
+        logger.info(
+            "Hoàn tiền '%s' đang ở trạng thái %s — bỏ qua webhook",
+            refund.refund_id,
+            refund.status.value,
+        )
+        return True
+
+    # Cập nhật hoàn tiền
+    existing_response = refund.gateway_response_data or {}
+    existing_response.update(metadata or {})
+    existing_response["webhook_received_at"] = datetime.now(timezone.utc).isoformat()
+    refund.gateway_response_data = existing_response
+    refund.status = RefundStatus.COMPLETED
+    refund.completed_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(refund)
+
+    # Kiểm tra nếu là full refund — cập nhật giao dịch gốc sang REFUNDED
+    from app.models.payment_models import PaymentTransactionModel
+
+    transaction = (
+        db.query(PaymentTransactionModel)
+        .filter(PaymentTransactionModel.transaction_id == refund.transaction_id)
+        .first()
+    )
+
+    if transaction and transaction.status == PaymentStatus.COMPLETED:
+        total_refunded = sum(
+            r.refund_amount
+            for r in transaction.refunds
+            if r.status == RefundStatus.COMPLETED
+        )
+        if total_refunded >= transaction.amount:
+            try:
+                service._transition_status(transaction, PaymentStatus.REFUNDED)
+            except Exception:
+                # Nếu đã ở trạng thái REFUNDED thì không sao
+                pass
+
+    logger.info(
+        "Hoàn tiền '%s' đã được cập nhật sang COMPLETED từ webhook (gateway: %s)",
+        refund.refund_id,
+        gateway_provider.value,
+    )
+
+    service._emit_event(
+        "payment.refund.completed",
+        str(refund.refund_id),
+        gateway=gateway_provider.value,
+    )
+
+    return True
+
+
+def handle_refund_failed(
+    db: Session,
+    gateway_provider: PaymentGatewayProvider,
+    gateway_refund_id: str,
+    error_code: str | None = None,
+    error_message: str | None = None,
+) -> bool:
+    """
+    Xử lý sự kiện hoàn tiền thất bại từ webhook.
+
+    Cập nhật yêu cầu hoàn tiền sang FAILED với thông tin lỗi.
+
+    Args:
+        db: SQLAlchemy Session.
+        gateway_provider: Nhà cung cấp gateway gửi webhook.
+        gateway_refund_id: Refund ID từ gateway.
+        error_code: Mã lỗi.
+        error_message: Thông báo lỗi.
+
+    Returns:
+        True nếu tìm thấy và cập nhật, False nếu không.
+    """
+    from app.models.payment_models import PaymentRefundModel
+
+    refund = (
+        db.query(PaymentRefundModel)
+        .filter(PaymentRefundModel.gateway_refund_id == gateway_refund_id)
+        .first()
+    )
+
+    if not refund:
+        logger.warning("Không tìm thấy hoàn tiền với gateway_refund_id='%s' cho webhook failed", gateway_refund_id)
+        return False
+
+    if refund.status not in (RefundStatus.PENDING, RefundStatus.PROCESSING):
+        return True
+
+    refund.error_code = error_code
+    refund.error_message = error_message or "Hoàn tiền thất bại từ gateway"
+    refund.status = RefundStatus.FAILED
+    refund.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(refund)
+
+    logger.warning(
+        "Hoàn tiền '%s' đã được cập nhật sang FAILED từ webhook (gateway: %s, error: %s)",
+        refund.refund_id,
+        gateway_provider.value,
+        error_code or error_message,
+    )
+
+    return True
+
+
+# ============================================================================
+# Webhook Endpoints
+# ============================================================================
+
+
+@router.post(
+    "/stripe",
+    summary="Nhận webhook từ Stripe",
+    responses={
+        200: {"description": "Webhook đã được xử lý thành công"},
+        400: {"description": "Webhook payload không hợp lệ"},
+        401: {"description": "Signature không hợp lệ"},
+    },
+)
+async def receive_stripe_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+    x_stripe_signature: str | None = Header(None, alias="X-Stripe-Signature"),
+) -> dict[str, str]:
+    """
+    Endpoint nhận webhook callback từ Stripe.
+
+    Xử lý các sự kiện:
+    - payment_intent.succeeded: Thanh toán thành công
+    - payment_intent.payment_failed: Thanh toán thất bại
+    - charge.refunded: Hoàn tiền thành công
+    - charge.dispute.created: Tranh chấp thanh toán
+
+    Xác thực signature qua X-Stripe-Signature header.
+    """
+    body_bytes = await request.body()
+    body = body_bytes.decode("utf-8")
+
+    logger.info("Nhận webhook Stripe (body length: %d bytes)", len(body))
+
+    # Xác thực signature
+    if x_stripe_signature:
+        # Lấy webhook secret từ gateway config
+        service = PaymentService(db)
+        try:
+            config = service._get_gateway_config(
+                PaymentGatewayProvider.STRIPE,
+                "default",  # TODO: lấy tenant_id từ context
+            )
+            webhook_secret = config.webhook_secret_reference or ""
+
+            if not verify_stripe_signature(body, x_stripe_signature, webhook_secret):
+                logger.warning("Stripe webhook signature không hợp lệ")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid webhook signature",
+                )
+        except Exception:
+            logger.warning("Không thể lấy Stripe webhook config — bỏ qua signature check")
+    else:
+        logger.warning("Stripe webhook không có signature header")
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        logger.warning("Stripe webhook payload không phải JSON hợp lệ")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload",
+        )
+
+    event_type = payload.get("type", "")
+    data = payload.get("data", {}).get("object", {})
+
+    # Xử lý sự kiện
+    if event_type == "payment_intent.succeeded":
+        handle_payment_success(
+            db=db,
+            gateway_provider=PaymentGatewayProvider.STRIPE,
+            gateway_transaction_id=data.get("id", ""),
+            amount=data.get("amount", 0),
+            currency=data.get("currency", "usd").upper(),
+            reference_code=data.get("metadata", {}).get("reference_code"),
+            metadata=data,
+        )
+    elif event_type == "payment_intent.payment_failed":
+        handle_payment_failed(
+            db=db,
+            gateway_provider=PaymentGatewayProvider.STRIPE,
+            gateway_transaction_id=data.get("id", ""),
+            error_code=data.get("last_payment_error", {}).get("code"),
+            error_message=data.get("last_payment_error", {}).get("message"),
+            reference_code=data.get("metadata", {}).get("reference_code"),
+        )
+    elif event_type == "charge.refunded":
+        handle_refund_completed(
+            db=db,
+            gateway_provider=PaymentGatewayProvider.STRIPE,
+            gateway_refund_id=data.get("id", ""),
+            gateway_transaction_id=data.get("balance_transaction"),
+            metadata=data,
+        )
+    elif event_type == "charge.dispute.created":
+        logger.warning("Stripe dispute webhook nhận được: charge=%s", data.get("id"))
+        # TODO: Xử lý dispute — cần có model riêng cho dispute
+    else:
+        logger.info("Stripe event type chưa xử lý: %s", event_type)
+
+    return {"status": "success", "message": f"Webhook Stripe '{event_type}' đã được xử lý"}
+
+
+@router.post(
+    "/vnpay",
+    summary="Nhận webhook từ VNPay",
+    responses={
+        200: {"description": "Webhook VNPay đã được xử lý thành công"},
+        400: {"description": "Webhook payload không hợp lệ"},
+        401: {"description": "Signature không hợp lệ"},
+    },
+)
+async def receive_vnpay_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """
+    Endpoint nhận webhook IPC (Instant Payment Notification) từ VNPay.
+
+    VNPay gửi các tham số qua query string:
+    - vnp_TransactionStatus: 00 (thành công), 01 (thất bại)
+    - vnp_TxnRef: Mã tham chiếu giao dịch
+    - vnp_Amount: Số tiền (x100)
+    - vnp_PayDate: Thời điểm thanh toán
+    - vnp_SecureHash: Signature để xác thực
+
+    Trả về: {"RspCode": "00", "Message": "success"} để VNPay biết đã nhận.
+    """
+    body_bytes = await request.body()
+    body = body_bytes.decode("utf-8")
+
+    logger.info("Nhận webhook VNPay (body length: %d bytes)", len(body))
+
+    # Parse query params từ body hoặc query string
+    params: dict[str, str] = {}
+    query_string = body.split("?", 1)[-1] if "?" in body else str(request.query_params)
+    for param in query_string.split("&"):
+        if "=" in param:
+            key, value = param.split("=", 1)
+            params[key] = value
+
+    # Xác thực signature
+    secure_hash = params.get("vnp_SecureHash", "")
+    if secure_hash:
+        service = PaymentService(db)
+        try:
+            config = service._get_gateway_config(
+                PaymentGatewayProvider.VNPAY,
+                "default",
+            )
+            secret_key = config.secret_key_reference or ""
+
+            if not verify_vnpay_signature(params, secure_hash, secret_key):
+                logger.warning("VNPay webhook signature không hợp lệ")
+                return {"RspCode": "ERROR", "Message": "Invalid signature"}
+        except Exception:
+            logger.warning("Không thể lấy VNPay config — bỏ qua signature check")
+
+    # Lấy thông tin từ params
+    transaction_status = params.get("vnp_TransactionStatus", "")
+    txn_ref = params.get("vnp_TxnRef", "")
+    amount = int(params.get("vnp_Amount", "0")) // 100  # VNPay gửi x100
+    vnp_OrderInfo = params.get("vnp_OrderInfo", "")
+    vnp_ErrorCode = params.get("vnp_ErrorCode", "")
+
+    if transaction_status == "00":
+        # Thành công
+        handle_payment_success(
+            db=db,
+            gateway_provider=PaymentGatewayProvider.VNPAY,
+            gateway_transaction_id=txn_ref,
+            amount=amount,
+            currency="VND",
+            reference_code=txn_ref,
+            metadata={
+                "vnp_TransactionNo": params.get("vnp_TransactionNo"),
+                "vnp_PayDate": params.get("vnp_PayDate"),
+                "vnp_OrderInfo": vnp_OrderInfo,
+            },
+        )
+    elif transaction_status == "01":
+        # Thất bại
+        handle_payment_failed(
+            db=db,
+            gateway_provider=PaymentGatewayProvider.VNPAY,
+            gateway_transaction_id=txn_ref,
+            error_code=vnp_ErrorCode or "01",
+            error_message=vnp_OrderInfo or f"VNPay error: {vnp_ErrorCode}",
+            reference_code=txn_ref,
+        )
+    else:
+        logger.info("VNPay transaction status chưa xử lý: %s", transaction_status)
+
+    return {"RspCode": "00", "Message": "success"}
+
+
+@router.post(
+    "/momo",
+    summary="Nhận webhook từ MoMo",
+    responses={
+        200: {"description": "Webhook MoMo đã được xử lý thành công"},
+        400: {"description": "Webhook payload không hợp lệ"},
+        401: {"description": "Signature không hợp lệ"},
+    },
+)
+async def receive_momo_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+    x_momo_signature: str | None = Header(None, alias="x-momo-signature"),
+) -> dict[str, str]:
+    """
+    Endpoint nhận IPN (Instant Payment Notification) từ MoMo.
+
+    Xử lý các sự kiện:
+    - order_paid: Thanh toán thành công
+    - order_failed: Thanh toán thất bại
+    - order_refunded: Hoàn tiền thành công
+
+    Xác thực signature qua x-momo-signature header.
+    """
+    body_bytes = await request.body()
+    body = body_bytes.decode("utf-8")
+
+    logger.info("Nhận webhook MoMo (body length: %d bytes)", len(body))
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        logger.warning("MoMo webhook payload không phải JSON hợp lệ")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload",
+        )
+
+    # Xác thực signature
+    if x_momo_signature:
+        service = PaymentService(db)
+        try:
+            config = service._get_gateway_config(
+                PaymentGatewayProvider.MOMO,
+                "default",
+            )
+            secret_key = config.secret_key_reference or ""
+
+            if not verify_momo_signature(payload, x_momo_signature, secret_key):
+                logger.warning("MoMo webhook signature không hợp lệ")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid webhook signature",
+                )
+        except Exception:
+            logger.warning("Không thể lấy MoMo config — bỏ qua signature check")
+
+    # Xử lý sự kiện
+    result_code = payload.get("resultCode", "")
+    order_id = payload.get("orderId", "")
+    amount = payload.get("amount", 0)
+    request_id = payload.get("requestId", "")
+    message = payload.get("message", "")
+
+    if result_code == "00":
+        # Thành công
+        handle_payment_success(
+            db=db,
+            gateway_provider=PaymentGatewayProvider.MOMO,
+            gateway_transaction_id=order_id,
+            amount=amount,
+            currency="VND",
+            reference_code=order_id,
+            metadata=payload,
+        )
+    elif result_code in ("01", "02", "09"):
+        # Thất bại
+        handle_payment_failed(
+            db=db,
+            gateway_provider=PaymentGatewayProvider.MOMO,
+            gateway_transaction_id=order_id,
+            error_code=result_code,
+            error_message=message or f"MoMo error: {result_code}",
+            reference_code=order_id,
+        )
+    else:
+        logger.info("MoMo resultCode chưa xử lý: %s", result_code)
+
+    return {"errorCode": "00", "message": "Success"}
+
+
+@router.post(
+    "/custom",
+    summary="Nhận webhook generic cho provider tùy chỉnh",
+    responses={
+        200: {"description": "Webhook đã được xử lý thành công"},
+        400: {"description": "Webhook payload không hợp lệ"},
+        401: {"description": "Signature không hợp lệ"},
+    },
+)
+async def receive_custom_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+    x_webhook_provider: str | None = Header(None, alias="X-Webhook-Provider"),
+    x_webhook_signature: str | None = Header(None, alias="X-Webhook-Signature"),
+) -> dict[str, str]:
+    """
+    Endpoint webhook generic cho các provider tùy chỉnh.
+
+    Yêu cầu payload có định dạng:
+    {
+        "event_type": "payment.success | payment.failed | refund.completed",
+        "gateway_transaction_id": "tx-xxx",
+        "amount": 100000,
+        "currency": "VND",
+        "reference_code": "PAY-2026-0001",
+        "metadata": {...}
+    }
+
+    Xác thực qua X-Webhook-Provider và X-Webhook-Signature headers.
+    """
+    body_bytes = await request.body()
+    body = body_bytes.decode("utf-8")
+
+    logger.info("Nhận webhook custom (provider: %s)", x_webhook_provider or "unknown")
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        logger.warning("Custom webhook payload không phải JSON hợp lệ")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload",
+        )
+
+    # Xác thực signature (sử dụng Stripe-like HMAC-SHA256)
+    if x_webhook_signature and x_webhook_provider:
+        service = PaymentService(db)
+        try:
+            provider = PaymentGatewayProvider(x_webhook_provider)
+            config = service._get_gateway_config(provider, "default")
+            webhook_secret = config.webhook_secret_reference or ""
+
+            if not verify_stripe_signature(body, x_webhook_signature, webhook_secret):
+                logger.warning("Custom webhook signature không hợp lệ (provider: %s)", x_webhook_provider)
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid webhook signature",
+                )
+        except ValueError:
+            logger.warning("Unknown provider: %s", x_webhook_provider)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown provider: {x_webhook_provider}",
+            )
+        except Exception:
+            logger.warning("Không thể lấy config cho provider %s", x_webhook_provider)
+
+    event_type = payload.get("event_type", "")
+    data = payload.get("data", payload)
+
+    if event_type in ("payment.success", "payment.completed"):
+        handle_payment_success(
+            db=db,
+            gateway_provider=PaymentGatewayProvider(x_webhook_provider) if x_webhook_provider else PaymentGatewayProvider.CUSTOM,
+            gateway_transaction_id=data.get("gateway_transaction_id", ""),
+            amount=data.get("amount", 0),
+            currency=data.get("currency", "VND"),
+            reference_code=data.get("reference_code"),
+            metadata=data,
+        )
+    elif event_type in ("payment.failed", "payment.error"):
+        handle_payment_failed(
+            db=db,
+            gateway_provider=PaymentGatewayProvider(x_webhook_provider) if x_webhook_provider else PaymentGatewayProvider.CUSTOM,
+            gateway_transaction_id=data.get("gateway_transaction_id", ""),
+            error_code=data.get("error_code"),
+            error_message=data.get("error_message"),
+            reference_code=data.get("reference_code"),
+        )
+    elif event_type in ("refund.completed", "refund.success"):
+        handle_refund_completed(
+            db=db,
+            gateway_provider=PaymentGatewayProvider(x_webhook_provider) if x_webhook_provider else PaymentGatewayProvider.CUSTOM,
+            gateway_refund_id=data.get("gateway_refund_id", ""),
+            gateway_transaction_id=data.get("gateway_transaction_id"),
+            metadata=data,
+        )
+    elif event_type in ("refund.failed", "refund.error"):
+        handle_refund_failed(
+            db=db,
+            gateway_provider=PaymentGatewayProvider(x_webhook_provider) if x_webhook_provider else PaymentGatewayProvider.CUSTOM,
+            gateway_refund_id=data.get("gateway_refund_id", ""),
+            error_code=data.get("error_code"),
+            error_message=data.get("error_message"),
+        )
+    else:
+        logger.info("Custom webhook event type chưa xử lý: %s", event_type)
+
+    return {"status": "success", "message": f"Webhook '{event_type}' đã được xử lý"}

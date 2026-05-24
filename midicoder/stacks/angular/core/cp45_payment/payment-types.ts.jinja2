@@ -1,0 +1,235 @@
+{% raw %}
+/**
+ * CP45 Payment Gateway — Các kiểu dữ liệu cho hệ thống thanh toán.
+ *
+ * File này định nghĩa tất cả interfaces và type aliases sử dụng
+ * trong các component, service, và store của CP45.
+ */
+
+/** Trạng thái giao dịch thanh toán */
+export enum PaymentStatus {
+  /** Đang chờ xử lý */
+  PENDING = 'pending',
+  /** Đã xử lý thành công */
+  COMPLETED = 'completed',
+  /** Đã thất bại */
+  FAILED = 'failed',
+  /** Đã hủy */
+  CANCELLED = 'cancelled',
+  /** Đang chờ xác nhận */
+  AWAITING_CONFIRMATION = 'awaiting_confirmation',
+  /** Đã hoàn tiền */
+  REFUNDED = 'refunded',
+}
+
+/** Phương thức thanh toán */
+export enum PaymentMethodType {
+  /** Thẻ tín dụng / ghi nợ */
+  CARD = 'card',
+  /** Chuyển khoản ngân hàng */
+  BANK_TRANSFER = 'bank_transfer',
+  /** Ví điện tử */
+  E_WALLET = 'e_wallet',
+  /** Thanh toán khi nhận hàng */
+  COD = 'cod',
+  /** Mã QR */
+  QR_CODE = 'qr_code',
+  /** Mã giảm giá / voucher */
+  VOUCHER = 'voucher',
+}
+
+/** Phương thức thanh toán — bản ghi */
+export interface PaymentMethod {
+  /** Định danh duy nhất */
+  id: string;
+  /** Loại phương thức */
+  type: PaymentMethodType;
+  /** Tên hiển thị (ví dụ: "Thẻ Visa •••• 4242") */
+  displayName: string;
+  /** Có được đặt làm mặc định hay không */
+  isDefault: boolean;
+  /** Còn hợp lệ hay không */
+  isActive: boolean;
+  /** Dữ liệu bổ sung theo từng loại (token, bank_code, ...) */
+  metadata?: Record<string, unknown>;
+  /** Thời điểm tạo */
+  createdAt: string;
+  /** Thời điểm cập nhật gần nhất */
+  updatedAt: string;
+}
+
+/** Form dữ liệu để tạo phương thức thanh toán mới */
+export interface CreatePaymentMethodDto {
+  /** Loại phương thức */
+  type: PaymentMethodType;
+  /** Tên hiển thị */
+  displayName: string;
+  /** Dữ liệu bổ sung */
+  metadata: Record<string, unknown>;
+}
+
+/** Form dữ liệu để cập nhật phương thức thanh toán */
+export interface UpdatePaymentMethodDto {
+  /** Tên hiển thị mới */
+  displayName?: string;
+  /** Đặt làm mặc định */
+  isDefault?: boolean;
+  /** Kích hoạt / vô hiệu hóa */
+  isActive?: boolean;
+  /** Dữ liệu bổ sung */
+  metadata?: Record<string, unknown>;
+}
+
+/** Một giao dịch thanh toán */
+export interface PaymentTransaction {
+  /** Định danh duy nhất */
+  id: string;
+  /** ID người dùng thực hiện */
+  userId: string;
+  /** ID phương thức thanh toán */
+  paymentMethodId: string;
+  /** Số tiền (đơn vị: đơn vị tiền nhỏ nhất, ví dụ: VND -> le = 100) */
+  amount: number;
+  /** Mã tiền tệ ISO 4217 */
+  currency: string;
+  /** Trạng thái giao dịch */
+  status: PaymentStatus;
+  /** Mô tả giao dịch */
+  description: string;
+  /** Mã tham chiếu bên thứ ba (gateway reference) */
+  referenceId?: string;
+  /** Mã lỗi (nếu thất bại) */
+  errorCode?: string;
+  /** Tin nhắn lỗi (nếu thất bại) */
+  errorMessage?: string;
+  /** Dữ liệu bổ sung */
+  metadata?: Record<string, unknown>;
+  /** Thời điểm tạo */
+  createdAt: string;
+  /** Thời điểm cập nhật gần nhất */
+  updatedAt: string;
+}
+
+/** Form dữ liệu để khởi tạo thanh toán mới */
+export interface InitiatePaymentDto {
+  /** ID phương thức thanh toán */
+  paymentMethodId: string;
+  /** Số tiền */
+  amount: number;
+  /** Mã tiền tệ */
+  currency: string;
+  /** Mô tả */
+  description: string;
+  /** Mã tham chiếu tùy chỉnh */
+  referenceId?: string;
+  /** Dữ liệu bổ sung */
+  metadata?: Record<string, unknown>;
+}
+
+/** Form dữ liệu để yêu cầu hoàn tiền */
+export interface RefundPaymentDto {
+  /** Số tiền hoàn lại (nếu không truyền => hoàn toàn bộ) */
+  amount?: number;
+  /** Lý do hoàn tiền */
+  reason: string;
+}
+
+/** Thống kê thanh toán tổng quan */
+export interface PaymentStats {
+  /** Tổng số giao dịch */
+  totalTransactions: number;
+  /** Tổng doanh thu (tất cả trạng thái) */
+  totalRevenue: number;
+  /** Thành công */
+  successfulCount: number;
+  /** Thành công — số tiền */
+  successfulAmount: number;
+  /** Thất bại */
+  failedCount: number;
+  /** Đã hoàn tiền */
+  refundedAmount: number;
+  /** Đang chờ */
+  pendingAmount: number;
+  /** Theo phương thức — phân bổ */
+  byMethod: PaymentMethodBreakdown[];
+  /** Theo khoảng thời gian — phân bổ */
+  byPeriod: PaymentPeriodBreakdown[];
+  /** Tỷ lệ thành công (0.0 - 1.0) */
+  successRate: number;
+}
+
+/** Phân bổ theo phương thức thanh toán */
+export interface PaymentMethodBreakdown {
+  /** Loại phương thức */
+  methodType: PaymentMethodType;
+  /** Số lượng giao dịch */
+  count: number;
+  /** Tổng số tiền */
+  amount: number;
+}
+
+/** Phân bổ theo khoảng thời gian */
+export interface PaymentPeriodBreakdown {
+  /** Nhãn khoảng thời gian (ví dụ: "2025-01") */
+  period: string;
+  /** Số lượng giao dịch */
+  count: number;
+  /** Tổng số tiền */
+  amount: number;
+}
+
+/** Param tìm kiếm / lọc lịch sử giao dịch */
+export interface PaymentHistoryFilters {
+  /** Từ khóa tìm kiếm */
+  search?: string;
+  /** Lọc theo trạng thái */
+  status?: PaymentStatus | null;
+  /** Lọc theo phương thức */
+  methodType?: PaymentMethodType | null;
+  /** Từ ngày */
+  fromDate?: string;
+  /** Đến ngày */
+  toDate?: string;
+  /** Số tiền tối thiểu */
+  minAmount?: number;
+  /** Số tiền tối đa */
+  maxAmount?: number;
+}
+
+/** Phân trang */
+export interface PaginationParams {
+  /** Số trang (bắt đầu từ 1) */
+  page: number;
+  /** Số bản ghi mỗi trang */
+  pageSize: number;
+  /** Trường sắp xếp */
+  sortBy?: string;
+  /** Hướng sắp xếp */
+  sortOrder?: 'asc' | 'desc';
+}
+
+/** Kết quả phân trang */
+export interface PaginatedResult<T> {
+  /** Danh sách bản ghi */
+  items: T[];
+  /** Tổng số bản ghi */
+  total: number;
+  /** Số trang hiện tại */
+  page: number;
+  /** Số bản ghi mỗi trang */
+  pageSize: number;
+  /** Tổng số trang */
+  totalPages: number;
+}
+
+/** Dạng compact cho thanh toán — dùng trong danh sách */
+export interface PaymentTransactionSummary {
+  id: string;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  description: string;
+  paymentMethodName: string;
+  createdAt: string;
+}
+{% endraw %}

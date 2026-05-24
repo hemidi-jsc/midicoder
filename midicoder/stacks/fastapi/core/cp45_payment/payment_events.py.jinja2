@@ -1,0 +1,939 @@
+"""
+CP45 Payment Gateway Events — Event-driven payment events.
+
+Module này định nghĩa các event và event handler cho payment gateway:
+- PaymentEvent: các loại sự kiện thanh toán (create, success, failed, refund, ...)
+- PaymentEventHandler: giao diện trừu tượng cho event handler
+- PaymentAuditHandler: handler ghi audit log khi có sự kiện
+- PaymentNotificationHandler: handler gửi thông báo khi có sự kiện
+- PaymentAnalyticsHandler: handler thu thập số liệu phân tích
+- PaymentEventBus: event bus đơn giản để publish/subscribe events
+
+Tích hợp với CP05 (Event Bus), CP14 (Audit), CP12 (Notification).
+
+CP45: Payment Gateway Abstraction Layer
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Callable
+
+from pydantic import BaseModel, Field
+
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Payment Event Types — Phân loại sự kiện thanh toán
+# ============================================================================
+
+
+class PaymentEventType(str, Enum):
+    """
+    Các loại sự kiện thanh toán.
+
+    Mỗi sự kiện đại diện cho một trạng thái hoặc hành động
+    trong vòng đời của giao dịch thanh toán.
+    """
+
+    # Giao dịch thanh toán
+    PAYMENT_CREATED = "payment.created"
+    PAYMENT_PROCESSING = "payment.processing"
+    PAYMENT_SUCCEEDED = "payment.succeeded"
+    PAYMENT_FAILED = "payment.failed"
+    PAYMENT_CANCELLED = "payment.cancelled"
+    PAYMENT_EXPIRED = "payment.expired"
+    PAYMENT_REFUNDED = "payment.refunded"
+    PAYMENT_DISPUTED = "payment.disputed"
+
+    # Hoàn tiền
+    REFUND_CREATED = "payment.refund.created"
+    REFUND_PROCESSING = "payment.refund.processing"
+    REFUND_SUCCEEDED = "payment.refund.succeeded"
+    REFUND_FAILED = "payment.refund.failed"
+
+    # Phương thức thanh toán
+    PAYMENT_METHOD_ADDED = "payment_method.added"
+    PAYMENT_METHOD_REMOVED = "payment_method.removed"
+    PAYMENT_METHOD_DEFAULT_CHANGED = "payment_method.default_changed"
+
+    # Cấu hình gateway
+    GATEWAY_CONFIG_CREATED = "gateway_config.created"
+    GATEWAY_CONFIG_UPDATED = "gateway_config.updated"
+    GATEWAY_CONFIG_DEACTIVATED = "gateway_config.deactivated"
+
+    # Webhook
+    WEBHOOK_RECEIVED = "webhook.received"
+    WEBHOOK_FAILED = "webhook.failed"
+
+    # Idempotency
+    IDEMPOTENCY_KEY_USED = "idempotency.key_used"
+
+    # Lỗi hệ thống
+    PAYMENT_GATEWAY_TIMEOUT = "payment.gateway_timeout"
+    PAYMENT_GATEWAY_ERROR = "payment.gateway_error"
+
+
+# ============================================================================
+# PaymentEvent — Mô hình sự kiện thanh toán
+# ============================================================================
+
+
+class PaymentEvent(BaseModel):
+    """
+    Mô hình sự kiện thanh toán.
+
+    Mỗi sự kiện chứa:
+    - event_type: Loại sự kiện (PaymentEventType)
+    - event_id: Định danh duy nhất của sự kiện
+    - timestamp: Thời điểm sự kiện xảy ra
+    - payload: Dữ liệu chi tiết của sự kiện
+    - metadata: Metadata bổ sung
+
+    Attributes:
+        event_type: Loại sự kiện.
+        event_id: Định danh duy nhất.
+        timestamp: Thời điểm xảy ra.
+        payload: Dữ liệu chi tiết.
+        tenant_id: Tenant ID.
+        metadata: Metadata bổ sung.
+    """
+
+    model_config = {"frozen": True}
+
+    event_type: PaymentEventType = Field(..., description="Loại sự kiện thanh toán")
+    event_id: str = Field(..., description="Định danh duy nhất của sự kiện")
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Thời điểm sự kiện xảy ra",
+    )
+    payload: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Dữ liệu chi tiết của sự kiện",
+    )
+    tenant_id: str = Field(
+        default="default",
+        max_length=100,
+        description="Tenant ID",
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Metadata bổ sung",
+    )
+
+    @property
+    def transaction_id(self) -> str | None:
+        """Lấy transaction_id từ payload (nếu có)."""
+        return self.payload.get("transaction_id")
+
+    @property
+    def customer_id(self) -> str | None:
+        """Lấy customer_id từ payload (nếu có)."""
+        return self.payload.get("customer_id")
+
+    @property
+    def gateway_provider(self) -> str | None:
+        """Lấy gateway provider từ payload (nếu có)."""
+        return self.payload.get("gateway_provider")
+
+    @property
+    def amount(self) -> int | None:
+        """Lấy số tiền từ payload (nếu có)."""
+        return self.payload.get("amount")
+
+    def __repr__(self) -> str:
+        return (
+            f"<PaymentEvent(type={self.event_type.value}, "
+            f"id={self.event_id}, txn={self.transaction_id})>"
+        )
+
+
+# ============================================================================
+# PaymentEventHandler — Giao diện trừu tượng cho event handler
+# ============================================================================
+
+
+class PaymentEventHandler(BaseModel):
+    """
+    Giao diện trừu tượng cho payment event handler.
+
+    Mỗi handler sẽ xử lý các sự kiện cụ thể theo tên đăng ký.
+    Handler cần implement handle_event() để xử lý sự kiện.
+
+    Attributes:
+        name: Tên của handler (dùng để debug/log).
+        event_types: Danh sách các loại sự kiện mà handler quan tâm.
+        is_async: Handler có xử lý async không.
+    """
+
+    name: str = Field(..., description="Tên của handler")
+    event_types: list[PaymentEventType] = Field(
+        default_factory=list,
+        description="Các loại sự kiện mà handler quan tâm",
+    )
+    is_async: bool = Field(
+        default=True,
+        description="Handler có xử lý async không",
+    )
+
+    def is_interested(self, event: PaymentEvent) -> bool:
+        """
+        Kiểm tra handler có quan tâm đến sự kiện này không.
+
+        Args:
+            event: PaymentEvent cần kiểm tra.
+
+        Returns:
+            True nếu handler quan tâm, False nếu không.
+        """
+        if not self.event_types:
+            return True  # Không có filter — quan tâm tất cả
+        return event.event_type in self.event_types
+
+    async def handle(self, event: PaymentEvent) -> None:
+        """
+        Xử lý sự kiện thanh toán.
+
+        Phương thức này cần được override bởi các handler cụ thể.
+
+        Args:
+            event: PaymentEvent cần xử lý.
+        """
+        logger.debug(
+            "Handler '%s' nhận sự kiện: %s (event_id: %s)",
+            self.name,
+            event.event_type.value,
+            event.event_id,
+        )
+
+
+# ============================================================================
+# PaymentAuditHandler — Handler ghi audit log
+# ============================================================================
+
+
+class PaymentAuditHandler(PaymentEventHandler):
+    """
+    Handler ghi audit log cho các sự kiện thanh toán.
+
+    Tích hợp với CP14 (Audit Compliance) — ghi lại tất cả
+    sự kiện thanh toán vào audit trail.
+
+    Usage:
+        handler = PaymentAuditHandler(audit_logger=audit_service)
+        await handler.handle(event)
+    """
+
+    name: str = "payment_audit_handler"
+    event_types: list[PaymentEventType] = [
+        PaymentEventType.PAYMENT_CREATED,
+        PaymentEventType.PAYMENT_SUCCEEDED,
+        PaymentEventType.PAYMENT_FAILED,
+        PaymentEventType.PAYMENT_CANCELLED,
+        PaymentEventType.PAYMENT_REFUNDED,
+        PaymentEventType.REFUND_CREATED,
+        PaymentEventType.REFUND_SUCCEEDED,
+        PaymentEventType.REFUND_FAILED,
+    ]
+    is_async: bool = True
+
+    async def handle(self, event: PaymentEvent) -> None:
+        """
+        Ghi audit log cho sự kiện thanh toán.
+
+        Trong production, phương thức này sẽ gọi audit service
+        để ghi vào audit trail table hoặc audit event bus.
+
+        Args:
+            event: PaymentEvent cần ghi audit log.
+        """
+        audit_record = {
+            "event_type": event.event_type.value,
+            "event_id": event.event_id,
+            "timestamp": event.timestamp.isoformat(),
+            "tenant_id": event.tenant_id,
+            "transaction_id": event.transaction_id,
+            "customer_id": event.customer_id,
+            "gateway_provider": event.gateway_provider,
+            "amount": event.amount,
+            "payload": event.payload,
+            "metadata": event.metadata,
+        }
+
+        logger.info(
+            "Audit log: %s — txn=%s, amount=%s, provider=%s",
+            event.event_type.value,
+            event.transaction_id,
+            event.amount,
+            event.gateway_provider,
+        )
+
+        # TODO: Tích hợp với CP14 Audit Service
+        # await self.audit_service.log(
+        #     action=event.event_type.value,
+        #     resource_type="payment",
+        #     resource_id=event.transaction_id,
+        #     data=audit_record,
+        # )
+
+
+# ============================================================================
+# PaymentNotificationHandler — Handler gửi thông báo
+# ============================================================================
+
+
+class PaymentNotificationHandler(PaymentEventHandler):
+    """
+    Handler gửi thông báo khi có sự kiện thanh toán.
+
+    Tích hợp với CP12 (Notification) — gửi email, SMS, in-app notification
+    cho khách hàng và admin khi có các sự kiện quan trọng.
+
+    Các sự kiện gửi thông báo:
+    - payment.succeeded: Gửi xác nhận thanh toán thành công cho khách hàng
+    - payment.failed: Gửi thông báo thanh toán thất bại
+    - payment.refunded: Gửi xác nhận hoàn tiền
+    - payment.disputed: Gửi cảnh báo tranh chấp cho admin
+
+    Usage:
+        handler = PaymentNotificationHandler(notification_service=notif_service)
+        await handler.handle(event)
+    """
+
+    name: str = "payment_notification_handler"
+    event_types: list[PaymentEventType] = [
+        PaymentEventType.PAYMENT_SUCCEEDED,
+        PaymentEventType.PAYMENT_FAILED,
+        PaymentEventType.PAYMENT_REFUNDED,
+        PaymentEventType.PAYMENT_DISPUTED,
+        PaymentEventType.REFUND_SUCCEEDED,
+        PaymentEventType.REFUND_FAILED,
+    ]
+    is_async: bool = True
+
+    async def handle(self, event: PaymentEvent) -> None:
+        """
+        Gửi thông báo cho sự kiện thanh toán.
+
+        Xác định loại thông báo dựa trên event_type và gửi
+        đến đối tượng phù hợp (khách hàng hoặc admin).
+
+        Args:
+            event: PaymentEvent cần gửi thông báo.
+        """
+        customer_email = event.payload.get("customer_email")
+        customer_phone = event.payload.get("customer_phone")
+        transaction_id = event.transaction_id
+        amount = event.amount
+
+        notification_config = self._get_notification_config(event.event_type)
+
+        if not notification_config:
+            return
+
+        # Gửi thông báo
+        notification = {
+            "event_type": event.event_type.value,
+            "recipient_type": notification_config["recipient_type"],
+            "recipient_email": customer_email if notification_config["recipient_type"] == "customer" else None,
+            "recipient_phone": customer_phone if notification_config["recipient_type"] == "customer" else None,
+            "channels": notification_config["channels"],
+            "template": notification_config["template"],
+            "template_vars": {
+                "transaction_id": transaction_id,
+                "amount": amount,
+                "currency": event.payload.get("currency", "VND"),
+                "timestamp": event.timestamp.isoformat(),
+            },
+        }
+
+        logger.info(
+            "Gửi thông báo: type=%s, template=%s, recipient=%s",
+            event.event_type.value,
+            notification["template"],
+            notification["recipient_type"],
+        )
+
+        # TODO: Tích hợp với CP12 Notification Service
+        # await self.notification_service.send(notification)
+
+    def _get_notification_config(
+        self,
+        event_type: PaymentEventType,
+    ) -> dict[str, Any] | None:
+        """
+        Lấy cấu hình thông báo theo loại sự kiện.
+
+        Args:
+            event_type: Loại sự kiện.
+
+        Returns:
+            Dict cấu hình thông báo, hoặc None nếu không cần gửi.
+        """
+        config_map: dict[PaymentEventType, dict[str, Any]] = {
+            PaymentEventType.PAYMENT_SUCCEEDED: {
+                "recipient_type": "customer",
+                "channels": ["email"],
+                "template": "payment_success_confirmation",
+                "description": "Xác nhận thanh toán thành công gửi cho khách hàng",
+            },
+            PaymentEventType.PAYMENT_FAILED: {
+                "recipient_type": "customer",
+                "channels": ["email"],
+                "template": "payment_failed_notification",
+                "description": "Thông báo thanh toán thất bại gửi cho khách hàng",
+            },
+            PaymentEventType.PAYMENT_REFUNDED: {
+                "recipient_type": "customer",
+                "channels": ["email", "sms"],
+                "template": "refund_confirmation",
+                "description": "Xác nhận hoàn tiền gửi cho khách hàng",
+            },
+            PaymentEventType.PAYMENT_DISPUTED: {
+                "recipient_type": "admin",
+                "channels": ["email", "in_app"],
+                "template": "payment_dispute_alert",
+                "description": "Cảnh báo tranh chấp thanh toán gửi cho admin",
+            },
+            PaymentEventType.REFUND_SUCCEEDED: {
+                "recipient_type": "customer",
+                "channels": ["email"],
+                "template": "refund_success_confirmation",
+                "description": "Xác nhận hoàn tiền thành công",
+            },
+            PaymentEventType.REFUND_FAILED: {
+                "recipient_type": "admin",
+                "channels": ["email", "in_app"],
+                "template": "refund_failed_alert",
+                "description": "Cảnh báo hoàn tiền thất bại gửi cho admin",
+            },
+        }
+
+        return config_map.get(event_type)
+
+
+# ============================================================================
+# PaymentAnalyticsHandler — Handler thu thập số liệu phân tích
+# ============================================================================
+
+
+class PaymentAnalyticsHandler(PaymentEventHandler):
+    """
+    Handler thu thập số liệu phân tích thanh toán.
+
+    Tích hợp với CP17 (BI Analytics) — thu thập metrics và
+    số liệu thống kê cho dashboard và báo cáo.
+
+    Metrics theo dõi:
+    - Tổng số giao dịch theo thời gian
+    - Tỷ lệ thành công/thất bại theo provider
+    - Tổng doanh thu theo khoảng thời gian
+    - Số tiền hoàn tiền
+    - Thời gian xử lý trung bình
+
+    Usage:
+        handler = PaymentAnalyticsHandler(analytics_service=analytics)
+        await handler.handle(event)
+    """
+
+    name: str = "payment_analytics_handler"
+    event_types: list[PaymentEventType] = [
+        PaymentEventType.PAYMENT_CREATED,
+        PaymentEventType.PAYMENT_SUCCEEDED,
+        PaymentEventType.PAYMENT_FAILED,
+        PaymentEventType.PAYMENT_REFUNDED,
+        PaymentEventType.PAYMENT_GATEWAY_TIMEOUT,
+        PaymentEventType.PAYMENT_GATEWAY_ERROR,
+    ]
+    is_async: bool = True
+
+    async def handle(self, event: PaymentEvent) -> None:
+        """
+        Thu thập số liệu phân tích từ sự kiện thanh toán.
+
+        Tăng counter metrics và ghi vào analytics store
+        để hỗ trợ báo cáo và dashboard.
+
+        Args:
+            event: PaymentEvent cần thu thập số liệu.
+        """
+        metric = self._extract_metric(event)
+
+        if not metric:
+            return
+
+        logger.debug(
+            "Analytics metric: %s — %s",
+            metric["metric_name"],
+            metric["metric_value"],
+        )
+
+        # TODO: Tích hợp với CP17 BI Analytics
+        # await self.analytics_service.record_metric(metric)
+
+    def _extract_metric(self, event: PaymentEvent) -> dict[str, Any] | None:
+        """
+        Trích xuất metric từ sự kiện thanh toán.
+
+        Args:
+            event: PaymentEvent.
+
+        Returns:
+            Dict metric hoặc None.
+        """
+        metric_map: dict[PaymentEventType, dict[str, Any]] = {
+            PaymentEventType.PAYMENT_CREATED: {
+                "metric_name": "payment.transactions_created",
+                "metric_type": "counter",
+                "metric_value": 1,
+                "tags": {
+                    "provider": event.gateway_provider or "unknown",
+                    "tenant": event.tenant_id,
+                },
+            },
+            PaymentEventType.PAYMENT_SUCCEEDED: {
+                "metric_name": "payment.transactions_succeeded",
+                "metric_type": "counter",
+                "metric_value": 1,
+                "tags": {
+                    "provider": event.gateway_provider or "unknown",
+                    "tenant": event.tenant_id,
+                    "amount": event.amount or 0,
+                },
+            },
+            PaymentEventType.PAYMENT_FAILED: {
+                "metric_name": "payment.transactions_failed",
+                "metric_type": "counter",
+                "metric_value": 1,
+                "tags": {
+                    "provider": event.gateway_provider or "unknown",
+                    "tenant": event.tenant_id,
+                    "error_code": event.payload.get("error_code", "unknown"),
+                },
+            },
+            PaymentEventType.PAYMENT_REFUNDED: {
+                "metric_name": "payment.refund_amount",
+                "metric_type": "gauge",
+                "metric_value": event.amount or 0,
+                "tags": {
+                    "provider": event.gateway_provider or "unknown",
+                    "tenant": event.tenant_id,
+                },
+            },
+            PaymentEventType.PAYMENT_GATEWAY_TIMEOUT: {
+                "metric_name": "payment.gateway_timeout",
+                "metric_type": "counter",
+                "metric_value": 1,
+                "tags": {
+                    "provider": event.gateway_provider or "unknown",
+                    "tenant": event.tenant_id,
+                },
+            },
+            PaymentEventType.PAYMENT_GATEWAY_ERROR: {
+                "metric_name": "payment.gateway_error",
+                "metric_type": "counter",
+                "metric_value": 1,
+                "tags": {
+                    "provider": event.gateway_provider or "unknown",
+                    "tenant": event.tenant_id,
+                    "error_type": event.payload.get("error_type", "unknown"),
+                },
+            },
+        }
+
+        return metric_map.get(event.event_type)
+
+
+# ============================================================================
+# PaymentEventBus — Event bus đơn giản để publish/subscribe
+# ============================================================================
+
+
+class PaymentEventBus:
+    """
+    Event bus đơn giản cho payment events.
+
+    Quản lý danh sách handler và phân phối sự kiện đến
+    các handler phù hợp. Hỗ trợ cả sync và async handler.
+
+    Usage:
+        bus = PaymentEventBus()
+        bus.register_handler(audit_handler)
+        bus.register_handler(notification_handler)
+        await bus.publish(event)
+    """
+
+    def __init__(self) -> None:
+        """Khởi tạo PaymentEventBus."""
+        self._handlers: list[PaymentEventHandler] = []
+        self._event_log: list[PaymentEvent] = []
+        self._max_log_size: int = 10000  # Giới hạn số sự kiện lưu trong bộ nhớ
+
+    def register_handler(self, handler: PaymentEventHandler) -> None:
+        """
+        Đăng ký handler mới vào event bus.
+
+        Args:
+            handler: PaymentEventHandler cần đăng ký.
+        """
+        self._handlers.append(handler)
+        logger.info(
+            "Đã đăng ký event handler '%s' (quan tâm: %s)",
+            handler.name,
+            [et.value for et in handler.event_types] if handler.event_types else "tất cả",
+        )
+
+    def unregister_handler(self, handler_name: str) -> bool:
+        """
+        Hủy đăng ký handler theo tên.
+
+        Args:
+            handler_name: Tên của handler cần hủy đăng ký.
+
+        Returns:
+            True nếu tìm thấy và hủy đăng ký, False nếu không.
+        """
+        for i, handler in enumerate(self._handlers):
+            if handler.name == handler_name:
+                self._handlers.pop(i)
+                logger.info("Đã hủy đăng ký event handler '%s'", handler_name)
+                return True
+        return False
+
+    async def publish(self, event: PaymentEvent) -> None:
+        """
+        Publish một sự kiện đến tất cả handler phù hợp.
+
+        Sự kiện sẽ được phân phối đến các handler đã đăng ký
+        và quan tâm đến loại sự kiện này.
+
+        Args:
+            event: PaymentEvent cần publish.
+        """
+        # Lưu vào event log
+        self._event_log.append(event)
+        if len(self._event_log) > self._max_log_size:
+            self._event_log = self._event_log[-self._max_log_size :]
+
+        # Tìm các handler phù hợp
+        interested_handlers = [
+            h for h in self._handlers if h.is_interested(event)
+        ]
+
+        if not interested_handlers:
+            logger.debug(
+                "Không có handler nào quan tâm đến sự kiện: %s",
+                event.event_type.value,
+            )
+            return
+
+        logger.info(
+            "Publish sự kiện %s đến %d handler(s): %s",
+            event.event_type.value,
+            len(interested_handlers),
+            [h.name for h in interested_handlers],
+        )
+
+        # Phân phối sự kiện đến các handler (song song)
+        tasks = []
+        for handler in interested_handlers:
+            task = self._dispatch_to_handler(handler, event)
+            tasks.append(task)
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _dispatch_to_handler(
+        self,
+        handler: PaymentEventHandler,
+        event: PaymentEvent,
+    ) -> None:
+        """
+        Gửi sự kiện đến một handler cụ thể.
+
+        Bẫy exception từ handler để sự kiện không bị bỏ lỡ
+        nếu một handler gặp lỗi.
+
+        Args:
+            handler: PaymentEventHandler cần dispatch.
+            event: PaymentEvent cần gửi.
+        """
+        try:
+            await handler.handle(event)
+        except Exception as e:
+            logger.exception(
+                "Handler '%s' gặp lỗi khi xử lý sự kiện %s: %s",
+                handler.name,
+                event.event_type.value,
+                str(e),
+            )
+
+    def get_event_log(
+        self,
+        event_type: PaymentEventType | None = None,
+        limit: int = 100,
+    ) -> list[PaymentEvent]:
+        """
+        Lấy lịch sử sự kiện đã publish.
+
+        Args:
+            event_type: Lọc theo loại sự kiện (nếu có).
+            limit: Số lượng sự kiện tối đa.
+
+        Returns:
+            Danh sách PaymentEvent, sắp xếp theo timestamp giảm dần.
+        """
+        events = self._event_log
+
+        if event_type:
+            events = [e for e in events if e.event_type == event_type]
+
+        # Sắp xếp theo timestamp giảm dần và lấy limit
+        sorted_events = sorted(
+            events,
+            key=lambda e: e.timestamp,
+            reverse=True,
+        )
+
+        return sorted_events[:limit]
+
+    def get_registered_handlers(self) -> list[str]:
+        """Trả về danh sách tên handler đã đăng ký."""
+        return [h.name for h in self._handlers]
+
+
+# ============================================================================
+# Factory — Tạo event bus với các handler mặc định
+# ============================================================================
+
+
+def create_payment_event_bus(
+    enable_audit: bool = True,
+    enable_notification: bool = True,
+    enable_analytics: bool = True,
+) -> PaymentEventBus:
+    """
+    Tạo PaymentEventBus với các handler mặc định.
+
+    Factory function để khởi tạo event bus với các handler
+    đã được cấu hình sẵn.
+
+    Args:
+        enable_audit: Bật/tắt audit handler.
+        enable_notification: Bật/tắt notification handler.
+        enable_analytics: Bật/tắt analytics handler.
+
+    Returns:
+        PaymentEventBus đã cấu hình.
+    """
+    bus = PaymentEventBus()
+
+    if enable_audit:
+        audit_handler = PaymentAuditHandler()
+        bus.register_handler(audit_handler)
+
+    if enable_notification:
+        notification_handler = PaymentNotificationHandler()
+        bus.register_handler(notification_handler)
+
+    if enable_analytics:
+        analytics_handler = PaymentAnalyticsHandler()
+        bus.register_handler(analytics_handler)
+
+    logger.info(
+        "Đã tạo PaymentEventBus với %d handler(s): %s",
+        len(bus.get_registered_handlers()),
+        bus.get_registered_handlers(),
+    )
+
+    return bus
+
+
+# ============================================================================
+# Helper Functions — Tạo các payment events
+# ============================================================================
+
+
+def create_payment_event(
+    event_type: PaymentEventType,
+    transaction_id: str | None = None,
+    amount: int | None = None,
+    customer_id: str | None = None,
+    gateway_provider: str | None = None,
+    tenant_id: str = "default",
+    **kwargs: Any,
+) -> PaymentEvent:
+    """
+    Tạo PaymentEvent mới.
+
+    Helper function để tạo event nhanh với các thông tin cơ bản.
+
+    Args:
+        event_type: Loại sự kiện.
+        transaction_id: ID giao dịch (nếu có).
+        amount: Số tiền (nếu có).
+        customer_id: ID khách hàng (nếu có).
+        gateway_provider: Provider gateway (nếu có).
+        tenant_id: Tenant ID.
+        **kwargs: Các thông tin bổ sung cho payload.
+
+    Returns:
+        PaymentEvent đã tạo.
+    """
+    import uuid
+
+    payload: dict[str, Any] = kwargs.copy()
+    if transaction_id:
+        payload["transaction_id"] = transaction_id
+    if amount is not None:
+        payload["amount"] = amount
+    if customer_id:
+        payload["customer_id"] = customer_id
+    if gateway_provider:
+        payload["gateway_provider"] = gateway_provider
+
+    event = PaymentEvent(
+        event_type=event_type,
+        event_id=str(uuid.uuid4()),
+        payload=payload,
+        tenant_id=tenant_id,
+    )
+
+    logger.debug("Tạo PaymentEvent: %s (id: %s)", event_type.value, event.event_id)
+
+    return event
+
+
+def create_payment_success_event(
+    transaction_id: str,
+    amount: int,
+    gateway_provider: str,
+    gateway_transaction_id: str | None = None,
+    customer_id: str | None = None,
+    customer_email: str | None = None,
+    tenant_id: str = "default",
+) -> PaymentEvent:
+    """
+    Tạo sự kiện thanh toán thành công.
+
+    Args:
+        transaction_id: ID giao dịch.
+        amount: Số tiền.
+        gateway_provider: Provider gateway.
+        gateway_transaction_id: Transaction ID từ gateway.
+        customer_id: ID khách hàng.
+        customer_email: Email khách hàng.
+        tenant_id: Tenant ID.
+
+    Returns:
+        PaymentEvent với loại PAYMENT_SUCCEEDED.
+    """
+    return create_payment_event(
+        event_type=PaymentEventType.PAYMENT_SUCCEEDED,
+        transaction_id=transaction_id,
+        amount=amount,
+        customer_id=customer_id,
+        gateway_provider=gateway_provider,
+        tenant_id=tenant_id,
+        gateway_transaction_id=gateway_transaction_id,
+        customer_email=customer_email,
+    )
+
+
+def create_payment_failed_event(
+    transaction_id: str,
+    amount: int,
+    gateway_provider: str,
+    error_code: str | None = None,
+    error_message: str | None = None,
+    customer_id: str | None = None,
+    tenant_id: str = "default",
+) -> PaymentEvent:
+    """
+    Tạo sự kiện thanh toán thất bại.
+
+    Args:
+        transaction_id: ID giao dịch.
+        amount: Số tiền.
+        gateway_provider: Provider gateway.
+        error_code: Mã lỗi.
+        error_message: Thông báo lỗi.
+        customer_id: ID khách hàng.
+        tenant_id: Tenant ID.
+
+    Returns:
+        PaymentEvent với loại PAYMENT_FAILED.
+    """
+    return create_payment_event(
+        event_type=PaymentEventType.PAYMENT_FAILED,
+        transaction_id=transaction_id,
+        amount=amount,
+        customer_id=customer_id,
+        gateway_provider=gateway_provider,
+        tenant_id=tenant_id,
+        error_code=error_code,
+        error_message=error_message,
+    )
+
+
+def create_refund_completed_event(
+    transaction_id: str,
+    refund_id: str,
+    amount: int,
+    gateway_provider: str,
+    customer_id: str | None = None,
+    customer_email: str | None = None,
+    tenant_id: str = "default",
+) -> PaymentEvent:
+    """
+    Tạo sự kiện hoàn tiền thành công.
+
+    Args:
+        transaction_id: ID giao dịch gốc.
+        refund_id: ID hoàn tiền.
+        amount: Số tiền hoàn.
+        gateway_provider: Provider gateway.
+        customer_id: ID khách hàng.
+        customer_email: Email khách hàng.
+        tenant_id: Tenant ID.
+
+    Returns:
+        PaymentEvent với loại REFUND_SUCCEEDED.
+    """
+    return create_payment_event(
+        event_type=PaymentEventType.REFUND_SUCCEEDED,
+        transaction_id=transaction_id,
+        amount=amount,
+        customer_id=customer_id,
+        gateway_provider=gateway_provider,
+        tenant_id=tenant_id,
+        refund_id=refund_id,
+        customer_email=customer_email,
+    )
+
+
+__all__ = [
+    # Event types
+    "PaymentEventType",
+    # Event model
+    "PaymentEvent",
+    # Handlers
+    "PaymentEventHandler",
+    "PaymentAuditHandler",
+    "PaymentNotificationHandler",
+    "PaymentAnalyticsHandler",
+    # Event bus
+    "PaymentEventBus",
+    # Factory
+    "create_payment_event_bus",
+    # Helpers
+    "create_payment_event",
+    "create_payment_success_event",
+    "create_payment_failed_event",
+    "create_refund_completed_event",
+]

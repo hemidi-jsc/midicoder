@@ -1,0 +1,325 @@
+{% raw %}import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { PaymentChannel } from "./PaymentDashboard";
+
+// ============================================================================
+// Định nghĩa loại dữ liệu cho phương thức thanh toán
+// ============================================================================
+
+/** Trạng thái phương thức thanh toán */
+export enum PaymentMethodStatus {
+Active = "active",
+Inactive = "inactive",
+Restricted = "restricted",
+}
+
+/** Phương thức thanh toán */
+export interface PaymentMethod {
+id: string;
+name: string;
+type: "card" | "bank" | "ewallet" | "crypto";
+channel: PaymentChannel;
+lastFour?: string;
+expiryDate?: string;
+defaultMethod: boolean;
+status: PaymentMethodStatus;
+addedAt: string;
+}
+
+/** Nút chọn loại phương thức thanh toán */
+const METHOD_TYPE_OPTIONS = [
+{ value: "all", label: "Tất cả" },
+{ value: "card", label: "Thẻ tín dụng / ghi nợ" },
+{ value: "bank", label: "Tài khoản ngân hàng" },
+{ value: "ewallet", label: "Ví điện tử" },
+{ value: "crypto", label: "Tiền mã hóa" },
+] as const;
+
+/** Biểu tượng theo loại phương thức */
+const METHOD_ICON: Record<string, string> = {
+    card: "💳",
+    bank: "🏦",
+    ewallet: "👛",
+    crypto: "₿",
+    };
+
+    /** Nhãn trạng thái phương thức */
+    const STATUS_LABEL: Record<PaymentMethodStatus, string> = {
+        [PaymentMethodStatus.Active]: "Hoạt động",
+        [PaymentMethodStatus.Inactive]: "Ngừng hoạt động",
+        [PaymentMethodStatus.Restricted]: "Bị hạn chế",
+        };
+
+        // ============================================================================
+        // Thành phần thẻ phương thức thanh toán
+        // ============================================================================
+
+        function PaymentMethodCard({
+        method,
+        onSetDefault,
+        onToggleStatus,
+        onRemove,
+        }: {
+        method: PaymentMethod;
+        onSetDefault: (id: string) => void;
+        onToggleStatus: (id: string) => void;
+        onRemove: (id: string) => void;
+        }) {
+        const icon = METHOD_ICON[method.type] || "📋";
+
+        return (
+        <div className={`relative rounded-xl border p-5 shadow-sm transition-all hover:shadow-md ${ method.defaultMethod
+            ? "border-blue-500 ring-1 ring-blue-500" : "border-gray-200 bg-white" }`}>
+            {/* HUY HIỆU phương thức mặc định */}
+            {method.defaultMethod && (
+            <span
+                className="absolute right-3 top-3 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                Mặc định
+            </span>
+            )}
+
+            {/* Biểu tượng và tên phương thức */}
+            <div className="mb-3 flex items-center gap-3">
+                <span className="text-3xl">{icon}</span>
+                <div>
+                    <h3 className="font-semibold text-gray-900">{method.name}</h3>
+                    <p className="text-sm text-gray-500">
+                        {method.type === "card" && method.lastFour
+                        ? `Thẻ kết thúc ${method.lastFour}`
+                        : method.type === "bank"
+                        ? "Tài khoản ngân hàng"
+                        : method.type === "ewallet"
+                        ? "Ví điện tử"
+                        : "Ví tiền mã hóa"}
+                    </p>
+                </div>
+            </div>
+
+            {/* Thông tin phụ */}
+            <div className="mb-4 space-y-1 text-sm text-gray-500">
+                {method.expiryDate && (
+                <p>Hạn sử dụng: {method.expiryDate}</p>
+                )}
+                <p>
+                    Trạng thái:{" "}
+                    <span className={ method.status===PaymentMethodStatus.Active ? "font-medium text-green-600" :
+                        method.status===PaymentMethodStatus.Restricted ? "font-medium text-yellow-600"
+                        : "font-medium text-red-600" }>
+                        {STATUS_LABEL[method.status]}
+                    </span>
+                </p>
+                <p>Ngày thêm: {new Date(method.addedAt).toLocaleDateString("vi-VN")}</p>
+            </div>
+
+            {/* Nhóm nút hành động */}
+            <div className="flex gap-2">
+                {!method.defaultMethod && (
+                <button onClick={()=> onSetDefault(method.id)}
+                    className="flex-1 rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700
+                    hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                    Đặt làm mặc định
+                </button>
+                )}
+                <button onClick={()=> onToggleStatus(method.id)}
+                    className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2
+                    focus:ring-gray-400 ${
+                    method.status === PaymentMethodStatus.Active
+                    ? "bg-yellow-50 text-yellow-700 hover:bg-yellow-100"
+                    : "bg-green-50 text-green-700 hover:bg-green-100"
+                    }`}
+                    >
+                    {method.status === PaymentMethodStatus.Active
+                    ? "Vô hiệu hóa"
+                    : "Kích hoạt"}
+                </button>
+                <button onClick={()=> onRemove(method.id)}
+                    className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100
+                    focus:outline-none focus:ring-2 focus:ring-red-500"
+                    >
+                    Xóa
+                </button>
+            </div>
+        </div>
+        );
+        }
+
+        // ============================================================================
+        // Thành phần chính quản lý phương thức thanh toán
+        // ============================================================================
+
+        /**
+        * PaymentMethods — Giao diện quản lý phương thức thanh toán.
+        * Hỗ trợ thêm, xóa, đặt mặc định và vô hiệu hóa phương thức.
+        */
+        export default function PaymentMethods() {
+        const [methods, setMethods] = useState<PaymentMethod[]>([]);
+            const [filterType, setFilterType] = useState<string>("all");
+                const [isLoading, setIsLoading] = useState(true);
+                const [showAddModal, setShowAddModal] = useState(false);
+
+                /** Lấy danh sách phương thức thanh toán từ API */
+                const fetchMethods = useCallback(async () => {
+                try {
+                const response = await fetch("/api/cp45/payment/methods");
+                if (!response.ok) {
+                throw new Error(`Lấy phương thức thanh toán thất bại: ${response.status}`);
+                }
+                const data = await response.json();
+                setMethods(data);
+                } catch (error) {
+                console.error("Lỗi lấy phương thức thanh toán:", error);
+                } finally {
+                setIsLoading(false);
+                }
+                }, []);
+
+                useEffect(() => {
+                fetchMethods();
+                }, [fetchMethods]);
+
+                /** Lọc danh sách phương thức theo loại */
+                const filteredMethods = useMemo(() => {
+                if (filterType === "all") return methods;
+                return methods.filter((m) => m.type === filterType);
+                }, [methods, filterType]);
+
+                /** Đặt phương thức mặc định */
+                const handleSetDefault = useCallback(
+                async (id: string) => {
+                try {
+                const response = await fetch(`/api/cp45/payment/methods/${id}/set-default`, {
+                method: "POST",
+                });
+                if (!response.ok) {
+                throw new Error(`Đặt mặc định thất bại: ${response.status}`);
+                }
+                fetchMethods();
+                } catch (error) {
+                console.error("Lỗi đặt phương thức mặc định:", error);
+                alert("Không thể đặt làm phương thức mặc định. Vui lòng thử lại.");
+                }
+                },
+                [fetchMethods]
+                );
+
+                /** Chuyển đổi trạng thái hoạt động */
+                const handleToggleStatus = useCallback(
+                async (id: string) => {
+                try {
+                const method = methods.find((m) => m.id === id);
+                if (!method) return;
+
+                const newStatus =
+                method.status === PaymentMethodStatus.Active
+                ? PaymentMethodStatus.Inactive
+                : PaymentMethodStatus.Active;
+
+                const response = await fetch(`/api/cp45/payment/methods/${id}/status`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: newStatus }),
+                });
+
+                if (!response.ok) {
+                throw new Error(`Cập nhật trạng thái thất bại: ${response.status}`);
+                }
+                fetchMethods();
+                } catch (error) {
+                console.error("Lỗi chuyển đổi trạng thái:", error);
+                alert("Không thể cập nhật trạng thái phương thức. Vui lòng thử lại.");
+                }
+                },
+                [methods, fetchMethods]
+                );
+
+                /** Xóa phương thức thanh toán */
+                const handleRemove = useCallback(
+                async (id: string) => {
+                if (!confirm("Bạn có chắc chắn muốn xóa phương thức thanh toán này?")) return;
+
+                try {
+                const response = await fetch(`/api/cp45/payment/methods/${id}`, {
+                method: "DELETE",
+                });
+                if (!response.ok) {
+                throw new Error(`Xóa phương thức thất bại: ${response.status}`);
+                }
+                fetchMethods();
+                } catch (error) {
+                console.error("Lỗi xóa phương thức thanh toán:", error);
+                alert("Không thể xóa phương thức thanh toán. Vui lòng thử lại.");
+                }
+                },
+                [fetchMethods]
+                );
+
+                if (isLoading) {
+                return (
+                <div className="flex h-96 items-center justify-center">
+                    <div className="text-center">
+                        <div
+                            className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+                        <p className="mt-4 text-sm text-gray-500">Đang tải phương thức thanh toán...</p>
+                    </div>
+                </div>
+                );
+                }
+
+                return (
+                <div className="space-y-6 p-6">
+                    {/* Tiêu đề và nút thêm mới */}
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-900">
+                                Quản Lý Phương Thức Thanh Toán
+                            </h1>
+                            <p className="mt-1 text-sm text-gray-500">
+                                Thêm, chỉnh sửa và quản lý phương thức thanh toán của bạn
+                            </p>
+                        </div>
+                        <button onClick={()=> setShowAddModal(true)}
+                            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700
+                            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                            >
+                            + Thêm Phương Thức Mới
+                        </button>
+                    </div>
+
+                    {/* Bộ lọc loại phương thức */}
+                    <div className="flex gap-2 overflow-x-auto">
+                        {METHOD_TYPE_OPTIONS.map((option) => (
+                        <button key={option.value} onClick={()=> setFilterType(option.value)}
+                            className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                            filterType === option.value
+                            ? "bg-blue-600 text-white"
+                            : "bg-white text-gray-700 hover:bg-gray-100"
+                            }`}
+                            >
+                            {option.label}
+                        </button>
+                        ))}
+                    </div>
+
+                    {/* Lưới phương thức thanh toán */}
+                    {filteredMethods.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-300 py-16 text-center">
+                        <p className="text-lg text-gray-500">
+                            Không có phương thức thanh toán nào
+                        </p>
+                        <p className="mt-1 text-sm text-gray-400">
+                            Thêm phương thức thanh toán để bắt đầu giao dịch
+                        </p>
+                    </div>
+                    ) : (
+                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                        {filteredMethods.map((method) => (
+                        <PaymentMethodCard key={method.id} method={method} onSetDefault={handleSetDefault}
+                            onToggleStatus={handleToggleStatus} onRemove={handleRemove} />
+                        ))}
+                    </div>
+                    )}
+                </div>
+                );
+                }
+                {% endraw %}

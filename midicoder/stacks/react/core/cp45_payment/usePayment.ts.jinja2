@@ -1,0 +1,288 @@
+{% raw %}import { useCallback, useEffect, useRef, useState } from "react";
+
+import { PaymentChannel, PaymentStatus } from "./PaymentDashboard";
+
+// ============================================================================
+// Định nghĩa loại dữ liệu cho hook thanh toán
+// ============================================================================
+
+/** Dữ liệu yêu cầu thanh toán */
+export interface PaymentRequest {
+  amount: number;
+  currency: string;
+  channel: PaymentChannel;
+  description?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/** Kết quả thanh toán */
+export interface PaymentResult {
+  id: string;
+  status: PaymentStatus;
+  amount: number;
+  currency: string;
+  transactionUrl?: string;
+  errorMessage?: string;
+}
+
+/** Trạng thái của hook thanh toán */
+interface PaymentHookState {
+  isProcessing: boolean;
+  currentPaymentId: string | null;
+  lastResult: PaymentResult | null;
+  error: string | null;
+}
+
+// ============================================================================
+// Hook chính — encapsulate toàn bộ thao tác thanh toán
+// ============================================================================
+
+/**
+ * usePayment — Custom hook quản lý vòng đời giao dịch thanh toán CP45.
+ *
+ * Cung cấp các hàm gọi API cho việc tạo giao dịch, kiểm tra trạng thái,
+ * huỷ giao dịch, hoàn tiền và theo dõi tiến trình realtime.
+ */
+export function usePayment() {
+  const [state, setState] = useState<PaymentHookState>({
+    isProcessing: false,
+    currentPaymentId: null,
+    lastResult: null,
+    error: null,
+  });
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  /** Huỷ giao dịch đang xử lý */
+  const abort = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setState((prev) => ({
+      ...prev,
+      isProcessing: false,
+      error: null,
+    }));
+  }, []);
+
+  /**
+   * Tạo và xử lý giao dịch thanh toán mới.
+   * Trả về Promise chứa kết quả thanh toán.
+   */
+  const initiatePayment = useCallback(
+    async (request: PaymentRequest): Promise<PaymentResult> => {
+      abort();
+
+      abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
+
+      setState((prev) => ({
+        ...prev,
+        isProcessing: true,
+        error: null,
+      }));
+
+      try {
+        const response = await fetch("/api/cp45/payment/initiate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(request),
+          signal,
+        });
+
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.message || `Yêu cầu thanh toán thất bại: ${response.status}`);
+        }
+
+        const result: PaymentResult = await response.json();
+
+        setState((prev) => ({
+          ...prev,
+          isProcessing: false,
+          currentPaymentId: result.id,
+          lastResult: result,
+        }));
+
+        return result;
+      } catch (error: unknown) {
+        if (error instanceof Error && error.name === "AbortError") {
+          setState((prev) => ({
+            ...prev,
+            isProcessing: false,
+            error: null,
+          }));
+          return {
+            id: "",
+            status: PaymentStatus.Failed,
+            amount: request.amount,
+            currency: request.currency,
+            errorMessage: "Giao dịch đã bị huỷ bởi người dùng",
+          };
+        }
+
+        const message = error instanceof Error ? error.message : "Đã xảy ra lỗi không xác định";
+        setState((prev) => ({
+          ...prev,
+          isProcessing: false,
+          error: message,
+        }));
+
+        return {
+          id: "",
+          status: PaymentStatus.Failed,
+          amount: request.amount,
+          currency: request.currency,
+          errorMessage: message,
+        };
+      }
+    },
+    [abort]
+  );
+
+  /**
+   * Kiểm tra trạng thái giao dịch theo mã ID.
+   * Hỗ trợ gọi lại định kỳ khi giao dịch đang chờ xử lý.
+   */
+  const checkStatus = useCallback(
+    async (paymentId: string): Promise<PaymentStatus> => {
+      try {
+        const response = await fetch(`/api/cp45/payment/${paymentId}/status`);
+        if (!response.ok) {
+          throw new Error(`Lấy trạng thái thất bại: ${response.status}`);
+        }
+        const data = await response.json();
+        return data.status;
+      } catch (error) {
+        console.error("Lỗi kiểm tra trạng thái giao dịch:", error);
+        throw error;
+      }
+    },
+    []
+  );
+
+  /**
+   * Theo dõi trạng thái giao dịch realtime bằng polling.
+   * Tự động dừng khi đạt trạng thái cuối cùng.
+   */
+  const pollStatus = useCallback(
+    (
+      paymentId: string,
+      onStatusChange: (status: PaymentStatus) => void,
+      intervalMs = 3000
+    ): (() => void) => {
+      let resolved = false;
+
+      const terminalStates = new Set<PaymentStatus>([
+        PaymentStatus.Completed,
+        PaymentStatus.Failed,
+        PaymentStatus.Refunded,
+      ]);
+
+      const timer = setInterval(async () => {
+        if (resolved) return;
+
+        try {
+          const status = await checkStatus(paymentId);
+          onStatusChange(status);
+
+          if (terminalStates.has(status)) {
+            resolved = true;
+            clearInterval(timer);
+          }
+        } catch {
+          // Lỗi polling không dừng trình theo dõi — thử lại ở chu kỳ kế tiếp
+        }
+      }, intervalMs);
+
+      // Gọi ngay lần đầu tiên
+      (async () => {
+        try {
+          const status = await checkStatus(paymentId);
+          onStatusChange(status);
+          if (terminalStates.has(status)) {
+            resolved = true;
+            clearInterval(timer);
+          }
+        } catch {
+          // Bỏ qua lỗi lần gọi đầu
+        }
+      })();
+
+      return () => {
+        resolved = true;
+        clearInterval(timer);
+      };
+    },
+    [checkStatus]
+  );
+
+  /** Huỷ giao dịch đang chờ xử lý */
+  const cancelPayment = useCallback(
+    async (paymentId: string): Promise<boolean> => {
+      try {
+        const response = await fetch(`/api/cp45/payment/${paymentId}/cancel`, {
+          method: "POST",
+        });
+        if (!response.ok) {
+          throw new Error(`Huỷ giao dịch thất bại: ${response.status}`);
+        }
+        setState((prev) => ({
+          ...prev,
+          isProcessing: false,
+          currentPaymentId: null,
+        }));
+        return true;
+      } catch (error) {
+        console.error("Lỗi huỷ giao dịch:", error);
+        return false;
+      }
+    },
+    []
+  );
+
+  /** Yêu cầu hoàn tiền cho giao dịch đã hoàn tất */
+  const refundPayment = useCallback(
+    async (paymentId: string, amount?: number): Promise<boolean> => {
+      try {
+        const body: Record<string, unknown> = {};
+        if (amount !== undefined) {
+          body.amount = amount;
+        }
+
+        const response = await fetch(`/api/cp45/payment/${paymentId}/refund`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+          throw new Error(`Yêu cầu hoàn tiền thất bại: ${response.status}`);
+        }
+        return true;
+      } catch (error) {
+        console.error("Lỗi hoàn tiền:", error);
+        return false;
+      }
+    },
+    []
+  );
+
+  /** Dọn dẹp khi component unmount */
+  useEffect(() => {
+    return () => {
+      abort();
+    };
+  }, [abort]);
+
+  return {
+    ...state,
+    initiatePayment,
+    checkStatus,
+    pollStatus,
+    cancelPayment,
+    refundPayment,
+    abort,
+  };
+}
+{% endraw %}

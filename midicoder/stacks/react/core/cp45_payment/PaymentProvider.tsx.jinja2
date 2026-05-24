@@ -1,0 +1,372 @@
+{% raw %}import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+
+import { PaymentChannel, PaymentStatus } from "./PaymentDashboard";
+import { PaymentMethod, PaymentMethodStatus } from "./PaymentMethods";
+import { PaymentTransaction } from "./PaymentHistory";
+
+// ============================================================================
+// Định nghĩa loại dữ liệu cho Context thanh toán
+// ============================================================================
+
+/** Trạng thái toàn cục của hệ thống thanh toán */
+export interface PaymentContextState {
+  /** Các phương thức thanh toán của người dùng */
+  methods: PaymentMethod[];
+  /** Lịch sử giao dịch gần đây */
+  recentTransactions: PaymentTransaction[];
+  /** ID giao dịch đang xử lý (nếu có) */
+  activePaymentId: string | null;
+  /** Trạng thái giao dịch đang hoạt động */
+  activePaymentStatus: PaymentStatus | null;
+  /** Lỗi toàn cục */
+  error: string | null;
+  /** Đang tải dữ liệu ban đầu */
+  isLoading: boolean;
+}
+
+/** Các hàm hành động trong Context */
+export interface PaymentContextActions {
+  /** Thêm phương thức thanh toán mới */
+  addMethod: (method: Omit<PaymentMethod, "id" | "addedAt">) => Promise<boolean>;
+  /** Xóa phương thức thanh toán */
+  removeMethod: (id: string) => Promise<boolean>;
+  /** Đặt phương thức mặc định */
+  setDefaultMethod: (id: string) => Promise<boolean>;
+  /** Chuyển đổi trạng thái hoạt động của phương thức */
+  toggleMethodStatus: (id: string) => Promise<boolean>;
+  /** Làm mới danh sách phương thức */
+  refreshMethods: () => Promise<void>;
+  /** Làm mới danh sách giao dịch */
+  refreshTransactions: () => Promise<void>;
+  /** Đặt ID giao dịch đang hoạt động */
+  setActivePayment: (id: string | null, status: PaymentStatus | null) => void;
+  /** Xóa lỗi toàn cục */
+  clearError: () => void;
+}
+
+/** Loại dữ liệu đầy đủ của Context */
+export type PaymentContextValue = PaymentContextState & PaymentContextActions;
+
+/** Giá trị mặc định khi chưa có Provider */
+const DEFAULT_STATE: PaymentContextState = {
+  methods: [],
+  recentTransactions: [],
+  activePaymentId: null,
+  activePaymentStatus: null,
+  error: null,
+  isLoading: true,
+};
+
+const DEFAULT_ACTIONS: PaymentContextActions = {
+  addMethod: async () => false,
+  removeMethod: async () => false,
+  setDefaultMethod: async () => false,
+  toggleMethodStatus: async () => false,
+  refreshMethods: async () => {},
+  refreshTransactions: async () => {},
+  setActivePayment: () => {},
+  clearError: () => {},
+};
+
+/** Tạo Context với giá trị mặc định */
+export const PaymentContext = createContext<PaymentContextValue>(
+  DEFAULT_STATE as unknown as PaymentContextValue & typeof DEFAULT_ACTIONS
+);
+
+/** Hook để truy cập Context thanh toán từ bất kỳ component con nào */
+export function usePaymentContext(): PaymentContextValue {
+  const context = useContext(PaymentContext);
+  if (!context) {
+    throw new Error("usePaymentContext phải được sử dụng bên trong PaymentProvider");
+  }
+  return context;
+}
+
+// ============================================================================
+// Provider — Quản lý trạng thái toàn cục và đồng bộ với API
+// ============================================================================
+
+/**
+ * PaymentProvider — Provider bao bọc ứng dụng để cung cấp trạng thái thanh toán
+ * toàn cục qua React Context. Tự động đồng bộ dữ liệu từ API và hỗ trợ
+ * cập nhật realtime thông qua polling.
+ */
+export default function PaymentProvider({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<PaymentContextState>({
+    methods: [],
+    recentTransactions: [],
+    activePaymentId: null,
+    activePaymentStatus: null,
+    error: null,
+    isLoading: true,
+  });
+
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /** Dọn dẹp polling khi unmount */
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+      }
+    };
+  }, []);
+
+  /** Tự động polling trạng thái giao dịch đang hoạt động */
+  useEffect(() => {
+    if (state.activePaymentId && state.activePaymentStatus === PaymentStatus.Processing) {
+      pollTimerRef.current = setInterval(async () => {
+        try {
+          const response = await fetch(
+            `/api/cp45/payment/${state.activePaymentId}/status`
+          );
+          if (!response.ok) return;
+
+          const data = await response.json();
+          setState((prev) => ({ ...prev, activePaymentStatus: data.status }));
+
+          // Nếu đạt trạng thái cuối cùng, dừng polling
+          if ([PaymentStatus.Completed, PaymentStatus.Failed, PaymentStatus.Refunded].includes(data.status)) {
+            if (pollTimerRef.current) {
+              clearInterval(pollTimerRef.current);
+              pollTimerRef.current = null;
+            }
+          }
+        } catch {
+          // Lỗi polling không ảnh hưởng trạng thái
+        }
+      }, 3000);
+    }
+
+    return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, [state.activePaymentId, state.activePaymentStatus]);
+
+  /** Lấy danh sách phương thức thanh toán từ API */
+  const refreshMethods = useCallback(async () => {
+    try {
+      const response = await fetch("/api/cp45/payment/methods");
+      if (!response.ok) {
+        throw new Error(`Lấy phương thức thanh toán thất bại: ${response.status}`);
+      }
+      const data: PaymentMethod[] = await response.json();
+      setState((prev) => ({ ...prev, methods: data }));
+    } catch (error) {
+      console.error("Lỗi lấy phương thức thanh toán:", error);
+      setState((prev) => ({
+        ...prev,
+        error: error instanceof Error ? error.message : "Lỗi tải phương thức thanh toán",
+      }));
+    } finally {
+      setState((prev) => ({ ...prev, isLoading: false }));
+    }
+  }, []);
+
+  /** Lấy danh sách giao dịch gần đây từ API */
+  const refreshTransactions = useCallback(async () => {
+    try {
+      const response = await fetch("/api/cp45/payment/transactions?limit=20");
+      if (!response.ok) {
+        throw new Error(`Lấy giao dịch thất bại: ${response.status}`);
+      }
+      const data: PaymentTransaction[] = await response.json();
+      setState((prev) => ({ ...prev, recentTransactions: data }));
+    } catch (error) {
+      console.error("Lỗi lấy giao dịch gần đây:", error);
+    }
+  }, []);
+
+  /** Khởi tạo dữ liệu ban đầu khi mount */
+  useEffect(() => {
+    refreshMethods();
+    refreshTransactions();
+  }, [refreshMethods, refreshTransactions]);
+
+  /** Thêm phương thức thanh toán mới */
+  const addMethod = useCallback(
+    async (method: Omit<PaymentMethod, "id" | "addedAt">): Promise<boolean> => {
+      try {
+        const response = await fetch("/api/cp45/payment/methods", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(method),
+        });
+        if (!response.ok) {
+          throw new Error(`Thêm phương thức thất bại: ${response.status}`);
+        }
+        await refreshMethods();
+        return true;
+      } catch (error) {
+        console.error("Lỗi thêm phương thức thanh toán:", error);
+        setState((prev) => ({
+          ...prev,
+          error: error instanceof Error ? error.message : "Lỗi thêm phương thức thanh toán",
+        }));
+        return false;
+      }
+    },
+    [refreshMethods]
+  );
+
+  /** Xóa phương thức thanh toán */
+  const removeMethod = useCallback(
+    async (id: string): Promise<boolean> => {
+      try {
+        const response = await fetch(`/api/cp45/payment/methods/${id}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          throw new Error(`Xóa phương thức thất bại: ${response.status}`);
+        }
+        setState((prev) => ({
+          ...prev,
+          methods: prev.methods.filter((m) => m.id !== id),
+        }));
+        return true;
+      } catch (error) {
+        console.error("Lỗi xóa phương thức thanh toán:", error);
+        setState((prev) => ({
+          ...prev,
+          error: error instanceof Error ? error.message : "Lỗi xóa phương thức thanh toán",
+        }));
+        return false;
+      }
+    },
+    []
+  );
+
+  /** Đặt phương thức mặc định */
+  const setDefaultMethod = useCallback(
+    async (id: string): Promise<boolean> => {
+      try {
+        const response = await fetch(`/api/cp45/payment/methods/${id}/set-default`, {
+          method: "POST",
+        });
+        if (!response.ok) {
+          throw new Error(`Đặt mặc định thất bại: ${response.status}`);
+        }
+        setState((prev) => ({
+          ...prev,
+          methods: prev.methods.map((m) => ({
+            ...m,
+            defaultMethod: m.id === id,
+          })),
+        }));
+        return true;
+      } catch (error) {
+        console.error("Lỗi đặt phương thức mặc định:", error);
+        return false;
+      }
+    },
+    []
+  );
+
+  /** Chuyển đổi trạng thái hoạt động của phương thức */
+  const toggleMethodStatus = useCallback(
+    async (id: string): Promise<boolean> => {
+      try {
+        const currentMethod = state.methods.find((m) => m.id === id);
+        if (!currentMethod) return false;
+
+        const newStatus =
+          currentMethod.status === PaymentMethodStatus.Active
+            ? PaymentMethodStatus.Inactive
+            : PaymentMethodStatus.Active;
+
+        const response = await fetch(`/api/cp45/payment/methods/${id}/status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus }),
+        });
+        if (!response.ok) {
+          throw new Error(`Cập nhật trạng thái thất bại: ${response.status}`);
+        }
+
+        setState((prev) => ({
+          ...prev,
+          methods: prev.methods.map((m) =>
+            m.id === id ? { ...m, status: newStatus } : m
+          ),
+        }));
+        return true;
+      } catch (error) {
+        console.error("Lỗi chuyển đổi trạng thái phương thức:", error);
+        return false;
+      }
+    },
+    [state.methods]
+  );
+
+  /** Đặt giao dịch đang hoạt động */
+  const setActivePayment = useCallback((id: string | null, status: PaymentStatus | null) => {
+    setState((prev) => ({
+      ...prev,
+      activePaymentId: id,
+      activePaymentStatus: status,
+    }));
+  }, []);
+
+  /** Xóa lỗi toàn cục */
+  const clearError = useCallback(() => {
+    setState((prev) => ({ ...prev, error: null }));
+  }, []);
+
+  /** Trích xuất method mặc định từ danh sách */
+  const defaultMethod = useMemo(
+    () => state.methods.find((m) => m.defaultMethod) ?? null,
+    [state.methods]
+  );
+
+  /** Giá trị context ổn định — tránh re-render không cần thiết */
+  const contextValue = useMemo<PaymentContextValue>(
+    () => ({
+      ...state,
+      addMethod,
+      removeMethod,
+      setDefaultMethod,
+      toggleMethodStatus,
+      refreshMethods,
+      refreshTransactions,
+      setActivePayment,
+      clearError,
+    }),
+    [
+      state,
+      addMethod,
+      removeMethod,
+      setDefaultMethod,
+      toggleMethodStatus,
+      refreshMethods,
+      refreshTransactions,
+      setActivePayment,
+      clearError,
+    ]
+  );
+
+  return (
+    <PaymentContext.Provider value={contextValue}>
+      {/* Hiển thị thông báo lỗi toàn cục (nếu có) */}
+      {state.error && (
+        <div className="fixed right-4 top-4 z-50 w-96 rounded-lg border border-red-200 bg-red-50 p-4 shadow-lg">
+          <div className="flex items-start justify-between">
+            <p className="text-sm text-red-800">{state.error}</p>
+            <button
+              onClick={clearError}
+              className="ml-4 text-red-500 hover:text-red-700"
+              aria-label="Đóng thông báo lỗi"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {children}
+    </PaymentContext.Provider>
+  );
+}
+{% endraw %}

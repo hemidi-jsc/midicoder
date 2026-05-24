@@ -1,0 +1,489 @@
+"""
+CP45 Payment Gateway Router — FastAPI APIRouter cho payment endpoints.
+
+Module này định nghĩa các HTTP endpoints để quản lý giao dịch thanh toán:
+- POST   /payments                    — Tạo giao dịch thanh toán mới
+- GET    /payments                     — Liệt kê giao dịch (filter + pagination)
+- GET    /payments/{transaction_id}    — Xem chi tiết giao dịch
+- POST   /payments/{transaction_id}/cancel    — Hủy giao dịch
+- GET    /payments/{transaction_id}/poll       — Tra cứu trạng thái từ gateway
+- POST   /payments/refund              — Tạo yêu cầu hoàn tiền
+- GET    /payments/refund/{refund_id}  — Xem chi tiết hoàn tiền
+- POST   /payment-methods              — Đăng ký phương thức thanh toán
+- GET    /payment-methods              — Liệt kê phương thức thanh toán
+- POST   /payment-methods/{method_id}/deactivate — Vô hiệu hóa phương thức
+- GET    /gateway-configs              — Liệt kê cấu hình gateway
+- GET    /gateway-configs/{config_id}  — Xem chi tiết cấu hình gateway
+- GET    /summary                      — Thống kê tổng hợp
+
+CP45: Payment Gateway Abstraction Layer
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from app.database import get_db
+from app.schemas.payment_schemas import (
+    PaymentGatewayConfigCreate,
+    PaymentGatewayConfigRead,
+    PaymentMethodCreate,
+    PaymentMethodRead,
+    PaymentRefundCreate,
+    PaymentRefundRead,
+    PaymentSummary,
+    PaymentTransactionCreate,
+    PaymentTransactionFilter,
+    PaymentTransactionList,
+    PaymentTransactionRead,
+)
+from app.services.payment_service import PaymentService
+
+
+def _get_service(db):
+    """Tạo PaymentService từ database session."""
+    return PaymentService(db)
+
+
+# ============================================================================
+# Router
+# ============================================================================
+
+router = APIRouter(prefix="/payments", tags=["Payment Gateway"])
+
+
+# ============================================================================
+# Payment Transaction Endpoints
+# ============================================================================
+
+
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    summary="Tạo giao dịch thanh toán mới",
+    response_model=PaymentTransactionRead,
+    responses={
+        201: {"description": "Giao dịch thanh toán được tạo thành công"},
+        400: {"description": "Dữ liệu đầu vào không hợp lệ"},
+        409: {"description": "Idempotency key đã tồn tại — trả về giao dịch cũ"},
+        502: {"description": "Lỗi từ payment gateway provider"},
+    },
+)
+async def create_payment(
+    data: PaymentTransactionCreate,
+    db=Depends(get_db),
+) -> PaymentTransactionRead:
+    """
+    Tạo một giao dịch thanh toán mới và gửi đến gateway provider.
+
+    Client gửi số tiền, tiền tệ, khách hàng, và gateway provider.
+    Server sẽ tạo giao dịch với trạng thái PENDING, gọi gateway API,
+    và cập nhật trạng thái sang PROCESSING khi gateway chấp nhận.
+
+    Hỗ trợ idempotency: nếu gửi cùng idempotency_key, server trả về
+    kết quả của giao dịch đã xử lý thay vì tạo mới.
+    """
+    service = _get_service(db)
+    return await service.create_payment(data)
+
+
+@router.get(
+    "",
+    summary="Lấy danh sách giao dịch thanh toán",
+    response_model=PaymentTransactionList,
+    responses={
+        200: {"description": "Danh sách giao dịch với phân trang"},
+    },
+)
+async def list_transactions(
+    status: str | None = Query(
+        None,
+        description="Lọc theo trạng thái (pending, processing, completed, failed, refunded)",
+    ),
+    customer_id: str | None = Query(
+        None,
+        description="Lọc theo ID khách hàng",
+    ),
+    gateway_provider: str | None = Query(
+        None,
+        description="Lọc theo gateway provider (stripe, vnpay, momo)",
+    ),
+    order_id: str | None = Query(
+        None,
+        description="Lọc theo ID đơn hàng",
+    ),
+    tenant_id: str | None = Query(
+        None,
+        description="Lọc theo tenant ID",
+    ),
+    from_date: str | None = Query(
+        None,
+        description="Lọc từ thời điểm (ISO 8601)",
+    ),
+    to_date: str | None = Query(
+        None,
+        description="Lọc đến thời điểm (ISO 8601)",
+    ),
+    min_amount: int | None = Query(
+        None,
+        ge=0,
+        description="Lọc từ số tiền tối thiểu",
+    ),
+    max_amount: int | None = Query(
+        None,
+        ge=0,
+        description="Lọc đến số tiền tối đa",
+    ),
+    page: int = Query(1, ge=1, description="Số trang (1-based)"),
+    page_size: int = Query(20, ge=1, le=100, description="Số items mỗi trang"),
+    db=Depends(get_db),
+) -> PaymentTransactionList:
+    """
+    Liệt kê giao dịch thanh toán với bộ lọc và phân trang.
+
+    Hỗ trợ lọc theo status, customer_id, gateway_provider, order_id,
+    tenant_id, khoảng thời gian, và khoảng số tiền.
+
+    Sắp xếp theo created_at giảm dần (mới nhất trước).
+    """
+    from app.schemas.payment_schemas import (
+        PaymentCurrency,
+        PaymentGatewayProvider as PGProvider,
+        PaymentMethodType as PMType,
+        PaymentStatus,
+    )
+
+    filter_data = PaymentTransactionFilter(
+        status=PaymentStatus(status) if status else None,
+        customer_id=customer_id,
+        gateway_provider=PGProvider(gateway_provider) if gateway_provider else None,
+        payment_method_type=None,
+        order_id=order_id,
+        tenant_id=tenant_id,
+        from_date=from_date,
+        to_date=to_date,
+        min_amount=min_amount,
+        max_amount=max_amount,
+        page=page,
+        page_size=page_size,
+    )
+
+    service = _get_service(db)
+    return service.list_transactions(filter_data)
+
+
+@router.get(
+    "/{transaction_id}",
+    summary="Xem chi tiết giao dịch thanh toán",
+    response_model=PaymentTransactionRead,
+    responses={
+        200: {"description": "Thông tin chi tiết của giao dịch"},
+        404: {"description": "Giao dịch không tồn tại"},
+    },
+)
+async def get_transaction(
+    transaction_id: str,
+    db=Depends(get_db),
+) -> PaymentTransactionRead:
+    """
+    Lấy thông tin chi tiết của một giao dịch thanh toán.
+
+    Trả về đầy đủ thông tin: số tiền, trạng thái, gateway response,
+    phương thức thanh toán, dữ liệu khách hàng, và thời gian.
+    """
+    service = _get_service(db)
+    return service.get_transaction(transaction_id)
+
+
+@router.post(
+    "/{transaction_id}/cancel",
+    summary="Hủy giao dịch thanh toán",
+    response_model=PaymentTransactionRead,
+    responses={
+        200: {"description": "Giao dịch đã được hủy thành công"},
+        404: {"description": "Giao dịch không tồn tại"},
+        409: {"description": "Giao dịch không thể hủy (đã hoàn thành/hủy rồi)"},
+    },
+)
+async def cancel_payment(
+    transaction_id: str,
+    db=Depends(get_db),
+) -> PaymentTransactionRead:
+    """
+    Hủy một giao dịch thanh toán đang chờ hoặc đang xử lý.
+
+    Chỉ cho phép hủy giao dịch có trạng thái PENDING hoặc PROCESSING.
+    Server sẽ gọi cancel API của gateway provider (nếu có hỗ trợ)
+    và cập nhật trạng thái sang CANCELLED.
+    """
+    service = _get_service(db)
+    return await service.cancel_payment(transaction_id)
+
+
+@router.get(
+    "/{transaction_id}/poll",
+    summary="Tra cứu trạng thái giao dịch từ gateway",
+    response_model=PaymentTransactionRead,
+    responses={
+        200: {"description": "Giao dịch đã được cập nhật trạng thái mới nhất"},
+        404: {"description": "Giao dịch không tồn tại"},
+    },
+)
+async def poll_payment_status(
+    transaction_id: str,
+    db=Depends(get_db),
+) -> PaymentTransactionRead:
+    """
+    Tra cứu lại trạng thái giao dịch từ gateway provider.
+
+    Hữu ích khi webhook chưa nhận được — client có thể gọi endpoint
+    này để lấy trạng thái mới nhất trực tiếp từ gateway.
+
+    Server sẽ gọi get_payment_status API của gateway và cập nhật
+    trạng thái giao dịch trong database nếu có thay đổi.
+    """
+    service = _get_service(db)
+    return await service.poll_payment_status(transaction_id)
+
+
+# ============================================================================
+# Refund Endpoints
+# ============================================================================
+
+
+@router.post(
+    "/refund",
+    status_code=status.HTTP_201_CREATED,
+    summary="Tạo yêu cầu hoàn tiền",
+    response_model=PaymentRefundRead,
+    responses={
+        201: {"description": "Yêu cầu hoàn tiền được tạo thành công"},
+        400: {"description": "Số tiền hoàn không hợp lệ"},
+        404: {"description": "Giao dịch gốc không tồn tại"},
+        409: {"description": "Không thể hoàn tiền (trạng thái không cho phép)"},
+        502: {"description": "Lỗi từ payment gateway"},
+    },
+)
+async def create_refund(
+    data: PaymentRefundCreate,
+    db=Depends(get_db),
+) -> PaymentRefundRead:
+    """
+    Tạo yêu cầu hoàn tiền cho một giao dịch đã thanh toán.
+
+    Hỗ trợ hoàn toàn bộ (full) hoặc một phần (partial).
+    Server validate:
+    - Giao dịch gốc tồn tại và ở trạng thái COMPLETED/PROCESSING
+    - Số tiền hoàn không vượt quá số tiền giao dịch
+    - Tổng số tiền đã hoàn không vượt quá số tiền giao dịch
+
+    Sau khi validate, server gọi refund API của gateway provider.
+    """
+    service = _get_service(db)
+    return await service.create_refund(data)
+
+
+@router.get(
+    "/refund/{refund_id}",
+    summary="Xem chi tiết hoàn tiền",
+    response_model=PaymentRefundRead,
+    responses={
+        200: {"description": "Thông tin chi tiết của hoàn tiền"},
+        404: {"description": "Yêu cầu hoàn tiền không tồn tại"},
+    },
+)
+async def get_refund(
+    refund_id: str,
+    db=Depends(get_db),
+) -> PaymentRefundRead:
+    """
+    Lấy thông tin chi tiết của một yêu cầu hoàn tiền.
+
+    Trả về thông tin: số tiền hoàn, loại hoàn, trạng thái,
+    gateway response, và thời gian.
+    """
+    service = _get_service(db)
+    return service.get_refund(refund_id)
+
+
+# ============================================================================
+# Payment Method Endpoints
+# ============================================================================
+
+
+@router.post(
+    "/methods",
+    status_code=status.HTTP_201_CREATED,
+    summary="Đăng ký phương thức thanh toán mới",
+    response_model=PaymentMethodRead,
+    responses={
+        201: {"description": "Phương thức thanh toán được đăng ký thành công"},
+        400: {"description": "Dữ liệu không hợp lệ"},
+    },
+)
+async def create_payment_method(
+    data: PaymentMethodCreate,
+    db=Depends(get_db),
+) -> PaymentMethodRead:
+    """
+    Đăng ký phương thức thanh toán mới cho khách hàng.
+
+    Lưu trữ thông tin trừu tượng của phương thức (không lưu
+    thông tin nhạy cảm như số thẻ, CVV).
+
+    Nếu is_default=True, các phương thức mặc định cũ sẽ bị tắt.
+    """
+    service = _get_service(db)
+    return service.create_payment_method(data)
+
+
+@router.get(
+    "/methods",
+    summary="Lấy danh sách phương thức thanh toán",
+    response_model=list[PaymentMethodRead],
+    responses={
+        200: {"description": "Danh sách phương thức thanh toán"},
+    },
+)
+async def list_payment_methods(
+    customer_id: str = Query(..., description="ID khách hàng"),
+    tenant_id: str = Query("default", description="Tenant ID"),
+    active_only: bool = Query(True, description="Chỉ lấy phương thức đang hoạt động"),
+    db=Depends(get_db),
+) -> list[PaymentMethodRead]:
+    """
+    Liệt kê phương thức thanh toán của một khách hàng.
+
+    Sắp xếp: phương thức mặc định (is_default=True) đứng trước.
+    """
+    service = _get_service(db)
+    return service.list_payment_methods(
+        customer_id=customer_id,
+        tenant_id=tenant_id,
+        active_only=active_only,
+    )
+
+
+@router.post(
+    "/methods/{method_id}/deactivate",
+    summary="Vô hiệu hóa phương thức thanh toán",
+    response_model=PaymentMethodRead,
+    responses={
+        200: {"description": "Phương thức đã được vô hiệu hóa"},
+        404: {"description": "Phương thức không tồn tại"},
+    },
+)
+async def deactivate_payment_method(
+    method_id: str,
+    db=Depends(get_db),
+) -> PaymentMethodRead:
+    """
+    Vô hiệu hóa một phương thức thanh toán.
+
+    Phương thức bị vô hiệu hóa không thể sử dụng cho giao dịch mới
+    nhưng vẫn giữ lại để lưu sử dụng.
+    """
+    service = _get_service(db)
+    return service.deactivate_payment_method(method_id)
+
+
+# ============================================================================
+# Gateway Config Endpoints
+# ============================================================================
+
+
+@router.post(
+    "/gateway-configs",
+    status_code=status.HTTP_201_CREATED,
+    summary="Tạo cấu hình payment gateway",
+    response_model=PaymentGatewayConfigRead,
+    responses={
+        201: {"description": "Cấu hình gateway được tạo thành công"},
+        400: {"description": "Dữ liệu không hợp lệ"},
+        409: {"description": "Cấu hình provider + environment đã tồn tại"},
+    },
+)
+async def create_gateway_config(
+    data: PaymentGatewayConfigCreate,
+    db=Depends(get_db),
+) -> PaymentGatewayConfigRead:
+    """
+    Tạo cấu hình payment gateway mới.
+
+    Lưu thông tin cấu hình: provider, environment, endpoint URL, webhook URL,
+    giới hạn số tiền, và các tham số cấu hình bổ sung.
+
+    Lưu ý: API key và secret key chỉ lưu reference đến secrets vault,
+    không lưu trực tiếp giá trị.
+    """
+    service = _get_service(db)
+    return service.create_gateway_config(data)
+
+
+@router.get(
+    "/gateway-configs",
+    summary="Lấy danh sách cấu hình gateway",
+    response_model=list[PaymentGatewayConfigRead],
+    responses={
+        200: {"description": "Danh sách cấu hình gateway"},
+    },
+)
+async def list_gateway_configs(
+    tenant_id: str = Query("default", description="Tenant ID"),
+    active_only: bool = Query(True, description="Chỉ lấy cấu hình đang hoạt động"),
+    db=Depends(get_db),
+) -> list[PaymentGatewayConfigRead]:
+    """
+    Liệt kê cấu hình payment gateway của tenant.
+
+    Sắp xếp: cấu hình mặc định (is_default=True) đứng trước.
+    Không bao giờ trả về API key hay secret key.
+    """
+    service = _get_service(db)
+    return service.list_gateway_configs(
+        tenant_id=tenant_id,
+        active_only=active_only,
+    )
+
+
+# ============================================================================
+# Summary Endpoint
+# ============================================================================
+
+
+@router.get(
+    "/summary",
+    summary="Thống kê tổng hợp thanh toán",
+    response_model=PaymentSummary,
+    responses={
+        200: {"description": "Thống kê tổng hợp giao dịch thanh toán"},
+    },
+)
+async def get_payment_summary(
+    tenant_id: str = Query("default", description="Tenant ID"),
+    from_date: str | None = Query(
+        None,
+        description="Bắt đầu khoảng thời gian (ISO 8601)",
+    ),
+    to_date: str | None = Query(
+        None,
+        description="Kết thúc khoảng thời gian (ISO 8601)",
+    ),
+    db=Depends(get_db),
+) -> PaymentSummary:
+    """
+    Lấy tổng hợp thống kê giao dịch thanh toán.
+
+    Trả về: tổng số giao dịch, tổng số tiền, số tiền thành công/thất bại,
+    số tiền đã hoàn trả, số giao dịch đang chờ, và tỷ lệ thành công.
+
+    Mặc định tính cho tháng hiện tại nếu không chỉ định khoảng thời gian.
+    """
+    from datetime import datetime
+
+    service = _get_service(db)
+    return service.get_payment_summary(
+        tenant_id=tenant_id,
+        from_date=datetime.fromisoformat(from_date) if from_date else None,
+        to_date=datetime.fromisoformat(to_date) if to_date else None,
+    )

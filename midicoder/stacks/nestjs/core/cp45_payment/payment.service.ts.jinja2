@@ -1,0 +1,1056 @@
+{% raw %}/**
+ * PaymentService — dịch vụ thanh toán với Strategy Pattern.
+ *
+ * Cung cấp các phương thức chính:
+ * - createPayment(): tạo giao dịch thanh toán mới (có idempotency)
+ * - confirmPayment(): xác nhận giao dịch sau khi người dùng thanh toán
+ * - cancelPayment(): hủy giao dịch đang chờ
+ * - createRefund(): tạo yêu cầu hoàn tiền
+ * - getPayment(): lấy chi tiết giao dịch
+ * - findPayments(): tìm kiếm giao dịch với phân trang
+ * - selectGateway(): chọn gateway phù hợp dựa trên tiêu chí
+ *
+ * Sử dụng Strategy Pattern để trừu tượng hóa các payment gateway
+ * khác nhau (VNPAY, Mozart, Stripe) thông qua PaymentGatewayStrategy interface.
+ *
+ * CP45: Payment Gateway
+ */
+
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  Logger,
+  Inject,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository, Between } from "typeorm";
+import {
+  PaymentTransaction,
+  PaymentMethod,
+  PaymentRefund,
+  PaymentStatus,
+  RefundStatus,
+  PaymentMethodType,
+} from "./payment.entity";
+import {
+  CreatePaymentDto,
+  ConfirmPaymentDto,
+  CancelPaymentDto,
+  CreateRefundDto,
+  CreatePaymentMethodDto,
+  PaymentQueryDto,
+  PaymentResponseDto,
+  PaymentMethodResponseDto,
+  RefundResponseDto,
+} from "./payment.dto";
+
+const logger = new Logger("PaymentService");
+
+// ============================================================================
+// Strategy Interface
+// ============================================================================
+
+/**
+ * Interface cho Payment Gateway Strategy.
+ *
+ * Mỗi payment gateway (VNPAY, Mozart, Stripe) sẽ implement interface này
+ * để cung cấp các phương thức tạo, xác nhận, hủy, và hoàn tiền giao dịch.
+ */
+export interface PaymentGatewayStrategy {
+  /**
+   * Tên gateway để nhận dạng strategy.
+   */
+  readonly name: string;
+
+  /**
+   * Tạo giao dịch thanh toán và trả về URL thanh toán.
+   *
+   * @param transaction - PaymentTransaction entity đã lưu
+   * @returns Object chứa paymentUrl và gatewayTransactionId
+   */
+  createPayment(transaction: PaymentTransaction): Promise<{
+    paymentUrl: string;
+    gatewayTransactionId: string;
+  }>;
+
+  /**
+   * Xác nhận giao dịch sau khi người dùng thanh toán thành công.
+   *
+   * @param transaction - PaymentTransaction entity
+   * @param gatewayData - Dữ liệu xác nhận từ gateway
+   * @returns Gateway response data
+   */
+  confirmPayment(
+    transaction: PaymentTransaction,
+    gatewayData: Record<string, any>,
+  ): Promise<Record<string, any>>;
+
+  /**
+   * Hủy giao dịch thanh toán.
+   *
+   * @param transaction - PaymentTransaction entity
+   * @returns Gateway response data
+   */
+  cancelPayment(transaction: PaymentTransaction): Promise<Record<string, any>>;
+
+  /**
+   * Hoàn tiền cho giao dịch.
+   *
+   * @param transaction - PaymentTransaction entity gốc
+   * @param refund - PaymentRefund entity
+   * @returns Gateway response data
+   */
+  refund(
+    transaction: PaymentTransaction,
+    refund: PaymentRefund,
+  ): Promise<Record<string, any>>;
+
+  /**
+   * Xử lý webhook callback từ gateway.
+   *
+   * @param payload - Dữ liệu webhook từ gateway
+   * @returns Thông tin giao dịch đã chuẩn hóa
+   */
+  handleWebhook(payload: Record<string, any>): Promise<{
+    transactionId: string;
+    status: PaymentStatus;
+    gatewayTransactionId: string;
+    response: Record<string, any>;
+  }>;
+
+  /**
+   * Xác thực chữ ký webhook từ gateway.
+   *
+   * @param payload - Raw payload
+   * @param signature - Chữ ký webhook
+   * @returns True nếu chữ ký hợp lệ
+   */
+  verifyWebhookSignature(
+    payload: Record<string, any>,
+    signature: string,
+  ): boolean;
+}
+
+// ============================================================================
+// Gateway Registry
+// ============================================================================
+
+/**
+ * Gateway Registry — quản lý và chọn payment gateway strategy.
+ *
+ * Lưu trữ danh sách các gateway strategy đã đăng ký và cung cấp
+ * phương thức chọn gateway phù hợp dựa trên tiêu chí.
+ */
+export class GatewayRegistry {
+  private readonly strategies = new Map<string, PaymentGatewayStrategy>();
+
+  /**
+   * Đăng ký một gateway strategy.
+   *
+   * @param strategy - PaymentGatewayStrategy instance
+   */
+  register(strategy: PaymentGatewayStrategy): void {
+    this.strategies.set(strategy.name.toLowerCase(), strategy);
+    logger.log(`Đăng ký gateway strategy: ${strategy.name}`);
+  }
+
+  /**
+   * Lấy gateway strategy theo tên.
+   *
+   * @param name - Tên gateway
+   * @returns PaymentGatewayStrategy hoặc undefined
+   */
+  get(name: string): PaymentGatewayStrategy | undefined {
+    return this.strategies.get(name.toLowerCase());
+  }
+
+  /**
+   * Kiểm tra gateway có được đăng ký không.
+   *
+   * @param name - Tên gateway
+   * @returns True nếu gateway tồn tại
+   */
+  has(name: string): boolean {
+    return this.strategies.has(name.toLowerCase());
+  }
+
+  /**
+   * Lấy danh sách tất cả gateway tên.
+   */
+  listNames(): string[] {
+    return Array.from(this.strategies.keys());
+  }
+
+  /**
+   * Lấy tất cả strategy instances.
+   */
+  getAll(): PaymentGatewayStrategy[] {
+    return Array.from(this.strategies.values());
+  }
+}
+
+// ============================================================================
+// Gateway Selection Criteria
+// ============================================================================
+
+/**
+ * Tiêu chí chọn payment gateway.
+ */
+export interface GatewaySelectionCriteria {
+  /** Mã tiền tệ */
+  currency: string;
+  /** Số tiền giao dịch */
+  amount: number;
+  /** Cổng thanh toán yêu cầu (nếu có) */
+  preferredGateway?: string;
+  /** Loại phương thức thanh toán */
+  methodType?: PaymentMethodType;
+  /** Tenant ID */
+  tenantId?: string | null;
+}
+
+/**
+ * Kết quả lựa chọn gateway.
+ */
+export interface GatewaySelectionResult {
+  /** Gateway được chọn */
+  gateway: string;
+  /** Lý do chọn */
+  reason: string;
+}
+
+// ============================================================================
+// Kết quả phân trang
+// ============================================================================
+
+/**
+ * Kết quả phân trang giao dịch thanh toán.
+ */
+export interface PaginatedPayments {
+  data: PaymentTransaction[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// ============================================================================
+// PaymentService
+// ============================================================================
+
+/**
+ * PaymentService — quản lý toàn bộ luồng thanh toán.
+ *
+ * Trách nhiệm chính:
+ * 1. Tạo và quản lý vòng đời giao dịch thanh toán
+ * 2. Đảm bảo idempotency qua idempotencyKey
+ * 3. Chọn gateway phù hợp (gateway selection strategy)
+ * 4. Điều phối các payment gateway strategy
+ * 5. Xử lý hoàn tiền và xác minh giới hạn hoàn tiền
+ * 6. Quản lý phương thức thanh toán của khách hàng
+ *
+ * Luồng thanh toán điển hình:
+ * 1. Client gọi createPayment() với CreatePaymentDto
+ * 2. Service kiểm tra idempotencyKey — nếu đã tồn tại, trả về giao dịch cũ
+ * 3. Service chọn gateway phù hợp (hoặc dùng gateway được chỉ định)
+ * 4. Service tạo PaymentTransaction entity với status = PENDING
+ * 5. Service gọi gateway strategy để tạo payment URL
+ * 6. Trả về payment URL cho client
+ * 7. Client redirect người dùng đến payment URL
+ * 8. Gateway gửi webhook về PaymentWebhookController
+ * 9. Webhook controller cập nhật trạng thái giao dịch
+ */
+@Injectable()
+export class PaymentService {
+  /** Gateway Registry —注入 qua DI container */
+  private readonly gatewayRegistry: GatewayRegistry;
+
+  /** Cache idempotency trong vòng request (bảo vệ race condition) */
+  private readonly idempotencyLocks = new Map<string, Promise<any>>();
+
+  constructor(
+    @InjectRepository(PaymentTransaction)
+    private readonly transactionRepository: Repository<PaymentTransaction>,
+    @InjectRepository(PaymentMethod)
+    private readonly paymentMethodRepository: Repository<PaymentMethod>,
+    @InjectRepository(PaymentRefund)
+    private readonly refundRepository: Repository<PaymentRefund>,
+    @Inject("GATEWAY_REGISTRY")
+    gatewayRegistry: GatewayRegistry,
+  ) {
+    this.gatewayRegistry = gatewayRegistry;
+  }
+
+  // ========================================================================
+  // Payment Creation & Idempotency
+  // ========================================================================
+
+  /**
+   * Tạo giao dịch thanh toán mới.
+   *
+   * Quy trình:
+   * 1. Kiểm tra idempotencyKey — nếu tồn tại giao dịch cùng key, trả về giao dịch cũ
+   * 2. Xác thực gateway có được đăng ký không
+   * 3. Chọn gateway strategy phù hợp
+   * 4. Tạo PaymentTransaction entity
+   * 5. Gọi gateway strategy để tạo payment URL
+   * 6. Lưu transaction và trả về response
+   *
+   * @param createDto - CreatePaymentDto
+   * @returns PaymentResponseDto với paymentUrl
+   */
+  async createPayment(createDto: CreatePaymentDto): Promise<PaymentResponseDto> {
+    // Bước 1: Kiểm tra idempotency — đảm bảo không tạo trùng giao dịch
+    const existing = await this.transactionRepository.findOne({
+      where: { idempotencyKey: createDto.idempotencyKey },
+    });
+
+    if (existing) {
+      logger.warn(
+        `Idempotency: phát hiện giao dịch trùng key ${createDto.idempotencyKey}, trả về giao dịch cũ`,
+      );
+      return this.toPaymentResponseDto(existing);
+    }
+
+    // Bước 2: Bảo vệ race condition — nếu có request cùng key đang xử lý, chờ nó hoàn tất
+    if (this.idempotencyLocks.has(createDto.idempotencyKey)) {
+      const result = await this.idempotencyLocks.get(createDto.idempotencyKey);
+      return result;
+    }
+
+    // Bước 3: Xác thực gateway
+    const gateway = this.gatewayRegistry.get(createDto.gateway);
+    if (!gateway) {
+      throw new BadRequestException(
+        `Cổng thanh toán '${createDto.gateway}' không được hỗ trợ. Các gateway khả dụng: ${this.gatewayRegistry.listNames().join(", ")}`,
+      );
+    }
+
+    // Bước 4: Tạo PaymentTransaction entity
+    const transaction = this.transactionRepository.create({
+      externalId: this.generateExternalId(),
+      idempotencyKey: createDto.idempotencyKey,
+      amount: createDto.amount,
+      currency: createDto.currency,
+      status: PaymentStatus.PENDING,
+      paymentMethodId: createDto.paymentMethodId || null,
+      gateway: createDto.gateway,
+      gatewayTransactionId: null,
+      gatewayResponse: {},
+      description: createDto.description || "",
+      metadata: createDto.metadata || {},
+      customerId: createDto.customerId,
+      tenantId: createDto.tenantId || null,
+      orderId: createDto.orderId || null,
+      expiresAt: createDto.expiresAt ? new Date(createDto.expiresAt) : null,
+    });
+
+    // Bước 5: Gọi gateway strategy để tạo payment URL
+    let paymentUrl: string;
+    let gatewayTransactionId: string;
+
+    try {
+      const result = await gateway.createPayment(transaction);
+      paymentUrl = result.paymentUrl;
+      gatewayTransactionId = result.gatewayTransactionId;
+    } catch (error) {
+      logger.error(
+        `Tạo giao dịch với gateway ${createDto.gateway} thất bại: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new BadRequestException(
+        `Không thể tạo giao dịch với cổng thanh toán ${createDto.gateway}`,
+      );
+    }
+
+    // Bước 6: Cập nhật gateway response và lưu
+    transaction.gatewayTransactionId = gatewayTransactionId;
+    transaction.gatewayResponse = { paymentUrl, gatewayTransactionId };
+    transaction.status = PaymentStatus.PROCESSING;
+
+    const saved = await this.transactionRepository.save(transaction);
+
+    logger.log(
+      `Tạo giao dịch thanh toán thành công: ${saved.id} (${gatewayTransactionId}, ${createDto.amount} ${createDto.currency})`,
+    );
+
+    const response = this.toPaymentResponseDto(saved);
+    response.paymentUrl = paymentUrl;
+
+    return response;
+  }
+
+  /**
+   * Xác nhận giao dịch thanh toán.
+   *
+   * Được gọi sau khi người dùng hoàn tất thanh toán trên gateway
+   * và quay lại ứng dụng (redirect URL).
+   *
+   * @param transactionId - ID giao dịch
+   * @param confirmDto - Dữ liệu xác nhận từ gateway
+   * @returns PaymentResponseDto đã cập nhật
+   */
+  async confirmPayment(
+    transactionId: string,
+    confirmDto: ConfirmPaymentDto,
+  ): Promise<PaymentResponseDto> {
+    const transaction = await this.getTransactionOrThrow(transactionId);
+
+    if (!transaction.isPending()) {
+      throw new BadRequestException(
+        `Không thể xác nhận giao dịch ở trạng thái '${transaction.status}'. Chỉ có thể xác nhận giao dịch đang chờ xử lý.`,
+      );
+    }
+
+    const gateway = this.gatewayRegistry.get(transaction.gateway);
+    if (!gateway) {
+      throw new BadRequestException(
+        `Gateway '${transaction.gateway}' không được tìm thấy`,
+      );
+    }
+
+    try {
+      const gatewayResponse = await gateway.confirmPayment(
+        transaction,
+        confirmDto.gatewayData,
+      );
+
+      transaction.status = PaymentStatus.SUCCEEDED;
+      transaction.gatewayResponse = {
+        ...transaction.gatewayResponse,
+        ...gatewayResponse,
+        confirmedAt: new Date().toISOString(),
+      };
+
+      const saved = await this.transactionRepository.save(transaction);
+
+      logger.log(
+        `Xác nhận giao dịch thanh toán thành công: ${transactionId}`,
+      );
+
+      return this.toPaymentResponseDto(saved);
+    } catch (error) {
+      logger.error(
+        `Xác nhận giao dịch ${transactionId} thất bại: ${error instanceof Error ? error.message : String(error)}`,
+      );
+
+      transaction.status = PaymentStatus.FAILED;
+      transaction.gatewayResponse = {
+        ...transaction.gatewayResponse,
+        error: error instanceof Error ? error.message : String(error),
+      };
+      await this.transactionRepository.save(transaction);
+
+      throw new BadRequestException("Xác nhận giao dịch thất bại");
+    }
+  }
+
+  /**
+   * Hủy giao dịch thanh toán.
+   *
+   * Chỉ có thể hủy giao dịch ở trạng thái PENDING hoặc PROCESSING.
+   *
+   * @param transactionId - ID giao dịch
+   * @param cancelDto - Lý do hủy (optional)
+   * @returns PaymentResponseDto đã cập nhật
+   */
+  async cancelPayment(
+    transactionId: string,
+    cancelDto: CancelPaymentDto,
+  ): Promise<PaymentResponseDto> {
+    const transaction = await this.getTransactionOrThrow(transactionId);
+
+    if (!transaction.isPending()) {
+      throw new BadRequestException(
+        `Không thể hủy giao dịch ở trạng thái '${transaction.status}'. Chỉ có thể hủy giao dịch đang chờ xử lý.`,
+      );
+    }
+
+    const gateway = this.gatewayRegistry.get(transaction.gateway);
+    if (!gateway) {
+      throw new BadRequestException(
+        `Gateway '${transaction.gateway}' không được tìm thấy`,
+      );
+    }
+
+    try {
+      const gatewayResponse = await gateway.cancelPayment(transaction);
+
+      transaction.status = PaymentStatus.CANCELLED;
+      transaction.gatewayResponse = {
+        ...transaction.gatewayResponse,
+        ...gatewayResponse,
+        cancelledAt: new Date().toISOString(),
+        cancelReason: cancelDto.reason || "",
+      };
+
+      const saved = await this.transactionRepository.save(transaction);
+
+      logger.log(`Hủy giao dịch thanh toán thành công: ${transactionId}`);
+
+      return this.toPaymentResponseDto(saved);
+    } catch (error) {
+      logger.error(
+        `Hủy giao dịch ${transactionId} thất bại: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new BadRequestException("Hủy giao dịch thất bại");
+    }
+  }
+
+  // ========================================================================
+  // Refund Operations
+  // ========================================================================
+
+  /**
+   * Tạo yêu cầu hoàn tiền.
+   *
+   * Xác minh:
+   * - Giao dịch gốc phải ở trạng thái SUCCEEDED
+   * - Tổng số tiền hoàn không vượt quá số tiền giao dịch
+   * - Gateway phải hỗ trợ hoàn tiền
+   *
+   * @param transactionId - ID giao dịch gốc
+   * @param createRefundDto - Dữ liệu tạo hoàn tiền
+   * @returns RefundResponseDto
+   */
+  async createRefund(
+    transactionId: string,
+    createRefundDto: CreateRefundDto,
+  ): Promise<RefundResponseDto> {
+    // Tìm giao dịch gốc
+    const transaction = await this.getTransactionOrThrow(transactionId);
+
+    // Xác minh giao dịch đã thành công
+    if (!transaction.isSuccess()) {
+      throw new BadRequestException(
+        `Không thể hoàn tiền cho giao dịch ở trạng thái '${transaction.status}'. Chỉ có thể hoàn tiền cho giao dịch thành công.`,
+      );
+    }
+
+    // Tính tổng số tiền đã hoàn cho giao dịch này
+    const existingRefunds = await this.refundRepository.find({
+      where: { transactionId, status: RefundStatus.SUCCEEDED },
+    });
+
+    const totalRefunded = existingRefunds.reduce(
+      (sum, r) => sum + r.amount,
+      0,
+    );
+
+    // Xác minh số tiền hoàn không vượt quá giao dịch gốc
+    if (totalRefunded + createRefundDto.amount > transaction.amount) {
+      throw new BadRequestException(
+        `Số tiền hoàn vượt quá giới hạn. Số tiền giao dịch: ${transaction.amount}, đã hoàn: ${totalRefunded}, yêu cầu hoàn: ${createRefundDto.amount}`,
+      );
+    }
+
+    // Lấy gateway strategy
+    const gateway = this.gatewayRegistry.get(transaction.gateway);
+    if (!gateway) {
+      throw new BadRequestException(
+        `Gateway '${transaction.gateway}' không được tìm thấy`,
+      );
+    }
+
+    // Tạo PaymentRefund entity
+    const refund = this.refundRepository.create({
+      transactionId: transaction.id,
+      externalId: this.generateExternalId(),
+      amount: createRefundDto.amount,
+      currency: transaction.currency,
+      status: RefundStatus.PENDING,
+      gatewayRefundId: null,
+      gatewayResponse: {},
+      reason: createRefundDto.reason || "",
+      metadata: createRefundDto.metadata || {},
+      tenantId: transaction.tenantId,
+    });
+
+    // Gọi gateway để xử lý hoàn tiền
+    try {
+      const gatewayResponse = await gateway.refund(transaction, refund);
+
+      refund.status = RefundStatus.SUCCEEDED;
+      refund.gatewayRefundId =
+        gatewayResponse.refundId || gatewayResponse.id || null;
+      refund.gatewayResponse = {
+        ...gatewayResponse,
+        refundedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      logger.error(
+        `Hoàn tiền ${transactionId} thất bại: ${error instanceof Error ? error.message : String(error)}`,
+      );
+
+      refund.status = RefundStatus.FAILED;
+      refund.gatewayResponse = {
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    const saved = await this.refundRepository.save(refund);
+
+    // Nếu hoàn tiền thành công, cập nhật trạng thái giao dịch gốc
+    if (refund.status === RefundStatus.SUCCEEDED) {
+      const remaining = transaction.amount - (totalRefunded + refund.amount);
+      if (remaining <= 0) {
+        transaction.status = PaymentStatus.REFUNDED;
+      } else {
+        transaction.status = PaymentStatus.REFUNDING;
+      }
+      await this.transactionRepository.save(transaction);
+    }
+
+    logger.log(
+      `Tạo yêu cầu hoàn tiền ${saved.id} cho giao dịch ${transactionId}: ${refund.amount} ${refund.currency}`,
+    );
+
+    return this.toRefundResponseDto(saved);
+  }
+
+  // ========================================================================
+  // Query Methods
+  // ========================================================================
+
+  /**
+   * Lấy chi tiết giao dịch thanh toán theo ID.
+   *
+   * @param transactionId - ID giao dịch
+   * @returns PaymentResponseDto
+   */
+  async getPayment(transactionId: string): Promise<PaymentResponseDto> {
+    const transaction = await this.getTransactionOrThrow(transactionId);
+    return this.toPaymentResponseDto(transaction);
+  }
+
+  /**
+   * Tìm kiếm giao dịch thanh toán với phân trang và lọc.
+   *
+   * Hỗ trợ lọc theo:
+   * - status: trạng thái giao dịch
+   * - customerId: ID khách hàng
+   * - orderId: ID đơn hàng
+   * - gateway: cổng thanh toán
+   * - tenantId: tenant ID
+   *
+   * @param query - PaymentQueryDto
+   * @returns PaginatedPayments
+   */
+  async findPayments(query: PaymentQueryDto): Promise<PaginatedPayments> {
+    const limit = query.limit ?? 20;
+    const offset = query.offset ?? 0;
+
+    const where: any = {};
+
+    if (query.status) {
+      where.status = query.status;
+    }
+    if (query.customerId) {
+      where.customerId = query.customerId;
+    }
+    if (query.orderId) {
+      where.orderId = query.orderId;
+    }
+    if (query.gateway) {
+      where.gateway = query.gateway;
+    }
+    if (query.tenantId) {
+      where.tenantId = query.tenantId;
+    }
+
+    const [data, total] = await this.transactionRepository.findAndCount({
+      where,
+      take: limit,
+      skip: offset,
+      order: { createdAt: "DESC" },
+      relations: ["refunds"],
+    });
+
+    return { data, total, limit, offset };
+  }
+
+  /**
+   * Tìm giao dịch theo idempotency key.
+   *
+   * Dùng để kiểm tra idempotency từ bên ngoài.
+   *
+   * @param key - Idempotency key
+   * @returns PaymentResponseDto hoặc null
+   */
+  async findByIdempotencyKey(key: string): Promise<PaymentResponseDto | null> {
+    const transaction = await this.transactionRepository.findOne({
+      where: { idempotencyKey: key },
+    });
+
+    if (!transaction) {
+      return null;
+    }
+
+    return this.toPaymentResponseDto(transaction);
+  }
+
+  /**
+   * Tìm giao dịch theo externalId.
+   *
+   * @param externalId - External ID
+   * @returns PaymentTransaction hoặc null
+   */
+  async findByExternalId(externalId: string): Promise<PaymentTransaction | null> {
+    return this.transactionRepository.findOne({
+      where: { externalId },
+    });
+  }
+
+  /**
+   * Tìm giao dịch theo gateway transaction ID.
+   *
+   * Dùng khi xử lý webhook từ gateway.
+   *
+   * @param gatewayTransactionId - ID giao dịch từ gateway
+   * @returns PaymentTransaction hoặc null
+   */
+  async findByGatewayTransactionId(
+    gatewayTransactionId: string,
+  ): Promise<PaymentTransaction | null> {
+    return this.transactionRepository.findOne({
+      where: { gatewayTransactionId },
+    });
+  }
+
+  // ========================================================================
+  // Payment Method Management
+  // ========================================================================
+
+  /**
+   * Tạo mới phương thức thanh toán.
+   *
+   * Nếu đặt isDefault = true, sẽ hủy đánh dấu default của các phương thức khác.
+   *
+   * @param createDto - CreatePaymentMethodDto
+   * @returns PaymentMethodResponseDto
+   */
+  async createPaymentMethod(
+    createDto: CreatePaymentMethodDto,
+  ): Promise<PaymentMethodResponseDto> {
+    // Nếu đặt làm mặc định, hủy mặc định của các phương thức cũ
+    if (createDto.isDefault) {
+      await this.paymentMethodRepository
+        .createQueryBuilder()
+        .update(PaymentMethod)
+        .set({ isDefault: false })
+        .where("customerId = :customerId", { customerId: createDto.customerId })
+        .execute();
+    }
+
+    const method = this.paymentMethodRepository.create({
+      type: createDto.type,
+      gateway: createDto.gateway,
+      gatewayToken: createDto.gatewayToken,
+      label: createDto.label || "",
+      isDefault: createDto.isDefault || false,
+      isVerified: false,
+      metadata: createDto.metadata || {},
+      customerId: createDto.customerId,
+      tenantId: createDto.tenantId || null,
+    });
+
+    const saved = await this.paymentMethodRepository.save(method);
+
+    logger.log(
+      `Tạo phương thức thanh toán mới: ${saved.id} (${createDto.type}) cho khách hàng ${createDto.customerId}`,
+    );
+
+    return this.toPaymentMethodResponseDto(saved);
+  }
+
+  /**
+   * Lấy tất cả phương thức thanh toán của khách hàng.
+   *
+   * @param customerId - Customer ID
+   * @returns List PaymentMethodResponseDto
+   */
+  async getCustomerPaymentMethods(
+    customerId: string,
+  ): Promise<PaymentMethodResponseDto[]> {
+    const methods = await this.paymentMethodRepository.find({
+      where: { customerId },
+      order: { isDefault: "DESC", createdAt: "DESC" },
+    });
+
+    return methods.map((m) => this.toPaymentMethodResponseDto(m));
+  }
+
+  /**
+   * Xóa phương thức thanh toán.
+   *
+   * Không cho phép xóa nếu là phương thức mặc định.
+   *
+   * @param methodId - Payment Method ID
+   * @returns True nếu xóa thành công
+   */
+  async removePaymentMethod(methodId: string): Promise<boolean> {
+    const method = await this.paymentMethodRepository.findOne({
+      where: { id: methodId },
+    });
+
+    if (!method) {
+      return false;
+    }
+
+    if (method.isDefault) {
+      throw new BadRequestException(
+        "Không thể xóa phương thức thanh toán mặc định. Vui lòng đặt phương thức khác làm mặc định trước.",
+      );
+    }
+
+    await this.paymentMethodRepository.remove(method);
+    logger.log(`Xóa phương thức thanh toán: ${methodId}`);
+    return true;
+  }
+
+  // ========================================================================
+  // Refund Query Methods
+  // ========================================================================
+
+  /**
+   * Lấy tất cả hoàn tiền của một giao dịch.
+   *
+   * @param transactionId - ID giao dịch
+   * @returns List RefundResponseDto
+   */
+  async getRefundsForTransaction(
+    transactionId: string,
+  ): Promise<RefundResponseDto[]> {
+    const refunds = await this.refundRepository.find({
+      where: { transactionId },
+      order: { createdAt: "DESC" },
+    });
+
+    return refunds.map((r) => this.toRefundResponseDto(r));
+  }
+
+  /**
+   * Lấy chi tiết hoàn tiền theo ID.
+   *
+   * @param refundId - Refund ID
+   * @returns RefundResponseDto
+   */
+  async getRefund(refundId: string): Promise<RefundResponseDto> {
+    const refund = await this.refundRepository.findOne({
+      where: { id: refundId },
+    });
+
+    if (!refund) {
+      throw new NotFoundException(`Không tìm thấy hoàn tiền: ${refundId}`);
+    }
+
+    return this.toRefundResponseDto(refund);
+  }
+
+  // ========================================================================
+  // Gateway Selection
+  // ========================================================================
+
+  /**
+   * Chọn payment gateway phù hợp dựa trên tiêu chí.
+   *
+   * Ưu tiên:
+   * 1. Nếu preferredGateway được chỉ định và có sẵn, dùng gateway đó
+   * 2. Nếu không, chọn gateway đầu tiên có sẵn
+   *
+   * @param criteria - GatewaySelectionCriteria
+   * @returns GatewaySelectionResult
+   */
+  selectGateway(criteria: GatewaySelectionCriteria): GatewaySelectionResult {
+    // Ưu tiên gateway được chỉ định
+    if (criteria.preferredGateway && this.gatewayRegistry.has(criteria.preferredGateway)) {
+      return {
+        gateway: criteria.preferredGateway,
+        reason: "Sử dụng gateway được chỉ định bởi client",
+      };
+    }
+
+    // Fallback: chọn gateway đầu tiên có sẵn
+    const available = this.gatewayRegistry.listNames();
+    if (available.length === 0) {
+      throw new BadRequestException("Không có payment gateway nào được cấu hình");
+    }
+
+    return {
+      gateway: available[0],
+      reason: `Sử dụng gateway mặc định (không có gateway được chỉ định)`,
+    };
+  }
+
+  // ========================================================================
+  // Webhook Processing (internal)
+  // ========================================================================
+
+  /**
+   * Xử lý webhook nhận được từ payment gateway.
+   *
+   * Phương thức này được gọi bởi PaymentWebhookController.
+   *
+   * Quy trình:
+   * 1. Xác thực chữ ký webhook
+   * 2. Tìm giao dịch liên quan
+   * 3. Cập nhật trạng thái giao dịch
+   * 4. Lưu gateway response
+   *
+   * @param gatewayName - Tên gateway gửi webhook
+   * @param payload - Raw payload từ gateway
+   * @param signature - Chữ ký webhook
+   * @returns PaymentResponseDto đã cập nhật
+   */
+  async processWebhook(
+    gatewayName: string,
+    payload: Record<string, any>,
+    signature: string,
+  ): Promise<PaymentResponseDto> {
+    const gateway = this.gatewayRegistry.get(gatewayName);
+    if (!gateway) {
+      throw new BadRequestException(`Gateway '${gatewayName}' không được tìm thấy`);
+    }
+
+    // Xác thực chữ ký webhook
+    if (!gateway.verifyWebhookSignature(payload, signature)) {
+      throw new BadRequestException("Chữ ký webhook không hợp lệ");
+    }
+
+    // Parse webhook payload
+    const webhookData = await gateway.handleWebhook(payload);
+
+    // Tìm giao dịch liên quan
+    let transaction = await this.transactionRepository.findOne({
+      where: { gatewayTransactionId: webhookData.gatewayTransactionId },
+    });
+
+    if (!transaction) {
+      // Nếu không tìm thấy theo gatewayTransactionId, thử tìm theo externalId trong payload
+      transaction = await this.transactionRepository.findOne({
+        where: { externalId: webhookData.transactionId },
+      });
+    }
+
+    if (!transaction) {
+      logger.warn(
+        `Webhook: không tìm thấy giao dịch cho gatewayTransactionId=${webhookData.gatewayTransactionId}`,
+      );
+      throw new NotFoundException("Không tìm thấy giao dịch liên quan");
+    }
+
+    // Cập nhật trạng thái giao dịch
+    transaction.status = webhookData.status;
+    transaction.gatewayResponse = {
+      ...transaction.gatewayResponse,
+      ...webhookData.response,
+      webhookReceivedAt: new Date().toISOString(),
+    };
+
+    const saved = await this.transactionRepository.save(transaction);
+
+    logger.log(
+      `Webhook: cập nhật trạng thái giao dịch ${transaction.id} thành ${webhookData.status}`,
+    );
+
+    return this.toPaymentResponseDto(saved);
+  }
+
+  // ========================================================================
+  // Internal Helpers
+  // ========================================================================
+
+  /**
+   * Tìm giao dịch hoặc ném NotFoundException.
+   *
+   * @param transactionId - ID giao dịch
+   * @returns PaymentTransaction
+   */
+  private async getTransactionOrThrow(
+    transactionId: string,
+  ): Promise<PaymentTransaction> {
+    const transaction = await this.transactionRepository.findOne({
+      where: { id: transactionId },
+    });
+
+    if (!transaction) {
+      throw new NotFoundException(`Không tìm thấy giao dịch: ${transactionId}`);
+    }
+
+    return transaction;
+  }
+
+  /**
+   * Tạo externalId duy nhất.
+   */
+  private generateExternalId(): string {
+    return `ptx_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  }
+
+  /**
+   * Chuyển đổi PaymentTransaction sang PaymentResponseDto.
+   */
+  private toPaymentResponseDto(t: PaymentTransaction): PaymentResponseDto {
+    return {
+      id: t.id,
+      externalId: t.externalId,
+      idempotencyKey: t.idempotencyKey,
+      amount: t.amount,
+      currency: t.currency,
+      status: t.status,
+      paymentMethodId: t.paymentMethodId,
+      gateway: t.gateway,
+      gatewayTransactionId: t.gatewayTransactionId,
+      gatewayResponse: t.gatewayResponse,
+      description: t.description,
+      metadata: t.metadata,
+      customerId: t.customerId,
+      tenantId: t.tenantId,
+      orderId: t.orderId,
+      expiresAt: t.expiresAt?.toISOString() || null,
+      createdAt: t.createdAt.toISOString(),
+      updatedAt: t.updatedAt.toISOString(),
+    };
+  }
+
+  /**
+   * Chuyển đổi PaymentMethod sang PaymentMethodResponseDto.
+   */
+  private toPaymentMethodResponseDto(
+    m: PaymentMethod,
+  ): PaymentMethodResponseDto {
+    return {
+      id: m.id,
+      type: m.type,
+      gateway: m.gateway,
+      label: m.label,
+      isDefault: m.isDefault,
+      isVerified: m.isVerified,
+      customerId: m.customerId,
+      metadata: m.metadata,
+      createdAt: m.createdAt.toISOString(),
+      updatedAt: m.updatedAt.toISOString(),
+    };
+  }
+
+  /**
+   * Chuyển đổi PaymentRefund sang RefundResponseDto.
+   */
+  private toRefundResponseDto(r: PaymentRefund): RefundResponseDto {
+    return {
+      id: r.id,
+      transactionId: r.transactionId,
+      externalId: r.externalId,
+      amount: r.amount,
+      currency: r.currency,
+      status: r.status,
+      gatewayRefundId: r.gatewayRefundId,
+      gatewayResponse: r.gatewayResponse,
+      reason: r.reason,
+      metadata: r.metadata,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    };
+  }
+}
+{% endraw %}

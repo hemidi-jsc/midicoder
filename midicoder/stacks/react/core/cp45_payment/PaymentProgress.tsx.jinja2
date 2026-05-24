@@ -1,0 +1,387 @@
+{% raw %}import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { PaymentStatus } from "./PaymentDashboard";
+
+// ============================================================================
+// Định nghĩa loại dữ liệu cho tiến trình thanh toán
+// ============================================================================
+
+/** Bước xử lý thanh toán */
+export enum PaymentStep {
+  Initializing = "initializing",
+  Validating = "validating",
+  Authorizing = "authorizing",
+  Processing = "processing",
+  Verifying = "verifying",
+  Completing = "completing",
+}
+
+/** Thông tin bước xử lý */
+interface StepInfo {
+  key: PaymentStep;
+  label: string;
+  description: string;
+  icon: string;
+}
+
+/** Danh sách các bước xử lý thanh toán */
+const STEPS: StepInfo[] = [
+  {
+    key: PaymentStep.Initializing,
+    label: "Khởi tạo",
+    description: "Đang khởi tạo kết nối thanh toán...",
+    icon: "⚙️",
+  },
+  {
+    key: PaymentStep.Validating,
+    label: "Kiểm tra",
+    description: "Đang kiểm tra thông tin thanh toán...",
+    icon: "🔍",
+  },
+  {
+    key: PaymentStep.Authorizing,
+    label: "Ủy quyền",
+    description: "Đang ủy quyền giao dịch...",
+    icon: "🔐",
+  },
+  {
+    key: PaymentStep.Processing,
+    label: "Xử lý",
+    description: "Đang xử lý giao dịch thanh toán...",
+    icon: "⚡",
+  },
+  {
+    key: PaymentStep.Verifying,
+    label: "Xác minh",
+    description: "Đang xác minh kết quả giao dịch...",
+    icon: "✅",
+  },
+  {
+    key: PaymentStep.Completing,
+    label: "Hoàn tất",
+    description: "Đang hoàn tất giao dịch...",
+    icon: "🎉",
+  },
+];
+
+/** Ánh xạ trạng thái API sang bước hiển thị */
+function statusToStepIndex(status: PaymentStatus): number {
+  switch (status) {
+    case PaymentStatus.Pending:
+      return 0;
+    case PaymentStatus.Processing:
+      return 2;
+    case PaymentStatus.Completed:
+      return 5;
+    case PaymentStatus.Failed:
+      return -1;
+    case PaymentStatus.Refunded:
+      return 6;
+    default:
+      return 0;
+  }
+}
+
+// ============================================================================
+// Thành phần thanh tiến trình
+// ============================================================================
+
+function ProgressBar({ currentStep, totalSteps }: { currentStep: number; totalSteps: number }) {
+  const percentage = useMemo(() => {
+    if (totalSteps <= 0) return 0;
+    return Math.min(100, Math.round((currentStep / totalSteps) * 100));
+  }, [currentStep, totalSteps]);
+
+  return (
+    <div className="w-full">
+      <div className="mb-2 flex justify-between text-sm">
+        <span className="font-medium text-gray-700">Tiến độ xử lý</span>
+        <span className="font-bold text-blue-600">{percentage}%</span>
+      </div>
+      <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-700 transition-all duration-500 ease-out"
+          style={{ width: `${percentage}%` }}
+          role="progressbar"
+          aria-valuenow={percentage}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Thành phần bước thanh toán
+// ============================================================================
+
+function StepItem({
+  step,
+  index,
+  currentStep,
+}: {
+  step: StepInfo;
+  index: number;
+  currentStep: number;
+}) {
+  const isCompleted = index < currentStep;
+  const isActive = index === currentStep;
+  const isPending = index > currentStep;
+
+  return (
+    <li className="relative">
+      {/* Nối với bước tiếp theo */}
+      {index < STEPS.length - 1 && (
+        <div
+          className={`absolute left-5 top-10 h-8 w-0.5 -translate-x-1/2 ${
+            isCompleted ? "bg-green-500" : "bg-gray-300"
+          }`}
+        />
+      )}
+
+      <div className="flex items-start gap-4 py-3">
+        {/* Vòng tròn trạng thái */}
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 text-lg ${
+            isCompleted
+              ? "border-green-500 bg-green-500 text-white"
+              : isActive
+                ? "border-blue-500 bg-blue-50 text-blue-600 animate-pulse"
+                : "border-gray-300 bg-gray-100 text-gray-400"
+          }`}
+        >
+          {isCompleted ? "✓" : step.icon}
+        </div>
+
+        {/* Nội dung bước */}
+        <div className="flex-1 pt-1">
+          <p
+            className={`text-sm font-semibold ${
+              isCompleted
+                ? "text-green-700"
+                : isActive
+                  ? "text-blue-700"
+                  : "text-gray-400"
+            }`}
+          >
+            {step.label}
+          </p>
+          <p
+            className={`text-xs ${
+              isCompleted
+                ? "text-green-600"
+                : isActive
+                  ? "text-blue-600"
+                  : "text-gray-400"
+            }`}
+          >
+            {isActive ? step.description : isCompleted ? "Đã hoàn thành" : "Đang chờ"}
+          </p>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+// ============================================================================
+// Thành phần trạng thái cuối cùng (thành công / thất bại)
+// ============================================================================
+
+function FinalState({ status, onRetry, onGoBack }: {
+  status: PaymentStatus;
+  onRetry?: () => void;
+  onGoBack?: () => void;
+}) {
+  if (status === PaymentStatus.Completed) {
+    return (
+      <div className="rounded-xl border border-green-200 bg-green-50 p-6 text-center">
+        <span className="text-5xl">🎉</span>
+        <h3 className="mt-3 text-lg font-bold text-green-800">
+          Thanh Toán Thành Công!
+        </h3>
+        <p className="mt-1 text-sm text-green-700">
+          Giao dịch của bạn đã được xử lý thành công.
+        </p>
+        {onGoBack && (
+          <button
+            onClick={onGoBack}
+            className="mt-4 rounded-lg bg-green-600 px-6 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+          >
+            Quay Lại Bảng Điều Khiển
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (status === PaymentStatus.Failed) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+        <span className="text-5xl">❌</span>
+        <h3 className="mt-3 text-lg font-bold text-red-800">
+          Thanh Toán Thất Bại
+        </h3>
+        <p className="mt-1 text-sm text-red-700">
+          Có lỗi xảy ra khi xử lý giao dịch. Vui lòng thử lại.
+        </p>
+        <div className="mt-4 flex justify-center gap-3">
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              className="rounded-lg bg-red-600 px-6 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              Thử Lại
+            </button>
+          )}
+          {onGoBack && (
+            <button
+              onClick={onGoBack}
+              className="rounded-lg border border-red-300 bg-white px-6 py-2 text-sm font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              Quay Lại
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (status === PaymentStatus.Refunded) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center">
+        <span className="text-5xl">💸</span>
+        <h3 className="mt-3 text-lg font-bold text-gray-800">
+          Đã Hoàn Tiền
+        </h3>
+        <p className="mt-1 text-sm text-gray-700">
+          Số tiền đã được hoàn về tài khoản của bạn.
+        </p>
+        {onGoBack && (
+          <button
+            onClick={onGoBack}
+            className="mt-4 rounded-lg bg-gray-600 px-6 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+          >
+            Quay Lại
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ============================================================================
+// Thành phần chính hiển thị tiến trình thanh toán
+// ============================================================================
+
+/**
+ * PaymentProgress — Hiển thị tiến trình xử lý thanh toán theo từng bước.
+ * Hỗ trợ theo dõi realtime thông qua WebSocket hoặc polling.
+ */
+export default function PaymentProgress({
+  paymentId,
+  status,
+  pollInterval = 3000,
+  onRetry,
+  onGoBack,
+}: {
+  paymentId: string;
+  status: PaymentStatus;
+  pollInterval?: number;
+  onRetry?: () => void;
+  onGoBack?: () => void;
+}) {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const startTimeRef = useRef(Date.now());
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /** Tính toán bước hiện tại từ trạng thái giao dịch */
+  useEffect(() => {
+    const stepIndex = statusToStepIndex(status);
+    setCurrentStep(stepIndex);
+  }, [status]);
+
+  /** Đồng hồ tính thời gian đã trôi qua */
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+
+  /** Format thời gian đã trôi qua dạng mm:ss */
+  const formattedTime = useMemo(() => {
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }, [elapsed]);
+
+  /** Kiểm tra xem đã ở trạng thái cuối cùng chưa */
+  const isTerminal = status === PaymentStatus.Completed || status === PaymentStatus.Failed || status === PaymentStatus.Refunded;
+
+  return (
+    <div className="mx-auto max-w-xl space-y-6 p-6">
+      {/* Tiêu đề */}
+      <div className="text-center">
+        <h2 className="text-xl font-bold text-gray-900">
+          Tiến Trình Thanh Toán
+        </h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Mã giao dịch: <span className="font-mono font-medium">{paymentId}</span>
+        </p>
+        {!isTerminal && (
+          <p className="mt-1 text-xs text-gray-400">
+            Thời gian xử lý: {formattedTime}
+          </p>
+        )}
+      </div>
+
+      {/* Thanh tiến trình */}
+      {!isTerminal && (
+        <ProgressBar currentStep={currentStep + 1} totalSteps={STEPS.length} />
+      )}
+
+      {/* Trạng thái cuối cùng */}
+      {isTerminal && (
+        <FinalState
+          status={status}
+          onRetry={onRetry}
+          onGoBack={onGoBack}
+        />
+      )}
+
+      {/* Danh sách các bước xử lý */}
+      {!isTerminal && (
+        <ul className="list-none pl-0">
+          {STEPS.map((step, index) => (
+            <StepItem
+              key={step.key}
+              step={step}
+              index={index}
+              currentStep={currentStep}
+            />
+          ))}
+        </ul>
+      )}
+
+      {/* Thông tin hỗ trợ */}
+      {!isTerminal && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+          <p className="text-sm text-blue-800">
+            <span className="font-semibold">💡 Lưu ý:</span> Vui lòng không đóng
+            cửa sổ này trong khi giao dịch đang được xử lý.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+{% endraw %}

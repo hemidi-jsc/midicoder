@@ -1,0 +1,691 @@
+{% raw %}
+/**
+ * CP45 Payment Gateway — Payment Methods Component (CRUD)
+ *
+ * Thành phần quản lý phương thức thanh toán:
+ * - Hiển thị danh sách phương thức đang có
+ * - Tạo mới phương thức thanh toán
+ * - Cập nhật / vô hiệu hóa phương thức
+ * - Xóa phương thức (có xác nhận)
+ * - Đặt phương thức làm mặc định
+ *
+ * Sử dụng Signal Store và Angular signals hiện đại.
+ */
+
+import {
+  Component,
+  ChangeDetectionStrategy,
+  inject,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+
+import { PaymentStore } from './payment.store';
+import {
+  PaymentMethod,
+  PaymentMethodType,
+  CreatePaymentMethodDto,
+  UpdatePaymentMethodDto,
+} from './payment-types';
+
+@Component({
+  selector: 'app-payment-methods',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="payment-methods-page">
+      <!-- Tiêu đề -->
+      <header class="page-header">
+        <h1>Quản Lý Phương Thức Thanh Toán</h1>
+        <button class="add-btn" (click)="onOpenCreateForm()">+ Thêm mới</button>
+      </header>
+
+      <!-- Hiển thị lỗi -->
+      <div *ngIf="error()" class="error-banner">
+        <strong>Lỗi:</strong> {{ error() }}
+        <button (click)="onClearError()">Đóng</button>
+      </div>
+
+      <!-- Đang tải -->
+      <div *ngIf="loadingMethods()" class="loading-state">
+        <p>Đang tải phương thức thanh toán...</p>
+      </div>
+
+      <!-- Form tạo mới -->
+      <section *ngIf="isCreating()" class="form-section">
+        <h2>Thêm Phương Thức Mới</h2>
+        <form (ngSubmit)="onCreateMethod()" class="method-form">
+          <div class="form-row">
+            <label for="new-type">Loại phương thức</label>
+            <select id="new-type" [(ngModel)]="newForm.type" name="type" required>
+              <option value="" disabled>-- Chọn loại --</option>
+              <option *ngFor="let opt of methodTypeOptions" [value]="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label for="new-displayName">Tên hiển thị</label>
+            <input
+              id="new-displayName"
+              type="text"
+              [(ngModel)]="newForm.displayName"
+              name="displayName"
+              placeholder="Ví dụ: Thẻ Visa •••• 4242"
+              required
+            />
+          </div>
+
+          <div class="form-row">
+            <label for="new-details">Chi tiết (JSON tùy chọn)</label>
+            <textarea
+              id="new-details"
+              [(ngModel)]="newForm.metadataJson"
+              name="metadataJson"
+              rows="3"
+              placeholder='{"bank_code": "VNB", "last4": "4242"}'
+            ></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" [disabled]="loadingMethods()">Tạo mới</button>
+            <button type="button" (click)="onCancelCreate()">Hủy</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Form chỉnh sửa -->
+      <section *ngIf="editingMethod" class="form-section edit-section">
+        <h2>Chỉnh Sửa Phương Thức</h2>
+        <form (ngSubmit)="onUpdateMethod()" class="method-form">
+          <div class="form-row">
+            <label for="edit-displayName">Tên hiển thị</label>
+            <input
+              id="edit-displayName"
+              type="text"
+              [(ngModel)]="editForm.displayName"
+              name="editDisplayName"
+              required
+            />
+          </div>
+
+          <div class="form-row checkbox-row">
+            <label>
+              <input
+                type="checkbox"
+                [(ngModel)]="editForm.isActive"
+                name="editIsActive"
+              />
+              Đang kích hoạt
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" [disabled]="loadingMethods()">Lưu thay đổi</button>
+            <button type="button" (click)="onCancelEdit()">Hủy</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Danh sách phương thức -->
+      <section *ngIf="!loadingMethods() && list().length; else emptyState" class="methods-list">
+        <h2>Danh Sách Phương Thức ({{ list().length }})</h2>
+        <div class="method-cards">
+          <div
+            *ngFor="let method of list()"
+            class="method-card"
+            [class.is-default]="method.isDefault"
+            [class.inactive]="!method.isActive"
+          >
+            <!-- Thẻ mặc định -->
+            <span *ngIf="method.isDefault" class="default-badge">Mặc định</span>
+
+            <div class="method-card-header">
+              <span class="method-icon">{{ getMethodIcon(method.type) }}</span>
+              <div class="method-info">
+                <h3 class="method-name">{{ method.displayName }}</h3>
+                <span class="method-type">{{ getMethodLabel(method.type) }}</span>
+              </div>
+              <span class="method-status" [class]="method.isActive ? 'active' : 'inactive'">
+                {{ method.isActive ? 'Kích hoạt' : 'Vô hiệu' }}
+              </span>
+            </div>
+
+            <div class="method-card-meta">
+              <span>Tạo: {{ method.createdAt | date:'mediumDate' }}</span>
+              <span *ngIf="method.updatedAt !== method.createdAt">
+                Sửa: {{ method.updatedAt | date:'mediumDate' }}
+              </span>
+            </div>
+
+            <!-- Hành động -->
+            <div class="method-actions">
+              <button
+                *ngIf="!method.isDefault"
+                (click)="onSetDefault(method.id)"
+                [disabled]="loadingMethods()"
+              >
+                Đặt mặc định
+              </button>
+              <button (click)="onEditMethod(method)">Chỉnh sửa</button>
+              <button
+                class="toggle-btn"
+                (click)="onToggleActive(method)"
+                [disabled]="loadingMethods()"
+              >
+                {{ method.isActive ? 'Vô hiệu hóa' : 'Kích hoạt' }}
+              </button>
+              <button
+                class="delete-btn"
+                (click)="onDeleteMethod(method.id, method.displayName)"
+                [disabled]="loadingMethods()"
+              >
+                Xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Trạng thái rỗng -->
+      <ng-template #emptyState>
+        <div class="empty-state">
+          <p>Chưa có phương thức thanh toán nào.</p>
+          <button class="add-btn" (click)="onOpenCreateForm()">+ Thêm phương thức đầu tiên</button>
+        </div>
+      </ng-template>
+
+      <!-- Xác nhận xóa -->
+      <div *ngIf="deletingId" class="confirm-overlay">
+        <div class="confirm-dialog">
+          <h3>Xác Nhận Xóa</h3>
+          <p>Bạn có chắc muốn xóa phương thức "<strong>{{ deletingName }}</strong>"?</p>
+          <p class="warning-text">Hành động này không thể hoàn tác.</p>
+          <div class="confirm-actions">
+            <button class="delete-btn" (click)="onConfirmDelete()">Xóa</button>
+            <button (click)="onCancelDelete()">Hủy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `,
+  styles: [`
+    .payment-methods-page {
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .page-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .page-header h1 {
+      margin: 0;
+      font-size: 24px;
+      color: #1a1a1a;
+    }
+
+    /* Buttons chung */
+    .add-btn {
+      margin-left: auto;
+      padding: 8px 16px;
+      background: #2e7d32;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .add-btn:hover { background: #1b5e20; }
+
+    /* Error / loading */
+    .error-banner {
+      padding: 12px 16px;
+      background: #ffebee;
+      color: #c62828;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .error-banner button {
+      background: none;
+      border: none;
+      color: #c62828;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .loading-state {
+      text-align: center;
+      padding: 48px 0;
+      color: #888;
+    }
+
+    /* Form */
+    .form-section {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .form-section.edit-section {
+      border-color: #1976d2;
+      background: #f5f9ff;
+    }
+    h2 {
+      font-size: 18px;
+      color: #333;
+      margin: 0 0 16px 0;
+    }
+    .method-form .form-row {
+      margin-bottom: 12px;
+    }
+    .method-form label {
+      display: block;
+      font-size: 13px;
+      color: #555;
+      margin-bottom: 4px;
+    }
+    .method-form input,
+    .method-form select,
+    .method-form textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .checkbox-row label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 0;
+    }
+    .form-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .form-actions button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .form-actions button[type='submit'] {
+      background: #1976d2;
+      color: #fff;
+    }
+    .form-actions button[type='submit']:disabled {
+      background: #bbb;
+      cursor: not-allowed;
+    }
+    .form-actions button[type='button'] {
+      background: #e0e0e0;
+      color: #333;
+    }
+
+    /* Method cards */
+    .methods-list {
+      margin-bottom: 32px;
+    }
+    .method-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .method-card {
+      position: relative;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .method-card.is-default {
+      border-color: #2e7d32;
+      background: #f1f8e9;
+    }
+    .method-card.inactive {
+      opacity: 0.6;
+    }
+    .default-badge {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: #2e7d32;
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+    .method-card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .method-icon { font-size: 28px; }
+    .method-info { flex: 1; }
+    .method-name {
+      margin: 0;
+      font-size: 16px;
+      color: #1a1a1a;
+    }
+    .method-type {
+      font-size: 12px;
+      color: #888;
+    }
+    .method-status {
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+    .method-status.active {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .method-status.inactive {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .method-card-meta {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 12px;
+    }
+    .method-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .method-actions button {
+      padding: 6px 12px;
+      border: 1px solid #ccc;
+      background: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .method-actions button:hover:not(:disabled) {
+      background: #f5f5f5;
+    }
+    .method-actions button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .method-actions .delete-btn {
+      color: #c62828;
+      border-color: #c62828;
+    }
+    .method-actions .delete-btn:hover:not(:disabled) {
+      background: #ffebee;
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 48px 0;
+      color: #888;
+    }
+
+    /* Confirm dialog */
+    .confirm-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .confirm-dialog {
+      background: #fff;
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 400px;
+      width: 90%;
+    }
+    .confirm-dialog h3 {
+      margin: 0 0 12px 0;
+    }
+    .warning-text {
+      color: #c62828;
+      font-size: 13px;
+    }
+    .confirm-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .confirm-actions .delete-btn {
+      background: #c62828;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .confirm-actions button:last-child {
+      background: #e0e0e0;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+  `],
+})
+export class PaymentMethodsComponent {
+  /* ---------------------------------------------------------------
+   * Store
+   * --------------------------------------------------------------- */
+
+  private readonly store = inject(PaymentStore);
+
+  /** Danh sách phương thức */
+  readonly list = this.store.list;
+
+  /** Đang tải */
+  readonly loadingMethods = this.store.methods;
+
+  /** Lỗi */
+  readonly error = this.store.currentError;
+
+  /* ---------------------------------------------------------------
+   * Local state — form
+   * --------------------------------------------------------------- */
+
+  /** Đang mở form tạo mới hay không */
+  isCreating = (): boolean => this._isCreating;
+  private _isCreating = false;
+
+  /** Form dữ liệu tạo mới */
+  newForm: Omit<CreatePaymentMethodDto, 'metadata'> & { metadataJson: string } = {
+    type: PaymentMethodType.CARD,
+    displayName: '',
+    metadataJson: '',
+  };
+
+  /** Phương thức đang chỉnh sửa */
+  editingMethod: PaymentMethod | null = null;
+
+  /** Form dữ liệu chỉnh sửa */
+  editForm: UpdatePaymentMethodDto & { displayName: string; isActive: boolean } = {
+    displayName: '',
+    isActive: true,
+  };
+
+  /** ID và tên đang chờ xác nhận xóa */
+  deletingId: string | null = null;
+  deletingName = '';
+
+  /** Các tùy chọn enum cho loại phương thức */
+  methodTypeOptions: { value: PaymentMethodType; label: string }[] = [
+    { value: PaymentMethodType.CARD, label: 'Thẻ tín dụng / ghi nợ' },
+    { value: PaymentMethodType.BANK_TRANSFER, label: 'Chuyển khoản ngân hàng' },
+    { value: PaymentMethodType.E_WALLET, label: 'Ví điện tử' },
+    { value: PaymentMethodType.COD, label: 'Thanh toán khi nhận hàng' },
+    { value: PaymentMethodType.QR_CODE, label: 'Mã QR' },
+    { value: PaymentMethodType.VOUCHER, label: 'Mã giảm giá / voucher' },
+  ];
+
+  /* ---------------------------------------------------------------
+   * Methods — Form tạo mới
+   * --------------------------------------------------------------- */
+
+  /** Mở form tạo mới */
+  onOpenCreateForm(): void {
+    this._isCreating = true;
+    this.newForm = {
+      type: PaymentMethodType.CARD,
+      displayName: '',
+      metadataJson: '',
+    };
+  }
+
+  /** Hủy form tạo mới */
+  onCancelCreate(): void {
+    this._isCreating = false;
+  }
+
+  /** Gửi form tạo mới */
+  onCreateMethod(): void {
+    let metadata: Record<string, unknown> = {};
+    if (this.newForm.metadataJson.trim()) {
+      try {
+        metadata = JSON.parse(this.newForm.metadataJson);
+      } catch {
+        // JSON không hợp lệ — bỏ qua, gửi metadata rỗng
+        metadata = {};
+      }
+    }
+
+    this.store.createPaymentMethod({
+      type: this.newForm.type,
+      displayName: this.newForm.displayName.trim(),
+      metadata,
+    });
+
+    this._isCreating = false;
+  }
+
+  /* ---------------------------------------------------------------
+   * Methods — Form chỉnh sửa
+   * --------------------------------------------------------------- */
+
+  /** Mở form chỉnh sửa cho phương thức */
+  onEditMethod(method: PaymentMethod): void {
+    this.editingMethod = method;
+    this.editForm = {
+      displayName: method.displayName,
+      isActive: method.isActive,
+    };
+  }
+
+  /** Hủy form chỉnh sửa */
+  onCancelEdit(): void {
+    this.editingMethod = null;
+  }
+
+  /** Gửi form chỉnh sửa */
+  onUpdateMethod(): void {
+    if (!this.editingMethod) return;
+
+    this.store.updatePaymentMethod(this.editingMethod.id, {
+      displayName: this.editForm.displayName.trim(),
+      isActive: this.editForm.isActive,
+    });
+
+    this.editingMethod = null;
+  }
+
+  /* ---------------------------------------------------------------
+   * Methods — Hành động CRUD
+   * --------------------------------------------------------------- */
+
+  /** Đặt phương thức làm mặc định */
+  onSetDefault(id: string): void {
+    this.store.setDefaultMethod(id);
+  }
+
+  /** Bật / tắt phương thức */
+  onToggleActive(method: PaymentMethod): void {
+    this.store.updatePaymentMethod(method.id, {
+      isActive: !method.isActive,
+    });
+  }
+
+  /** Mở hộp thoại xác nhận xóa */
+  onDeleteMethod(id: string, name: string): void {
+    this.deletingId = id;
+    this.deletingName = name;
+  }
+
+  /** Xác nhận xóa */
+  onConfirmDelete(): void {
+    if (this.deletingId) {
+      this.store.deletePaymentMethod(this.deletingId);
+    }
+    this.deletingId = null;
+    this.deletingName = '';
+  }
+
+  /** Hủy xóa */
+  onCancelDelete(): void {
+    this.deletingId = null;
+    this.deletingName = '';
+  }
+
+  /** Xóa lỗi */
+  onClearError(): void {
+    this.store.clearError();
+  }
+
+  /* ---------------------------------------------------------------
+   * Methods — Tiện ích hiển thị
+   * --------------------------------------------------------------- */
+
+  /** Lấy icon cho loại phương thức */
+  getMethodIcon(type: PaymentMethodType): string {
+    const icons: Record<string, string> = {
+      [PaymentMethodType.CARD]: '\uD83D\uDCB3',
+      [PaymentMethodType.BANK_TRANSFER]: '\uD83C\uDFE6',
+      [PaymentMethodType.E_WALLET]: '\uD83D\uDCB0',
+      [PaymentMethodType.COD]: '\uD83D\uDCB1',
+      [PaymentMethodType.QR_CODE]: '\uD83D\uDD0D',
+      [PaymentMethodType.VOUCHER]: '\uD83C\uDF81',
+    };
+    return icons[type] ?? '\uD83D\uDCB2';
+  }
+
+  /** Lấy nhãn tiếng Việt cho loại phương thức */
+  getMethodLabel(type: PaymentMethodType): string {
+    const labels: Record<string, string> = {
+      [PaymentMethodType.CARD]: 'Thẻ tín dụng / ghi nợ',
+      [PaymentMethodType.BANK_TRANSFER]: 'Chuyển khoản ngân hàng',
+      [PaymentMethodType.E_WALLET]: 'Ví điện tử',
+      [PaymentMethodType.COD]: 'Thanh toán khi nhận hàng',
+      [PaymentMethodType.QR_CODE]: 'Mã QR',
+      [PaymentMethodType.VOUCHER]: 'Mã giảm giá / voucher',
+    };
+    return labels[type] ?? type;
+  }
+}
+{% endraw %}

@@ -1,0 +1,415 @@
+{% raw %}/**
+ * PaymentWebhookController — controller nhận webhook từ payment gateway.
+ *
+ * Chịu trách nhiệm nhận và xử lý webhook callback từ các payment gateway
+ * (VNPAY, Mozart, Stripe, ...) khi có thay đổi trạng thái giao dịch.
+ *
+ * Khác với WebhookController (CP40) gửi webhook đến các endpoint bên ngoài,
+ * controller này nhận webhook TỪ payment gateway vào hệ thống.
+ *
+ * Luồng xử lý:
+ * 1. Nhận webhook từ gateway theo path /webhooks/payment/:gateway
+ * 2. Trích xuất chữ ký xác thực từ header hoặc body
+ * 3. Gọi PaymentService.processWebhook() để xác thực và xử lý
+ * 4. Trả về phản hồi cho gateway
+ *
+ * CP45: Payment Gateway
+ */
+
+import {
+  Controller,
+  Post,
+  Body,
+  Param,
+  Headers,
+  Req,
+  Res,
+  Logger,
+  BadRequestException,
+  HttpStatus,
+} from "@nestjs/common";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiHeader,
+  ApiBody,
+  ApiParam,
+} from "@nestjs/swagger";
+import { Request, Response } from "express";
+import { PaymentService } from "./payment.service";
+import { PaymentResponseDto } from "./payment.dto";
+
+const logger = new Logger("PaymentWebhookController");
+
+/**
+ * Webhook response từ gateway.
+ */
+interface WebhookResponse {
+  success: boolean;
+  message: string;
+}
+
+/**
+ * PaymentWebhookController — nhận webhook từ payment gateway.
+ *
+ * API Routes:
+ * - POST /webhooks/payment/vnpay    - Webhook từ VNPAY
+ * - POST /webhooks/payment/mozart   - Webhook từ Mozart
+ * - POST /webhooks/payment/stripe   - Webhook từ Stripe
+ *
+ * Lưu ý:
+ * - Các endpoint webhook không yêu cầu authentication (API key/Bearer token)
+ *   vì xác thực được thực hiện qua chữ ký HMAC của gateway
+ * - Response phải trả về 200 OK để gateway biết webhook đã được nhận
+ * - Nếu xử lý thất bại, trả về 400/500 để gateway retry
+ */
+@ApiTags("Payment Webhook")
+@Controller("webhooks/payment")
+export class PaymentWebhookController {
+  constructor(
+    private readonly paymentService: PaymentService,
+  ) {}
+
+  // ========================================================================
+  // VNPAY Webhook
+  // ========================================================================
+
+  /**
+   * Nhận webhook (IPN) từ VNPAY.
+   *
+   * VNPAY gửi IPN khi có thay đổi trạng thái thanh toán.
+   * Dữ liệu webhook là các query string parameters trong body.
+   * Chữ ký xác thực được gửi trong header X-WWW-Authenticate
+   * hoặc trong tham số vnp_SecureHash.
+   *
+   * @param body - Dữ liệu webhook từ VNPAY
+   * @param signature - Chữ ký xác thực
+   * @param res - Express response
+   * @returns WebhookResponse
+   */
+  @Post("vnpay")
+  @ApiOperation({
+    summary: "Webhook IPN từ VNPAY",
+    description:
+      "Nhận webhook IPN (Instant Payment Notification) từ VNPAY. " +
+      "VNPAY gửi webhook khi có thay đổi trạng thái giao dịch thanh toán.",
+  })
+  @ApiHeader({
+    name: "X-WWW-Authenticate",
+    description: "Chữ ký HMAC xác thực webhook từ VNPAY",
+    required: false,
+  })
+  @ApiBody({
+    description: "Dữ liệu webhook từ VNPAY",
+    schema: {
+      type: "object",
+      properties: {
+        vnp_TmnCode: { type: "string", description: "Mã merchant VNPAY" },
+        vnp_TransactionNo: { type: "string", description: "Số giao dịch tại VNPAY" },
+        vnp_OrderInfo: { type: "string", description: "Nội dung giao dịch" },
+        vnp_TransactionStatus: { type: "string", description: "Trạng thái: 00=thành công" },
+        vnp_Amount: { type: "string", description: "Số tiền (x100)" },
+        vnp_Currency: { type: "string", description: "Mã tiền tệ" },
+        vnp_PayDate: { type: "string", description: "Ngày thanh toán" },
+        vnp_SecureHash: { type: "string", description: "Chữ ký HMAC" },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Webhook đã được nhận và xử lý thành công",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Chữ ký webhook không hợp lệ hoặc dữ liệu không đúng định dạng",
+  })
+  async handleVnpayWebhook(
+    @Body() body: Record<string, any>,
+    @Headers("x-www-authenticate") headerSignature?: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      // VNPAY gửi chữ ký trong body (vnp_SecureHash) hoặc header
+      const signature = body.vnp_SecureHash || headerSignature || "";
+
+      logger.log(
+        `Nhận webhook từ VNPAY - TransactionNo: ${body.vnp_TransactionNo || "unknown"}`,
+      );
+
+      await this.paymentService.processWebhook("vnpay", body, signature);
+
+      // VNPAY yêu cầu trả về định dạng: {RspCode: "00", Message: "success"}
+      res.status(HttpStatus.OK).json({
+        RspCode: "00",
+        Message: "success",
+      });
+    } catch (error) {
+      logger.error(
+        `Xử lý webhook VNPAY thất bại: ${error instanceof Error ? error.message : String(error)}`,
+      );
+
+      if (error instanceof BadRequestException) {
+        res.status(HttpStatus.BAD_REQUEST).json({
+          RspCode: "99",
+          Message: error.message,
+        });
+      } else {
+        res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+          RspCode: "99",
+          Message: "Internal server error",
+        });
+      }
+    }
+  }
+
+  // ========================================================================
+  // Mozart Webhook
+  // ========================================================================
+
+  /**
+   * Nhận webhook từ Mozart Bank.
+   *
+   * Mozart gửi webhook khi có thay đổi trạng thái giao dịch.
+   * Chữ ký xác thực được gửi trong header X-Mozart-Signature.
+   *
+   * @param body - Dữ liệu webhook từ Mozart
+   * @param signature - Chữ ký xác thực từ header
+   * @param res - Express response
+   * @returns WebhookResponse
+   */
+  @Post("mozart")
+  @ApiOperation({
+    summary: "Webhook từ Mozart Bank",
+    description:
+      "Nhận webhook từ Mozart Bank khi có thay đổi trạng thái giao dịch. " +
+      "Xác thực bằng chữ ký HMAC trong header X-Mozart-Signature.",
+  })
+  @ApiHeader({
+    name: "X-Mozart-Signature",
+    description: "Chữ ký HMAC xác thực webhook từ Mozart",
+    required: true,
+  })
+  @ApiBody({
+    description: "Dữ liệu webhook từ Mozart Bank",
+    schema: {
+      type: "object",
+      properties: {
+        event_type: { type: "string", description: "Loại sự kiện" },
+        data: { type: "object", description: "Dữ liệu giao dịch" },
+        timestamp: { type: "string", description: "Thời gian sự kiện" },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Webhook đã được nhận và xử lý thành công",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Chữ ký webhook không hợp lệ",
+  })
+  async handleMozartWebhook(
+    @Body() body: Record<string, any>,
+    @Headers("x-mozart-signature") signature: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      logger.log(
+        `Nhận webhook từ Mozart - EventType: ${body.event_type || "unknown"}`,
+      );
+
+      if (!signature) {
+        throw new BadRequestException("Thiếu chữ ký xác thực từ Mozart");
+      }
+
+      await this.paymentService.processWebhook("mozart", body, signature);
+
+      res.status(HttpStatus.OK).json({
+        success: true,
+        message: "Webhook đã được xử lý thành công",
+      });
+    } catch (error) {
+      logger.error(
+        `Xử lý webhook Mozart thất bại: ${error instanceof Error ? error.message : String(error)}`,
+      );
+
+      res.status(error instanceof BadRequestException ? HttpStatus.BAD_REQUEST : HttpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }
+
+  // ========================================================================
+  // Stripe Webhook
+  // ========================================================================
+
+  /**
+   * Nhận webhook từ Stripe.
+   *
+   * Stripe gửi webhook khi có sự kiện liên quan đến thanh toán.
+   * Chữ ký xác thực được gửi trong header Stripe-Signature,
+   * bao gồm timestamp và chữ ký HMAC.
+   *
+   * Các sự kiện Stripe được hỗ trợ:
+   * - payment_intent.succeeded: Thanh toán thành công
+   * - payment_intent.payment_failed: Thanh toán thất bại
+   * - payment_intent.canceled: Thanh toán bị hủy
+   * - charge.refunded: Hoàn tiền thành công
+   *
+   * @param body - Raw body từ Stripe (cần raw body để xác thực chữ ký)
+   * @param signature - Stripe-Signature header
+   * @param req - Express request object
+   * @param res - Express response
+   * @returns WebhookResponse
+   */
+  @Post("stripe")
+  @ApiOperation({
+    summary: "Webhook từ Stripe",
+    description:
+      "Nhận webhook từ Stripe khi có sự kiện thanh toán. " +
+      "Xác thực bằng Stripe-Signature header với HMAC-SHA256.",
+  })
+  @ApiHeader({
+    name: "Stripe-Signature",
+    description: "Chữ ký webhook từ Stripe (timestamp + signature)",
+    required: true,
+  })
+  @ApiBody({
+    description: "Dữ liệu webhook từ Stripe",
+    schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Event ID" },
+        type: { type: "string", description: "Loại sự kiện" },
+        data: { type: "object", description: "Dữ liệu sự kiện" },
+        created: { type: "number", description: "Timestamp sự kiện" },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Webhook đã được nhận và xử lý thành công",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Chữ ký webhook không hợp lệ",
+  })
+  async handleStripeWebhook(
+    @Body() body: Record<string, any>,
+    @Headers("stripe-signature") signature: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      logger.log(
+        `Nhận webhook từ Stripe - EventType: ${body.type || "unknown"}`,
+      );
+
+      if (!signature) {
+        throw new BadRequestException("Thiếu Stripe-Signature header");
+      }
+
+      await this.paymentService.processWebhook("stripe", body, signature);
+
+      res.status(HttpStatus.OK).json({
+        received: true,
+      });
+    } catch (error) {
+      logger.error(
+        `Xử lý webhook Stripe thất bại: ${error instanceof Error ? error.message : String(error)}`,
+      );
+
+      res.status(error instanceof BadRequestException ? HttpStatus.BAD_REQUEST : HttpStatus.INTERNAL_SERVER_ERROR).json({
+        error: {
+          message: error instanceof Error ? error.message : "Internal server error",
+        },
+      });
+    }
+  }
+
+  // ========================================================================
+  // Generic Gateway Webhook (fallback)
+  // ========================================================================
+
+  /**
+   * Nhận webhook từ bất kỳ gateway nào được cấu hình.
+   *
+   * Endpoint tổng quát cho các gateway không có endpoint riêng.
+   * Tên gateway được xác định qua path parameter.
+   *
+   * @param gateway - Tên gateway (path param)
+   * @param body - Dữ liệu webhook
+   * @param signature - Chữ ký xác thực (header)
+   * @param res - Express response
+   * @returns WebhookResponse
+   */
+  @Post(":gateway")
+  @ApiOperation({
+    summary: "Webhook tổng quát cho payment gateway",
+    description:
+      "Nhận webhook từ bất kỳ payment gateway nào được cấu hình. " +
+      "Tên gateway được xác định qua path parameter.",
+  })
+  @ApiParam({
+    name: "gateway",
+    description: "Tên payment gateway (vnpay, mozart, stripe, ...)",
+    example: "vnpay",
+  })
+  @ApiHeader({
+    name: "X-Webhook-Signature",
+    description: "Chữ ký xác thực webhook",
+    required: true,
+  })
+  @ApiBody({
+    description: "Dữ liệu webhook từ gateway",
+    schema: {
+      type: "object",
+      description: "Dữ liệu webhook tùy thuộc vào gateway",
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Webhook đã được nhận và xử lý thành công",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Chữ ký không hợp lệ hoặc gateway không được hỗ trợ",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Gateway không được tìm thấy",
+  })
+  async handleGenericWebhook(
+    @Param("gateway") gateway: string,
+    @Body() body: Record<string, any>,
+    @Headers("x-webhook-signature") signature: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      logger.log(`Nhận webhook từ gateway '${gateway}'`);
+
+      if (!signature) {
+        throw new BadRequestException("Thiếu chữ ký xác thực webhook");
+      }
+
+      await this.paymentService.processWebhook(gateway, body, signature);
+
+      res.status(HttpStatus.OK).json({
+        success: true,
+        message: "Webhook đã được xử lý thành công",
+      });
+    } catch (error) {
+      logger.error(
+        `Xử lý webhook từ gateway '${gateway}' thất bại: ${error instanceof Error ? error.message : String(error)}`,
+      );
+
+      res.status(error instanceof BadRequestException ? HttpStatus.BAD_REQUEST : HttpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Internal server error",
+      });
+    }
+  }
+}
+{% endraw %}

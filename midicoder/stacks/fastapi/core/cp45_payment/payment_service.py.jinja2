@@ -1,0 +1,1697 @@
+"""
+CP45 Payment Gateway Service — Logic layer cho payment gateway abstraction.
+
+Module này cung cấp các service class để quản lý vòng đời thanh toán:
+- PaymentService: service chính xử lý giao dịch, hoàn tiền, và thống kê
+- PaymentGatewayStrategy: giao diện strategy cho gateway selection
+- StripeGatewayHandler: handler cho Stripe
+- VNPayGatewayHandler: handler cho VNPay
+- MoMoGatewayHandler: handler cho MoMo
+
+Tính năng chính:
+- Strategy pattern để lựa chọn gateway provider phù hợp
+- State machine cho trạng thái giao dịch (pending -> processing -> completed/failed)
+- Idempotency key protection (khi enable_idempotency bật)
+- Hoàn tiền (full/partial) với validation
+- Event emission (CP05) và audit logging (CP14)
+
+CP45: Payment Gateway Abstraction Layer
+"""
+
+from __future__ import annotations
+
+import abc
+import hashlib
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from sqlalchemy import and_, or_
+from sqlalchemy.orm import Session
+
+from app.models.payment_models import (
+    PaymentCurrency,
+    PaymentDirection,
+    PaymentGatewayConfigModel,
+    PaymentGatewayProvider,
+    PaymentMethodModel,
+    PaymentMethodType,
+    PaymentRefundModel,
+    PaymentStatus,
+    PaymentTransactionModel,
+    RefundStatus,
+    RefundType,
+)
+from app.schemas.payment_schemas import (
+    PaymentGatewayConfigRead,
+    PaymentMethodCreate,
+    PaymentMethodRead,
+    PaymentRefundCreate,
+    PaymentRefundRead,
+    PaymentSummary,
+    PaymentTransactionCreate,
+    PaymentTransactionFilter,
+    PaymentTransactionList,
+    PaymentTransactionRead,
+)
+{% if enable_idempotency %}
+from app.models.payment_models import IdempotencyKeyModel
+{% endif %}
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Strategy Interface — Giao diện trừu tượng cho gateway handler
+# ============================================================================
+
+
+class PaymentGatewayStrategy(abc.ABC):
+    """
+    Giao diện strategy cho payment gateway handler.
+
+    Mỗi provider (Stripe, VNPay, MoMo) sẽ implement các phương thức
+    trừu tượng này để xử lý giao dịch, hoàn tiền, và tra cứu trạng thái.
+
+    Đây là abstraction layer — các handler cụ thể sẽ gọi API của provider
+    tương ứng và trả về kết quả chuẩn hóa.
+    """
+
+    @property
+    @abc.abstractmethod
+    def provider(self) -> PaymentGatewayProvider:
+        """Trả về provider này xử lý."""
+        ...
+
+    @abc.abstractmethod
+    async def create_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """
+        Tạo giao dịch thanh toán mới tại gateway provider.
+
+        Args:
+            transaction: PaymentTransactionModel cần xử lý.
+            config: PaymentGatewayConfigModel chứa cấu hình kết nối.
+
+        Returns:
+            Dict với keys: gateway_transaction_id, redirect_url, status.
+        """
+        ...
+
+    @abc.abstractmethod
+    async def capture_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """
+        Capture (nạp) thanh toán đã được auth.
+
+        Args:
+            transaction: Giao dịch đã được authenticate.
+            config: Cấu hình gateway.
+
+        Returns:
+            Dict với keys: gateway_transaction_id, status.
+        """
+        ...
+
+    @abc.abstractmethod
+    async def refund_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        refund: PaymentRefundModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """
+        Tạo yêu cầu hoàn tiền tại gateway provider.
+
+        Args:
+            transaction: Giao dịch gốc cần hoàn tiền.
+            refund: PaymentRefundModel chứa thông tin hoàn tiền.
+            config: Cấu hình gateway.
+
+        Returns:
+            Dict với keys: gateway_refund_id, status.
+        """
+        ...
+
+    @abc.abstractmethod
+    async def get_payment_status(
+        self,
+        gateway_transaction_id: str,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """
+        Tra cứu trạng thái giao dịch từ gateway provider.
+
+        Args:
+            gateway_transaction_id: Transaction ID từ gateway.
+            config: Cấu hình gateway.
+
+        Returns:
+            Dict với keys: status, amount, currency, error_message.
+        """
+        ...
+
+    @abc.abstractmethod
+    async def cancel_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """
+        Hủy giao dịch thanh toán tại gateway provider.
+
+        Args:
+            transaction: Giao dịch cần hủy.
+            config: Cấu hình gateway.
+
+        Returns:
+            Dict với keys: status.
+        """
+        ...
+
+
+# ============================================================================
+# Concrete Strategies — Handler cho từng gateway provider
+# ============================================================================
+
+
+class StripeGatewayHandler(PaymentGatewayStrategy):
+    """
+    Handler cho Stripe Payment Gateway.
+
+    Tích hợp với Stripe API để tạo thanh toán, hoàn tiền,
+    và tra cứu trạng thái.
+    """
+
+    @property
+    def provider(self) -> PaymentGatewayProvider:
+        return PaymentGatewayProvider.STRIPE
+
+    async def create_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """Tạo Payment Intent trên Stripe."""
+        # TODO: Tích hợp với Stripe SDK — stripe.PaymentIntent.create()
+        logger.info(
+            "Stripe create_payment: transaction=%s, amount=%d %s",
+            transaction.transaction_id,
+            transaction.amount,
+            transaction.currency.value,
+        )
+
+        # Placeholder — trong production sẽ gọi Stripe API
+        # stripe_client = stripe.Stripe(api_key=config.api_key_reference)
+        # intent = stripe_client.PaymentIntent.create(
+        #     amount=transaction.amount,
+        #     currency=transaction.currency.value.lower(),
+        #     metadata={"reference_code": transaction.reference_code},
+        # )
+
+        return {
+            "gateway_transaction_id": f"pi_placeholder_{transaction.transaction_id}",
+            "redirect_url": None,
+            "status": PaymentStatus.PROCESSING.value,
+            "client_secret": "placeholder_client_secret",
+        }
+
+    async def capture_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """Capture Payment Intent trên Stripe."""
+        logger.info(
+            "Stripe capture_payment: gateway_tx=%s",
+            transaction.gateway_transaction_id,
+        )
+        # TODO: stripe.PaymentIntent.capture(gateway_transaction_id)
+        return {
+            "gateway_transaction_id": transaction.gateway_transaction_id,
+            "status": PaymentStatus.COMPLETED.value,
+        }
+
+    async def refund_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        refund: PaymentRefundModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """Tạo Refund trên Stripe."""
+        logger.info(
+            "Stripe refund_payment: gateway_tx=%s, amount=%d",
+            transaction.gateway_transaction_id,
+            refund.refund_amount,
+        )
+        # TODO: stripe.Refund.create(payment_intent=gateway_tx, amount=refund_amount)
+        return {
+            "gateway_refund_id": f"re_placeholder_{refund.refund_id}",
+            "status": RefundStatus.PROCESSING.value,
+        }
+
+    async def get_payment_status(
+        self,
+        gateway_transaction_id: str,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """Tra cứu trạng thái Payment Intent trên Stripe."""
+        logger.info("Stripe get_payment_status: gateway_tx=%s", gateway_transaction_id)
+        # TODO: stripe.PaymentIntent.retrieve(gateway_transaction_id)
+        return {
+            "status": "succeeded",
+            "amount": 0,
+            "currency": "usd",
+            "error_message": None,
+        }
+
+    async def cancel_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """Hủy Payment Intent trên Stripe."""
+        logger.info("Stripe cancel_payment: gateway_tx=%s", transaction.gateway_transaction_id)
+        # TODO: stripe.PaymentIntent.cancel(gateway_transaction_id)
+        return {"status": PaymentStatus.CANCELLED.value}
+
+
+class VNPayGatewayHandler(PaymentGatewayStrategy):
+    """
+    Handler cho VNPay Payment Gateway.
+
+    Tích hợp với VNPay API — tạo URL thanh toán, query kết quả,
+    xử lý phản hồi IPC từ VNPay.
+    """
+
+    @property
+    def provider(self) -> PaymentGatewayProvider:
+        return PaymentGatewayProvider.VNPAY
+
+    async def create_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """Tạo URL thanh toán VNPay."""
+        logger.info(
+            "VNPay create_payment: transaction=%s, amount=%d VND",
+            transaction.transaction_id,
+            transaction.amount,
+        )
+        # TODO: Tạo VNPay payment URL với các tham số bắt buộc:
+        # vnp_Version, vnp_Command, vnp_TmnCode, vnp_Amount, vnp_CurrCode,
+        # vnp_TxnRef, vnp_OrderInfo, vnp_OrderType, vnp_Locale,
+        # vnp_CreateDate, vnp_IpAddress, vnp_ReturnUrl, vnp_BankCode, vnp_SecureHash
+
+        return {
+            "gateway_transaction_id": f"vnpay_{transaction.reference_code}",
+            "redirect_url": "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?vnp_TxnRef=...",
+            "status": PaymentStatus.PENDING.value,
+        }
+
+    async def capture_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """VNPay không cần capture — thanh toán tự động captured."""
+        return {
+            "gateway_transaction_id": transaction.gateway_transaction_id,
+            "status": PaymentStatus.COMPLETED.value,
+        }
+
+    async def refund_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        refund: PaymentRefundModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """Tạo yêu cầu hoàn tiền VNPay."""
+        logger.info(
+            "VNPay refund_payment: txn_ref=%s, amount=%d",
+            transaction.gateway_transaction_id,
+            refund.refund_amount,
+        )
+        # TODO: Gọi VNPay refund API endpoint
+        return {
+            "gateway_refund_id": f"vnpay_ref_{refund.refund_id}",
+            "status": RefundStatus.PROCESSING.value,
+        }
+
+    async def get_payment_status(
+        self,
+        gateway_transaction_id: str,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """Query kết quả thanh toán VNPay."""
+        logger.info("VNPay get_payment_status: txn_ref=%s", gateway_transaction_id)
+        # TODO: Gọi VNPay QueryDr API
+        return {
+            "status": "00",
+            "amount": 0,
+            "currency": "VND",
+            "error_message": None,
+        }
+
+    async def cancel_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """VNPay không hỗ trợ cancel — dùng refund thay thế."""
+        logger.warning("VNPay cancel_payment: không hỗ trợ, cần dùng refund")
+        return {"status": PaymentStatus.CANCELLED.value}
+
+
+class MoMoGatewayHandler(PaymentGatewayStrategy):
+    """
+    Handler cho MoMo Payment Gateway.
+
+    Tích hợp với MoMo API — tạo thanh toán trực tuyến,
+    tra cứu trạng thái, và hoàn tiền.
+    """
+
+    @property
+    def provider(self) -> PaymentGatewayProvider:
+        return PaymentGatewayProvider.MOMO
+
+    async def create_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """Tạo giao dịch MoMo — trả về payUrl hoặc deepLink."""
+        logger.info(
+            "MoMo create_payment: transaction=%s, amount=%d VND",
+            transaction.transaction_id,
+            transaction.amount,
+        )
+        # TODO: Gọi MoMo API /createOrder với partnerCode, requestId,
+        # amount, orderId, orderInfo, redirectUrl, ipnUrl, requestType
+
+        return {
+            "gateway_transaction_id": f"momo_{transaction.reference_code}",
+            "redirect_url": "https://test-payment.momo.vn/v2/gateway/api/mobpay",
+            "status": PaymentStatus.PENDING.value,
+        }
+
+    async def capture_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """MoMo tự động capture."""
+        return {
+            "gateway_transaction_id": transaction.gateway_transaction_id,
+            "status": PaymentStatus.COMPLETED.value,
+        }
+
+    async def refund_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        refund: PaymentRefundModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """Tạo yêu cầu hoàn tiền MoMo."""
+        logger.info(
+            "MoMo refund_payment: txn=%s, amount=%d",
+            transaction.gateway_transaction_id,
+            refund.refund_amount,
+        )
+        # TODO: Gọi MoMo refund API
+        return {
+            "gateway_refund_id": f"momo_ref_{refund.refund_id}",
+            "status": RefundStatus.PROCESSING.value,
+        }
+
+    async def get_payment_status(
+        self,
+        gateway_transaction_id: str,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """Tra cứu trạng thái giao dịch MoMo."""
+        logger.info("MoMo get_payment_status: txn=%s", gateway_transaction_id)
+        # TODO: Gọi MoMo query API
+        return {
+            "status": "00",
+            "amount": 0,
+            "currency": "VND",
+            "error_message": None,
+        }
+
+    async def cancel_payment(
+        self,
+        transaction: PaymentTransactionModel,
+        config: PaymentGatewayConfigModel,
+    ) -> dict[str, Any]:
+        """MoMo không hỗ trợ cancel — dùng refund."""
+        return {"status": PaymentStatus.CANCELLED.value}
+
+
+# ============================================================================
+# Gateway Registry — Đăng ký và lấy strategy theo provider
+# ============================================================================
+
+
+class GatewayStrategyRegistry:
+    """
+    Registry cho các gateway strategy.
+
+    Quản lý danh sách các handler đã đăng ký và trả về handler
+    phù hợp dựa trên PaymentGatewayProvider.
+
+    Usage:
+        registry = GatewayStrategyRegistry()
+        handler = registry.get_handler(PaymentGatewayProvider.STRIPE)
+    """
+
+    def __init__(self) -> None:
+        """Khởi tạo registry với các handler mặc định."""
+        self._handlers: dict[PaymentGatewayProvider, PaymentGatewayStrategy] = {}
+        self._register_defaults()
+
+    def _register_defaults(self) -> None:
+        """Đăng ký các gateway handler mặc định."""
+        self.register(StripeGatewayHandler())
+        self.register(VNPayGatewayHandler())
+        self.register(MoMoGatewayHandler())
+
+    def register(self, handler: PaymentGatewayStrategy) -> None:
+        """
+        Đăng ký một gateway handler mới.
+
+        Args:
+            handler: PaymentGatewayStrategy implementation.
+        """
+        self._handlers[handler.provider] = handler
+        logger.info("Đã đăng ký gateway handler: %s", handler.provider.value)
+
+    def get_handler(self, provider: PaymentGatewayProvider) -> PaymentGatewayStrategy:
+        """
+        Lấy gateway handler theo provider.
+
+        Args:
+            provider: Nhà cung cấp gateway.
+
+        Returns:
+            PaymentGatewayStrategy phù hợp.
+
+        Raises:
+            MidicoderError: Nếu provider không được hỗ trợ.
+        """
+        handler = self._handlers.get(provider)
+        if not handler:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_GATEWAY_NOT_SUPPORTED,
+                provider=provider.value,
+                supported=list(p.value for p in self._handlers.keys()),
+            )
+        return handler
+
+    def list_supported_providers(self) -> list[PaymentGatewayProvider]:
+        """Trả về danh sách các provider được hỗ trợ."""
+        return list(self._handlers.keys())
+
+
+# ============================================================================
+# PaymentService — Service chính
+# ============================================================================
+
+
+class PaymentService:
+    """
+    Service layer chính cho payment gateway.
+
+    Quản lý toàn bộ vòng đời của giao dịch thanh toán:
+    - Tạo giao dịch mới (với idempotency protection)
+    - Xử lý thanh toán qua gateway strategy
+    - Hoàn tiền (full/partial)
+    - Tra cứu và liệt kê giao dịch
+    - Quản lý phương thức thanh toán
+    - Quản lý cấu hình gateway
+    - Thống kê tổng hợp
+
+    Attributes:
+        db: SQLAlchemy Session.
+        registry: GatewayStrategyRegistry để lựa chọn handler.
+    """
+
+    def __init__(self, db: Session) -> None:
+        """Khởi tạo PaymentService.
+
+        Args:
+            db: SQLAlchemy Session.
+        """
+        self.db: Session = db
+        self.registry: GatewayStrategyRegistry = GatewayStrategyRegistry()
+
+    # ========================================================================
+    # State Machine — Quản lý chuyển trạng thái
+    # ========================================================================
+
+    def _validate_status_transition(
+        self,
+        current: PaymentStatus,
+        next_status: PaymentStatus,
+    ) -> bool:
+        """
+        Kiểm tra chuyển trạng thái có hợp lệ trong state machine.
+
+        Chuyển trạng thái hợp lệ:
+          pending -> processing, failed, cancelled
+          processing -> completed, failed
+          completed -> refunded
+          expired  -> (không chuyển tiếp được)
+
+        Args:
+            current: Trạng thái hiện tại.
+            next_status: Trạng thái muốn chuyển sang.
+
+        Returns:
+            True nếu chuyển trạng thái hợp lệ, False nếu không.
+        """
+        valid_transitions: dict[PaymentStatus, list[PaymentStatus]] = {
+            PaymentStatus.PENDING: [
+                PaymentStatus.PROCESSING,
+                PaymentStatus.FAILED,
+                PaymentStatus.CANCELLED,
+                PaymentStatus.EXPIRED,
+            ],
+            PaymentStatus.PROCESSING: [
+                PaymentStatus.COMPLETED,
+                PaymentStatus.FAILED,
+            ],
+            PaymentStatus.COMPLETED: [
+                PaymentStatus.REFUNDED,
+            ],
+            PaymentStatus.FAILED: [],
+            PaymentStatus.REFUNDED: [],
+            PaymentStatus.CANCELLED: [],
+            PaymentStatus.EXPIRED: [],
+        }
+
+        allowed = valid_transitions.get(current, [])
+        is_valid = next_status in allowed
+
+        if not is_valid:
+            logger.warning(
+                "Chuyển trạng thái không hợp lệ: %s -> %s (cho phép: %s)",
+                current.value,
+                next_status.value,
+                [s.value for s in allowed],
+            )
+
+        return is_valid
+
+    def _transition_status(
+        self,
+        transaction: PaymentTransactionModel,
+        new_status: PaymentStatus,
+    ) -> PaymentTransactionModel:
+        """
+        Chuyển trạng thái giao dịch một cách an toàn.
+
+        Kiểm tra tính hợp lệ của chuyển trạng thái trước khi cập nhật.
+        Tự động cập nhật paid_at khi chuyển sang COMPLETED.
+
+        Args:
+            transaction: Giao dịch cần cập nhật.
+            new_status: Trạng thái mới.
+
+        Returns:
+            PaymentTransactionModel đã cập nhật.
+
+        Raises:
+            MidicoderError: Nếu chuyển trạng thái không hợp lệ.
+        """
+        if not self._validate_status_transition(transaction.status, new_status):
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_INVALID_STATUS_TRANSITION,
+                transaction_id=str(transaction.transaction_id),
+                current_status=transaction.status.value,
+                requested_status=new_status.value,
+            )
+
+        transaction.status = new_status
+        transaction.updated_at = datetime.now(timezone.utc)
+
+        if new_status == PaymentStatus.COMPLETED:
+            transaction.paid_at = datetime.now(timezone.utc)
+
+        self.db.commit()
+        self.db.refresh(transaction)
+
+        logger.info(
+            "Giao dịch %s chuyển trạng thái: %s -> %s",
+            transaction.transaction_id,
+            transaction.status.value,
+            new_status.value,
+        )
+
+        return transaction
+
+    # ========================================================================
+    # Idempotency — Chỉ bật khi enable_idempotency
+    # ========================================================================
+
+{% if enable_idempotency %}
+    def _check_idempotency(
+        self,
+        idempotency_key: str,
+        tenant_id: str,
+    ) -> PaymentTransactionRead | None:
+        """
+        Kiểm tra idempotency key — nếu đã tồn tại, trả về giao dịch cũ.
+
+        Đảm bảo idempotent behavior: cùng một key chỉ tạo một giao dịch duy nhất,
+        ngay cả khi client gửi request nhiều lần.
+
+        Args:
+            idempotency_key: Idempotency key từ client.
+            tenant_id: Tenant ID để isolation.
+
+        Returns:
+            PaymentTransactionRead nếu key đã tồn tại, None nếu chưa.
+        """
+        existing = (
+            self.db.query(IdempotencyKeyModel)
+            .filter(
+                and_(
+                    IdempotencyKeyModel.key_value == idempotency_key,
+                    IdempotencyKeyModel.tenant_id == tenant_id,
+                )
+            )
+            .first()
+        )
+
+        if existing:
+            # Key đã tồn tại — trả về giao dịch cũ
+            if existing.transaction_id:
+                transaction = (
+                    self.db.query(PaymentTransactionModel)
+                    .filter(PaymentTransactionModel.transaction_id == existing.transaction_id)
+                    .first()
+                )
+                if transaction:
+                    logger.info(
+                        "Idempotency key %s đã tồn tại — trả về giao dịch cũ %s",
+                        idempotency_key,
+                        transaction.transaction_id,
+                    )
+                    return PaymentTransactionRead.model_validate(transaction)
+
+            return None
+
+        return None
+
+    def _save_idempotency_key(
+        self,
+        idempotency_key: str,
+        transaction: PaymentTransactionModel,
+        ttl_hours: int = 24,
+    ) -> IdempotencyKeyModel:
+        """
+        Lưu idempotency key kèm transaction_id đã xử lý.
+
+        Args:
+            idempotency_key: Idempotency key cần lưu.
+            transaction: Giao dịch đã tạo thành công.
+            ttl_hours: Thời gian sống của key (mặc định 24 giờ).
+
+        Returns:
+            IdempotencyKeyModel đã lưu.
+        """
+        key_model = IdempotencyKeyModel(
+            key_value=idempotency_key,
+            transaction_id=transaction.transaction_id,
+            request_method="POST",
+            tenant_id=transaction.tenant_id,
+            customer_id=transaction.customer_id,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=ttl_hours),
+        )
+
+        self.db.add(key_model)
+        self.db.commit()
+        self.db.refresh(key_model)
+
+        logger.debug(
+            "Đã lưu idempotency key %s (ttl=%dh, txn=%s)",
+            idempotency_key,
+            ttl_hours,
+            transaction.transaction_id,
+        )
+
+        return key_model
+
+{% else %}
+    def _check_idempotency(
+        self,
+        idempotency_key: str | None,
+        tenant_id: str,
+    ) -> PaymentTransactionRead | None:
+        """Placeholder — idempotency không được bật."""
+        return None
+
+    def _save_idempotency_key(
+        self,
+        idempotency_key: str | None,
+        transaction: PaymentTransactionModel,
+        ttl_hours: int = 24,
+    ) -> None:
+        """Placeholder — idempotency không được bật."""
+        return None
+{% endif %}
+
+    # ========================================================================
+    # Reference Code Generator
+    # ========================================================================
+
+    def _generate_reference_code(self, prefix: str = "PAY") -> str:
+        """
+        Tạo mã tham chiếu duy nhất cho giao dịch.
+
+        Định dạng: {PREFIX}-{YYYY}-{SEQ} (VD: PAY-2026-0001)
+
+        Args:
+            prefix: Tiền tố của mã (PAY cho giao dịch, REF cho hoàn tiền).
+
+        Returns:
+            Mã tham chiếu duy nhất.
+        """
+        now = datetime.now(timezone.utc)
+        year = now.strftime("%Y")
+        # Tạo sequence dựa trên timestamp để đảm bảo duy nhất
+        seq = now.strftime("%m%d%H%M%S")
+        return f"{prefix}-{year}-{seq}"
+
+    # ========================================================================
+    # Gateway Config Selection
+    # ========================================================================
+
+    def _get_gateway_config(
+        self,
+        provider: PaymentGatewayProvider,
+        tenant_id: str,
+        environment: str = "production",
+    ) -> PaymentGatewayConfigModel:
+        """
+        Lấy cấu hình gateway phù hợp cho provider và tenant.
+
+        Ưu tiên:
+        1. Cấu hình active, đúng provider, đúng tenant, đúng environment
+        2. Cấu hình default nếu không tìm thấy cấu hình cụ thể
+
+        Args:
+            provider: Nhà cung cấp gateway.
+            tenant_id: Tenant ID.
+            environment: Môi trường (production, sandbox).
+
+        Returns:
+            PaymentGatewayConfigModel phù hợp.
+
+        Raises:
+            MidicoderError: Nếu không tìm thấy cấu hình phù hợp.
+        """
+        config = (
+            self.db.query(PaymentGatewayConfigModel)
+            .filter(
+                and_(
+                    PaymentGatewayConfigModel.provider == provider,
+                    PaymentGatewayConfigModel.tenant_id == tenant_id,
+                    PaymentGatewayConfigModel.environment == environment,
+                    PaymentGatewayConfigModel.is_active == True,
+                )
+            )
+            .first()
+        )
+
+        if not config:
+            # Fallback: lấy cấu hình default
+            config = (
+                self.db.query(PaymentGatewayConfigModel)
+                .filter(
+                    and_(
+                        PaymentGatewayConfigModel.provider == provider,
+                        PaymentGatewayConfigModel.tenant_id == tenant_id,
+                        PaymentGatewayConfigModel.is_default == True,
+                        PaymentGatewayConfigModel.is_active == True,
+                    )
+                )
+                .first()
+            )
+
+        if not config:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_GATEWAY_CONFIG_NOT_FOUND,
+                provider=provider.value,
+                tenant_id=tenant_id,
+                environment=environment,
+            )
+
+        return config
+
+    # ========================================================================
+    # Payment Transaction CRUD
+    # ========================================================================
+
+    async def create_payment(
+        self,
+        data: PaymentTransactionCreate,
+    ) -> PaymentTransactionRead:
+        """
+        Tạo giao dịch thanh toán mới và gửi đến gateway provider.
+
+        Quy trình:
+        1. Kiểm tra idempotency key (nếu bật)
+        2. Validate số tiền theo giới hạn của gateway config
+        3. Tạo PaymentTransactionModel với trạng thái PENDING
+        4. Lấy gateway handler theo strategy pattern
+        5. Gọi gateway handler.create_payment()
+        6. Cập nhật giao dịch với gateway response
+        7. Chuyển trạng thái sang PROCESSING
+        8. Lưu idempotency key
+        9. Emit event và audit log
+
+        Args:
+            data: Dữ liệu tạo giao dịch từ client.
+
+        Returns:
+            PaymentTransactionRead với thông tin giao dịch mới.
+
+        Raises:
+            MidicoderError: Nếu số tiền không hợp lệ, gateway lỗi, hoặc idempotency key trùng.
+        """
+        # Bước 1: Kiểm tra idempotency
+        if data.idempotency_key:
+            existing = self._check_idempotency(data.idempotency_key, data.tenant_id)
+            if existing:
+                return existing
+
+        # Bước 2: Lấy và validate gateway config
+        config = self._get_gateway_config(data.gateway_provider, data.tenant_id)
+
+        # Validate số tiền theo giới hạn
+        if config.min_amount and data.amount < config.min_amount:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_AMOUNT_BELOW_MINIMUM,
+                min_amount=config.min_amount,
+                requested_amount=data.amount,
+            )
+        if config.max_amount and data.amount > config.max_amount:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_AMOUNT_ABOVE_MAXIMUM,
+                max_amount=config.max_amount,
+                requested_amount=data.amount,
+            )
+
+        # Bước 3: Tạo PaymentTransactionModel
+        reference_code = self._generate_reference_code("PAY")
+        transaction = PaymentTransactionModel(
+            reference_code=reference_code,
+            amount=data.amount,
+            currency=data.currency,
+            customer_id=data.customer_id,
+            customer_email=data.customer_email,
+            customer_phone=data.customer_phone,
+            gateway_provider=data.gateway_provider,
+            payment_method_type=data.payment_method_type,
+            payment_method_id=data.payment_method_id,
+            intent=data.intent,
+            direction=PaymentDirection.PAYMENT,
+            status=PaymentStatus.PENDING,
+            description=data.description,
+            order_id=data.order_id,
+            subscription_id=data.subscription_id,
+            redirect_url=data.redirect_url,
+            callback_url=data.callback_url,
+            tenant_id=data.tenant_id,
+            metadata=data.metadata or {},
+{% if enable_idempotency %}
+            idempotency_key=data.idempotency_key,
+{% endif %}
+        )
+
+        self.db.add(transaction)
+        self.db.commit()
+        self.db.refresh(transaction)
+
+        # Bước 4-5: Lấy gateway handler và gọi create_payment
+        handler = self.registry.get_handler(data.gateway_provider)
+
+        try:
+            gateway_response = await handler.create_payment(transaction, config)
+
+            # Bước 6: Cập nhật giao dịch với gateway response
+            transaction.gateway_transaction_id = gateway_response.get("gateway_transaction_id")
+            transaction.gateway_request_data = {
+                "amount": data.amount,
+                "currency": data.currency.value,
+                "intent": data.intent.value,
+            }
+            transaction.gateway_response_data = gateway_response
+
+            if gateway_response.get("redirect_url"):
+                transaction.redirect_url = gateway_response["redirect_url"]
+
+            # Bước 7: Chuyển trạng thái sang PROCESSING
+            self._transition_status(transaction, PaymentStatus.PROCESSING)
+
+        except Exception as e:
+            # Gateway trả về lỗi — cập nhật giao dịch sang FAILED
+            transaction.error_code = getattr(e, "code", "GATEWAY_ERROR")
+            transaction.error_message = str(e)
+            transaction.gateway_response_data = {"error": str(e)}
+            self._transition_status(transaction, PaymentStatus.FAILED)
+            self.db.commit()
+
+            logger.exception("Giao dịch %s thất bại khi gọi gateway: %s", transaction.transaction_id, str(e))
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_GATEWAY_ERROR,
+                provider=data.gateway_provider.value,
+                error=str(e),
+            )
+
+        # Bước 8: Lưu idempotency key
+        if data.idempotency_key:
+            self._save_idempotency_key(data.idempotency_key, transaction)
+
+        # Bước 9: Emit event
+        self._emit_event(
+            "payment.created",
+            str(transaction.transaction_id),
+            amount=transaction.amount,
+            provider=transaction.gateway_provider.value,
+        )
+
+        # Audit log
+        self._audit_log(
+            "payment_created",
+            str(transaction.transaction_id),
+            amount=transaction.amount,
+            provider=transaction.gateway_provider.value,
+        )
+
+        return PaymentTransactionRead.model_validate(transaction)
+
+    def get_transaction(self, transaction_id: str) -> PaymentTransactionRead:
+        """
+        Lấy thông tin chi tiết của một giao dịch thanh toán.
+
+        Args:
+            transaction_id: ID của giao dịch.
+
+        Returns:
+            PaymentTransactionRead với đầy đủ thông tin.
+
+        Raises:
+            MidicoderError: Nếu giao dịch không tồn tại.
+        """
+        transaction = (
+            self.db.query(PaymentTransactionModel)
+            .filter(PaymentTransactionModel.transaction_id == transaction_id)
+            .first()
+        )
+
+        if not transaction:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_TRANSACTION_NOT_FOUND,
+                transaction_id=transaction_id,
+            )
+
+        return PaymentTransactionRead.model_validate(transaction)
+
+    def list_transactions(
+        self,
+        filter_data: PaymentTransactionFilter,
+    ) -> PaymentTransactionList:
+        """
+        Liệt kê giao dịch thanh toán với bộ lọc và phân trang.
+
+        Args:
+            filter_data: PaymentTransactionFilter chứa các tham số lọc.
+
+        Returns:
+            PaymentTransactionList với items và phân trang.
+        """
+        query = self.db.query(PaymentTransactionModel)
+
+        # Áp dụng các bộ lọc
+        if filter_data.status:
+            query = query.filter(PaymentTransactionModel.status == filter_data.status.value)
+        if filter_data.customer_id:
+            query = query.filter(PaymentTransactionModel.customer_id == filter_data.customer_id)
+        if filter_data.gateway_provider:
+            query = query.filter(PaymentTransactionModel.gateway_provider == filter_data.gateway_provider.value)
+        if filter_data.payment_method_type:
+            query = query.filter(PaymentTransactionModel.payment_method_type == filter_data.payment_method_type.value)
+        if filter_data.order_id:
+            query = query.filter(PaymentTransactionModel.order_id == filter_data.order_id)
+        if filter_data.tenant_id:
+            query = query.filter(PaymentTransactionModel.tenant_id == filter_data.tenant_id)
+        if filter_data.from_date:
+            query = query.filter(PaymentTransactionModel.created_at >= filter_data.from_date)
+        if filter_data.to_date:
+            query = query.filter(PaymentTransactionModel.created_at <= filter_data.to_date)
+        if filter_data.min_amount is not None:
+            query = query.filter(PaymentTransactionModel.amount >= filter_data.min_amount)
+        if filter_data.max_amount is not None:
+            query = query.filter(PaymentTransactionModel.amount <= filter_data.max_amount)
+
+        # Đếm tổng số
+        total = query.count()
+
+        # Phân trang
+        offset = (filter_data.page - 1) * filter_data.page_size
+        items = (
+            query.order_by(PaymentTransactionModel.created_at.desc())
+            .offset(offset)
+            .limit(filter_data.page_size)
+            .all()
+        )
+
+        # Tính tổng số tiền trong trang
+        total_amount = sum(t.amount for t in items)
+
+        return PaymentTransactionList(
+            items=[PaymentTransactionRead.model_validate(t) for t in items],
+            total=total,
+            page=filter_data.page,
+            page_size=filter_data.page_size,
+            total_amount=total_amount,
+            currency="VND",
+        )
+
+    async def cancel_payment(self, transaction_id: str) -> PaymentTransactionRead:
+        """
+        Hủy giao dịch thanh toán.
+
+        Chỉ cho phép hủy giao dịch ở trạng thái PENDING hoặc PROCESSING.
+        Nếu gateway đã capture, cần gọi cancel API của gateway.
+
+        Args:
+            transaction_id: ID của giao dịch cần hủy.
+
+        Returns:
+            PaymentTransactionRead với trạng thái CANCELLED.
+
+        Raises:
+            MidicoderError: Nếu giao dịch không tồn tại hoặc không thể hủy.
+        """
+        transaction = (
+            self.db.query(PaymentTransactionModel)
+            .filter(PaymentTransactionModel.transaction_id == transaction_id)
+            .first()
+        )
+
+        if not transaction:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_TRANSACTION_NOT_FOUND,
+                transaction_id=transaction_id,
+            )
+
+        if transaction.status not in (PaymentStatus.PENDING, PaymentStatus.PROCESSING):
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_CANNOT_CANCEL,
+                transaction_id=transaction_id,
+                current_status=transaction.status.value,
+            )
+
+        # Gọi gateway cancel API
+        config = self._get_gateway_config(transaction.gateway_provider, transaction.tenant_id)
+        handler = self.registry.get_handler(transaction.gateway_provider)
+
+        try:
+            await handler.cancel_payment(transaction, config)
+        except Exception as e:
+            logger.warning(
+                "Gateway cancel API thất bại cho giao dịch %s: %s (vẫn hủy ở DB)",
+                transaction_id,
+                str(e),
+            )
+
+        # Cập nhật trạng thái
+        self._transition_status(transaction, PaymentStatus.CANCELLED)
+
+        self._emit_event("payment.cancelled", str(transaction.transaction_id))
+        self._audit_log("payment_cancelled", str(transaction.transaction_id))
+
+        return PaymentTransactionRead.model_validate(transaction)
+
+    async def poll_payment_status(
+        self,
+        transaction_id: str,
+    ) -> PaymentTransactionRead:
+        """
+        Tra cứu lại trạng thái giao dịch từ gateway provider.
+
+        Hữu ích khi webhook chưa nhận được — client có thể poll
+        để lấy trạng thái mới nhất từ gateway.
+
+        Args:
+            transaction_id: ID của giao dịch cần tra cứu.
+
+        Returns:
+            PaymentTransactionRead đã cập nhật.
+        """
+        transaction = (
+            self.db.query(PaymentTransactionModel)
+            .filter(PaymentTransactionModel.transaction_id == transaction_id)
+            .first()
+        )
+
+        if not transaction:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_TRANSACTION_NOT_FOUND,
+                transaction_id=transaction_id,
+            )
+
+        if not transaction.gateway_transaction_id:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_NO_GATEWAY_TRANSACTION,
+                transaction_id=transaction_id,
+            )
+
+        config = self._get_gateway_config(transaction.gateway_provider, transaction.tenant_id)
+        handler = self.registry.get_handler(transaction.gateway_provider)
+
+        try:
+            status_response = await handler.get_payment_status(
+                transaction.gateway_transaction_id,
+                config,
+            )
+
+            # Map status từ gateway sang PaymentStatus
+            gateway_status = status_response.get("status", "")
+            if gateway_status in ("succeeded", "00", "completed"):
+                if transaction.status in (PaymentStatus.PENDING, PaymentStatus.PROCESSING):
+                    self._transition_status(transaction, PaymentStatus.COMPLETED)
+            elif gateway_status in ("failed", "01", "error"):
+                if transaction.status in (PaymentStatus.PENDING, PaymentStatus.PROCESSING):
+                    transaction.error_message = status_response.get("error_message")
+                    self._transition_status(transaction, PaymentStatus.FAILED)
+
+            self.db.commit()
+            self.db.refresh(transaction)
+
+        except Exception as e:
+            logger.exception(
+                "Poll status thất bại cho giao dịch %s: %s",
+                transaction_id,
+                str(e),
+            )
+
+        return PaymentTransactionRead.model_validate(transaction)
+
+    # ========================================================================
+    # Refund — Hoàn tiền
+    # ========================================================================
+
+    async def create_refund(
+        self,
+        data: PaymentRefundCreate,
+    ) -> PaymentRefundRead:
+        """
+        Tạo yêu cầu hoàn tiền.
+
+        Quy trình:
+        1. Kiểm tra giao dịch gốc tồn tại và có thể hoàn tiền
+        2. Validate số tiền hoàn không vượt quá số tiền gốc
+        3. Kiểm tra tổng hoàn tiền không vượt quá số tiền giao dịch
+        4. Tạo PaymentRefundModel
+        5. Gọi gateway refund API
+        6. Cập nhật trạng thái giao dịch gốc sang REFUNDED (nếu full refund)
+
+        Args:
+            data: Dữ liệu tạo hoàn tiền.
+
+        Returns:
+            PaymentRefundRead với thông tin hoàn tiền mới.
+
+        Raises:
+            MidicoderError: Nếu giao dịch không tồn tại, không thể hoàn, hoặc số tiền không hợp lệ.
+        """
+        # Lấy giao dịch gốc
+        transaction = (
+            self.db.query(PaymentTransactionModel)
+            .filter(PaymentTransactionModel.transaction_id == data.transaction_id)
+            .first()
+        )
+
+        if not transaction:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_TRANSACTION_NOT_FOUND,
+                transaction_id=data.transaction_id,
+            )
+
+        # Kiểm tra giao dịch có thể hoàn tiền không
+        if transaction.status not in (PaymentStatus.COMPLETED, PaymentStatus.PROCESSING):
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_CANNOT_REFUND,
+                transaction_id=data.transaction_id,
+                current_status=transaction.status.value,
+            )
+
+        # Validate số tiền hoàn
+        if data.refund_amount > transaction.amount:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_REFUND_EXCEEDS_AMOUNT,
+                refund_amount=data.refund_amount,
+                transaction_amount=transaction.amount,
+            )
+
+        # Kiểm tra tổng đã hoàn — không vượt quá số tiền giao dịch
+        total_refunded = sum(
+            r.refund_amount
+            for r in transaction.refunds
+            if r.status in (RefundStatus.COMPLETED, RefundStatus.PROCESSING)
+        )
+        if total_refunded + data.refund_amount > transaction.amount:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_REFUND_EXCEEDS_TOTAL,
+                total_refunded=total_refunded,
+                refund_amount=data.refund_amount,
+                transaction_amount=transaction.amount,
+            )
+
+        # Xác định loại hoàn tiền
+        if data.refund_amount >= transaction.amount:
+            refund_type = RefundType.FULL
+        else:
+            refund_type = RefundType.PARTIAL
+
+        # Tạo PaymentRefundModel
+        reference_code = self._generate_reference_code("REF")
+        refund = PaymentRefundModel(
+            reference_code=reference_code,
+            transaction_id=transaction.transaction_id,
+            refund_amount=data.refund_amount,
+            currency=transaction.currency,
+            refund_type=refund_type,
+            status=RefundStatus.PENDING,
+            reason=data.reason,
+            requested_by=data.requested_by,
+            tenant_id=data.tenant_id,
+            metadata=data.metadata or {},
+        )
+
+        self.db.add(refund)
+        self.db.commit()
+        self.db.refresh(refund)
+
+        # Gọi gateway refund API
+        config = self._get_gateway_config(transaction.gateway_provider, transaction.tenant_id)
+        handler = self.registry.get_handler(transaction.gateway_provider)
+
+        try:
+            gateway_response = await handler.refund_payment(transaction, refund, config)
+
+            refund.gateway_refund_id = gateway_response.get("gateway_refund_id")
+            refund.gateway_response_data = gateway_response
+            refund.status = RefundStatus.PROCESSING
+
+            self.db.commit()
+            self.db.refresh(refund)
+
+        except Exception as e:
+            refund.error_code = getattr(e, "code", "GATEWAY_ERROR")
+            refund.error_message = str(e)
+            refund.status = RefundStatus.FAILED
+            self.db.commit()
+
+            logger.exception("Hoàn tiền %s thất bại khi gọi gateway: %s", refund.refund_id, str(e))
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_REFUND_GATEWAY_ERROR,
+                provider=transaction.gateway_provider.value,
+                error=str(e),
+            )
+
+        # Emit event
+        self._emit_event(
+            "payment.refund.created",
+            str(refund.refund_id),
+            transaction_id=str(transaction.transaction_id),
+            amount=refund.refund_amount,
+        )
+
+        return PaymentRefundRead.model_validate(refund)
+
+    def get_refund(self, refund_id: str) -> PaymentRefundRead:
+        """
+        Lấy thông tin chi tiết của một yêu cầu hoàn tiền.
+
+        Args:
+            refund_id: ID của hoàn tiền.
+
+        Returns:
+            PaymentRefundRead.
+
+        Raises:
+            MidicoderError: Nếu không tìm thấy.
+        """
+        refund = (
+            self.db.query(PaymentRefundModel)
+            .filter(PaymentRefundModel.refund_id == refund_id)
+            .first()
+        )
+
+        if not refund:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_REFUND_NOT_FOUND,
+                refund_id=refund_id,
+            )
+
+        return PaymentRefundRead.model_validate(refund)
+
+    # ========================================================================
+    # PaymentMethod CRUD
+    # ========================================================================
+
+    def create_payment_method(
+        self,
+        data: PaymentMethodCreate,
+    ) -> PaymentMethodRead:
+        """
+        Đăng ký phương thức thanh toán mới.
+
+        Nếu is_default=True, tắt is_default của các phương thức khác
+        thuộc cùng customer.
+
+        Args:
+            data: Dữ liệu tạo phương thức thanh toán.
+
+        Returns:
+            PaymentMethodRead.
+        """
+        # Nếu đặt là default, tắt default của các phương thức khác
+        if data.is_default:
+            existing_methods = (
+                self.db.query(PaymentMethodModel)
+                .filter(
+                    and_(
+                        PaymentMethodModel.customer_id == data.customer_id,
+                        PaymentMethodModel.is_default == True,
+                    )
+                )
+                .all()
+            )
+            for method in existing_methods:
+                method.is_default = False
+            self.db.commit()
+
+        payment_method = PaymentMethodModel(
+            method_type=data.method_type,
+            display_name=data.display_name,
+            customer_id=data.customer_id,
+            gateway_provider=data.gateway_provider,
+            is_default=data.is_default,
+            is_active=True,
+            details=data.details or {},
+            expired_at=data.expired_at,
+            tenant_id=data.tenant_id,
+            metadata=data.metadata or {},
+        )
+
+        self.db.add(payment_method)
+        self.db.commit()
+        self.db.refresh(payment_method)
+
+        self._emit_event(
+            "payment_method.created",
+            str(payment_method.method_id),
+            method_type=payment_method.method_type.value,
+        )
+
+        return PaymentMethodRead.model_validate(payment_method)
+
+    def list_payment_methods(
+        self,
+        customer_id: str,
+        tenant_id: str = "default",
+        active_only: bool = True,
+    ) -> list[PaymentMethodRead]:
+        """
+        Liệt kê phương thức thanh toán của một khách hàng.
+
+        Args:
+            customer_id: ID khách hàng.
+            tenant_id: Tenant ID.
+            active_only: Chỉ lấy phương thức đang hoạt động.
+
+        Returns:
+            List của PaymentMethodRead, sắp xếp theo is_default (True trước).
+        """
+        query = self.db.query(PaymentMethodModel).filter(
+            and_(
+                PaymentMethodModel.customer_id == customer_id,
+                PaymentMethodModel.tenant_id == tenant_id,
+            )
+        )
+
+        if active_only:
+            query = query.filter(PaymentMethodModel.is_active == True)
+
+        methods = query.order_by(
+            PaymentMethodModel.is_default.desc(),
+            PaymentMethodModel.created_at.desc(),
+        ).all()
+
+        return [PaymentMethodRead.model_validate(m) for m in methods]
+
+    def deactivate_payment_method(
+        self,
+        method_id: str,
+    ) -> PaymentMethodRead:
+        """
+        Vô hiệu hóa một phương thức thanh toán.
+
+        Args:
+            method_id: ID phương thức cần vô hiệu hóa.
+
+        Returns:
+            PaymentMethodRead đã cập nhật.
+
+        Raises:
+            MidicoderError: Nếu không tìm thấy.
+        """
+        method = (
+            self.db.query(PaymentMethodModel)
+            .filter(PaymentMethodModel.method_id == method_id)
+            .first()
+        )
+
+        if not method:
+            raise EM.raise_error(
+                ErrorCode.CP45_PAYMENT_METHOD_NOT_FOUND,
+                method_id=method_id,
+            )
+
+        method.is_active = False
+        method.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(method)
+
+        self._emit_event(
+            "payment_method.deactivated",
+            str(method.method_id),
+        )
+
+        return PaymentMethodRead.model_validate(method)
+
+    # ========================================================================
+    # Gateway Config CRUD
+    # ========================================================================
+
+    def create_gateway_config(
+        self,
+        data: "PaymentGatewayConfigCreate",
+    ) -> PaymentGatewayConfigRead:
+        """
+        Tạo cấu hình payment gateway mới.
+
+        Args:
+            data: Dữ liệu tạo cấu hình.
+
+        Returns:
+            PaymentGatewayConfigRead.
+        """
+        config = PaymentGatewayConfigModel(
+            provider=data.provider,
+            display_name=data.display_name,
+            environment=data.environment,
+            is_active=data.is_active,
+            is_default=data.is_default,
+            api_key_reference=data.api_key_reference,
+            secret_key_reference=data.secret_key_reference,
+            webhook_secret_reference=data.webhook_secret_reference,
+            endpoint_url=data.endpoint_url,
+            webhook_url=data.webhook_url,
+            max_amount=data.max_amount,
+            min_amount=data.min_amount,
+            supported_currencies=data.supported_currencies or [],
+            supported_methods=data.supported_methods or [],
+            config_params=data.config_params or {},
+            tenant_id=data.tenant_id,
+            metadata=data.metadata or {},
+        )
+
+        self.db.add(config)
+        self.db.commit()
+        self.db.refresh(config)
+
+        self._audit_log(
+            "gateway_config_created",
+            str(config.config_id),
+            provider=config.provider.value,
+        )
+
+        return PaymentGatewayConfigRead.model_validate(config)
+
+    def list_gateway_configs(
+        self,
+        tenant_id: str = "default",
+        active_only: bool = True,
+    ) -> list[PaymentGatewayConfigRead]:
+        """
+        Liệt kê cấu hình gateway của tenant.
+
+        Args:
+            tenant_id: Tenant ID.
+            active_only: Chỉ lấy cấu hình đang hoạt động.
+
+        Returns:
+            List của PaymentGatewayConfigRead.
+        """
+        query = self.db.query(PaymentGatewayConfigModel).filter(
+            PaymentGatewayConfigModel.tenant_id == tenant_id
+        )
+
+        if active_only:
+            query = query.filter(PaymentGatewayConfigModel.is_active == True)
+
+        configs = query.order_by(
+            PaymentGatewayConfigModel.is_default.desc(),
+            PaymentGatewayConfigModel.provider,
+        ).all()
+
+        return [PaymentGatewayConfigRead.model_validate(c) for c in configs]
+
+    # ========================================================================
+    # Summary — Thống kê tổng hợp
+    # ========================================================================
+
+    def get_payment_summary(
+        self,
+        tenant_id: str = "default",
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
+    ) -> PaymentSummary:
+        """
+        Tính toán tổng hợp thống kê giao dịch thanh toán.
+
+        Args:
+            tenant_id: Tenant ID để lọc.
+            from_date: Bắt đầu khoảng thời gian.
+            to_date: Kết thúc khoảng thời gian.
+
+        Returns:
+            PaymentSummary với các số liệu thống kê.
+        """
+        if from_date is None:
+            from_date = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if to_date is None:
+            to_date = datetime.now(timezone.utc)
+
+        query = self.db.query(PaymentTransactionModel).filter(
+            and_(
+                PaymentTransactionModel.tenant_id == tenant_id,
+                PaymentTransactionModel.created_at >= from_date,
+                PaymentTransactionModel.created_at <= to_date,
+            )
+        )
+
+        all_transactions = query.all()
+
+        total = len(all_transactions)
+        completed = [t for t in all_transactions if t.status == PaymentStatus.COMPLETED]
+        failed = [t for t in all_transactions if t.status == PaymentStatus.FAILED]
+        pending = [t for t in all_transactions if t.status == PaymentStatus.PENDING]
+
+        total_amount = sum(t.amount for t in all_transactions)
+        successful_amount = sum(t.amount for t in completed)
+        failed_amount = sum(t.amount for t in failed)
+
+        # Tính tổng hoàn tiền
+        refunded_amount = 0
+        for t in all_transactions:
+            if t.status == PaymentStatus.REFUNDED:
+                refunded_amount += sum(r.refund_amount for r in t.refunds)
+
+        success_rate = round((len(completed) / total) * 100, 2) if total > 0 else 0.0
+
+        return PaymentSummary(
+            total_transactions=total,
+            total_amount=total_amount,
+            successful_amount=successful_amount,
+            failed_amount=failed_amount,
+            refunded_amount=refunded_amount,
+            pending_count=len(pending),
+            success_rate=success_rate,
+            period_start=from_date,
+            period_end=to_date,
+        )
+
+    # ========================================================================
+    # Event & Audit Integration (CP05, CP14)
+    # ========================================================================
+
+    def _emit_event(self, event_type: str, entity_id: str, **kwargs: Any) -> None:
+        """
+        Emit event cho payment — integration với CP05 Event Bus.
+
+        Args:
+            event_type: Loại event.
+            entity_id: ID của entity liên quan.
+            **kwargs: Các tham số bổ sung.
+        """
+{% if use_events %}
+        event_data = {
+            "event_type": event_type,
+            "entity_id": entity_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **kwargs,
+        }
+        logger.info("Emit payment event: %s — %s", event_type, event_data)
+        # TODO: event_bus.publish(event_type, event_data)
+{% else %}
+        logger.debug("Event (disabled): %s entity=%s %s", event_type, entity_id, kwargs)
+{% endif %}
+
+    def _audit_log(self, action: str, entity_id: str, **kwargs: Any) -> None:
+        """
+        Ghi audit log cho payment — integration với CP14 Audit.
+
+        Args:
+            action: Hành động audit.
+            entity_id: ID của entity liên quan.
+            **kwargs: Các tham số bổ sung.
+        """
+{% if use_audit %}
+        audit_data = {
+            "action": action,
+            "entity_id": entity_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **kwargs,
+        }
+        logger.info("Audit log: %s — %s", action, audit_data)
+        # TODO: audit_logger.log(action="payment_operation", **audit_data)
+{% else %}
+        logger.debug("Audit (disabled): %s entity=%s %s", action, entity_id, kwargs)
+{% endif %}

@@ -1,0 +1,828 @@
+"""
+CP45 Payment Gateway Schemas — Pydantic v2.
+
+Module này định nghĩa các Pydantic schemas cho payment gateway abstraction layer:
+- PaymentTransactionCreate: schema tạo giao dịch thanh toán mới
+- PaymentTransactionUpdate: schema cập nhật giao dịch
+- PaymentTransactionRead: schema đọc giao dịch từ database
+- PaymentTransactionList: schema danh sách giao dịch với phân trang
+- PaymentRefundCreate: schema tạo yêu cầu hoàn tiền
+- PaymentRefundRead: schema đọc thông tin hoàn tiền
+- PaymentMethodCreate: schema đăng ký phương thức thanh toán
+- PaymentMethodRead: schema đọc phương thức thanh toán
+- PaymentGatewayConfigCreate: schema tạo cấu hình gateway
+- PaymentGatewayConfigRead: schema đọc cấu hình gateway
+- PaymentTransactionFilter: schema bộ lọc giao dịch
+- PaymentWebhookPayload: schema webhook từ gateway provider
+
+CP45: Payment Gateway Abstraction Layer
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+# ============================================================================
+# Enums
+# ============================================================================
+
+
+class PaymentStatus(str, Enum):
+    """Trạng thái giao dịch thanh toán."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    REFUNDED = "refunded"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class PaymentMethodType(str, Enum):
+    """Loại phương thức thanh toán."""
+
+    CREDIT_CARD = "credit_card"
+    DEBIT_CARD = "debit_card"
+    BANK_TRANSFER = "bank_transfer"
+    EWALLET = "ewallet"
+    QR_CODE = "qr_code"
+    VNPAY = "vnpay"
+    MOMO = "momo"
+    ZALOPAY = "zalopay"
+    OTHER = "other"
+
+
+class PaymentDirection(str, Enum):
+    """Hướng giao dịch."""
+
+    PAYMENT = "payment"
+    REFUND = "refund"
+    CAPTURE = "capture"
+    VOID = "void"
+
+
+class PaymentGatewayProvider(str, Enum):
+    """Nhà cung cấp payment gateway."""
+
+    STRIPE = "stripe"
+    VNPAY = "vnpay"
+    MOMO = "momo"
+    ZALOPAY = "zalopay"
+    PAYOS = "payos"
+    MIDTRANS = "midtrans"
+    CUSTOM = "custom"
+
+
+class PaymentCurrency(str, Enum):
+    """Mã tiền tệ hỗ trợ."""
+
+    VND = "VND"
+    USD = "USD"
+    EUR = "EUR"
+    JPY = "JPY"
+    SGD = "SGD"
+    THB = "THB"
+    KRW = "KRW"
+    CNY = "CNY"
+
+
+class PaymentIntent(str, Enum):
+    """Mục đích thanh toán."""
+
+    AUTH_ONLY = "auth_only"
+    AUTH_AND_CAPTURE = "auth_and_capture"
+    CAPTURE_ONLY = "capture_only"
+    SUBSCRIPTION = "subscription"
+    INSTANT = "instant"
+
+
+class RefundStatus(str, Enum):
+    """Trạng thái hoàn tiền."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class RefundType(str, Enum):
+    """Loại hoàn tiền."""
+
+    FULL = "full"
+    PARTIAL = "partial"
+
+
+# ============================================================================
+# PaymentTransaction — Schemas cho giao dịch thanh toán
+# ============================================================================
+
+
+class PaymentTransactionCreate(BaseModel):
+    """
+    Schema yêu cầu tạo giao dịch thanh toán mới.
+
+    Fields bắt buộc: amount, currency, customer_id, gateway_provider
+    Các fields khác có giá trị mặc định hoặc optional.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    amount: int = Field(
+        ...,
+        gt=0,
+        description="Số tiền giao dịch (đơn vị: đơn vị nhỏ nhất của tiền tệ)",
+    )
+    currency: PaymentCurrency = Field(
+        default=PaymentCurrency.VND,
+        description="Mã tiền tệ",
+    )
+    customer_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="ID của khách hàng thực hiện thanh toán",
+    )
+    customer_email: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Email của khách hàng",
+    )
+    customer_phone: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Số điện thoại của khách hàng",
+    )
+    gateway_provider: PaymentGatewayProvider = Field(
+        ...,
+        description="Nhà cung cấp payment gateway",
+    )
+    payment_method_type: PaymentMethodType | None = Field(
+        default=None,
+        description="Loại phương thức thanh toán",
+    )
+    payment_method_id: str | None = Field(
+        default=None,
+        description="ID của PaymentMethod đã đăng ký",
+    )
+    intent: PaymentIntent = Field(
+        default=PaymentIntent.AUTH_AND_CAPTURE,
+        description="Mục đích thanh toán",
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=1000,
+        description="Mô tả giao dịch",
+    )
+    order_id: str | None = Field(
+        default=None,
+        max_length=255,
+        description="ID của đơn hàng liên quan",
+    )
+    subscription_id: str | None = Field(
+        default=None,
+        max_length=255,
+        description="ID của gói đăng ký liên quan",
+    )
+    redirect_url: str | None = Field(
+        default=None,
+        description="URL redirect sau khi thanh toán thành công",
+    )
+    callback_url: str | None = Field(
+        default=None,
+        description="URL callback/webhook cho kết quả thanh toán",
+    )
+    tenant_id: str = Field(
+        default="default",
+        max_length=100,
+        description="Tenant ID",
+    )
+{% if enable_idempotency %}
+    idempotency_key: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Idempotency key để chống trùng lặp giao dịch",
+    )
+{% endif %}
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Metadata mở rộng cho giao dịch",
+    )
+
+
+class PaymentTransactionUpdate(BaseModel):
+    """
+    Schema cập nhật thông tin giao dịch thanh toán.
+
+    Tất cả fields đều optional — chỉ cập nhật những fields được cung cấp.
+    Trạng thái giao dịch được thay đổi qua state machine, không trực tiếp.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    description: str | None = Field(
+        default=None,
+        max_length=1000,
+        description="Cập nhật mô tả giao dịch",
+    )
+    redirect_url: str | None = Field(
+        default=None,
+        description="Cập nhật URL redirect",
+    )
+    callback_url: str | None = Field(
+        default=None,
+        description="Cập nhật URL callback",
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Cập nhật metadata",
+    )
+
+
+class PaymentTransactionRead(BaseModel):
+    """
+    Schema trả về thông tin giao dịch thanh toán.
+
+    Chứa đầy đủ thông tin: số tiền, trạng thái, gateway response,
+    phương thức thanh toán, và thời gian.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    transaction_id: str = Field(..., description="Định danh duy nhất của giao dịch")
+    reference_code: str = Field(..., description="Mã tham chiếu duy nhất")
+    description: str | None = Field(default=None, description="Mô tả giao dịch")
+    amount: int = Field(..., description="Số tiền giao dịch")
+    currency: str = Field(..., description="Mã tiền tệ")
+    status: str = Field(..., description="Trạng thái hiện tại")
+    direction: str = Field(..., description="Hướng giao dịch")
+    intent: str = Field(..., description="Mục đích thanh toán")
+    gateway_provider: str = Field(..., description="Nhà cung cấp gateway")
+    gateway_transaction_id: str | None = Field(default=None, description="Transaction ID từ gateway")
+    payment_method_type: str | None = Field(default=None, description="Loại phương thức thanh toán")
+    payment_method_id: str | None = Field(default=None, description="ID phương thức thanh toán")
+    customer_id: str = Field(..., description="ID khách hàng")
+    customer_email: str | None = Field(default=None, description="Email khách hàng")
+    customer_phone: str | None = Field(default=None, description="Số điện thoại khách hàng")
+    order_id: str | None = Field(default=None, description="ID đơn hàng liên quan")
+    subscription_id: str | None = Field(default=None, description="ID gói đăng ký")
+    error_code: str | None = Field(default=None, description="Mã lỗi từ gateway")
+    error_message: str | None = Field(default=None, description="Thông báo lỗi")
+    gateway_response_data: dict[str, Any] | None = Field(default=None, description="Response từ gateway")
+    redirect_url: str | None = Field(default=None, description="URL redirect")
+    callback_url: str | None = Field(default=None, description="URL callback")
+{% if enable_idempotency %}
+    idempotency_key: str | None = Field(default=None, description="Idempotency key")
+{% endif %}
+    metadata: dict[str, Any] | None = Field(default=None, description="Metadata")
+    created_at: datetime = Field(..., description="Thời điểm tạo")
+    updated_at: datetime = Field(..., description="Thời điểm cập nhật cuối")
+    paid_at: datetime | None = Field(default=None, description="Thời điểm thanh toán thành công")
+    expired_at: datetime | None = Field(default=None, description="Thời điểm hết hạn")
+
+    @property
+    def is_successful(self) -> bool:
+        """Kiểm tra giao dịch có thành công không."""
+        return self.status == PaymentStatus.COMPLETED.value
+
+    @property
+    def is_refundable(self) -> bool:
+        """Kiểm tra giao dịch có thể hoàn tiền không."""
+        return self.status in (PaymentStatus.COMPLETED.value, PaymentStatus.PROCESSING.value)
+
+    @property
+    def amount_display(self) -> str:
+        """Hiển thị số tiền theo đơn vị tiền tệ."""
+        if self.currency in ("VND", "JPY"):
+            return f"{self.amount} {self.currency}"
+        return f"{self.amount / 100:.2f} {self.currency}"
+
+
+# ============================================================================
+# PaymentTransactionList — Schema danh sách giao dịch với phân trang
+# ============================================================================
+
+
+class PaymentTransactionList(BaseModel):
+    """
+    Schema trả về danh sách giao dịch thanh toán với phân trang.
+
+    Cho phép client hiển thị pagination UI và total count.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    items: list[PaymentTransactionRead] = Field(
+        default_factory=list,
+        description="Danh sách giao dịch trong trang hiện tại",
+    )
+    total: int = Field(
+        ...,
+        ge=0,
+        description="Tổng số giao dịch phù hợp với bộ lọc",
+    )
+    page: int = Field(
+        ...,
+        ge=1,
+        description="Số trang hiện tại (1-based)",
+    )
+    page_size: int = Field(
+        ...,
+        ge=1,
+        le=100,
+        description="Số items mỗi trang",
+    )
+    total_amount: int = Field(
+        default=0,
+        ge=0,
+        description="Tổng số tiền của các giao dịch trong trang (đơn vị nhỏ nhất)",
+    )
+    currency: str = Field(
+        default="VND",
+        description="Mã tiền tệ",
+    )
+
+    @property
+    def total_pages(self) -> int:
+        """Tính tổng số trang."""
+        return max(1, (self.total + self.page_size - 1) // self.page_size)
+
+
+# ============================================================================
+# PaymentTransactionFilter — Schema bộ lọc giao dịch
+# ============================================================================
+
+
+class PaymentTransactionFilter(BaseModel):
+    """
+    Schema bộ lọc cho danh sách giao dịch thanh toán.
+
+    Hỗ trợ lọc theo status, customer_id, gateway_provider, thời gian,
+    và phân trang.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    status: PaymentStatus | None = Field(
+        default=None,
+        description="Lọc theo trạng thái giao dịch",
+    )
+    customer_id: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Lọc theo ID khách hàng",
+    )
+    gateway_provider: PaymentGatewayProvider | None = Field(
+        default=None,
+        description="Lọc theo nhà cung cấp gateway",
+    )
+    payment_method_type: PaymentMethodType | None = Field(
+        default=None,
+        description="Lọc theo loại phương thức thanh toán",
+    )
+    order_id: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Lọc theo ID đơn hàng",
+    )
+    tenant_id: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Lọc theo tenant ID",
+    )
+    from_date: datetime | None = Field(
+        default=None,
+        description="Lọc từ thời điểm (created_at >= from_date)",
+    )
+    to_date: datetime | None = Field(
+        default=None,
+        description="Lọc đến thời điểm (created_at <= to_date)",
+    )
+    min_amount: int | None = Field(
+        default=None,
+        ge=0,
+        description="Lọc từ số tiền tối thiểu",
+    )
+    max_amount: int | None = Field(
+        default=None,
+        ge=0,
+        description="Lọc đến số tiền tối đa",
+    )
+    page: int = Field(
+        default=1,
+        ge=1,
+        description="Số trang (1-based)",
+    )
+    page_size: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description="Số items mỗi trang",
+    )
+
+
+# ============================================================================
+# PaymentRefund — Schemas cho hoàn tiền
+# ============================================================================
+
+
+class PaymentRefundCreate(BaseModel):
+    """
+    Schema yêu cầu tạo hoàn tiền.
+
+    Fields bắt buộc: transaction_id, refund_amount
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    transaction_id: str = Field(
+        ...,
+        description="ID của giao dịch thanh toán gốc cần hoàn tiền",
+    )
+    refund_amount: int = Field(
+        ...,
+        gt=0,
+        description="Số tiền hoàn trả (đơn vị: đơn vị nhỏ nhất)",
+    )
+    refund_type: RefundType = Field(
+        default=RefundType.FULL,
+        description="Loại hoàn tiền: full hoặc partial",
+    )
+    reason: str | None = Field(
+        default=None,
+        max_length=1000,
+        description="Lý do hoàn tiền",
+    )
+    requested_by: str | None = Field(
+        default=None,
+        max_length=255,
+        description="ID của người khởi tạo yêu cầu hoàn tiền",
+    )
+    tenant_id: str = Field(
+        default="default",
+        max_length=100,
+        description="Tenant ID",
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Metadata mở rộng",
+    )
+
+
+class PaymentRefundRead(BaseModel):
+    """
+    Schema trả về thông tin hoàn tiền.
+
+    Chứa đầy đủ thông tin: số tiền hoàn, trạng thái, gateway response.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    refund_id: str = Field(..., description="Định danh duy nhất của hoàn tiền")
+    reference_code: str = Field(..., description="Mã tham chiếu hoàn tiền")
+    transaction_id: str = Field(..., description="ID giao dịch gốc")
+    refund_amount: int = Field(..., description="Số tiền hoàn trả")
+    currency: str = Field(..., description="Mã tiền tệ")
+    refund_type: str = Field(..., description="Loại hoàn tiền")
+    status: str = Field(..., description="Trạng thái hoàn tiền")
+    reason: str | None = Field(default=None, description="Lý do hoàn tiền")
+    requested_by: str | None = Field(default=None, description="Người yêu cầu")
+    gateway_refund_id: str | None = Field(default=None, description="Refund ID từ gateway")
+    error_code: str | None = Field(default=None, description="Mã lỗi từ gateway")
+    error_message: str | None = Field(default=None, description="Thông báo lỗi")
+    gateway_response_data: dict[str, Any] | None = Field(default=None, description="Response từ gateway")
+    metadata: dict[str, Any] | None = Field(default=None, description="Metadata")
+    created_at: datetime = Field(..., description="Thời điểm tạo")
+    updated_at: datetime = Field(..., description="Thời điểm cập nhật cuối")
+    completed_at: datetime | None = Field(default=None, description="Thời điểm hoàn thành")
+
+    @property
+    def is_successful(self) -> bool:
+        """Kiểm tra hoàn tiền có thành công không."""
+        return self.status == RefundStatus.COMPLETED.value
+
+
+# ============================================================================
+# PaymentMethod — Schemas cho phương thức thanh toán
+# ============================================================================
+
+
+class PaymentMethodCreate(BaseModel):
+    """
+    Schema đăng ký phương thức thanh toán mới.
+
+    Fields bắt buộc: method_type, customer_id
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    method_type: PaymentMethodType = Field(
+        ...,
+        description="Loại phương thức thanh toán",
+    )
+    display_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Tên hiển thị (VD: Visa **** 4242)",
+    )
+    customer_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="ID của khách hàng sở hữu phương thức",
+    )
+    gateway_provider: PaymentGatewayProvider | None = Field(
+        default=None,
+        description="Gateway provider liên kết",
+    )
+    is_default: bool = Field(
+        default=False,
+        description="Đặt làm phương thức mặc định",
+    )
+    details: dict[str, Any] | None = Field(
+        default=None,
+        description="Chi tiết phương thức (không lưu dữ liệu nhạy cảm)",
+    )
+    expired_at: datetime | None = Field(
+        default=None,
+        description="Thời điểm hết hạn (với credit card)",
+    )
+    tenant_id: str = Field(
+        default="default",
+        max_length=100,
+        description="Tenant ID",
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Metadata mở rộng",
+    )
+
+
+class PaymentMethodRead(BaseModel):
+    """
+    Schema trả về thông tin phương thức thanh toán.
+
+    Chứa thông tin trừu tượng — không bao giờ trả về dữ liệu nhạy cảm
+    như số thẻ, CVV, hay token đầy đủ.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    method_id: str = Field(..., description="Định danh phương thức")
+    method_type: str = Field(..., description="Loại phương thức")
+    display_name: str = Field(..., description="Tên hiển thị")
+    is_default: bool = Field(..., description="Phương thức mặc định")
+    is_active: bool = Field(..., description="Đang hoạt động")
+    gateway_provider: str | None = Field(default=None, description="Gateway provider")
+    details: dict[str, Any] | None = Field(default=None, description="Chi tiết (không nhạy cảm)")
+    customer_id: str = Field(..., description="ID khách hàng")
+    expired_at: datetime | None = Field(default=None, description="Thời điểm hết hạn")
+    metadata: dict[str, Any] | None = Field(default=None, description="Metadata")
+    created_at: datetime = Field(..., description="Thời điểm đăng ký")
+    updated_at: datetime = Field(..., description="Thời điểm cập nhật cuối")
+
+
+# ============================================================================
+# PaymentGatewayConfig — Schemas cho cấu hình gateway
+# ============================================================================
+
+
+class PaymentGatewayConfigCreate(BaseModel):
+    """
+    Schema tạo cấu hình payment gateway mới.
+
+    Fields bắt buộc: provider
+    Các thông tin secret nên được lưu trong vault/secrets management
+    và chỉ truyền reference qua các field _reference.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    provider: PaymentGatewayProvider = Field(
+        ...,
+        description="Nhà cung cấp payment gateway",
+    )
+    display_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Tên hiển thị (VD: Stripe Production)",
+    )
+    environment: str = Field(
+        default="production",
+        max_length=50,
+        description="Môi trường: production, sandbox, staging",
+    )
+    is_active: bool = Field(
+        default=True,
+        description="Cấu hình có đang hoạt động không",
+    )
+    is_default: bool = Field(
+        default=False,
+        description="Cấu hình mặc định",
+    )
+    api_key_reference: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Reference đến API key trong secrets vault",
+    )
+    secret_key_reference: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Reference đến secret key trong vault",
+    )
+    webhook_secret_reference: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Reference đến webhook signing secret",
+    )
+    endpoint_url: str | None = Field(
+        default=None,
+        description="URL endpoint của gateway provider",
+    )
+    webhook_url: str | None = Field(
+        default=None,
+        description="URL webhook nhận callback",
+    )
+    max_amount: int | None = Field(
+        default=None,
+        gt=0,
+        description="Giới hạn số tiền tối đa",
+    )
+    min_amount: int | None = Field(
+        default=None,
+        gt=0,
+        description="Giới hạn số tiền tối thiểu",
+    )
+    supported_currencies: list[str] | None = Field(
+        default=None,
+        description="Danh sách tiền tệ được hỗ trợ",
+    )
+    supported_methods: list[str] | None = Field(
+        default=None,
+        description="Danh sách phương thức được hỗ trợ",
+    )
+    config_params: dict[str, Any] | None = Field(
+        default=None,
+        description="Các tham số cấu hình bổ sung",
+    )
+    tenant_id: str = Field(
+        default="default",
+        max_length=100,
+        description="Tenant ID",
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Metadata mở rộng",
+    )
+
+
+class PaymentGatewayConfigRead(BaseModel):
+    """
+    Schema trả về cấu hình payment gateway.
+
+    Không bao giờ trả về API key hay secret key — chỉ trả về
+    thông tin cấu hình không nhạy cảm.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    config_id: str = Field(..., description="Định danh cấu hình")
+    provider: str = Field(..., description="Nhà cung cấp gateway")
+    display_name: str = Field(..., description="Tên hiển thị")
+    environment: str = Field(..., description="Môi trường")
+    is_active: bool = Field(..., description="Đang hoạt động")
+    is_default: bool = Field(..., description="Cấu hình mặc định")
+    endpoint_url: str | None = Field(default=None, description="URL endpoint")
+    webhook_url: str | None = Field(default=None, description="URL webhook")
+    max_amount: int | None = Field(default=None, description="Giới hạn tối đa")
+    min_amount: int | None = Field(default=None, description="Giới hạn tối thiểu")
+    supported_currencies: list[str] = Field(default_factory=list, description="Tiền tệ được hỗ trợ")
+    supported_methods: list[str] = Field(default_factory=list, description="Phương thức được hỗ trợ")
+    config_params: dict[str, Any] | None = Field(default=None, description="Tham số cấu hình")
+    tenant_id: str = Field(..., description="Tenant ID")
+    metadata: dict[str, Any] | None = Field(default=None, description="Metadata")
+    created_at: datetime = Field(..., description="Thời điểm tạo")
+    updated_at: datetime = Field(..., description="Thời điểm cập nhật cuối")
+
+
+# ============================================================================
+# PaymentWebhookPayload — Schema webhook từ gateway provider
+# ============================================================================
+
+
+class PaymentWebhookPayload(BaseModel):
+    """
+    Schema webhook payload nhận từ gateway provider.
+
+    Schema này chuẩn hóa dữ liệu webhook từ các provider khác nhau
+    (Stripe, VNPay, MoMo) thành định dạng thống nhất.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    event_type: str = Field(
+        ...,
+        description="Loại sự kiện (vd: payment.success, payment.failed, refund.completed)",
+    )
+    event_id: str = Field(
+        ...,
+        description="ID duy nhất của sự kiện từ gateway",
+    )
+    timestamp: datetime = Field(
+        ...,
+        description="Thời điểm sự kiện xảy ra (từ gateway)",
+    )
+    gateway_provider: PaymentGatewayProvider = Field(
+        ...,
+        description="Nhà cung cấp gateway gửi webhook",
+    )
+    gateway_transaction_id: str = Field(
+        ...,
+        description="Transaction ID từ gateway provider",
+    )
+    amount: int = Field(
+        ...,
+        gt=0,
+        description="Số tiền giao dịch",
+    )
+    currency: str = Field(
+        ...,
+        description="Mã tiền tệ",
+    )
+    status: str = Field(
+        ...,
+        description="Trạng thái giao dịch từ gateway",
+    )
+    reference_code: str | None = Field(
+        default=None,
+        description="Mã tham chiếu của giao dịch (nếu có)",
+    )
+    raw_payload: dict[str, Any] | None = Field(
+        default=None,
+        description="Raw payload gốc từ gateway để audit/debug",
+    )
+
+
+# ============================================================================
+# PaymentSummary — Schema tổng hợp thống kê
+# ============================================================================
+
+
+class PaymentSummary(BaseModel):
+    """
+    Schema tổng hợp thống kê giao dịch thanh toán.
+
+    Dùng cho dashboard admin — hiển thị tổng quan về hoạt động thanh toán.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    total_transactions: int = Field(..., ge=0, description="Tổng số giao dịch")
+    total_amount: int = Field(..., ge=0, description="Tổng số tiền (đơn vị nhỏ nhất)")
+    successful_amount: int = Field(..., ge=0, description="Số tiền thành công")
+    failed_amount: int = Field(..., ge=0, description="Số tiền thất bại")
+    refunded_amount: int = Field(..., ge=0, description="Số tiền đã hoàn trả")
+    pending_count: int = Field(..., ge=0, description="Số giao dịch đang chờ")
+    success_rate: float = Field(..., ge=0.0, le=100.0, description="Tỷ lệ thành công (%)")
+    period_start: datetime = Field(..., description="Bắt đầu khoảng thời gian")
+    period_end: datetime = Field(..., description="Kết thúc khoảng thời gian")
+
+
+__all__ = [
+    # Enums
+    "PaymentStatus",
+    "PaymentMethodType",
+    "PaymentDirection",
+    "PaymentGatewayProvider",
+    "PaymentCurrency",
+    "PaymentIntent",
+    "RefundStatus",
+    "RefundType",
+    # Transaction
+    "PaymentTransactionCreate",
+    "PaymentTransactionUpdate",
+    "PaymentTransactionRead",
+    "PaymentTransactionList",
+    "PaymentTransactionFilter",
+    # Refund
+    "PaymentRefundCreate",
+    "PaymentRefundRead",
+    # Method
+    "PaymentMethodCreate",
+    "PaymentMethodRead",
+    # Gateway Config
+    "PaymentGatewayConfigCreate",
+    "PaymentGatewayConfigRead",
+    # Webhook
+    "PaymentWebhookPayload",
+    # Summary
+    "PaymentSummary",
+]

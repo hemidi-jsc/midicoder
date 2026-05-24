@@ -1,0 +1,821 @@
+{% raw %}
+/**
+* CP45 Payment Gateway — Payment History Component
+*
+* Thành phần hiển thị lịch sử giao dịch thanh toán với:
+* - Bảng giao dịch phân trang
+* - Bộ lọc theo trạng thái, phương thức, khoảng ngày, số tiền
+* - Tìm kiếm theo từ khóa
+* - Sắp xếp theo cột
+* - Hành động: xem chi tiết, hoàn tiền, hủy giao dịch
+*
+* Sử dụng Signal Store và Angular signals hiện đại.
+*/
+
+import {
+Component,
+ChangeDetectionStrategy,
+inject,
+computed,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+
+import { PaymentStore } from './payment.store';
+import {
+PaymentStatus,
+PaymentMethodType,
+PaymentTransactionSummary,
+RefundPaymentDto,
+} from './payment-types';
+
+@Component({
+selector: 'app-payment-history',
+standalone: true,
+imports: [CommonModule, FormsModule],
+changeDetection: ChangeDetectionStrategy.OnPush,
+template: `
+<div class="payment-history-page">
+    <!-- Tiêu đề -->
+    <header class="page-header">
+        <h1>Lịch Sử Giao Dịch</h1>
+        <span class="record-count">
+            {{ total() }} giao dịch
+        </span>
+    </header>
+
+    <!-- Hiển thị lỗi -->
+    <div *ngIf="error()" class="error-banner">
+        <strong>Lỗi:</strong> {{ error() }}
+        <button (click)="onClearError()">Đóng</button>
+    </div>
+
+    <!-- Bộ lọc -->
+    <section class="filters-section">
+        <div class="filters-grid">
+            <!-- Tìm kiếm -->
+            <div class="filter-item">
+                <label for="search">Tìm kiếm</label>
+                <input id="search" type="text" [(ngModel)]="localFilters.search" (keyup.enter)="onApplyFilters()"
+                    placeholder="Từ khóa, mô tả..." />
+            </div>
+
+            <!-- Trạng thái -->
+            <div class="filter-item">
+                <label for="status-filter">Trạng thái</label>
+                <select id="status-filter" [(ngModel)]="localFilters.status">
+                    <option [ngValue]="null">Tất cả</option>
+                    <option [ngValue]="status" *ngFor="let status of statusOptions">
+                        {{ getStatusLabel(status) }}
+                    </option>
+                </select>
+            </div>
+
+            <!-- Phương thức -->
+            <div class="filter-item">
+                <label for="method-filter">Phương thức</label>
+                <select id="method-filter" [(ngModel)]="localFilters.methodType">
+                    <option [ngValue]="null">Tất cả</option>
+                    <option [ngValue]="type" *ngFor="let type of methodTypeOptions">
+                        {{ type }}
+                    </option>
+                </select>
+            </div>
+
+            <!-- Từ ngày -->
+            <div class="filter-item">
+                <label for="from-date">Từ ngày</label>
+                <input id="from-date" type="date" [(ngModel)]="localFilters.fromDate" />
+            </div>
+
+            <!-- Đến ngày -->
+            <div class="filter-item">
+                <label for="to-date">Đến ngày</label>
+                <input id="to-date" type="date" [(ngModel)]="localFilters.toDate" />
+            </div>
+
+            <!-- Số tiền tối thiểu -->
+            <div class="filter-item">
+                <label for="min-amount">Từ số tiền</label>
+                <input id="min-amount" type="number" [(ngModel)]="localFilters.minAmount" min="0" placeholder="0" />
+            </div>
+
+            <!-- Số tiền tối đa -->
+            <div class="filter-item">
+                <label for="max-amount">Đến số tiền</label>
+                <input id="max-amount" type="number" [(ngModel)]="localFilters.maxAmount" min="0"
+                    placeholder="Không giới hạn" />
+            </div>
+        </div>
+
+        <!-- Nút hành động -->
+        <div class="filter-actions">
+            <button class="apply-btn" (click)="onApplyFilters()">Áp dụng bộ lọc</button>
+            <button class="clear-btn" (click)="onClearFilters()">Xóa bộ lọc</button>
+        </div>
+    </section>
+
+    <!-- Đang tải -->
+    <div *ngIf="loadingHistory()" class="loading-state">
+        <p>Đang tải lịch sử giao dịch...</p>
+    </div>
+
+    <!-- Bảng giao dịch -->
+    <section *ngIf="!loadingHistory() && transactions().length; else emptyState" class="table-section">
+        <table class="transactions-table">
+            <thead>
+                <tr>
+                    <th (click)="onSortBy('createdAt')">
+                        Ngày tạo {{ getSortIndicator('createdAt') }}
+                    </th>
+                    <th>Mô Tả</th>
+                    <th (click)="onSortBy('amount')">
+                        Số Tiền {{ getSortIndicator('amount') }}
+                    </th>
+                    <th>Phương Thức</th>
+                    <th (click)="onSortBy('status')">
+                        Trạng Thái {{ getSortIndicator('status') }}
+                    </th>
+                    <th>Hành Động</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr *ngFor="let tx of transactions()">
+                    <td class="date-cell">{{ tx.createdAt | date:'mediumDate' }}</td>
+                    <td class="desc-cell">{{ tx.description || '(không mô tả)' }}</td>
+                    <td class="amount-cell">{{ formatCurrency(tx.amount) }} {{ tx.currency }}</td>
+                    <td class="method-cell">{{ tx.paymentMethodName }}</td>
+                    <td>
+                        <span class="status-badge" [class]="getStatusClass(tx.status)">
+                            {{ getStatusLabel(tx.status) }}
+                        </span>
+                    </td>
+                    <td class="actions-cell">
+                        <button (click)="onViewDetails(tx.id)">Chi tiết</button>
+                        <button *ngIf="tx.status === 'pending'" (click)="onCancelTransaction(tx.id)" class="cancel-btn">
+                            Hủy
+                        </button>
+                        <button *ngIf="tx.status === 'completed'" (click)="onOpenRefundDialog(tx)" class="refund-btn">
+                            Hoàn tiền
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Phân trang -->
+        <nav class="pagination" *ngIf="totalPages() > 1">
+            <button [disabled]="currentPage() <= 1" (click)="onGoToPage(currentPage() - 1)">
+                &laquo; Trước
+            </button>
+
+            <span class="page-info">
+                Trang {{ currentPage() }} / {{ totalPages() }}
+            </span>
+
+            <button [disabled]="currentPage() >= totalPages()" (click)="onGoToPage(currentPage() + 1)">
+                Sau &raquo;
+            </button>
+
+            <!-- Nhảy đến trang -->
+            <div class="jump-to-page">
+                <input type="number" [(ngModel)]="jumpPage" (keyup.enter)="onJumpToPage()" [min]="1"
+                    [max]="totalPages()" placeholder="Trang..." />
+                <button (click)="onJumpToPage()">Nhảy</button>
+            </div>
+        </nav>
+    </section>
+
+    <!-- Trạng thái rỗng -->
+    <ng-template #emptyState>
+        <div class="empty-state">
+            <p>Không có giao dịch nào phù hợp với bộ lọc hiện tại.</p>
+            <button class="clear-btn" (click)="onClearFilters()">Xóa bộ lọc</button>
+        </div>
+    </ng-template>
+
+    <!-- Dialog hoàn tiền -->
+    <div *ngIf="refundTarget" class="confirm-overlay">
+        <div class="confirm-dialog">
+            <h3>Yêu Cầu Hoàn Tiền</h3>
+            <p>Hoàn tiền cho giao dịch: <strong>{{ refundTarget.description }}</strong></p>
+            <p>Số tiền gốc: <strong>{{ formatCurrency(refundTarget.amount) }} {{ refundTarget.currency }}</strong></p>
+
+            <div class="form-row">
+                <label for="refund-amount">Số tiền hoàn lại (để trống = hoàn toàn bộ)</label>
+                <input id="refund-amount" type="number" [(ngModel)]="refundForm.amount" [max]="refundTarget.amount"
+                    min="1" placeholder="Toàn bộ" />
+            </div>
+
+            <div class="form-row">
+                <label for="refund-reason">Lý do hoàn tiền</label>
+                <textarea id="refund-reason" [(ngModel)]="refundForm.reason" rows="3" required></textarea>
+            </div>
+
+            <div class="confirm-actions">
+                <button class="refund-confirm-btn" (click)="onConfirmRefund()">Xác nhận hoàn tiền</button>
+                <button (click)="onCancelRefund()">Hủy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dialog hủy giao dịch -->
+    <div *ngIf="cancellingId" class="confirm-overlay">
+        <div class="confirm-dialog">
+            <h3>Xác Nhận Hủy Giao Dịch</h3>
+            <p>Bạn có chắc muốn hủy giao dịch này?</p>
+            <div class="confirm-actions">
+                <button class="cancel-confirm-btn" (click)="onConfirmCancel()">Hủy giao dịch</button>
+                <button (click)="onCancelCancel()">Không hủy</button>
+            </div>
+        </div>
+    </div>
+</div>
+`,
+styles: [`
+.payment-history-page {
+padding: 20px;
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+max-width: 1200px;
+margin: 0 auto;
+}
+.page-header {
+display: flex;
+align-items: center;
+gap: 16px;
+margin-bottom: 24px;
+}
+.page-header h1 {
+margin: 0;
+font-size: 24px;
+color: #1a1a1a;
+}
+.record-count {
+margin-left: auto;
+font-size: 14px;
+color: #888;
+}
+
+/* Error */
+.error-banner {
+padding: 12px 16px;
+background: #ffebee;
+color: #c62828;
+border-radius: 6px;
+margin-bottom: 16px;
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+.error-banner button {
+background: none;
+border: none;
+color: #c62828;
+cursor: pointer;
+text-decoration: underline;
+}
+
+/* Filters */
+.filters-section {
+background: #fff;
+border: 1px solid #e0e0e0;
+border-radius: 8px;
+padding: 16px;
+margin-bottom: 24px;
+}
+.filters-grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+gap: 12px;
+margin-bottom: 12px;
+}
+.filter-item label {
+display: block;
+font-size: 12px;
+color: #888;
+margin-bottom: 4px;
+}
+.filter-item input,
+.filter-item select {
+width: 100%;
+padding: 6px 8px;
+border: 1px solid #ccc;
+border-radius: 4px;
+font-size: 14px;
+box-sizing: border-box;
+}
+.filter-actions {
+display: flex;
+gap: 8px;
+}
+.apply-btn {
+padding: 8px 16px;
+background: #1976d2;
+color: #fff;
+border: none;
+border-radius: 4px;
+cursor: pointer;
+}
+.apply-btn:hover { background: #1565c0; }
+.clear-btn {
+padding: 8px 16px;
+background: #e0e0e0;
+color: #333;
+border: none;
+border-radius: 4px;
+cursor: pointer;
+}
+.clear-btn:hover { background: #ccc; }
+
+/* Loading */
+.loading-state {
+text-align: center;
+padding: 48px 0;
+color: #888;
+}
+
+/* Table */
+.table-section {
+background: #fff;
+border: 1px solid #e0e0e0;
+border-radius: 8px;
+overflow: hidden;
+}
+.transactions-table {
+width: 100%;
+border-collapse: collapse;
+font-size: 14px;
+}
+.transactions-table th {
+background: #f9f9f9;
+font-weight: 600;
+color: #555;
+text-align: left;
+padding: 10px 12px;
+border-bottom: 2px solid #e0e0e0;
+cursor: pointer;
+user-select: none;
+white-space: nowrap;
+}
+.transactions-table th:hover {
+background: #f0f0f0;
+}
+.transactions-table td {
+padding: 10px 12px;
+border-bottom: 1px solid #eee;
+}
+.date-cell {
+white-space: nowrap;
+color: #555;
+}
+.desc-cell {
+max-width: 240px;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.amount-cell {
+font-weight: 600;
+white-space: nowrap;
+}
+.method-cell {
+font-size: 13px;
+color: #555;
+}
+.actions-cell {
+white-space: nowrap;
+}
+.actions-cell button {
+padding: 4px 8px;
+margin-right: 4px;
+border: 1px solid #ccc;
+background: #fff;
+border-radius: 4px;
+cursor: pointer;
+font-size: 12px;
+}
+.actions-cell button:hover { background: #f5f5f5; }
+
+/* Status badge */
+.status-badge {
+display: inline-block;
+padding: 2px 8px;
+border-radius: 12px;
+font-size: 12px;
+font-weight: 500;
+}
+.status-pending { background: #fff3e0; color: #e65100; }
+.status-completed { background: #e8f5e9; color: #2e7d32; }
+.status-failed { background: #ffebee; color: #c62828; }
+.status-cancelled { background: #eceff1; color: #455a64; }
+.status-awaiting_confirmation { background: #e3f2fd; color: #1565c0; }
+.status-refunded { background: #f3e5f5; color: #7b1fa2; }
+
+/* Action buttons */
+.cancel-btn {
+color: #e65100 !important;
+border-color: #e65100 !important;
+}
+.cancel-btn:hover { background: #fff3e0 !important; }
+.refund-btn {
+color: #7b1fa2 !important;
+border-color: #7b1fa2 !important;
+}
+.refund-btn:hover { background: #f3e5f5 !important; }
+
+/* Pagination */
+.pagination {
+display: flex;
+align-items: center;
+gap: 12px;
+padding: 12px 16px;
+border-top: 1px solid #e0e0e0;
+}
+.pagination button {
+padding: 6px 12px;
+border: 1px solid #ccc;
+background: #fff;
+border-radius: 4px;
+cursor: pointer;
+font-size: 13px;
+}
+.pagination button:disabled {
+opacity: 0.5;
+cursor: not-allowed;
+}
+.pagination button:hover:not(:disabled) {
+background: #f5f5f5;
+}
+.page-info {
+font-size: 14px;
+color: #555;
+}
+.jump-to-page {
+margin-left: auto;
+display: flex;
+gap: 4px;
+}
+.jump-to-page input {
+width: 60px;
+padding: 4px 8px;
+border: 1px solid #ccc;
+border-radius: 4px;
+font-size: 13px;
+}
+.jump-to-page button {
+padding: 4px 12px;
+border: 1px solid #1976d2;
+background: #1976d2;
+color: #fff;
+border-radius: 4px;
+cursor: pointer;
+font-size: 13px;
+}
+
+/* Empty state */
+.empty-state {
+text-align: center;
+padding: 48px 0;
+color: #888;
+}
+
+/* Dialog overlay */
+.confirm-overlay {
+position: fixed;
+top: 0;
+left: 0;
+right: 0;
+bottom: 0;
+background: rgba(0,0,0,0.4);
+display: flex;
+align-items: center;
+justify-content: center;
+z-index: 1000;
+}
+.confirm-dialog {
+background: #fff;
+border-radius: 8px;
+padding: 24px;
+max-width: 480px;
+width: 90%;
+}
+.confirm-dialog h3 {
+margin: 0 0 12px 0;
+font-size: 18px;
+}
+.form-row {
+margin-bottom: 12px;
+}
+.form-row label {
+display: block;
+font-size: 13px;
+color: #555;
+margin-bottom: 4px;
+}
+.form-row input,
+.form-row textarea {
+width: 100%;
+padding: 8px;
+border: 1px solid #ccc;
+border-radius: 4px;
+font-size: 14px;
+box-sizing: border-box;
+}
+.confirm-actions {
+display: flex;
+gap: 8px;
+margin-top: 16px;
+}
+.confirm-actions .refund-confirm-btn {
+background: #7b1fa2;
+color: #fff;
+border: none;
+padding: 8px 16px;
+border-radius: 4px;
+cursor: pointer;
+}
+.confirm-actions .cancel-confirm-btn {
+background: #e65100;
+color: #fff;
+border: none;
+padding: 8px 16px;
+border-radius: 4px;
+cursor: pointer;
+}
+.confirm-actions button:last-child {
+background: #e0e0e0;
+border: none;
+padding: 8px 16px;
+border-radius: 4px;
+cursor: pointer;
+}
+`],
+})
+export class PaymentHistoryComponent {
+/* ---------------------------------------------------------------
+* Store — inject theo kiểu hiện đại
+* --------------------------------------------------------------- */
+
+private readonly store = inject(PaymentStore);
+
+/** Danh sách giao dịch (trang hiện tại) */
+readonly transactions = this.store.transactions;
+
+/** Tổng số bản ghi */
+readonly total = this.store.total;
+
+/** Tổng số trang */
+readonly totalPages = this.store.totalPages;
+
+/** Số trang hiện tại — derived signal từ pagination */
+readonly currentPage = computed(() => this.store.pagination().page);
+
+/** Đang tải lịch sử */
+readonly loadingHistory = this.store.history;
+
+/** Lỗi */
+readonly error = this.store.currentError;
+
+/* ---------------------------------------------------------------
+* Local state — bộ lọc
+* --------------------------------------------------------------- */
+
+/** Bộ lọc cục bộ (chưa áp dụng) */
+localFilters: {
+search: string;
+status: PaymentStatus | null;
+methodType: PaymentMethodType | null;
+fromDate: string;
+toDate: string;
+minAmount: number | null;
+maxAmount: number | null;
+} = {
+search: '',
+status: null,
+methodType: null,
+fromDate: '',
+toDate: '',
+minAmount: null,
+maxAmount: null,
+};
+
+/* ---------------------------------------------------------------
+* Local state — dialog
+* --------------------------------------------------------------- */
+
+/** Nhảy đến trang */
+jumpPage = 1;
+
+/** Giao dịch đang chờ hoàn tiền */
+refundTarget: PaymentTransactionSummary | null = null;
+
+/** Form hoàn tiền */
+refundForm: { amount: number | null; reason: string } = {
+amount: null,
+reason: '',
+};
+
+/** ID giao dịch đang chờ hủy */
+cancellingId: string | null = null;
+
+/* ---------------------------------------------------------------
+* Tùy chọn enum hiển thị
+* --------------------------------------------------------------- */
+
+statusOptions = [
+PaymentStatus.PENDING,
+PaymentStatus.COMPLETED,
+PaymentStatus.FAILED,
+PaymentStatus.CANCELLED,
+PaymentStatus.AWAITING_CONFIRMATION,
+PaymentStatus.REFUNDED,
+];
+
+methodTypeOptions = [
+PaymentMethodType.CARD,
+PaymentMethodType.BANK_TRANSFER,
+PaymentMethodType.E_WALLET,
+PaymentMethodType.COD,
+PaymentMethodType.QR_CODE,
+PaymentMethodType.VOUCHER,
+];
+
+/* ---------------------------------------------------------------
+* Lifecycle
+* --------------------------------------------------------------- */
+
+constructor() {
+// Dữ liệu đã được tự động tải từ PaymentStore.onInit hook
+}
+
+/* ---------------------------------------------------------------
+* Methods — Bộ lọc
+* --------------------------------------------------------------- */
+
+/** Áp dụng bộ lọc */
+onApplyFilters(): void {
+const filters: any = {};
+
+if (this.localFilters.search?.trim()) {
+filters.search = this.localFilters.search.trim();
+}
+if (this.localFilters.status) {
+filters.status = this.localFilters.status;
+}
+if (this.localFilters.methodType) {
+filters.methodType = this.localFilters.methodType;
+}
+if (this.localFilters.fromDate) {
+filters.fromDate = this.localFilters.fromDate;
+}
+if (this.localFilters.toDate) {
+filters.toDate = this.localFilters.toDate;
+}
+if (this.localFilters.minAmount !== null && this.localFilters.minAmount !== undefined) {
+filters.minAmount = this.localFilters.minAmount;
+}
+if (this.localFilters.maxAmount !== null && this.localFilters.maxAmount !== undefined) {
+filters.maxAmount = this.localFilters.maxAmount;
+}
+
+this.store.updateFilters(filters);
+}
+
+/** Xóa toàn bộ bộ lọc */
+onClearFilters(): void {
+this.localFilters = {
+search: '',
+status: null,
+methodType: null,
+fromDate: '',
+toDate: '',
+minAmount: null,
+maxAmount: null,
+};
+this.store.clearFilters();
+}
+
+/* ---------------------------------------------------------------
+* Methods — Sắp xếp
+* --------------------------------------------------------------- */
+
+/** Sắp xếp theo trường */
+onSortBy(field: string): void {
+this.store.sortBy(field);
+}
+
+/** Lấy ký hiệu sắp xếp cho cột */
+getSortIndicator(field: string): string {
+const pagination = this.store.pagination();
+if (pagination.sortBy !== field) return '';
+return pagination.sortOrder === 'asc' ? ' \u25B2' : ' \u25BC';
+}
+
+/* ---------------------------------------------------------------
+* Methods — Phân trang
+* --------------------------------------------------------------- */
+
+/** Chuyển đến trang */
+onGoToPage(page: number): void {
+this.store.goToPage(page);
+}
+
+/** Nhảy đến trang (từ input) */
+onJumpToPage(): void {
+const page = Math.max(1, Math.min(this.jumpPage, this.totalPages()));
+this.store.goToPage(page);
+this.jumpPage = page;
+}
+
+/* ---------------------------------------------------------------
+* Methods — Hành động giao dịch
+* --------------------------------------------------------------- */
+
+/** Xem chi tiết giao dịch */
+onViewDetails(id: string): void {
+// Điều hướng đến trang chi tiết giao dịch
+window.location.hash = `#/payments/transactions/${id}`;
+}
+
+/** Mở dialog hủy giao dịch */
+onCancelTransaction(id: string): void {
+this.cancellingId = id;
+}
+
+/** Xác nhận hủy giao dịch */
+onConfirmCancel(): void {
+if (this.cancellingId) {
+this.store.cancelTransaction(this.cancellingId);
+}
+this.cancellingId = null;
+}
+
+/** Hủy dialog hủy giao dịch */
+onCancelCancel(): void {
+this.cancellingId = null;
+}
+
+/** Mở dialog hoàn tiền */
+onOpenRefundDialog(tx: PaymentTransactionSummary): void {
+this.refundTarget = tx;
+this.refundForm = { amount: null, reason: '' };
+}
+
+/** Xác nhận hoàn tiền */
+onConfirmRefund(): void {
+if (!this.refundTarget) return;
+
+const dto: RefundPaymentDto = {
+amount: this.refundForm.amount ?? undefined,
+reason: this.refundForm.reason.trim(),
+};
+
+if (!dto.reason) {
+return; // Lý do bắt buộc
+}
+
+this.store.refundPayment(this.refundTarget.id, dto);
+this.refundTarget = null;
+}
+
+/** Hủy dialog hoàn tiền */
+onCancelRefund(): void {
+this.refundTarget = null;
+}
+
+/** Xóa thông báo lỗi */
+onClearError(): void {
+this.store.clearError();
+}
+
+/* ---------------------------------------------------------------
+* Methods — Tiện ích hiển thị
+* --------------------------------------------------------------- */
+
+/** Định dạng tiền tệ */
+formatCurrency(value: number): string {
+return value.toLocaleString('vi-VN', {
+minimumFractionDigits: 0,
+maximumFractionDigits: 0,
+});
+}
+
+/** Lấy class CSS cho trạng thái */
+getStatusClass(status: PaymentStatus): string {
+return `status-${status.toLowerCase()}`;
+}
+
+/** Lấy nhãn tiếng Việt cho trạng thái */
+getStatusLabel(status: PaymentStatus): string {
+const labels: Record<PaymentStatus, string> = {
+    [PaymentStatus.PENDING]: 'Đang chờ',
+    [PaymentStatus.COMPLETED]: 'Thành công',
+    [PaymentStatus.FAILED]: 'Thất bại',
+    [PaymentStatus.CANCELLED]: 'Đã hủy',
+    [PaymentStatus.AWAITING_CONFIRMATION]: 'Chờ xác nhận',
+    [PaymentStatus.REFUNDED]: 'Đã hoàn tiền',
+    };
+    return labels[status] ?? status;
+    }
+    }
+    {% endraw %}

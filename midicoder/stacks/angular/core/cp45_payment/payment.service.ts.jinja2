@@ -1,0 +1,196 @@
+{% raw %}
+/**
+ * CP45 Payment Gateway — Angular Service cho API thanh toán.
+ *
+ * Service này đóng gói tất cả cuộc gọi HTTP đến backend CP45,
+ * trả về Observable để store có thể chuyển đổi thành Signal.
+ *
+ * Sử dụng inject() của Angular hiện đại, không dùng constructor injection.
+ */
+
+import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+
+import {
+  PaymentMethod,
+  CreatePaymentMethodDto,
+  UpdatePaymentMethodDto,
+  PaymentTransaction,
+  PaymentTransactionSummary,
+  InitiatePaymentDto,
+  RefundPaymentDto,
+  PaymentStats,
+  PaymentHistoryFilters,
+  PaginationParams,
+  PaginatedResult,
+} from './payment-types';
+
+/**
+ * PaymentService — trung gian HTTP cho CP45 Payment Gateway.
+ *
+ * Tất cả phương thức trả về Observable; người gọi (Store)
+ * sẽ subscribe và đẩy dữ liệu vào Signal.
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class PaymentService {
+  /** HttpClient — inject theo phong cách hiện đại */
+  private readonly http = inject(HttpClient);
+
+  /** Đường dẫn cơ sở của API thanh toán */
+  private readonly baseUrl = '/api/payments';
+
+  // ------------------------------------------------------------------
+  // Phương thức thanh toán
+  // ------------------------------------------------------------------
+
+  /**
+   * Lấy danh sách phương thức thanh toán của người dùng hiện tại.
+   */
+  getPaymentMethods(): Observable<PaymentMethod[]> {
+    return this.http.get<PaymentMethod[]>(`${this.baseUrl}/methods`);
+  }
+
+  /**
+   * Lấy chi tiết một phương thức thanh toán theo ID.
+   */
+  getPaymentMethodById(id: string): Observable<PaymentMethod> {
+    return this.http.get<PaymentMethod>(`${this.baseUrl}/methods/${id}`);
+  }
+
+  /**
+   * Tạo phương thức thanh toán mới.
+   */
+  createPaymentMethod(dto: CreatePaymentMethodDto): Observable<PaymentMethod> {
+    return this.http.post<PaymentMethod>(`${this.baseUrl}/methods`, dto);
+  }
+
+  /**
+   * Cập nhật phương thức thanh toán (partial update).
+   */
+  updatePaymentMethod(id: string, dto: UpdatePaymentMethodDto): Observable<PaymentMethod> {
+    return this.http.patch<PaymentMethod>(`${this.baseUrl}/methods/${id}`, dto);
+  }
+
+  /**
+   * Xóa phương thức thanh toán.
+   */
+  deletePaymentMethod(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/methods/${id}`);
+  }
+
+  /**
+   * Đặt phương thức thanh toán làm mặc định.
+   */
+  setDefaultPaymentMethod(id: string): Observable<PaymentMethod> {
+    return this.http.put<PaymentMethod>(`${this.baseUrl}/methods/${id}/default`, {});
+  }
+
+  // ------------------------------------------------------------------
+  // Giao dịch thanh toán
+  // ------------------------------------------------------------------
+
+  /**
+   * Khởi tạo một giao dịch thanh toán mới.
+   */
+  initiatePayment(dto: InitiatePaymentDto): Observable<PaymentTransaction> {
+    return this.http.post<PaymentTransaction>(`${this.baseUrl}/transactions`, dto);
+  }
+
+  /**
+   * Lấy chi tiết giao dịch theo ID.
+   */
+  getTransactionById(id: string): Observable<PaymentTransaction> {
+    return this.http.get<PaymentTransaction>(`${this.baseUrl}/transactions/${id}`);
+  }
+
+  /**
+   * Lấy lịch sử giao dịch — phân trang, có bộ lọc.
+   */
+  getPaymentHistory(
+    filters: PaymentHistoryFilters,
+    pagination: PaginationParams,
+  ): Observable<PaginatedResult<PaymentTransactionSummary>> {
+    const params = this.buildQueryParams({ ...filters, ...pagination });
+    return this.http.get<PaginatedResult<PaymentTransactionSummary>>(
+      `${this.baseUrl}/transactions`,
+      { params },
+    );
+  }
+
+  /**
+   * Yêu cầu hoàn tiền cho một giao dịch.
+   */
+  refundPayment(
+    transactionId: string,
+    dto: RefundPaymentDto,
+  ): Observable<PaymentTransaction> {
+    return this.http.post<PaymentTransaction>(
+      `${this.baseUrl}/transactions/${transactionId}/refund`,
+      dto,
+    );
+  }
+
+  /**
+   * Hủy một giao dịch đang chờ xử lý.
+   */
+  cancelTransaction(transactionId: string): Observable<PaymentTransaction> {
+    return this.http.put<PaymentTransaction>(
+      `${this.baseUrl}/transactions/${transactionId}/cancel`,
+      {},
+    );
+  }
+
+  /**
+   * Tải lại trạng thái giao dịch từ gateway bên thứ ba.
+   */
+  refreshTransactionStatus(transactionId: string): Observable<PaymentTransaction> {
+    return this.http.post<PaymentTransaction>(
+      `${this.baseUrl}/transactions/${transactionId}/refresh`,
+      {},
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // Thống kê
+  // ------------------------------------------------------------------
+
+  /**
+   * Lấy thống kê thanh toán tổng quan.
+   */
+  getPaymentStats(): Observable<PaymentStats> {
+    return this.http.get<PaymentStats>(`${this.baseUrl}/stats`);
+  }
+
+  /**
+   * Lấy thống kê với khoảng thời gian tùy chỉnh.
+   */
+  getPaymentStatsForPeriod(fromDate: string, toDate: string): Observable<PaymentStats> {
+    return this.http.get<PaymentStats>(`${this.baseUrl}/stats`, {
+      params: { fromDate, toDate },
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Tiện ích
+  // ------------------------------------------------------------------
+
+  /**
+   * Chuyển đổi các tham số lọc và phân trang thành HttpParams.
+   * Bỏ qua các giá trị undefined / null / chuỗi rỗng.
+   */
+  private buildQueryParams(
+    source: PaymentHistoryFilters & PaginationParams,
+  ): Record<string, string> {
+    const params: Record<string, string> = {};
+    for (const [key, value] of Object.entries(source)) {
+      if (value !== undefined && value !== null && value !== '') {
+        params[key] = String(value);
+      }
+    }
+    return params;
+  }
+}
+{% endraw %}

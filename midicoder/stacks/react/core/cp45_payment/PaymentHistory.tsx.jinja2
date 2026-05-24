@@ -1,0 +1,376 @@
+{% raw %}import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { PaymentChannel, PaymentStatus } from "./PaymentDashboard";
+
+// ============================================================================
+// Định nghĩa loại dữ liệu cho lịch sử giao dịch
+// ============================================================================
+
+/** Lọc trạng thái giao dịch */
+export type StatusFilter = PaymentStatus | "all";
+
+/** Sắp xếp theo trường */
+export type SortField = "createdAt" | "amount" | "status";
+export type SortDirection = "asc" | "desc";
+
+/** Giao dịch trong lịch sử */
+export interface PaymentTransaction {
+id: string;
+amount: number;
+currency: string;
+status: PaymentStatus;
+channel: PaymentChannel;
+customerName: string;
+customerEmail: string;
+description: string;
+createdAt: string;
+updatedAt: string;
+fees: number;
+netAmount: number;
+metadata?: Record<string, unknown>;
+    }
+
+    /** Kết quả phân trang */
+    export interface PaginatedResult<T> {
+        items: T[];
+        total: number;
+        page: number;
+        pageSize: number;
+        totalPages: number;
+        }
+
+        /** Nhãn trạng thái cho bộ lọc */
+        const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
+        { value: "all", label: "Tất cả" },
+        { value: PaymentStatus.Pending, label: "Đang chờ xử lý" },
+        { value: PaymentStatus.Processing, label: "Đang xử lý" },
+        { value: PaymentStatus.Completed, label: "Hoàn tất" },
+        { value: PaymentStatus.Failed, label: "Thất bại" },
+        { value: PaymentStatus.Refunded, label: "Đã hoàn tiền" },
+        ];
+
+        /** Màu badge theo trạng thái */
+        const STATUS_BADGE: Record<PaymentStatus, string> = {
+            [PaymentStatus.Pending]: "bg-yellow-100 text-yellow-800",
+            [PaymentStatus.Processing]: "bg-blue-100 text-blue-800",
+            [PaymentStatus.Completed]: "bg-green-100 text-green-800",
+            [PaymentStatus.Failed]: "bg-red-100 text-red-800",
+            [PaymentStatus.Refunded]: "bg-gray-100 text-gray-800",
+            };
+
+            /** Nhãn trạng thái trong bảng */
+            const STATUS_LABEL: Record<PaymentStatus, string> = {
+                [PaymentStatus.Pending]: "Đang chờ",
+                [PaymentStatus.Processing]: "Đang xử lý",
+                [PaymentStatus.Completed]: "Hoàn tất",
+                [PaymentStatus.Failed]: "Thất bại",
+                [PaymentStatus.Refunded]: "Hoàn tiền",
+                };
+
+                /** Kí hiệu kênh thanh toán */
+                const CHANNEL_EMOJI: Record<PaymentChannel, string> = {
+                    [PaymentChannel.Card]: "💳",
+                    [PaymentChannel.BankTransfer]: "🏦",
+                    [PaymentChannel.EWallet]: "👛",
+                    [PaymentChannel.Crypto]: "₿",
+                    };
+
+                    // ============================================================================
+                    // Thành phần phân trang
+                    // ============================================================================
+
+                    function Pagination({
+                    page,
+                    totalPages,
+                    onPageChange,
+                    }: {
+                    page: number;
+                    totalPages: number;
+                    onPageChange: (page: number) => void;
+                    }) {
+                    if (totalPages <= 1) return null; return ( <nav
+                        className="flex items-center justify-between border-t border-gray-200 px-6 py-4">
+                        <p className="text-sm text-gray-700">
+                            Trang <span className="font-medium">{page}</span> trong{" "}
+                            <span className="font-medium">{totalPages}</span>
+                        </p>
+                        <div className="flex gap-2">
+                            <button onClick={()=> onPageChange(page - 1)}
+                                disabled={page <= 1}
+                                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50">
+                                    Trước
+                            </button>
+                            <button onClick={()=> onPageChange(page + 1)}
+                                disabled={page >= totalPages}
+                                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium
+                                text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                Sau
+                            </button>
+                        </div>
+                        </nav>
+                        );
+                        }
+
+                        // ============================================================================
+                        // Thành phần lịch sử giao dịch chính
+                        // ============================================================================
+
+                        /**
+                        * PaymentHistory — Danh sách lịch sử giao dịch thanh toán.
+                        * Hỗ trợ phân trang, lọc trạng thái, sắp xếp và tìm kiếm.
+                        */
+                        export default function PaymentHistory() {
+                        const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
+                            const [total, setTotal] = useState(0);
+                            const [page, setPage] = useState(1);
+                            const pageSize = 10;
+
+                            const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+                                const [sortField, setSortField] = useState<SortField>("createdAt");
+                                    const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+                                        const [searchQuery, setSearchQuery] = useState("");
+
+                                        const [isLoading, setIsLoading] = useState(true);
+
+                                        /** Tính tổng số trang từ tổng số bản ghi */
+                                        const totalPages = useMemo(() => Math.ceil(total / pageSize), [total,
+                                        pageSize]);
+
+                                        /** Lấy danh sách giao dịch với phân trang, lọc và sắp xếp */
+                                        const fetchTransactions = useCallback(async () => {
+                                        setIsLoading(true);
+                                        try {
+                                        const params = new URLSearchParams({
+                                        page: page.toString(),
+                                        pageSize: pageSize.toString(),
+                                        sort: sortField,
+                                        order: sortDirection,
+                                        });
+
+                                        if (statusFilter !== "all") {
+                                        params.set("status", statusFilter);
+                                        }
+                                        if (searchQuery.trim()) {
+                                        params.set("q", searchQuery.trim());
+                                        }
+
+                                        const response = await fetch(`/api/cp45/payment/transactions?${params}`);
+                                        if (!response.ok) {
+                                        throw new Error(`Lấy lịch sử giao dịch thất bại: ${response.status}`);
+                                        }
+                                        const data: PaginatedResult<PaymentTransaction> = await response.json();
+                                            setTransactions(data.items);
+                                            setTotal(data.total);
+                                            } catch (error) {
+                                            console.error("Lỗi lấy lịch sử giao dịch:", error);
+                                            } finally {
+                                            setIsLoading(false);
+                                            }
+                                            }, [page, statusFilter, sortField, sortDirection, searchQuery]);
+
+                                            useEffect(() => {
+                                            fetchTransactions();
+                                            }, [fetchTransactions]);
+
+                                            /** Xử lý thay đổi trang */
+                                            const handlePageChange = (newPage: number) => {
+                                            setPage(newPage);
+                                            };
+
+                                            /** Xử lý thay đổi bộ lọc trạng thái */
+                                            const handleStatusFilterChange = (status: StatusFilter) => {
+                                            setStatusFilter(status);
+                                            setPage(1);
+                                            };
+
+                                            /** Xử lý thay đổi trường sắp xếp */
+                                            const handleSortChange = (field: SortField) => {
+                                            if (sortField === field) {
+                                            setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+                                            } else {
+                                            setSortField(field);
+                                            setSortDirection("desc");
+                                            }
+                                            setPage(1);
+                                            };
+
+                                            /** Xử lý tìm kiếm với debounce */
+                                            const handleSearch = useCallback(
+                                            (query: string) => {
+                                            setSearchQuery(query);
+                                            setPage(1);
+                                            },
+                                            []
+                                            );
+
+                                            /** Nút sắp xếp — hiển thị mũi tên khi trường đang được chọn */
+                                            function SortHeader({ field, children }: { field: SortField; children:
+                                            string }) {
+                                            const isActive = sortField === field;
+                                            return (
+                                            <th className="cursor-pointer px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-700"
+                                                onClick={()=> handleSortChange(field)}
+                                                >
+                                                <span className="flex items-center gap-1">
+                                                    {children}
+                                                    {isActive && (
+                                                    <span>{sortDirection === "asc" ? "↑" : "↓"}</span>
+                                                    )}
+                                                </span>
+                                            </th>
+                                            );
+                                            }
+
+                                            if (isLoading && transactions.length === 0) {
+                                            return (
+                                            <div className="flex h-96 items-center justify-center">
+                                                <div className="text-center">
+                                                    <div
+                                                        className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+                                                    <p className="mt-4 text-sm text-gray-500">Đang tải lịch sử giao
+                                                        dịch...</p>
+                                                </div>
+                                            </div>
+                                            );
+                                            }
+
+                                            return (
+                                            <div className="space-y-6 p-6">
+                                                {/* Tiêu đề trang */}
+                                                <div>
+                                                    <h1 className="text-2xl font-bold text-gray-900">
+                                                        Lịch Sử Giao Dịch
+                                                    </h1>
+                                                    <p className="mt-1 text-sm text-gray-500">
+                                                        Xem và lọc tất cả giao dịch thanh toán trên hệ thống CP45
+                                                    </p>
+                                                </div>
+
+                                                {/* Thanh công cụ: tìm kiếm và lọc */}
+                                                <div
+                                                    className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {STATUS_FILTER_OPTIONS.map((option) => (
+                                                        <button key={option.value} onClick={()=>
+                                                            handleStatusFilterChange(option.value)}
+                                                            className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm
+                                                            font-medium transition-colors ${
+                                                            statusFilter === option.value
+                                                            ? "bg-blue-600 text-white"
+                                                            : "bg-white text-gray-700 hover:bg-gray-100"
+                                                            }`}
+                                                            >
+                                                            {option.label}
+                                                        </button>
+                                                        ))}
+                                                    </div>
+                                                    <input type="text" placeholder="Tìm kiếm theo mã, tên khách hàng..."
+                                                        value={searchQuery} onChange={(e)=>
+                                                    handleSearch(e.target.value)}
+                                                    className="w-72 rounded-lg border border-gray-300 bg-white px-3 py-2
+                                                    text-sm placeholder-gray-400 focus:border-blue-500
+                                                    focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                    />
+                                                </div>
+
+                                                {/* Bảng giao dịch */}
+                                                <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+                                                    <div className="overflow-x-auto">
+                                                        <table className="min-w-full divide-y divide-gray-200">
+                                                            <thead className="bg-gray-50">
+                                                                <tr>
+                                                                    <SortHeader field="createdAt">Ngày Tạo</SortHeader>
+                                                                    <th
+                                                                        className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                                        Mã Giao Dịch
+                                                                    </th>
+                                                                    <th
+                                                                        className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                                        Khách Hàng
+                                                                    </th>
+                                                                    <th
+                                                                        className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                                        Kênh
+                                                                    </th>
+                                                                    <SortHeader field="amount">Số Tiền</SortHeader>
+                                                                    <th
+                                                                        className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                                        Phí
+                                                                    </th>
+                                                                    <th
+                                                                        className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                                        Thực Nhận
+                                                                    </th>
+                                                                    <SortHeader field="status">Trạng Thái</SortHeader>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-gray-200 bg-white">
+                                                                {transactions.length === 0 ? (
+                                                                <tr>
+                                                                    <td colSpan={8}
+                                                                        className="px-6 py-12 text-center text-sm text-gray-500">
+                                                                        Không tìm thấy giao dịch nào
+                                                                    </td>
+                                                                </tr>
+                                                                ) : (
+                                                                transactions.map((tx) => (
+                                                                <tr key={tx.id} className="hover:bg-gray-50">
+                                                                    <td
+                                                                        className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                                                                        {new Date(tx.createdAt).toLocaleString("vi-VN")}
+                                                                    </td>
+                                                                    <td
+                                                                        className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
+                                                                        {tx.id}
+                                                                    </td>
+                                                                    <td
+                                                                        className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                                                                        <p className="font-medium">{tx.customerName}</p>
+                                                                        <p className="text-xs text-gray-400">
+                                                                            {tx.customerEmail}</p>
+                                                                    </td>
+                                                                    <td
+                                                                        className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                                                                        <span className="flex items-center gap-1.5">
+                                                                            {CHANNEL_EMOJI[tx.channel]}
+                                                                            {tx.channel}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td
+                                                                        className="whitespace-nowrap px-6 py-4 text-right text-sm font-semibold text-gray-900">
+                                                                        {tx.amount.toLocaleString("vi-VN")}
+                                                                        {tx.currency}
+                                                                    </td>
+                                                                    <td
+                                                                        className="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-500">
+                                                                        {tx.fees.toLocaleString("vi-VN")} {tx.currency}
+                                                                    </td>
+                                                                    <td
+                                                                        className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium text-gray-900">
+                                                                        {tx.netAmount.toLocaleString("vi-VN")}
+                                                                        {tx.currency}
+                                                                    </td>
+                                                                    <td
+                                                                        className="whitespace-nowrap px-6 py-4 text-center">
+                                                                        <span className={`inline-flex items-center
+                                                                            rounded-full px-2.5 py-0.5 text-xs
+                                                                            font-medium ${STATUS_BADGE[tx.status]}`}>
+                                                                            {STATUS_LABEL[tx.status]}
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                                ))
+                                                                )}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+
+                                                    {/* Phân trang */}
+                                                    <Pagination page={page} totalPages={totalPages}
+                                                        onPageChange={handlePageChange} />
+                                                </div>
+                                            </div>
+                                            );
+                                            }
+                                            {% endraw %}

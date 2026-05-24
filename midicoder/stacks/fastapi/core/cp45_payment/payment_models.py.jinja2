@@ -1,0 +1,990 @@
+"""
+CP45 Payment Gateway Models — SQLAlchemy 2.0.
+
+Module này định nghĩa các mô hình dữ liệu cho payment gateway abstraction layer:
+- PaymentTransactionModel: ghi chép giao dịch thanh toán với state machine và idempotency
+- PaymentMethodModel: lưu phương thức thanh toán đã đăng ký
+- PaymentRefundModel: quản lý yêu cầu hoàn tiền
+- PaymentGatewayConfigModel: cấu hình provider gateway (Stripe, VNPay, MoMo)
+- IdempotencyKeyModel: bảo vệ idempotency cho các giao dịch
+
+Tích hợp với CP02 (Multi-tenant), CP14 (Audit), CP05 (Event Bus).
+
+CP45: Payment Gateway Abstraction Layer
+"""
+
+from __future__ import annotations
+
+import enum
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+    index,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+# ============================================================================
+# Base
+# ============================================================================
+
+
+class Base(DeclarativeBase):
+    """Base class cho tất cả SQLAlchemy models."""
+
+    pass
+
+
+# ============================================================================
+# Enums
+# ============================================================================
+
+
+class PaymentStatus(str, enum.Enum):
+    """Trạng thái giao dịch thanh toán — state machine."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    REFUNDED = "refunded"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class PaymentMethodType(str, enum.Enum):
+    """Loại phương thức thanh toán."""
+
+    CREDIT_CARD = "credit_card"
+    DEBIT_CARD = "debit_card"
+    BANK_TRANSFER = "bank_transfer"
+    EWALLET = "ewallet"
+    QR_CODE = "qr_code"
+    VNPAY = "vnpay"
+    MOMO = "momo"
+    ZALOPAY = "zalopay"
+    OTHER = "other"
+
+
+class PaymentDirection(str, enum.Enum):
+    """Hướng giao dịch."""
+
+    PAYMENT = "payment"
+    REFUND = "refund"
+    CAPTURE = "capture"
+    VOID = "void"
+
+
+class PaymentGatewayProvider(str, enum.Enum):
+    """Nhà cung cấp payment gateway."""
+
+    STRIPE = "stripe"
+    VNPAY = "vnpay"
+    MOMO = "momo"
+    ZALOPAY = "zalopay"
+    PAYOS = "payos"
+    MIDTRANS = "midtrans"
+    CUSTOM = "custom"
+
+
+class PaymentCurrency(str, enum.Enum):
+    """Mã tiền tệ hỗ trợ."""
+
+    VND = "VND"
+    USD = "USD"
+    EUR = "EUR"
+    JPY = "JPY"
+    SGD = "SGD"
+    THB = "THB"
+    KRW = "KRW"
+    CNY = "CNY"
+
+
+class PaymentIntent(str, enum.Enum):
+    """Mục đích thanh toán."""
+
+    AUTH_ONLY = "auth_only"
+    AUTH_AND_CAPTURE = "auth_and_capture"
+    CAPTURE_ONLY = "capture_only"
+    SUBSCRIPTION = "subscription"
+    INSTANT = "instant"
+
+
+class RefundStatus(str, enum.Enum):
+    """Trạng thái hoàn tiền."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class RefundType(str, enum.Enum):
+    """Loại hoàn tiền."""
+
+    FULL = "full"
+    PARTIAL = "partial"
+
+
+# ============================================================================
+# PaymentTransactionModel
+# ============================================================================
+
+
+class PaymentTransactionModel(Base):
+    """
+    Mô hình giao dịch thanh toán — ghi chép đầy đủ vòng đời của một giao dịch.
+
+    Mỗi giao dịch bao gồm:
+    - Idempotency key để chống trùng lặp
+    - State machine (pending -> processing -> completed/failed)
+    - Gateway response data (raw response từ provider)
+    - Multi-tenant isolation qua tenant_id
+
+    Chuyển trạng thái hợp lệ:
+      pending -> processing -> completed
+      pending -> failed
+      pending -> cancelled
+      processing -> completed
+      processing -> failed
+      completed -> refunded
+    """
+
+    __tablename__ = "payment_transactions"
+
+    # Định danh
+    transaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        comment="Định danh duy nhất của giao dịch",
+    )
+
+    # Idempotency — khóa bảo vệ chống trùng lặp giao dịch
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+        unique=True,
+        comment="Idempotency key để chống trùng lặp",
+    )
+
+    # Thông tin giao dịch cơ bản
+    reference_code: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="Mã tham chiếu duy nhất (VD: PAY-2026-0001)",
+    )
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Mô tả giao dịch",
+    )
+
+    # Số tiền & tiền tệ
+    amount: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        comment="Số tiền giao dịch (đơn vị: đơn vị nhỏ nhất, VD: đồng cho VND, cent cho USD)",
+    )
+    currency: Mapped[PaymentCurrency] = mapped_column(
+        Enum(PaymentCurrency),
+        nullable=False,
+        default=PaymentCurrency.VND,
+        comment="Mã tiền tệ",
+    )
+
+    # Trạng thái & hướng
+    status: Mapped[PaymentStatus] = mapped_column(
+        Enum(PaymentStatus),
+        nullable=False,
+        default=PaymentStatus.PENDING,
+        index=True,
+        comment="Trạng thái hiện tại — state machine",
+    )
+    direction: Mapped[PaymentDirection] = mapped_column(
+        Enum(PaymentDirection),
+        nullable=False,
+        default=PaymentDirection.PAYMENT,
+        comment="Hướng giao dịch",
+    )
+    intent: Mapped[PaymentIntent] = mapped_column(
+        Enum(PaymentIntent),
+        nullable=False,
+        default=PaymentIntent.AUTH_AND_CAPTURE,
+        comment="Mục đích thanh toán",
+    )
+
+    # Gateway — provider & external reference
+    gateway_provider: Mapped[PaymentGatewayProvider] = mapped_column(
+        Enum(PaymentGatewayProvider),
+        nullable=False,
+        index=True,
+        comment="Nhà cung cấp payment gateway đã sử dụng",
+    )
+    gateway_transaction_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="Transaction ID từ phía gateway provider",
+    )
+
+    # Phương thức thanh toán
+    payment_method_type: Mapped[PaymentMethodType] = mapped_column(
+        Enum(PaymentMethodType),
+        nullable=True,
+        comment="Loại phương thức thanh toán được sử dụng",
+    )
+    payment_method_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("payment_methods.method_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="ID của PaymentMethod đã sử dụng",
+    )
+
+    # Người dùng & tenant
+    customer_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="ID của khách hàng thực hiện thanh toán",
+    )
+    customer_email: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Email của khách hàng",
+    )
+    customer_phone: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Số điện thoại của khách hàng",
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="default",
+        index=True,
+        comment="Tenant ID để multi-tenant isolation",
+    )
+
+    # Dữ liệu từ gateway
+    gateway_request_data: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=dict,
+        comment="Dữ liệu request gửi đến gateway",
+    )
+    gateway_response_data: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=dict,
+        comment="Raw response từ gateway provider",
+    )
+    error_code: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Mã lỗi từ gateway (nếu có)",
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Thông báo lỗi chi tiết từ gateway",
+    )
+
+    # URLs & callback
+    redirect_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="URL redirect sau khi thanh toán thành công",
+    )
+    callback_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="URL callback/webhook cho kết quả thanh toán",
+    )
+
+    # Liên kết nghiệp vụ
+    order_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="ID của đơn hàng liên quan",
+    )
+    subscription_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="ID của gói đăng ký liên quan",
+    )
+
+    # Metadata
+    metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=dict,
+        comment="Metadata mở rộng cho giao dịch",
+    )
+
+    # Thời gian
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        comment="Thời điểm tạo giao dịch",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        comment="Thời điểm cập nhật cuối",
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Thời điểm thanh toán thành công",
+    )
+    expired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Thời điểm hết hạn của giao dịch",
+    )
+
+    # Quan hệ
+    payment_method: Mapped["PaymentMethodModel | None"] = relationship(
+        "PaymentMethodModel",
+        back_populates="transactions",
+    )
+    refunds: Mapped[list["PaymentRefundModel"]] = relationship(
+        "PaymentRefundModel",
+        back_populates="transaction",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    __table_args__ = (
+        index(
+            "ix_payment_txn_tenant_customer_status",
+            "tenant_id",
+            "customer_id",
+            "status",
+        ),
+        index(
+            "ix_payment_txn_gateway_provider_ref",
+            "gateway_provider",
+            "gateway_transaction_id",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<PaymentTransactionModel(transaction_id={self.transaction_id}, "
+            f"reference={self.reference_code}, status={self.status.value}, "
+            f"amount={self.amount} {self.currency.value})>"
+        )
+
+
+# ============================================================================
+# PaymentMethodModel
+# ============================================================================
+
+
+class PaymentMethodModel(Base):
+    """
+    Mô hình phương thức thanh toán — lưu thông tin phương thức đã đăng ký.
+
+    Lưu trữ thông tin trừu tượng của phương thức thanh toán (không lưu
+    thông tin nhạy cảm như số thẻ, CVV). Các dữ liệu nhạy cảm được
+    token hóa và lưu tại phía gateway provider.
+
+    Hỗ trợ các loại: credit_card, bank_transfer, ewallet, qr_code.
+    """
+
+    __tablename__ = "payment_methods"
+
+    # Định danh
+    method_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        comment="Định danh duy nhất của phương thức thanh toán",
+    )
+
+    # Thông tin cơ bản
+    method_type: Mapped[PaymentMethodType] = mapped_column(
+        Enum(PaymentMethodType),
+        nullable=False,
+        index=True,
+        comment="Loại phương thức thanh toán",
+    )
+    display_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Tên hiển thị (VD: Visa **** 4242, Ví MoMo)",
+    )
+    is_default: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="Phương thức mặc định của khách hàng",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="Phương thức có đang hoạt động không",
+    )
+
+    # Token từ gateway — không lưu dữ liệu nhạy cảm
+    gateway_token: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Token được trả về từ gateway provider (vd: Stripe token)",
+    )
+    gateway_provider: Mapped[PaymentGatewayProvider] = mapped_column(
+        Enum(PaymentGatewayProvider),
+        nullable=True,
+        comment="Gateway provider liên kết với phương thức này",
+    )
+
+    # Dữ liệu phụ thuộc loại phương thức
+    # Credit card: last4, brand, expiry
+    # Bank transfer: bank_name, account_number (last4), account_name
+    # Ewallet: provider_name, wallet_id_masked
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=dict,
+        comment="Chi tiết phương thức (chỉ lưu dữ liệu không nhạy cảm)",
+    )
+
+    # Người dùng & tenant
+    customer_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="ID của khách hàng sở hữu phương thức",
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="default",
+        index=True,
+        comment="Tenant ID",
+    )
+
+    # Metadata
+    metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=dict,
+        comment="Metadata mở rộng",
+    )
+
+    # Thời gian
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        comment="Thời điểm đăng ký phương thức",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        comment="Thời điểm cập nhật cuối",
+    )
+    expired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Thời điểm hết hạn (với credit card: tháng/năm)",
+    )
+
+    # Quan hệ
+    transactions: Mapped[list["PaymentTransactionModel"]] = relationship(
+        "PaymentTransactionModel",
+        back_populates="payment_method",
+        lazy="selectin",
+    )
+
+    __table_args__ = (
+        index(
+            "ix_payment_method_customer_active",
+            "customer_id",
+            "is_active",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<PaymentMethodModel(method_id={self.method_id}, "
+            f"type={self.method_type.value}, display={self.display_name})>"
+        )
+
+
+# ============================================================================
+# PaymentRefundModel
+# ============================================================================
+
+
+class PaymentRefundModel(Base):
+    """
+    Mô hình hoàn tiền — quản lý yêu cầu hoàn tiền cho giao dịch.
+
+    Mỗi yêu cầu hoàn tiền liên kết với một PaymentTransaction cha.
+    Hỗ trợ hoàn toàn bộ (full) hoặc một phần (partial).
+    Theo dõi trạng thái từ pending đến completed/failed.
+    """
+
+    __tablename__ = "payment_refunds"
+
+    # Định danh
+    refund_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        comment="Định danh duy nhất của yêu cầu hoàn tiền",
+    )
+
+    # Mã tham chiếu
+    reference_code: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="Mã tham chiếu hoàn tiền (VD: REF-2026-0001)",
+    )
+
+    # Liên kết với giao dịch gốc
+    transaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("payment_transactions.transaction_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="ID của giao dịch thanh toán gốc",
+    )
+
+    # Số tiền hoàn & loại hoàn
+    refund_amount: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        comment="Số tiền hoàn trả (đơn vị: đơn vị nhỏ nhất)",
+    )
+    currency: Mapped[PaymentCurrency] = mapped_column(
+        Enum(PaymentCurrency),
+        nullable=False,
+        default=PaymentCurrency.VND,
+        comment="Mã tiền tệ",
+    )
+    refund_type: Mapped[RefundType] = mapped_column(
+        Enum(RefundType),
+        nullable=False,
+        default=RefundType.FULL,
+        comment="Loại hoàn tiền: full hoặc partial",
+    )
+
+    # Trạng thái
+    status: Mapped[RefundStatus] = mapped_column(
+        Enum(RefundStatus),
+        nullable=False,
+        default=RefundStatus.PENDING,
+        index=True,
+        comment="Trạng thái của yêu cầu hoàn tiền",
+    )
+
+    # Lý do hoàn tiền
+    reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Lý do hoàn tiền",
+    )
+
+    # Gateway — thông tin hoàn tiền từ provider
+    gateway_refund_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="Refund ID từ phía gateway provider",
+    )
+    gateway_response_data: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=dict,
+        comment="Raw response từ gateway về yêu cầu hoàn tiền",
+    )
+    error_code: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Mã lỗi từ gateway (nếu hoàn tiền thất bại)",
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Thông báo lỗi chi tiết",
+    )
+
+    # Người yêu cầu hoàn tiền
+    requested_by: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="ID của người/yêu cầu khởi tạo hoàn tiền",
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="default",
+        index=True,
+        comment="Tenant ID",
+    )
+
+    # Metadata
+    metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=dict,
+        comment="Metadata mở rộng",
+    )
+
+    # Thời gian
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        comment="Thời điểm tạo yêu cầu hoàn tiền",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        comment="Thời điểm cập nhật cuối",
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Thời điểm hoàn tiền thành công",
+    )
+
+    # Quan hệ
+    transaction: Mapped["PaymentTransactionModel"] = relationship(
+        "PaymentTransactionModel",
+        back_populates="refunds",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<PaymentRefundModel(refund_id={self.refund_id}, "
+            f"transaction={self.transaction_id}, "
+            f"amount={self.refund_amount}, status={self.status.value})>"
+        )
+
+
+# ============================================================================
+# PaymentGatewayConfigModel
+# ============================================================================
+
+
+class PaymentGatewayConfigModel(Base):
+    """
+    Mô hình cấu hình payment gateway — lưu thông tin cấu hình cho mỗi provider.
+
+    Mỗi tenant có thể cấu hình nhiều gateway providers khác nhau.
+    Các thông tin nhạy cảm (API key, secret) nên được lưu trong vault/secrets
+    management; field này chỉ lưu reference đến vị trí secret.
+
+    Hỗ trợ: Stripe, VNPay, MoMo, ZaloPay, và các provider tùy chỉnh.
+    """
+
+    __tablename__ = "payment_gateway_configs"
+
+    # Định danh
+    config_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        comment="Định danh duy nhất của cấu hình gateway",
+    )
+
+    # Provider & tên
+    provider: Mapped[PaymentGatewayProvider] = mapped_column(
+        Enum(PaymentGatewayProvider),
+        nullable=False,
+        index=True,
+        comment="Nhà cung cấp payment gateway",
+    )
+    display_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Tên hiển thị (VD: Stripe Production, VNPay Sandbox)",
+    )
+
+    # Môi trường
+    environment: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="production",
+        index=True,
+        comment="Môi trường: production, sandbox, staging",
+    )
+
+    # Trạng thái
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="Cấu hình có đang hoạt động không",
+    )
+    is_default: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="Cấu hình mặc định khi không chỉ định provider",
+    )
+
+    # Thông tin kết nối — secret references
+    api_key_reference: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Reference đến API key trong secrets vault",
+    )
+    secret_key_reference: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Reference đến secret key trong secrets vault",
+    )
+    webhook_secret_reference: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Reference đến webhook signing secret trong vault",
+    )
+
+    # Cấu hình provider-specific
+    endpoint_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="URL endpoint của gateway provider",
+    )
+    webhook_url: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="URL webhook nhận callback từ gateway",
+    )
+
+    # Cấu hình bổ sung
+    config_params: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=dict,
+        comment="Các tham số cấu hình bổ sung cho provider",
+    )
+
+    # Hạn chế & giới hạn
+    max_amount: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        comment="Giới hạn số tiền tối đa cho mỗi giao dịch",
+    )
+    min_amount: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        comment="Giới hạn số tiền tối thiểu cho mỗi giao dịch",
+    )
+    supported_currencies: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=True,
+        default_factory=list,
+        comment="Danh sách tiền tệ được hỗ trợ bởi gateway này",
+    )
+    supported_methods: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=True,
+        default_factory=list,
+        comment="Danh sách phương thức thanh toán được hỗ trợ",
+    )
+
+    # Tenant & metadata
+    tenant_id: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="default",
+        index=True,
+        comment="Tenant ID",
+    )
+    metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=True,
+        default=dict,
+        comment="Metadata mở rộng",
+    )
+
+    # Thời gian
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        comment="Thời điểm tạo cấu hình",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        comment="Thời điểm cập nhật cuối",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("provider", "environment", "tenant_id", name="uq_pg_config_provider_env_tenant"),
+        index(
+            "ix_pg_config_active_default",
+            "is_active",
+            "is_default",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<PaymentGatewayConfigModel(config_id={self.config_id}, "
+            f"provider={self.provider.value}, env={self.environment})>"
+        )
+
+
+# ============================================================================
+# IdempotencyKeyModel — Chỉ bật khi enable_idempotency
+# ============================================================================
+
+{% if enable_idempotency %}
+
+
+class IdempotencyKeyModel(Base):
+    """
+    Mô hình idempotency key — bảo vệ chống trùng lặp giao dịch.
+
+    Mỗi idempotency key được lưu lại kèm với transaction_id đã xử lý.
+    Khi nhận được request với key đã tồn tại, trả về kết quả cũ thay
+    vì xử lý lại — đảm bảo idempotent behavior.
+
+    Keys tự động hết hạn sau khoảng thời gian cấu hình để giải phóng
+    không gian lưu trữ.
+    """
+
+    __tablename__ = "payment_idempotency_keys"
+
+    # Định danh
+    key_value: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+        comment="Giá trị idempotency key (hash hoặc UUID)",
+    )
+
+    # Liên kết với giao dịch đã xử lý
+    transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("payment_transactions.transaction_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="ID của giao dịch đã xử lý với key này",
+    )
+
+    # Thông tin request gốc
+    request_body_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="SHA-256 hash của request body để validate",
+    )
+    request_method: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        default="POST",
+        comment="HTTP method của request gốc",
+    )
+
+    # Tenant & khách hàng
+    tenant_id: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="default",
+        index=True,
+        comment="Tenant ID",
+    )
+    customer_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="ID của khách hàng liên quan",
+    )
+
+    # Thời gian
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        comment="Thời điểm tạo key",
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+        comment="Thời điểm key hết hạn — sau đó có thể dọn dẹp",
+    )
+
+    __table_args__ = (
+        index(
+            "ix_idempotency_key_expires",
+            "expires_at",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<IdempotencyKeyModel(key={self.key_value}, "
+            f"transaction={self.transaction_id}, expires={self.expires_at})>"
+        )
+
+{% endif %}
+
+
+__all__ = [
+    "Base",
+    "PaymentStatus",
+    "PaymentMethodType",
+    "PaymentDirection",
+    "PaymentGatewayProvider",
+    "PaymentCurrency",
+    "PaymentIntent",
+    "RefundStatus",
+    "RefundType",
+    "PaymentTransactionModel",
+    "PaymentMethodModel",
+    "PaymentRefundModel",
+    "PaymentGatewayConfigModel",
+{% if enable_idempotency %}
+    "IdempotencyKeyModel",
+{% endif %}
+]

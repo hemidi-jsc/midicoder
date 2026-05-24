@@ -776,7 +776,7 @@ core_packs:
       - transaction_flow
       - refund_process
     category: financial
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP35
     name: Geospatial Services
@@ -936,8 +936,19 @@ core_packs:
       - data_purge
       - gdpr_erasure
     category: compliance
-    status: planned
+    status: stable
     version: 1.0.0
+    error_codes:
+      MDC-CP47-001: "Retention policy không tồn tại"
+      MDC-CP47-002: "Retention days không hợp lệ"
+      MDC-CP47-003: "Archive thất bại"
+      MDC-CP47-004: "Không được purge (có exemption)"
+      MDC-CP47-005: "Erasure request không tồn tại"
+      MDC-CP47-006: "Erasure đang chạy"
+      MDC-CP47-007: "Cold storage không truy cập được"
+      MDC-CP47-008: "Retention scan thất bại"
+      MDC-CP47-009: "Exemption đã tồn tại"
+      MDC-CP47-010: "Restore từ cold storage thất bại"
   - id: CP48
     name: API Rate Limiting & Quota Management
     internal_id: cp48_rate_limit

@@ -994,6 +994,20 @@ class ErrorCode(str, Enum):
     CP44_BULK_CANCEL_FAILED = "MDC-CP44-010"
 
     # =========================================================================
+    # CP45: Payment Gateway Abstraction Errors
+    # =========================================================================
+    CP45_PAYMENT_GATEWAY_NOT_FOUND = "MDC-CP45-001"
+    CP45_PAYMENT_METHOD_NOT_FOUND = "MDC-CP45-002"
+    CP45_PAYMENT_PROCESSING_FAILED = "MDC-CP45-003"
+    CP45_INVALID_PAYMENT_AMOUNT = "MDC-CP45-004"
+    CP45_PAYMENT_IDEMPOTENCY_CONFLICT = "MDC-CP45-005"
+    CP45_REFUND_AMOUNT_EXCEEDS_ORIGINAL = "MDC-CP45-006"
+    CP45_REFUND_NOT_ALLOWED = "MDC-CP45-007"
+    CP45_WEBHOOK_SIGNATURE_INVALID = "MDC-CP45-008"
+    CP45_PAYMENT_GATEWAY_TIMEOUT = "MDC-CP45-009"
+    CP45_PAYMENT_METHOD_EXPIRED = "MDC-CP45-010"
+
+    # =========================================================================
     # CP46: MFA & Advanced Authentication Errors
     # =========================================================================
     CP46_MFA_FACTOR_NOT_FOUND = "MDC-CP46-001"
@@ -1006,6 +1020,20 @@ class ErrorCode(str, Enum):
     CP46_WEBAUTHN_VERIFICATION_FAILED = "MDC-CP46-008"
     CP46_BIOMETRIC_NOT_SUPPORTED = "MDC-CP46-009"
     CP46_MFA_RATE_LIMIT_EXCEEDED = "MDC-CP46-010"
+
+    # =========================================================================
+    # CP47: Data Retention & Lifecycle Management Errors
+    # =========================================================================
+    CP47_RETENTION_POLICY_NOT_FOUND = "MDC-CP47-001"
+    CP47_RETENTION_DAYS_INVALID = "MDC-CP47-002"
+    CP47_ARCHIVE_FAILED = "MDC-CP47-003"
+    CP47_PURGE_NOT_ALLOWED = "MDC-CP47-004"
+    CP47_ERASURE_REQUEST_NOT_FOUND = "MDC-CP47-005"
+    CP47_ERASURE_IN_PROGRESS = "MDC-CP47-006"
+    CP47_COLD_STORAGE_UNAVAILABLE = "MDC-CP47-007"
+    CP47_RETENTION_SCAN_FAILED = "MDC-CP47-008"
+    CP47_EXEMPTION_ALREADY_EXISTS = "MDC-CP47-009"
+    CP47_RESTORE_FAILED = "MDC-CP47-010"
 
     # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
