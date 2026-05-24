@@ -1,0 +1,60 @@
+# CP46: MFA & Advanced Authentication Pack
+pack_id: CP46
+internal_id: cp46_mfa
+version: 1.0.0
+name: MFA & Advanced Authentication
+description: >
+  Multi-factor authentication với TOTP, SMS OTP, WebAuthn/FIDO2, và biometric.
+  Hỗ trợ enrollment, challenge/verification, session management, và backup methods.
+
+phase: P2
+category: security
+status: complete
+
+capabilities:
+  - totp_auth
+  - sms_otp
+  - webauthn_fido2
+  - biometric_auth
+
+obligations:
+  - mfa_enrollment_flow
+  - mfa_challenge_verification
+
+depends_on:
+  - CP03
+  - CP12
+
+file_contributions:
+  - path: midicoder/emitters/core/cp46_mfa/models.py
+    description: 4 enums, 4 dataclasses, MFAEngine
+  - path: midicoder/emitters/core/cp46_mfa/parser.py
+    description: MFAIR, MFARule, parse functions
+  - path: midicoder/emitters/core/cp46_mfa/recipes.py
+    description: basic_mfa_recipe, full_mfa_recipe
+  - path: midicoder/emitters/core/cp46_mfa/fastapi.py
+    description: FastAPI emitter
+  - path: midicoder/emitters/core/cp46_mfa/nestjs.py
+    description: NestJS emitter
+  - path: midicoder/emitters/core/cp46_mfa/angular.py
+    description: Angular emitter
+  - path: midicoder/emitters/core/cp46_mfa/react.py
+    description: React emitter
+
+recipes:
+  - name: basic_mfa
+    description: "1 rule — TOTP bắt buộc cho tất cả users"
+  - name: full_mfa
+    description: "4 rules (WebAuthn, TOTP, SMS, Biometric) với priority và backup"
+
+error_codes:
+  MDC-CP46-001: "MFA factor không tồn tại"
+  MDC-CP46-002: "MFA đã được kích hoạt"
+  MDC-CP46-003: "MFA chưa được kích hoạt"
+  MDC-CP46-004: "Mã OTP không hợp lệ"
+  MDC-CP46-005: "OTP đã hết hạn"
+  MDC-CP46-006: "TOTP secret không hợp lệ"
+  MDC-CP46-007: "WebAuthn registration thất bại"
+  MDC-CP46-008: "WebAuthn verification thất bại"
+  MDC-CP46-009: "Biometric không được hỗ trợ"
+  MDC-CP46-010: "Vượt quá rate limit MFA"

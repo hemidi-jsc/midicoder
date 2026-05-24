@@ -994,6 +994,20 @@ class ErrorCode(str, Enum):
     CP44_BULK_CANCEL_FAILED = "MDC-CP44-010"
 
     # =========================================================================
+    # CP46: MFA & Advanced Authentication Errors
+    # =========================================================================
+    CP46_MFA_FACTOR_NOT_FOUND = "MDC-CP46-001"
+    CP46_MFA_ALREADY_ENABLED = "MDC-CP46-002"
+    CP46_MFA_NOT_ENABLED = "MDC-CP46-003"
+    CP46_INVALID_OTP_CODE = "MDC-CP46-004"
+    CP46_OTP_EXPIRED = "MDC-CP46-005"
+    CP46_TOTP_SECRET_INVALID = "MDC-CP46-006"
+    CP46_WEBAUTHN_REGISTRATION_FAILED = "MDC-CP46-007"
+    CP46_WEBAUTHN_VERIFICATION_FAILED = "MDC-CP46-008"
+    CP46_BIOMETRIC_NOT_SUPPORTED = "MDC-CP46-009"
+    CP46_MFA_RATE_LIMIT_EXCEEDED = "MDC-CP46-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

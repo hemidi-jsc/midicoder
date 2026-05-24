@@ -904,8 +904,19 @@ core_packs:
       - webauthn_fido2
       - biometric_auth
     category: security
-    status: planned
+    status: complete
     version: 1.0.0
+    error_codes:
+      MDC-CP46-001: "MFA factor không tồn tại"
+      MDC-CP46-002: "MFA đã được kích hoạt"
+      MDC-CP46-003: "MFA chưa được kích hoạt"
+      MDC-CP46-004: "Mã OTP không hợp lệ"
+      MDC-CP46-005: "OTP đã hết hạn"
+      MDC-CP46-006: "TOTP secret không hợp lệ"
+      MDC-CP46-007: "WebAuthn registration thất bại"
+      MDC-CP46-008: "WebAuthn verification thất bại"
+      MDC-CP46-009: "Biometric không được hỗ trợ"
+      MDC-CP46-010: "Vượt quá rate limit MFA"
   - id: CP47
     name: Data Retention & Lifecycle Management
     internal_id: cp47_retention
