@@ -1,0 +1,1134 @@
+{% raw %}/**
+ * RetentionErasure — Thành phần yêu cầu xóa dữ liệu theo GDPR: tìm kiếm chủ thể,
+ * biểu mẫu xóa, theo dõi trạng thái, nhật ký xóa đã thực hiện.
+ * Sinh bởi CP47 Data Retention & Lifecycle Management.
+ */
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+
+/* ---- Interface dữ liệu ---- */
+
+/** Trạng thái yêu cầu xóa */
+export type ErasureRequestStatus = 'submitted' | 'under_review' | 'approved' | 'in_progress' | 'completed' | 'denied' | 'expired';
+
+/** Loại bằng chứng/định danh chủ thể */
+export type IdentityType = 'email' | 'phone' | 'national_id' | 'passport' | 'user_id';
+
+/** Loại dữ liệu cần xóa */
+export type ErasureScope = 'all_personal_data' | 'account_data' | 'communication_data' | 'usage_data' | 'file_data' | 'consent_data';
+
+/** Một chủ thể dữ liệu (kết quả tìm kiếm) */
+export interface DataSubject {
+    id: string;
+    email: string;
+    phone?: string;
+    display_name: string;
+    national_id?: string;
+    last_activity: string;
+    data_sources_count: number;
+    estimated_records: number;
+}
+
+/** Một yêu cầu xóa dữ liệu */
+export interface ErasureRequest {
+    id: string;
+    subject_id: string;
+    subject_email: string;
+    subject_name: string;
+    status: ErasureRequestStatus;
+    reason: string;
+    legal_basis: string;
+    scope: ErasureScope[];
+    requested_by: string;
+    identity_verified: boolean;
+    records_found: number;
+    records_erased: number;
+    created_at: string;
+    reviewed_at?: string;
+    completed_at?: string;
+    denial_reason?: string;
+    notes?: string;
+}
+
+/** Dữ liệu biểu mẫu yêu cầu xóa */
+export interface ErasureFormData {
+    subject_identifier: string;
+    identity_type: IdentityType | '';
+    reason: string;
+    legal_basis: string;
+    scope: ErasureScope[];
+    notes: string;
+}
+
+/** Lỗi biểu mẫu */
+export interface ErasureFormErrors {
+    subject_identifier?: string;
+    identity_type?: string;
+    reason?: string;
+    legal_basis?: string;
+    scope?: string;
+    general?: string;
+}
+
+/** Props của component */
+export interface RetentionErasureProps {
+    /** URL API cơ sở */
+    apiBase?: string;
+    /** Callback khi yêu cầu xóa được gửi/xử lý */
+    onErasureRequest?: (request: ErasureRequest) => void;
+    /** Chỉ hiển thị yêu cầu của người dùng hiện tại */
+    ownRequestsOnly?: boolean;
+}
+
+/* ---- Giá trị mặc định biểu mẫu ---- */
+
+const emptyForm: ErasureFormData = {
+    subject_identifier: '',
+    identity_type: '',
+    reason: '',
+    legal_basis: '',
+    scope: [],
+    notes: '',
+};
+
+/* ---- Style objects ---- */
+
+const sWrap: React.CSSProperties = {
+    padding: '24px',
+    maxWidth: '1400px',
+    margin: '0 auto',
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    backgroundColor: '#f8fafc',
+    minHeight: '100vh',
+};
+
+const sHeader: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '24px',
+    flexWrap: 'wrap',
+    gap: '16px',
+};
+
+const sHeaderTitle: React.CSSProperties = {
+    margin: 0,
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#0f172a',
+};
+
+const sHeaderSub: React.CSSProperties = {
+    fontSize: '14px',
+    color: '#64748b',
+    marginTop: '4px',
+};
+
+const sBtnBase: React.CSSProperties = {
+    padding: '9px 18px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    background: '#fff',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#334155',
+    transition: 'all 0.15s',
+};
+
+const sBtnPrimary: React.CSSProperties = {
+    ...sBtnBase,
+    background: '#6366f1',
+    color: '#fff',
+    border: 'none',
+};
+
+const sBtnDanger: React.CSSProperties = {
+    ...sBtnBase,
+    background: '#ef4444',
+    color: '#fff',
+    border: 'none',
+};
+
+const sBtnSuccess: React.CSSProperties = {
+    ...sBtnBase,
+    background: '#22c55e',
+    color: '#fff',
+    border: 'none',
+};
+
+const sBtnWarning: React.CSSProperties = {
+    ...sBtnBase,
+    background: '#f59e0b',
+    color: '#fff',
+    border: 'none',
+};
+
+const sBtnSmall: React.CSSProperties = {
+    ...sBtnBase,
+    padding: '5px 12px',
+    fontSize: '13px',
+};
+
+const sCard: React.CSSProperties = {
+    background: '#fff',
+    borderRadius: '12px',
+    padding: '20px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+    marginBottom: '20px',
+};
+
+const sCardTitle: React.CSSProperties = {
+    margin: '0 0 16px',
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#0f172a',
+};
+
+const sGrid2Col: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '20px',
+};
+
+const sTable: React.CSSProperties = {
+    width: '100%',
+    borderCollapse: 'collapse',
+};
+
+const sTh: React.CSSProperties = {
+    padding: '12px 10px',
+    textAlign: 'left',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    borderBottom: '2px solid #e2e8f0',
+    whiteSpace: 'nowrap',
+};
+
+const sTd: React.CSSProperties = {
+    padding: '12px 10px',
+    fontSize: '14px',
+    borderBottom: '1px solid #f1f5f9',
+    color: '#334155',
+};
+
+const sTdCode: React.CSSProperties = {
+    fontFamily: 'ui-monospace, monospace',
+    fontSize: '13px',
+    color: '#6366f1',
+    background: '#eef2ff',
+    padding: '2px 6px',
+    borderRadius: '4px',
+};
+
+const sEmptyState: React.CSSProperties = {
+    padding: '48px 20px',
+    textAlign: 'center',
+    color: '#94a3b8',
+    fontSize: '15px',
+};
+
+const sLoading: React.CSSProperties = {
+    padding: '48px 20px',
+    textAlign: 'center',
+    color: '#64748b',
+    fontSize: '15px',
+};
+
+const sError: React.CSSProperties = {
+    padding: '14px 18px',
+    background: '#fef2f2',
+    borderRadius: '8px',
+    color: '#991b1b',
+    fontSize: '14px',
+    border: '1px solid #fecaca',
+    marginBottom: '16px',
+};
+
+const sWarning: React.CSSProperties = {
+    padding: '14px 18px',
+    background: '#fffbeb',
+    borderRadius: '8px',
+    color: '#92400e',
+    fontSize: '14px',
+    border: '1px solid #fde68a',
+    marginBottom: '16px',
+};
+
+const sSuccess: React.CSSProperties = {
+    padding: '14px 18px',
+    background: '#f0fdf4',
+    borderRadius: '8px',
+    color: '#166534',
+    fontSize: '14px',
+    border: '1px solid #bbf7d0',
+    marginBottom: '16px',
+};
+
+const sBadgeBase: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '3px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+};
+
+/* Form styles */
+const sFormField: React.CSSProperties = {
+    marginBottom: '16px',
+};
+
+const sFormLabel: React.CSSProperties = {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#334155',
+    marginBottom: '6px',
+};
+
+const sFormInput: React.CSSProperties = {
+    width: '100%',
+    padding: '10px 12px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    color: '#334155',
+    outline: 'none',
+    boxSizing: 'border-box',
+};
+
+const sFormInputError: React.CSSProperties = {
+    ...sFormInput,
+    borderColor: '#ef4444',
+    backgroundColor: '#fef2f2',
+};
+
+const sFormTextarea: React.CSSProperties = {
+    ...sFormInput,
+    minHeight: '80px',
+    resize: 'vertical' as const,
+    fontFamily: 'inherit',
+};
+
+const sFormErrorText: React.CSSProperties = {
+    fontSize: '12px',
+    color: '#dc2626',
+    marginTop: '4px',
+};
+
+const sCheckboxGroup: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '8px',
+};
+
+const sCheckboxItem: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '14px',
+    color: '#334155',
+};
+
+/* Search result card */
+const sSubjectCard: React.CSSProperties = {
+    padding: '14px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '10px',
+    marginBottom: '10px',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+    backgroundColor: '#fff',
+};
+
+const sSubjectCardSelected: React.CSSProperties = {
+    ...sSubjectCard,
+    borderColor: '#6366f1',
+    backgroundColor: '#eef2ff',
+};
+
+const sOverlay: React.CSSProperties = {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.4)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+};
+
+const sModal: React.CSSProperties = {
+    background: '#fff',
+    borderRadius: '16px',
+    padding: '28px',
+    width: '100%',
+    maxWidth: '640px',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
+};
+
+const sModalTitle: React.CSSProperties = {
+    margin: '0 0 20px',
+    fontSize: '20px',
+    fontWeight: 600,
+    color: '#0f172a',
+};
+
+const sFormActions: React.CSSProperties = {
+    display: 'flex',
+    gap: '10px',
+    justifyContent: 'flex-end',
+    marginTop: '20px',
+    paddingTop: '16px',
+    borderTop: '1px solid #e2e8f0',
+};
+
+/* Progress bar cho tiến độ xóa */
+const sProgressBar: React.CSSProperties = {
+    width: '100%',
+    height: '6px',
+    background: '#e2e8f0',
+    borderRadius: '3px',
+    overflow: 'hidden',
+};
+
+const sProgressFill: React.CSSProperties = {
+    height: '100%',
+    borderRadius: '3px',
+    transition: 'width 0.3s ease',
+};
+
+/* ---- Helper functions ---- */
+
+/** Màu và nhãn cho trạng thái yêu cầu xóa */
+function erasureStatusStyle(status: ErasureRequestStatus): React.CSSProperties {
+    const map: Record<ErasureRequestStatus, { bg: string; color: string }> = {
+        submitted:     { bg: '#dbeafe', color: '#1e40af' },
+        under_review:  { bg: '#fef3c7', color: '#92400e' },
+        approved:      { bg: '#d1fae5', color: '#065f46' },
+        in_progress:   { bg: '#e0e7ff', color: '#3730a3' },
+        completed:     { bg: '#d1fae5', color: '#065f46' },
+        denied:        { bg: '#fee2e2', color: '#991b1b' },
+        expired:       { bg: '#f1f5f9', color: '#475569' },
+    };
+    const c = map[status] || { bg: '#f1f5f9', color: '#475569' };
+    return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
+}
+
+function erasureStatusLabel(status: ErasureRequestStatus): string {
+    const map: Record<ErasureRequestStatus, string> = {
+        submitted:     'Đã gửi',
+        under_review:  'Đang xem xét',
+        approved:      'Đã duyệt',
+        in_progress:   'Đang xử lý',
+        completed:     'Hoàn thành',
+        denied:        'Bị từ chối',
+        expired:       'Đã hết hạn',
+    };
+    return map[status] || status;
+}
+
+/** Nhãn loại định danh */
+const identityLabels: Record<IdentityType, string> = {
+    email:        'Email',
+    phone:        'Số điện thoại',
+    national_id:  'CMND/CCCD',
+    passport:     'Hộ chiếu',
+    user_id:      'ID người dùng',
+};
+
+/** Nhãn phạm vi xóa */
+const scopeLabels: Record<ErasureScope, string> = {
+    all_personal_data:   'Tất cả dữ liệu cá nhân',
+    account_data:        'Dữ liệu tài khoản',
+    communication_data:  'Dữ liệu giao tiếp',
+    usage_data:          'Dữ liệu sử dụng',
+    file_data:           'Dữ liệu tập tin',
+    consent_data:        'Dữ liệu đồng ý/bằng chứng',
+};
+
+/** Cơ sở pháp lý GDPR */
+const legalBasisOptions = [
+    { value: 'gdpr_art17', label: 'GDPR Điều 17 — Quyền bị quên' },
+    { value: 'gdpr_art16', label: 'GDPR Điều 16 — Quyền sửa đổi' },
+    { value: 'gdpr_art21', label: 'GDPR Điều 21 — Quyền phản đối' },
+    { value: 'withdrawn_consent', label: 'Rút lại sự đồng ý' },
+    { value: 'data_breach', label: 'Vi phạm dữ liệu' },
+    { value: 'other', label: 'Lý do khác (ghi chú)' },
+];
+
+function formatDateTime(iso: string | null | undefined): string {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+/* ---- Xác thực biểu mẫu ---- */
+
+function validateErasureForm(data: ErasureFormData): ErasureFormErrors {
+    const errors: ErasureFormErrors = {};
+
+    if (!data.subject_identifier.trim()) {
+        errors.subject_identifier = 'Vui lòng nhập thông tin định danh chủ thể';
+    }
+
+    if (!data.identity_type) {
+        errors.identity_type = 'Vui lòng chọn loại định danh';
+    }
+
+    if (!data.reason.trim()) {
+        errors.reason = 'Lý do xóa không được để trống';
+    } else if (data.reason.trim().length < 10) {
+        errors.reason = 'Lý do xóa cần ít nhất 10 ký tự';
+    }
+
+    if (!data.legal_basis) {
+        errors.legal_basis = 'Vui lòng chọn cơ sở pháp lý';
+    }
+
+    if (!data.scope.length) {
+        errors.scope = 'Vui lòng chọn ít nhất một phạm vi dữ liệu cần xóa';
+    }
+
+    return errors;
+}
+
+/* ---- Component chính ---- */
+
+export const RetentionErasure: React.FC<RetentionErasureProps> = ({
+    apiBase,
+    onErasureRequest,
+    ownRequestsOnly = false,
+}) => {
+    const baseUrl = apiBase || '/api';
+
+    /* Trạng thái tìm kiếm chủ thể */
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<DataSubject[]>([]);
+    const [searching, setSearching] = useState(false);
+    const [selectedSubject, setSelectedSubject] = useState<DataSubject | null>(null);
+
+    /* Trạng thái danh sách yêu cầu xóa */
+    const [requests, setRequests] = useState<ErasureRequest[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<string | null>(null);
+
+    /* Bộ lọc */
+    const [filterStatus, setFilterStatus] = useState<ErasureRequestStatus | 'all'>('all');
+
+    /* Modal biểu mẫu */
+    const [showForm, setShowForm] = useState(false);
+    const [formData, setFormData] = useState<ErasureFormData>({ ...emptyForm });
+    const [formErrors, setFormErrors] = useState<ErasureFormErrors>({});
+    const [submitting, setSubmitting] = useState(false);
+
+    /* Chi tiết yêu cầu */
+    const [selectedRequest, setSelectedRequest] = useState<ErasureRequest | null>(null);
+
+    /* Tìm kiếm chủ thể dữ liệu */
+    const searchSubjects = useCallback(async (query: string) => {
+        if (!query.trim() || query.trim().length < 2) {
+            setSearchResults([]);
+            return;
+        }
+        setSearching(true);
+        try {
+            const res = await fetch(
+                `${baseUrl}/api/retention/subjects?q=${encodeURIComponent(query.trim())}`
+            );
+            const data = await res.json();
+            setSearchResults(data || []);
+        } catch {
+            setSearchResults([]);
+        } finally {
+            setSearching(false);
+        }
+    }, [baseUrl]);
+
+    /* Debounce tìm kiếm */
+    const handleSearchChange = useCallback((value: string) => {
+        setSearchQuery(value);
+        setFormData((prev) => ({ ...prev, subject_identifier: value }));
+        const timer = setTimeout(() => {
+            searchSubjects(value);
+        }, 400);
+        return () => clearTimeout(timer);
+    }, [searchSubjects]);
+
+    /* Tải danh sách yêu cầu xóa */
+    const loadRequests = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const params = new URLSearchParams();
+            if (filterStatus !== 'all') params.set('status', filterStatus);
+            if (ownRequestsOnly) params.set('own_only', 'true');
+
+            const res = await fetch(`${baseUrl}/api/retention/erasure-requests?${params.toString()}`);
+            const data = await res.json();
+            setRequests(data || []);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Không thể tải danh sách yêu cầu xóa');
+        } finally {
+            setLoading(false);
+        }
+    }, [baseUrl, filterStatus, ownRequestsOnly]);
+
+    useEffect(() => {
+        loadRequests();
+    }, [loadRequests]);
+
+    /* Sắp xếp yêu cầu — ưu tiên chưa hoàn thành */
+    const sortedRequests = useMemo(() => {
+        const priority: Record<ErasureRequestStatus, number> = {
+            submitted: 0,
+            under_review: 1,
+            approved: 2,
+            in_progress: 3,
+            denied: 4,
+            expired: 5,
+            completed: 6,
+        };
+        return [...requests].sort((a, b) => {
+            const pDiff = priority[a.status] - priority[b.status];
+            if (pDiff !== 0) return pDiff;
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+    }, [requests]);
+
+    /* Mở form tạo yêu cầu xóa */
+    const openCreateForm = useCallback(() => {
+        setFormData({ ...emptyForm });
+        setFormErrors({});
+        setSelectedSubject(null);
+        setSearchQuery('');
+        setSearchResults([]);
+        setShowForm(true);
+    }, []);
+
+    const closeForm = useCallback(() => {
+        setShowForm(false);
+        setFormErrors({});
+    }, []);
+
+    /* Chọn chủ thể từ kết quả tìm kiếm */
+    const selectSubject = useCallback((subject: DataSubject) => {
+        setSelectedSubject(subject);
+        setFormData((prev) => ({
+            ...prev,
+            subject_identifier: subject.email,
+            identity_type: 'email',
+        }));
+        setSearchResults([]);
+    }, []);
+
+    /* Cập nhật trường biểu mẫu */
+    const updateField = useCallback(<K extends keyof ErasureFormData>(field: K, value: ErasureFormData[K]) => {
+        setFormData((prev) => ({ ...prev, [field]: value }));
+        setFormErrors((prev) => {
+            const next = { ...prev };
+            delete next[field];
+            return next;
+        });
+    }, []);
+
+    /* Toggle phạm vi xóa */
+    const toggleScope = useCallback((scope: ErasureScope) => {
+        setFormData((prev) => {
+            const exists = prev.scope.includes(scope);
+            return {
+                ...prev,
+                scope: exists
+                    ? prev.scope.filter((s) => s !== scope)
+                    : [...prev.scope, scope],
+            };
+        });
+        setFormErrors((prev) => {
+            const next = { ...prev };
+            delete next.scope;
+            return next;
+        });
+    }, []);
+
+    /* Gửi yêu cầu xóa */
+    const handleSubmit = useCallback(async () => {
+        const errors = validateErasureForm(formData);
+        if (Object.keys(errors).length > 0) {
+            setFormErrors(errors);
+            return;
+        }
+
+        setSubmitting(true);
+        setError(null);
+        setSuccess(null);
+
+        try {
+            const payload = {
+                subject_identifier: formData.subject_identifier.trim(),
+                identity_type: formData.identity_type,
+                subject_id: selectedSubject?.id,
+                reason: formData.reason.trim(),
+                legal_basis: formData.legal_basis,
+                scope: formData.scope,
+                notes: formData.notes.trim() || undefined,
+            };
+
+            const res = await fetch(`${baseUrl}/api/retention/erasure-requests`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) {
+                const errBody = await res.json().catch(() => null);
+                throw new Error(errBody?.detail || errBody?.message || `Lỗi (${res.status})`);
+            }
+
+            const newRequest = await res.json();
+            setSuccess('Yêu cầu xóa đã được gửi thành công');
+            closeForm();
+            await loadRequests();
+            onErasureRequest?.(newRequest);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Không thể gửi yêu cầu xóa');
+        } finally {
+            setSubmitting(false);
+        }
+    }, [formData, selectedSubject, baseUrl, closeForm, loadRequests, onErasureRequest]);
+
+    /* Xem chi tiết yêu cầu */
+    const viewRequestDetail = useCallback((request: ErasureRequest) => {
+        setSelectedRequest(request);
+    }, []);
+
+    /* Tính tỷ lệ hoàn thành xóa */
+    const eraseProgress = useCallback((r: ErasureRequest): number => {
+        if (r.records_found <= 0) return 0;
+        return Math.min(100, Math.round((r.records_erased / r.records_found) * 100));
+    }, []);
+
+    /* Nút phê duyệt/từ chối yêu cầu */
+    const handleReview = useCallback(async (requestId: string, action: 'approve' | 'deny', reason?: string) => {
+        try {
+            const payload: Record<string, any> = { action };
+            if (reason) payload.reason = reason;
+
+            const res = await fetch(`${baseUrl}/api/retention/erasure-requests/${requestId}/review`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) throw new Error('Không thể xử lý yêu cầu xem xét');
+
+            setSuccess(action === 'approve' ? 'Đã phê duyệt yêu cầu xóa' : 'Đã từ chối yêu cầu xóa');
+            await loadRequests();
+            setSelectedRequest(null);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Lỗi khi xử lý xem xét');
+        }
+    }, [baseUrl, loadRequests]);
+
+    return (
+        <div style={sWrap}>
+            {/* Header */}
+            <div style={sHeader}>
+                <div>
+                    <h1 style={sHeaderTitle}>Yêu cầu xóa dữ liệu (GDPR)</h1>
+                    <p style={sHeaderSub}>
+                        Quản lý yêu cầu xóa dữ liệu cá nhân theo quy định GDPR và luật bảo vệ dữ liệu
+                    </p>
+                </div>
+                <button onClick={openCreateForm} style={sBtnDanger}>
+                    + Yêu cầu xóa mới
+                </button>
+            </div>
+
+            {/* Cảnh báo pháp lý */}
+            <div style={sWarning}>
+                <strong>Lưu ý pháp lý:</strong> Yêu cầu xóa dữ liệu tuân thủ Điều 17 GDPR (Quyền bị quên).
+                Quá trình xóa có thể mất thời gian và sẽ được ghi nhận trong dấu vết kiểm toán.
+            </div>
+
+            {/* Thông báo */}
+            {error && <div style={sError}><strong>Lỗi:</strong> {error}</div>}
+            {success && <div style={sSuccess}><strong>Thành công:</strong> {success}</div>}
+
+            {/* Bộ lọc */}
+            <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>Trạng thái:</span>
+                <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value as ErasureRequestStatus | 'all')}
+                    style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px' }}
+                >
+                    <option value="all">Tất cả</option>
+                    <option value="submitted">Đã gửi</option>
+                    <option value="under_review">Đang xem xét</option>
+                    <option value="approved">Đã duyệt</option>
+                    <option value="in_progress">Đang xử lý</option>
+                    <option value="completed">Hoàn thành</option>
+                    <option value="denied">Bị từ chối</option>
+                    <option value="expired">Đã hết hạn</option>
+                </select>
+                <button onClick={loadRequests} style={sBtnSuccess}>Làm mới</button>
+            </div>
+
+            {/* Bảng yêu cầu xóa */}
+            <div style={sCard}>
+                <h2 style={sCardTitle}>Danh sách yêu cầu xóa ({sortedRequests.length})</h2>
+                {loading ? (
+                    <div style={sLoading}>Đang tải yêu cầu xóa...</div>
+                ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={sTable}>
+                            <thead>
+                                <tr>
+                                    <th style={sTh}>ID</th>
+                                    <th style={sTh}>Chủ thể</th>
+                                    <th style={sTh}>Email</th>
+                                    <th style={sTh}>Lý do</th>
+                                    <th style={sTh}>Phạm vi</th>
+                                    <th style={sTh}>Tiến độ</th>
+                                    <th style={sTh}>Trạng thái</th>
+                                    <th style={sTh}>Ngày tạo</th>
+                                    <th style={sTh}>Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {sortedRequests.map((r) => {
+                                    const progress = eraseProgress(r);
+                                    return (
+                                        <tr key={r.id}>
+                                            <td style={sTd}>
+                                                <span style={sTdCode}>{r.id.slice(0, 12)}</span>
+                                            </td>
+                                            <td style={{ ...sTd, fontWeight: 500 }}>{r.subject_name}</td>
+                                            <td style={sTd}>{r.subject_email}</td>
+                                            <td style={sTd}>
+                                                <div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {r.reason}
+                                                </div>
+                                            </td>
+                                            <td style={sTd}>
+                                                {r.scope.length} mục
+                                                <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>
+                                                    {r.scope.slice(0, 2).map((s) => scopeLabels[s] || s).join(', ')}
+                                                    {r.scope.length > 2 ? '...' : ''}
+                                                </span>
+                                            </td>
+                                            <td style={{ ...sTd, minWidth: '100px' }}>
+                                                {r.records_found > 0 ? (
+                                                    <>
+                                                        <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>
+                                                            {r.records_erased}/{r.records_found}
+                                                        </div>
+                                                        <div style={sProgressBar}>
+                                                            <div
+                                                                style={{
+                                                                    ...sProgressFill,
+                                                                    width: `${progress}%`,
+                                                                    backgroundColor:
+                                                                        r.status === 'completed' ? '#22c55e'
+                                                                            : r.status === 'in_progress' ? '#3b82f6'
+                                                                            : '#94a3b8',
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>—</span>
+                                                )}
+                                            </td>
+                                            <td style={sTd}>
+                                                <span style={erasureStatusStyle(r.status)}>
+                                                    {erasureStatusLabel(r.status)}
+                                                </span>
+                                            </td>
+                                            <td style={sTd}>{formatDateTime(r.created_at)}</td>
+                                            <td style={{ ...sTd, whiteSpace: 'nowrap' }}>
+                                                <button
+                                                    onClick={() => viewRequestDetail(r)}
+                                                    style={{ ...sBtnSmall, marginRight: '6px' }}
+                                                >
+                                                    Chi tiết
+                                                </button>
+                                                {(r.status === 'under_review' || r.status === 'submitted') && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleReview(r.id, 'approve')}
+                                                            style={{ ...sBtnSmall, ...sBtnSuccess, marginRight: '6px' }}
+                                                        >
+                                                            Duyệt
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleReview(r.id, 'deny')}
+                                                            style={{ ...sBtnSmall, ...sBtnDanger }}
+                                                        >
+                                                            Từ chối
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {!sortedRequests.length && (
+                                    <tr>
+                                        <td colSpan={9} style={sEmptyState}>
+                                            Chưa có yêu cầu xóa nào. Nhấn "Yêu cầu xóa mới" để tạo.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* Modal biểu mẫu yêu cầu xóa */}
+            {showForm && (
+                <div style={sOverlay} onClick={closeForm}>
+                    <div style={sModal} onClick={(e) => e.stopPropagation()}>
+                        <h2 style={sModalTitle}>Yêu cầu xóa dữ liệu mới</h2>
+
+                        {/* Tìm kiếm chủ thể */}
+                        <div style={sFormField}>
+                            <label style={sFormLabel}>Tìm kiếm chủ thể dữ liệu *</label>
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => handleSearchChange(e.target.value)}
+                                style={sFormInput}
+                                placeholder="Nhập email, số điện thoại, hoặc ID..."
+                            />
+                            {searching && (
+                                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>Đang tìm kiếm...</div>
+                            )}
+                        </div>
+
+                        {/* Kết quả tìm kiếm */}
+                        {searchResults.length > 0 && (
+                            <div style={{ marginBottom: '16px', maxHeight: '160px', overflowY: 'auto' }}>
+                                {searchResults.map((subject) => (
+                                    <div
+                                        key={subject.id}
+                                        style={selectedSubject?.id === subject.id ? sSubjectCardSelected : sSubjectCard}
+                                        onClick={() => selectSubject(subject)}
+                                    >
+                                        <div style={{ fontWeight: 600, fontSize: '14px' }}>{subject.display_name}</div>
+                                        <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            {subject.email}
+                                            {subject.phone ? ` | ${subject.phone}` : ''}
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                                            {subject.data_sources_count} nguồn dữ liệu
+                                            {' '}• ~{subject.estimated_records.toLocaleString('vi-VN')} bản ghi
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div style={sFormField}>
+                            <label style={sFormLabel}>Loại định danh *</label>
+                            <select
+                                value={formData.identity_type}
+                                onChange={(e) => updateField('identity_type', e.target.value as IdentityType)}
+                                style={formErrors.identity_type ? sFormInputError : sFormInput}
+                            >
+                                <option value="">-- Chọn loại --</option>
+                                {Object.entries(identityLabels).map(([val, lbl]) => (
+                                    <option key={val} value={val}>{lbl}</option>
+                                ))}
+                            </select>
+                            {formErrors.identity_type && <div style={sFormErrorText}>{formErrors.identity_type}</div>}
+                        </div>
+
+                        <div style={sFormField}>
+                            <label style={sFormLabel}>Cơ sở pháp lý *</label>
+                            <select
+                                value={formData.legal_basis}
+                                onChange={(e) => updateField('legal_basis', e.target.value)}
+                                style={formErrors.legal_basis ? sFormInputError : sFormInput}
+                            >
+                                <option value="">-- Chọn cơ sở pháp lý --</option>
+                                {legalBasisOptions.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
+                            {formErrors.legal_basis && <div style={sFormErrorText}>{formErrors.legal_basis}</div>}
+                        </div>
+
+                        <div style={sFormField}>
+                            <label style={sFormLabel}>Phạm vi dữ liệu cần xóa *</label>
+                            <div style={sCheckboxGroup}>
+                                {(Object.entries(scopeLabels) as [ErasureScope, string][]).map(([val, lbl]) => (
+                                    <label key={val} style={sCheckboxItem}>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.scope.includes(val)}
+                                            onChange={() => toggleScope(val)}
+                                        />
+                                        {lbl}
+                                    </label>
+                                ))}
+                            </div>
+                            {formErrors.scope && <div style={sFormErrorText}>{formErrors.scope}</div>}
+                        </div>
+
+                        <div style={sFormField}>
+                            <label style={sFormLabel}>Lý do xóa *</label>
+                            <textarea
+                                value={formData.reason}
+                                onChange={(e) => updateField('reason', e.target.value)}
+                                style={formErrors.reason ? sFormTextarea : sFormTextarea}
+                                placeholder="Mô tả lý do yêu cầu xóa dữ liệu..."
+                            />
+                            {formErrors.reason && <div style={sFormErrorText}>{formErrors.reason}</div>}
+                        </div>
+
+                        <div style={sFormField}>
+                            <label style={sFormLabel}>Ghi chú (tùy chọn)</label>
+                            <textarea
+                                value={formData.notes}
+                                onChange={(e) => updateField('notes', e.target.value)}
+                                style={sFormTextarea}
+                                placeholder="Thông tin bổ sung cho bộ phận xử lý..."
+                            />
+                        </div>
+
+                        <div style={sFormActions}>
+                            <button onClick={closeForm} style={sBtnBase} disabled={submitting}>
+                                Hủy
+                            </button>
+                            <button onClick={handleSubmit} style={sBtnDanger} disabled={submitting}>
+                                {submitting ? 'Đang gửi...' : 'Gửi yêu cầu xóa'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal chi tiết yêu cầu */}
+            {selectedRequest && (
+                <div style={sOverlay} onClick={() => setSelectedRequest(null)}>
+                    <div style={sModal} onClick={(e) => e.stopPropagation()}>
+                        <h2 style={sModalTitle}>Chi tiết yêu cầu xóa</h2>
+                        <div style={{ fontSize: '14px', color: '#334155' }}>
+                            <div style={{ marginBottom: '12px' }}>
+                                <strong>ID:</strong>{' '}
+                                <span style={{ ...sTdCode, marginLeft: '8px' }}>{selectedRequest.id}</span>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                                <strong>Chủ thể:</strong>{' '}
+                                <span style={{ marginLeft: '8px' }}>{selectedRequest.subject_name} ({selectedRequest.subject_email})</span>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                                <strong>Trạng thái:</strong>{' '}
+                                <span style={{ marginLeft: '8px' }}>
+                                    <span style={erasureStatusStyle(selectedRequest.status)}>
+                                        {erasureStatusLabel(selectedRequest.status)}
+                                    </span>
+                                </span>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                                <strong>Cơ sở pháp lý:</strong>{' '}
+                                <span style={{ marginLeft: '8px' }}>
+                                    {legalBasisOptions.find((o) => o.value === selectedRequest.legal_basis)?.label || selectedRequest.legal_basis}
+                                </span>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                                <strong>Lý do:</strong>
+                                <div style={{ marginTop: '4px', paddingLeft: '16px', color: '#475569' }}>
+                                    {selectedRequest.reason}
+                                </div>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                                <strong>Phạm vi:</strong>
+                                <div style={{ marginTop: '4px', paddingLeft: '16px' }}>
+                                    {selectedRequest.scope.map((s) => (
+                                        <div key={s} style={{ fontSize: '13px' }}>
+                                            {scopeLabels[s] || s}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                                <strong>Tiến độ xóa:</strong>{' '}
+                                {selectedRequest.records_found > 0
+                                    ? `${selectedRequest.records_erased}/${selectedRequest.records_found} bản ghi`
+                                    : 'Chưa bắt đầu'}
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                                <strong>Đã xác minh danh tính:</strong>{' '}
+                                <span style={{ color: selectedRequest.identity_verified ? '#16a34a' : '#dc2626' }}>
+                                    {selectedRequest.identity_verified ? 'Đã xác minh' : 'Chưa xác minh'}
+                                </span>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                                <strong>Người gửi:</strong>{' '}
+                                <span style={{ marginLeft: '8px' }}>{selectedRequest.requested_by}</span>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                                <strong>Ngày tạo:</strong>{' '}
+                                <span style={{ marginLeft: '8px' }}>{formatDateTime(selectedRequest.created_at)}</span>
+                            </div>
+                            {selectedRequest.completed_at && (
+                                <div style={{ marginBottom: '12px' }}>
+                                    <strong>Ngày hoàn thành:</strong>{' '}
+                                    <span style={{ marginLeft: '8px' }}>{formatDateTime(selectedRequest.completed_at)}</span>
+                                </div>
+                            )}
+                            {selectedRequest.denial_reason && (
+                                <div style={{ marginBottom: '12px', padding: '10px', background: '#fef2f2', borderRadius: '6px', color: '#991b1b' }}>
+                                    <strong>Lý do từ chối:</strong> {selectedRequest.denial_reason}
+                                </div>
+                            )}
+                            {selectedRequest.notes && (
+                                <div style={{ marginBottom: '12px', padding: '10px', background: '#f8fafc', borderRadius: '6px', color: '#475569' }}>
+                                    <strong>Ghi chú:</strong> {selectedRequest.notes}
+                                </div>
+                            )}
+                        </div>
+                        <div style={sFormActions}>
+                            {(selectedRequest.status === 'under_review' || selectedRequest.status === 'submitted') && (
+                                <>
+                                    <button
+                                        onClick={() => handleReview(selectedRequest.id, 'approve')}
+                                        style={sBtnSuccess}
+                                    >
+                                        Phê duyệt
+                                    </button>
+                                    <button
+                                        onClick={() => handleReview(selectedRequest.id, 'deny')}
+                                        style={sBtnDanger}
+                                    >
+                                        Từ chối
+                                    </button>
+                                </>
+                            )}
+                            <button onClick={() => setSelectedRequest(null)} style={sBtnBase}>
+                                Đóng
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default RetentionErasure;
+{% endraw %}

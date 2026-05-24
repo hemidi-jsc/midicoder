@@ -1,0 +1,559 @@
+{% raw %}/**
+ * CP47 — Dịch vụ HTTP cho quản lý chu kỳ dữ liệu
+ *
+ * Cung cấp các phương thức gọi API cho chính sách lưu trữ,
+ * bản ghi lưu trữ, yêu cầu xóa dữ liệu (GDPR), và thống kê dashboard.
+ *
+ * Sử dụng HttpClient và SignalState từ retention store.
+ */
+
+import { Injectable, inject } from '@angular/core';
+import {
+  HttpClient,
+  HttpErrorResponse,
+  HttpParams,
+  HttpHeaders,
+} from '@angular/common/http';
+import {
+  Observable,
+  catchError,
+  shareReplay,
+  tap,
+  timeout,
+  finalize,
+} from 'rxjs';
+import {
+  RetentionPolicy,
+  RetentionPolicyForm,
+  RetentionPolicyFilters,
+  RetentionPolicyStatus,
+  RetentionDataType,
+  ArchiveRecord,
+  ErasureRequest,
+  ErasureRequestForm,
+  ErasureRequestFilters,
+  ErasureRequestStatus,
+  RetentionStats,
+  PaginatedResponse,
+  ApiError,
+  RETENTION_ENDPOINTS,
+  DEFAULT_PAGE_SIZE,
+  ARCHIVE_PAGE_SIZE,
+  ERASURE_PAGE_SIZE,
+} from './retention-types';
+
+// ──────────────────────────────────────────────
+// Internal helpers
+// ──────────────────────────────────────────────
+
+/**
+ * Chuyển đổi HttpErrorResponse thành ApiError chuẩn
+ * để đảm bảo giao diện luôn nhận được định dạng lỗi nhất quán.
+ */
+function toApiError(error: HttpErrorResponse): ApiError {
+  const serverCode = error.status;
+  const message = error.error?.message ?? error.statusText ?? 'Lỗi không xác định';
+  return {
+    code: `HTTP_${serverCode}`,
+    message,
+    details: error.error?.details,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * Thời gian chờ mặc định cho các yêu cầu API (ms)
+ * Dùng timeout 30s cho các thao tác thông thường.
+ */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * Thời gian chờ cho thao tác nặng (lưu trữ hàng loạt, xuất báo cáo)
+ */
+const HEAVY_OP_TIMEOUT_MS = 120_000;
+
+// ──────────────────────────────────────────────
+// Service chính
+// ──────────────────────────────────────────────
+
+/**
+ * Dịch vụ trung tâm cho tất cả thao tác retention.
+ *
+ * Mỗi phương thức trả về Observable đã được bọc bởi:
+ * - timeout() để tránh treo request
+ * - shareReplay(1) để cache phản hồi trong cùng một chu kỳ
+ * - catchError() để chuyển đổi lỗi thành ApiError chuẩn
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class RetentionService {
+  private readonly http = inject(HttpClient);
+
+  // ──────────────────────────────────────────
+  // Chính sách lưu trữ (CRUD)
+  // ──────────────────────────────────────────
+
+  /**
+   * Lấy danh sách chính sách với phân trang và lọc.
+   *
+   * @param filters — tiêu chí lọc, sắp xếp, phân trang
+   * @returns Observable trả về danh sách phân trang
+   */
+  getPolicies(
+    filters: RetentionPolicyFilters = {}
+  ): Observable<PaginatedResponse<RetentionPolicy>> {
+    const params = this.buildPolicyParams(filters);
+
+    return this.http
+      .get<PaginatedResponse<RetentionPolicy>>(RETENTION_ENDPOINTS.policies, {
+        params,
+        headers: new HttpHeaders({ 'Cache-Control': 'no-cache' }),
+      })
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Lấy chi tiết một chính sách theo ID.
+   */
+  getPolicyById(id: string): Observable<RetentionPolicy> {
+    const url = `${RETENTION_ENDPOINTS.policies}/${encodeURIComponent(id)}`;
+
+    return this.http
+      .get<RetentionPolicy>(url)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Tạo mới một chính sách lưu trữ.
+   *
+   * @param form — dữ liệu form từ giao diện
+   * @returns Observable trả về chính sách đã tạo
+   */
+  createPolicy(form: RetentionPolicyForm): Observable<RetentionPolicy> {
+    return this.http
+      .post<RetentionPolicy>(RETENTION_ENDPOINTS.policies, form)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap((policy) => {
+          console.log(`[CP47] Đã tạo chính sách: ${policy.name} (${policy.id})`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Cập nhật thông tin chính sách.
+   *
+   * @param id — định danh chính sách
+   * @param form — dữ liệu cập nhật (không cần gửi full object)
+   */
+  updatePolicy(
+    id: string,
+    form: Partial<RetentionPolicyForm>
+  ): Observable<RetentionPolicy> {
+    const url = `${RETENTION_ENDPOINTS.policies}/${encodeURIComponent(id)}`;
+
+    return this.http
+      .patch<RetentionPolicy>(url, form)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap(() => {
+          console.log(`[CP47] Đã cập nhật chính sách: ${id}`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Xóa chính sách — hành động này không thể hoàn tác.
+   * Nếu chính sách đang áp dụng cho bản ghi nào, server sẽ trả lỗi.
+   */
+  deletePolicy(id: string): Observable<void> {
+    const url = `${RETENTION_ENDPOINTS.policies}/${encodeURIComponent(id)}`;
+
+    return this.http
+      .delete<void>(url)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap(() => {
+          console.log(`[CP47] Đã xóa chính sách: ${id}`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Kích hoạt hoặc vô hiệu hóa chính sách.
+   *
+   * @param id — định danh chính sách
+   * @param status — trạng thái mới
+   */
+  setPolicyStatus(
+    id: string,
+    status: RetentionPolicyStatus
+  ): Observable<RetentionPolicy> {
+    const url = `${RETENTION_ENDPOINTS.policies}/${encodeURIComponent(id)}/status`;
+
+    return this.http
+      .put<RetentionPolicy>(url, { status })
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Áp dụng ngay chính sách cho tất cả bản ghi phù hợp.
+   * Thao tác nặng — có thể mất vài phút cho tập dữ liệu lớn.
+   */
+  enforcePolicyNow(id: string): Observable<{ affectedRecords: number }> {
+    const url = `${RETENTION_ENDPOINTS.policies}/${encodeURIComponent(id)}/enforce`;
+
+    return this.http
+      .post<{ affectedRecords: number }>(url, {})
+      .pipe(
+        timeout(HEAVY_OP_TIMEOUT_MS),
+        tap((result) => {
+          console.log(`[CP47] Đã áp dụng chính sách ${id} cho ${result.affectedRecords} bản ghi`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  // ──────────────────────────────────────────
+  // Bản ghi lưu trữ (Archive)
+  // ──────────────────────────────────────────
+
+  /**
+   * Lấy danh sách bản ghi đã lưu trữ.
+   */
+  getArchives(
+    page: number = 1,
+    pageSize: number = ARCHIVE_PAGE_SIZE,
+    dataType?: RetentionDataType
+  ): Observable<PaginatedResponse<ArchiveRecord>> {
+    const params: Record<string, string> = {
+      page: String(page),
+      pageSize: String(pageSize),
+    };
+
+    if (dataType) {
+      params.dataType = dataType;
+    }
+
+    return this.http
+      .get<PaginatedResponse<ArchiveRecord>>(RETENTION_ENDPOINTS.archives, {
+        params,
+      })
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Khởi tạo lưu trữ cho một tập bản ghi cụ thể.
+   *
+   * @param policyId — chính sách áp dụng
+   * @param recordIds — danh sách ID bản ghi cần lưu
+   * @param format — định dạng lưu trữ
+   */
+  archiveRecords(
+    policyId: string,
+    recordIds: string[],
+    format: 'zip' | 'tar.gz' | 'parquet' = 'zip'
+  ): Observable<{ archiveId: string; estimatedMB: number }> {
+    return this.http
+      .post<{ archiveId: string; estimatedMB: number }>(
+        `${RETENTION_ENDPOINTS.archives}/bulk`,
+        { policyId, recordIds, format }
+      )
+      .pipe(
+        timeout(HEAVY_OP_TIMEOUT_MS),
+        tap((result) => {
+          console.log(`[CP47] Đã khởi tạo lưu trữ: ${result.archiveId} (~${result.estimatedMB} MB)`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Tải xuống bản ghi lưu trữ.
+   * Trả về blob để giao diện xử lý download.
+   */
+  downloadArchive(archiveId: string): Observable<Blob> {
+    const url = `${RETENTION_ENDPOINTS.archives}/${encodeURIComponent(archiveId)}/download`;
+
+    return this.http
+      .get(url, { responseType: 'blob' })
+      .pipe(
+        timeout(HEAVY_OP_TIMEOUT_MS),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Xóa vĩnh viễn bản ghi đã lưu trữ.
+   */
+  deleteArchive(archiveId: string): Observable<void> {
+    const url = `${RETENTION_ENDPOINTS.archives}/${encodeURIComponent(archiveId)}`;
+
+    return this.http
+      .delete<void>(url)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        catchError(toApiError),
+      );
+  }
+
+  // ──────────────────────────────────────────
+  // Yêu cầu xóa dữ liệu (GDPR Erasure)
+  // ──────────────────────────────────────────
+
+  /**
+   * Lấy danh sách yêu cầu xóa với phân trang và lọc.
+   */
+  getErasureRequests(
+    filters: ErasureRequestFilters = {}
+  ): Observable<PaginatedResponse<ErasureRequest>> {
+    const params = this.buildErasureParams(filters);
+
+    return this.http
+      .get<PaginatedResponse<ErasureRequest>>(RETENTION_ENDPOINTS.erasure, {
+        params,
+      })
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Lấy chi tiết yêu cầu xóa theo ID — bao gồm tiến độ chi tiết.
+   */
+  getErasureRequestById(id: string): Observable<ErasureRequest> {
+    const url = `${RETENTION_ENDPOINTS.erasure}/${encodeURIComponent(id)}`;
+
+    return this.http
+      .get<ErasureRequest>(url)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Tạo mới yêu cầu xóa dữ liệu.
+   */
+  createErasureRequest(form: ErasureRequestForm): Observable<ErasureRequest> {
+    return this.http
+      .post<ErasureRequest>(RETENTION_ENDPOINTS.erasure, form)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap((req) => {
+          console.log(`[CP47] Đã gửi yêu cầu xóa: ${req.id}`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Xác minh danh tính chủ thể dữ liệu.
+   * Sau bước này, yêu cầu chuyển sang trạng thái 'verified'.
+   */
+  verifyErasureRequest(
+    id: string,
+    verificationCode: string
+  ): Observable<ErasureRequest> {
+    const url = `${RETENTION_ENDPOINTS.erasure}/${encodeURIComponent(id)}/verify`;
+
+    return this.http
+      .post<ErasureRequest>(url, { verificationCode })
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Phê duyệt và bắt đầu xóa dữ liệu.
+   */
+  approveErasureRequest(
+    id: string,
+    note?: string
+  ): Observable<ErasureRequest> {
+    const url = `${RETENTION_ENDPOINTS.erasure}/${encodeURIComponent(id)}/approve`;
+
+    return this.http
+      .post<ErasureRequest>(url, { note })
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap(() => {
+          console.log(`[CP47] Đã phê duyệt yêu cầu xóa: ${id}`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Từ chối yêu cầu xóa.
+   */
+  denyErasureRequest(
+    id: string,
+    reasonCode: string,
+    note?: string
+  ): Observable<ErasureRequest> {
+    const url = `${RETENTION_ENDPOINTS.erasure}/${encodeURIComponent(id)}/deny`;
+
+    return this.http
+      .post<ErasureRequest>(url, { reasonCode, note })
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Lấy tiến độ xóa theo thời gian thực qua SSE (Server-Sent Events).
+   * Trả về Observable emit từng cập nhật tiến độ.
+   */
+  streamErasureProgress(id: string): Observable<{ percent: number; step: string }> {
+    const url = `${RETENTION_ENDPOINTS.erasure}/${encodeURIComponent(id)}/progress`;
+
+    // Dùng event-source để nhận stream SSE
+    return this.http.get(url, {
+      responseType: 'text',
+      observe: 'response',
+    }).pipe(
+      timeout(HEAVY_OP_TIMEOUT_MS),
+      catchError(toApiError),
+    );
+  }
+
+  /**
+   * Hủy yêu cầu xóa đang chờ xử lý.
+   * Chỉ được phép hủy ở trạng thái 'pending' hoặc 'processing'.
+   */
+  cancelErasureRequest(id: string): Observable<void> {
+    const url = `${RETENTION_ENDPOINTS.erasure}/${encodeURIComponent(id)}/cancel`;
+
+    return this.http
+      .post<void>(url, {})
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        catchError(toApiError),
+      );
+  }
+
+  // ──────────────────────────────────────────
+  // Thống kê Dashboard
+  // ──────────────────────────────────────────
+
+  /**
+   * Lấy toàn bộ thống kê cho dashboard.
+   * Kết quả được cache 60s bởi server.
+   */
+  getStats(): Observable<RetentionStats> {
+    return this.http
+      .get<RetentionStats>(RETENTION_ENDPOINTS.stats)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  // ──────────────────────────────────────────
+  // Xuất báo cáo
+  // ──────────────────────────────────────────
+
+  /**
+   * Xuất báo cáo tuân thủ dưới dạng file PDF.
+   *
+   * @param startDate — ngày bắt đầu khoảng thời gian (ISO 8601)
+   * @param endDate — ngày kết thúc (ISO 8601)
+   * @returns Observable trả về blob PDF
+   */
+  exportComplianceReport(
+    startDate: string,
+    endDate: string
+  ): Observable<Blob> {
+    const params = new HttpParams()
+      .set('startDate', startDate)
+      .set('endDate', endDate);
+
+    return this.http
+      .get(RETENTION_ENDPOINTS.export, {
+        params,
+        responseType: 'blob',
+      })
+      .pipe(
+        timeout(HEAVY_OP_TIMEOUT_MS),
+        catchError(toApiError),
+      );
+  }
+
+  // ──────────────────────────────────────────
+  // Internal helpers
+  // ──────────────────────────────────────────
+
+  /**
+   * Xây dựng HttpParams từ bộ lọc chính sách.
+   */
+  private buildPolicyParams(filters: RetentionPolicyFilters): HttpParams {
+    let params = new HttpParams();
+
+    if (filters.search) {
+      params = params.set('q', filters.search);
+    }
+    if (filters.dataType && filters.dataType !== 'all') {
+      params = params.set('dataType', filters.dataType);
+    }
+    if (filters.status && filters.status !== 'all') {
+      params = params.set('status', filters.status);
+    }
+    if (filters.sortBy) {
+      params = params.set('sortBy', String(filters.sortBy));
+      params = params.set('sortOrder', filters.sortOrder ?? 'desc');
+    }
+    params = params.set('page', String(filters.page ?? 1));
+    params = params.set('pageSize', String(filters.pageSize ?? DEFAULT_PAGE_SIZE));
+
+    return params;
+  }
+
+  /**
+   * Xây dựng HttpParams từ bộ lọc yêu cầu xóa.
+   */
+  private buildErasureParams(filters: ErasureRequestFilters): HttpParams {
+    let params = new HttpParams();
+
+    if (filters.search) {
+      params = params.set('q', filters.search);
+    }
+    if (filters.status && filters.status !== 'all') {
+      params = params.set('status', filters.status);
+    }
+    if (filters.sortBy) {
+      params = params.set('sortBy', String(filters.sortBy));
+      params = params.set('sortOrder', filters.sortOrder ?? 'desc');
+    }
+    params = params.set('page', String(filters.page ?? 1));
+    params = params.set('pageSize', String(filters.pageSize ?? ERASURE_PAGE_SIZE));
+
+    return params;
+  }
+}
+{% endraw %}

@@ -1,0 +1,769 @@
+{% raw %}
+// ============================================================================
+// CP47 — Data Retention & Lifecycle Management
+// Webhook Controller — Nhận và xử lý sự kiện bảo quản dữ liệu
+// ============================================================================
+// File: retention-webhook.controller.ts.jinja2
+// Template context: (không sử dụng biến Jinja2 — template tĩnh)
+//
+// Rule V1: NO @midicoder imports — generated code standalone, use relative imports
+// Rule V2: NO business logic in decorators — only structure
+// ============================================================================
+
+import {
+  Controller,
+  Post,
+  Body,
+  Headers,
+  Req,
+  BadRequestException,
+  Logger,
+  HttpStatus,
+  HttpCode,
+  UnauthorizedException,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiHeader,
+  ApiResponse,
+} from '@nestjs/swagger';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import * as crypto from 'crypto';
+
+import {
+  RetentionPolicyEntity,
+  ArchivedRecordEntity,
+  ErasureRequestEntity,
+  RetentionPolicyStatus,
+  ArchiveStatus,
+  ErasureStatus,
+  ErasureReason,
+  ErasurePriority,
+} from './entities/retention.entity';
+
+/**
+ * Dữ liệu webhook event nhận từ hệ thống bên ngoài.
+ */
+export interface RetentionWebhookPayload {
+  /** ID sự kiện duy nhất */
+  eventId: string;
+
+  /** Loại sự kiện */
+  eventType: RetentionWebhookEventType;
+
+  /** Dấu thời gian (epoch milliseconds) */
+  timestamp: number;
+
+  /** Dữ liệu chi tiết của sự kiện */
+  data: Record<string, any>;
+
+  /** Phiên bản schema của webhook */
+  schemaVersion: string;
+}
+
+/**
+ * Các loại sự kiện webhook cho bảo quản dữ liệu.
+ */
+export enum RetentionWebhookEventType {
+  /** Người dùng yêu cầu xóa tài khoản — kích hoạt erasure tự động */
+  USER_ACCOUNT_DELETED = 'user.account_deleted',
+  /** Người dùng rút lại sự đồng ý — kích hoạt erasure */
+  CONSENT_WITHDRAWN = 'consent.withdrawn',
+  /** Chính sách bảo quản mới được kích hoạt */
+  POLICY_ACTIVATED = 'policy.activated',
+  /** Chính sách bảo quản bị vô hiệu hóa */
+  POLICY_DEACTIVATED = 'policy.deactivated',
+  /** Bản ghi lưu trữ hoàn tất */
+  ARCHIVE_COMPLETED = 'archive.completed',
+  /** Bản ghi lưu trữ thất bại */
+  ARCHIVE_FAILED = 'archive.failed',
+  /** Yêu cầu xóa hoàn tất */
+  ERASURE_COMPLETED = 'erasure.completed',
+  /** Yêu cầu xóa quá hạn */
+  ERASURE_OVERDUE = 'erasure.overdue',
+  /** Dữ liệu đã hết thời hạn bảo quản */
+  DATA_EXPIRED = 'data.expired',
+  /** Sự kiện tùy chỉnh */
+  CUSTOM = 'custom',
+}
+
+/**
+ * RetentionWebhookController — Controller nhận và xử lý webhook sự kiện.
+ *
+ * Cung cấp endpoint nhận webhook từ các hệ thống bên ngoài:
+ * - Hệ thống quản lý người dùng: gửi sự kiện xóa tài khoản, rút lại đồng ý
+ * - Hệ thống chính sách: gửi sự kiện kích hoạt/vô hiệu hóa chính sách
+ * - Hệ thống lưu trữ: gửi sự kiện hoàn tất/thất bại lưu trữ
+ * - Hệ thống giám sát: gửi sự kiện quá hạn, hết hạn
+ *
+ * Xác thực webhook bằng HMAC-SHA256 signature verification.
+ */
+@ApiTags('Retention Webhook')
+@Controller('webhooks/retention')
+export class RetentionWebhookController {
+  private readonly logger = new Logger(RetentionWebhookController.name);
+
+  // Secret key cho webhook verification (trong thực tế sẽ lấy từ config)
+  private readonly webhookSecret = process.env.RETENTION_WEBHOOK_SECRET || '';
+
+  // Tolerance cho timestamp (giây) — chống replay attack
+  private readonly TIMESTAMP_TOLERANCE_SECONDS = 300;
+
+  // Số lần thử lại tối đa cho archive event
+  private readonly MAX_ARCHIVE_RETRIES = 3;
+
+  constructor(
+    @InjectRepository(RetentionPolicyEntity)
+    private readonly policyRepo: Repository<RetentionPolicyEntity>,
+    @InjectRepository(ArchivedRecordEntity)
+    private readonly archiveRepo: Repository<ArchivedRecordEntity>,
+    @InjectRepository(ErasureRequestEntity)
+    private readonly erasureRepo: Repository<ErasureRequestEntity>,
+  ) {}
+
+  // ========================================================================
+  // Webhook Endpoint Chính
+  // ========================================================================
+
+  /**
+   * POST /webhooks/retention — Nhận webhook sự kiện bảo quản dữ liệu.
+   *
+   * Endpoint tổng quát nhận webhook từ bất kỳ nguồn nào,
+   * xác thực chữ ký, và định tuyến đến handler tương ứng.
+   *
+   * Headers bắt buộc:
+   * - x-webhook-signature: HMAC-SHA256 signature của payload
+   * - x-webhook-timestamp: Dấu thời gian (epoch seconds) của webhook
+   *
+   * @param body - Dữ liệu webhook
+   * @param signature - Chữ ký webhook
+   * @param timestamp - Dấu thời gian webhook
+   */
+  @Post()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Nhận webhook sự kiện bảo quản dữ liệu',
+    description:
+      'Nhận và xử lý webhook từ các hệ thống bên ngoài. ' +
+      'Hỗ trợ xác thực HMAC-SHA256 signature và chống replay attack.',
+  })
+  @ApiHeader({
+    name: 'x-webhook-signature',
+    description: 'HMAC-SHA256 signature của raw request body',
+    required: true,
+  })
+  @ApiHeader({
+    name: 'x-webhook-timestamp',
+    description: 'Dấu thời gian epoch seconds của webhook',
+    required: true,
+  })
+  @ApiResponse({ status: 200, description: 'Webhook đã xử lý thành công' })
+  @ApiResponse({ status: 400, description: 'Dữ liệu webhook không hợp lệ' })
+  @ApiResponse({ status: 401, description: 'Chữ ký webhook không hợp lệ' })
+  async handleWebhook(
+    @Body() body: RetentionWebhookPayload,
+    @Headers('x-webhook-signature') signature: string,
+    @Headers('x-webhook-timestamp') timestamp: string,
+    @Req() req: any,
+  ): Promise<{ received: boolean; eventId: string }> {
+    this.logger.log(`Nhận webhook: eventType=${body.eventType}, eventId=${body.eventId}`);
+
+    // Bước 1: Xác thực chữ ký webhook
+    const rawBody = JSON.stringify(body);
+    const isValid = this.verifyWebhookSignature(rawBody, signature, timestamp);
+
+    if (!isValid) {
+      this.logger.warn(
+        `Chữ ký webhook không hợp lệ: eventId=${body.eventId}`,
+      );
+      throw new UnauthorizedException('Chữ ký webhook không hợp lệ');
+    }
+
+    // Bước 2: Kiểm tra timestamp — chống replay attack
+    if (timestamp) {
+      const webhookTime = parseInt(timestamp, 10);
+      const now = Math.floor(Date.now() / 1000);
+      if (Math.abs(now - webhookTime) > this.TIMESTAMP_TOLERANCE_SECONDS) {
+        this.logger.warn(
+          `Webhook timestamp quá cũ: eventId=${body.eventId}, age=${now - webhookTime}s`,
+        );
+        throw new BadRequestException('Webhook đã hết hạn (timestamp quá cũ)');
+      }
+    }
+
+    // Bước 3: Xác thực cấu trúc payload
+    if (!body.eventId || !body.eventType || !body.data) {
+      throw new BadRequestException('Payload webhook thiếu trường bắt buộc');
+    }
+
+    // Bước 4: Định tuyến và xử lý sự kiện
+    const result = await this.routeAndProcessEvent(body);
+
+    this.logger.log(
+      `Xử lý webhook thành công: eventId=${body.eventId}, eventType=${body.eventType}`,
+    );
+
+    return {
+      received: true,
+      eventId: body.eventId,
+    };
+  }
+
+  // ========================================================================
+  // Định Route và Xử Lý Sự Kiện
+  // ========================================================================
+
+  /**
+   * Định tuyến và xử lý webhook event theo loại sự kiện.
+   *
+   * @param payload - Dữ liệu webhook
+   * @returns Kết quả xử lý
+   */
+  private async routeAndProcessEvent(
+    payload: RetentionWebhookPayload,
+  ): Promise<{ action: string; detail: string }> {
+    switch (payload.eventType) {
+      case RetentionWebhookEventType.USER_ACCOUNT_DELETED:
+        return await this.handleUserAccountDeleted(payload);
+
+      case RetentionWebhookEventType.CONSENT_WITHDRAWN:
+        return await this.handleConsentWithdrawn(payload);
+
+      case RetentionWebhookEventType.POLICY_ACTIVATED:
+        return await this.handlePolicyActivated(payload);
+
+      case RetentionWebhookEventType.POLICY_DEACTIVATED:
+        return await this.handlePolicyDeactivated(payload);
+
+      case RetentionWebhookEventType.ARCHIVE_COMPLETED:
+        return await this.handleArchiveCompleted(payload);
+
+      case RetentionWebhookEventType.ARCHIVE_FAILED:
+        return await this.handleArchiveFailed(payload);
+
+      case RetentionWebhookEventType.ERASURE_COMPLETED:
+        return await this.handleErasureCompleted(payload);
+
+      case RetentionWebhookEventType.ERASURE_OVERDUE:
+        return await this.handleErasureOverdue(payload);
+
+      case RetentionWebhookEventType.DATA_EXPIRED:
+        return await this.handleDataExpired(payload);
+
+      case RetentionWebhookEventType.CUSTOM:
+        return await this.handleCustomEvent(payload);
+
+      default:
+        this.logger.warn(`Loại sự kiện không xác định: ${payload.eventType}`);
+        return { action: 'ignored', detail: `Unknown event type: ${payload.eventType}` };
+    }
+  }
+
+  // ========================================================================
+  // Event Handlers
+  // ========================================================================
+
+  /**
+   * Xử lý sự kiện: người dùng xóa tài khoản.
+   *
+   * Tự động tạo yêu cầu xóa dữ liệu (ErasureRequest) với lý do ACCOUNT_DELETION.
+   *
+   * @param payload - Webhook payload
+   */
+  private async handleUserAccountDeleted(
+    payload: RetentionWebhookPayload,
+  ): Promise<{ action: string; detail: string }> {
+    const userId = payload.data.userId || payload.data.user_id;
+
+    if (!userId) {
+      throw new BadRequestException('user.account_deleted thiếu userId');
+    }
+
+    // Kiểm tra xem đã có yêu cầu xóa cho user này chưa
+    const existing = await this.erasureRepo.findOne({
+      where: {
+        userId,
+        status: [
+          ErasureStatus.SUBMITTED,
+          ErasureStatus.UNDER_REVIEW,
+          ErasureStatus.APPROVED,
+          ErasureStatus.IN_PROGRESS,
+        ],
+      },
+    });
+
+    if (existing) {
+      this.logger.log(
+        `Bỏ qua sự kiện xóa tài khoản: user ${userId} đã có yêu cầu xóa đang xử lý (ref: ${existing.referenceNumber})`,
+      );
+      return {
+        action: 'skipped',
+        detail: `User ${userId} đã có yêu cầu xóa đang xử lý`,
+      };
+    }
+
+    // Tạo yêu cầu xóa tự động
+    const legalDeadline = new Date();
+    legalDeadline.setDate(legalDeadline.getDate() + 30);
+
+    const erasure = this.erasureRepo.create({
+      referenceNumber: this.generateReferenceNumber(),
+      userId,
+      requestedBy: 'system_webhook',
+      erasureReason: ErasureReason.ACCOUNT_DELETION,
+      reasonDetail: `Tự động tạo từ webhook user.account_deleted (eventId: ${payload.eventId})`,
+      status: ErasureStatus.SUBMITTED,
+      priority: ErasurePriority.CAO,
+      legalDeadline,
+      metadata: payload.data,
+    });
+
+    await this.erasureRepo.save(erasure);
+
+    this.logger.log(
+      `Tạo yêu cầu xóa tự động: user=${userId}, ref=${erasure.referenceNumber}`,
+    );
+
+    return {
+      action: 'erasure_created',
+      detail: `Yêu cầu xóa ref=${erasure.referenceNumber} cho user=${userId}`,
+    };
+  }
+
+  /**
+   * Xử lý sự kiện: người dùng rút lại sự đồng ý.
+   *
+   * Tự động tạo yêu cầu xóa với lý do CONSENT_WITHDRAWN.
+   *
+   * @param payload - Webhook payload
+   */
+  private async handleConsentWithdrawn(
+    payload: RetentionWebhookPayload,
+  ): Promise<{ action: string; detail: string }> {
+    const userId = payload.data.userId || payload.data.user_id;
+
+    if (!userId) {
+      throw new BadRequestException('consent.withdrawn thiếu userId');
+    }
+
+    // Tạo yêu cầu xóa tự động
+    const legalDeadline = new Date();
+    legalDeadline.setDate(legalDeadline.getDate() + 30);
+
+    const erasure = this.erasureRepo.create({
+      referenceNumber: this.generateReferenceNumber(),
+      userId,
+      requestedBy: 'system_webhook',
+      erasureReason: ErasureReason.CONSENT_WITHDRAWN,
+      reasonDetail: `Tự động tạo từ webhook consent.withdrawn (eventId: ${payload.eventId})`,
+      status: ErasureStatus.SUBMITTED,
+      priority: ErasurePriority.TRUNG_BÌNH,
+      dataTypesToErase: payload.data.dataTypes || payload.data.consentScope
+        ? [payload.data.consentScope]
+        : null,
+      legalDeadline,
+      metadata: payload.data,
+    });
+
+    await this.erasureRepo.save(erasure);
+
+    this.logger.log(
+      `Tạo yêu cầu xóa rút lại đồng ý: user=${userId}, ref=${erasure.referenceNumber}`,
+    );
+
+    return {
+      action: 'erasure_created',
+      detail: `Yêu cầu xóa ref=${erasure.referenceNumber} (consent withdrawn)`,
+    };
+  }
+
+  /**
+   * Xử lý sự kiện: chính sách bảo quản được kích hoạt.
+   *
+   * Cập nhật trạng thái chính sách thành ACTIVE.
+   *
+   * @param payload - Webhook payload
+   */
+  private async handlePolicyActivated(
+    payload: RetentionWebhookPayload,
+  ): Promise<{ action: string; detail: string }> {
+    const policyId = payload.data.policyId || payload.data.policy_id;
+
+    if (!policyId) {
+      throw new BadRequestException('policy.activated thiếu policyId');
+    }
+
+    const policy = await this.policyRepo.findOne({ where: { id: policyId } });
+
+    if (!policy) {
+      this.logger.warn(`Chính sách ${policyId} không tồn tại — bỏ qua sự kiện activated`);
+      return { action: 'skipped', detail: `Policy ${policyId} không tồn tại` };
+    }
+
+    policy.status = RetentionPolicyStatus.ACTIVE;
+    await this.policyRepo.save(policy);
+
+    this.logger.log(`Kích hoạt chính sách: ${policy.name} (id: ${policyId})`);
+
+    return {
+      action: 'policy_activated',
+      detail: `Chính sách ${policy.name} đã kích hoạt`,
+    };
+  }
+
+  /**
+   * Xử lý sự kiện: chính sách bảo quản bị vô hiệu hóa.
+   *
+   * Cập nhật trạng thái chính sách thành PAUSED.
+   *
+   * @param payload - Webhook payload
+   */
+  private async handlePolicyDeactivated(
+    payload: RetentionWebhookPayload,
+  ): Promise<{ action: string; detail: string }> {
+    const policyId = payload.data.policyId || payload.data.policy_id;
+
+    if (!policyId) {
+      throw new BadRequestException('policy.deactivated thiếu policyId');
+    }
+
+    const policy = await this.policyRepo.findOne({ where: { id: policyId } });
+
+    if (!policy) {
+      this.logger.warn(`Chính sách ${policyId} không tồn tại — bỏ qua sự kiện deactivated`);
+      return { action: 'skipped', detail: `Policy ${policyId} không tồn tại` };
+    }
+
+    policy.status = RetentionPolicyStatus.PAUSED;
+    await this.policyRepo.save(policy);
+
+    this.logger.log(`Vô hiệu hóa chính sách: ${policy.name} (id: ${policyId})`);
+
+    return {
+      action: 'policy_deactivated',
+      detail: `Chính sách ${policy.name} đã vô hiệu hóa`,
+    };
+  }
+
+  /**
+   * Xử lý sự kiện: bản ghi lưu trữ hoàn tất.
+   *
+   * Cập nhật trạng thái bản ghi lưu trữ thành COMPLETED và đặt completedAt.
+   *
+   * @param payload - Webhook payload
+   */
+  private async handleArchiveCompleted(
+    payload: RetentionWebhookPayload,
+  ): Promise<{ action: string; detail: string }> {
+    const archiveId = payload.data.archiveId || payload.data.archive_id;
+
+    if (!archiveId) {
+      throw new BadRequestException('archive.completed thiếu archiveId');
+    }
+
+    const archive = await this.archiveRepo.findOne({ where: { id: archiveId } });
+
+    if (!archive) {
+      this.logger.warn(`Bản ghi lưu trữ ${archiveId} không tồn tại`);
+      return { action: 'skipped', detail: `Archive ${archiveId} không tồn tại` };
+    }
+
+    if (archive.status === ArchiveStatus.COMPLETED) {
+      return { action: 'no_op', detail: `Archive ${archiveId} đã hoàn tất` };
+    }
+
+    archive.status = ArchiveStatus.COMPLETED;
+    archive.completedAt = new Date();
+
+    // Cập nhật thông tin thêm từ payload
+    if (payload.data.storagePath) archive.storagePath = payload.data.storagePath;
+    if (payload.data.compressedSizeBytes) {
+      archive.compressedSizeBytes = payload.data.compressedSizeBytes;
+    }
+    if (payload.data.checksum) archive.checksumSha256 = payload.data.checksum;
+
+    await this.archiveRepo.save(archive);
+
+    this.logger.log(`Bản ghi lưu trữ hoàn tất: id=${archiveId}`);
+
+    return {
+      action: 'archive_completed',
+      detail: `Archive ${archiveId} đã cập nhật thành COMPLETED`,
+    };
+  }
+
+  /**
+   * Xử lý sự kiện: bản ghi lưu trữ thất bại.
+   *
+   * Cập nhật trạng thái FAILED và kiểm tra thử lại tự động.
+   *
+   * @param payload - Webhook payload
+   */
+  private async handleArchiveFailed(
+    payload: RetentionWebhookPayload,
+  ): Promise<{ action: string; detail: string }> {
+    const archiveId = payload.data.archiveId || payload.data.archive_id;
+
+    if (!archiveId) {
+      throw new BadRequestException('archive.failed thiếu archiveId');
+    }
+
+    const archive = await this.archiveRepo.findOne({ where: { id: archiveId } });
+
+    if (!archive) {
+      this.logger.warn(`Bản ghi lưu trữ ${archiveId} không tồn tại`);
+      return { action: 'skipped', detail: `Archive ${archiveId} không tồn tại` };
+    }
+
+    archive.status = ArchiveStatus.FAILED;
+    archive.errorMessage = payload.data.error || payload.data.message || 'Lỗi lưu trữ từ webhook';
+    archive.retryCount += 1;
+
+    // Tự động thử lại nếu chưa vượt quá số lần tối đa
+    if (archive.retryCount < this.MAX_ARCHIVE_RETRIES) {
+      archive.status = ArchiveStatus.PENDING;
+      this.logger.log(
+        `Tự động thử lại lưu trữ: id=${archiveId}, retry=${archive.retryCount}/${this.MAX_ARCHIVE_RETRIES}`,
+      );
+    } else {
+      this.logger.warn(
+        `Vượt quá số lần thử lại lưu trữ: id=${archiveId}, retries=${archive.retryCount}`,
+      );
+    }
+
+    await this.archiveRepo.save(archive);
+
+    return {
+      action: archive.status === ArchiveStatus.PENDING ? 'retry_scheduled' : 'archive_failed',
+      detail: `Archive ${archiveId}: retry=${archive.retryCount}/${this.MAX_ARCHIVE_RETRIES}`,
+    };
+  }
+
+  /**
+   * Xử lý sự kiện: yêu cầu xóa hoàn tất.
+   *
+   * Cập nhật trạng thái thành COMPLETED và đặt completedAt.
+   *
+   * @param payload - Webhook payload
+   */
+  private async handleErasureCompleted(
+    payload: RetentionWebhookPayload,
+  ): Promise<{ action: string; detail: string }> {
+    const referenceNumber = payload.data.referenceNumber || payload.data.reference_number;
+
+    if (!referenceNumber) {
+      throw new BadRequestException('erasure.completed thiếu referenceNumber');
+    }
+
+    const erasure = await this.erasureRepo.findOne({
+      where: { referenceNumber },
+    });
+
+    if (!erasure) {
+      this.logger.warn(`Yêu cầu xóa ${referenceNumber} không tồn tại`);
+      return { action: 'skipped', detail: `Erasure ${referenceNumber} không tồn tại` };
+    }
+
+    if (erasure.status === ErasureStatus.COMPLETED) {
+      return { action: 'no_op', detail: `Erasure ${referenceNumber} đã hoàn tất` };
+    }
+
+    erasure.status = ErasureStatus.COMPLETED;
+    erasure.completedAt = new Date();
+    if (payload.data.recordsErasedCount) {
+      erasure.recordsErasedCount = payload.data.recordsErasedCount;
+    }
+
+    await this.erasureRepo.save(erasure);
+
+    this.logger.log(`Yêu cầu xóa hoàn tất: ref=${referenceNumber}`);
+
+    return {
+      action: 'erasure_completed',
+      detail: `Erasure ${referenceNumber} đã cập nhật thành COMPLETED`,
+    };
+  }
+
+  /**
+   * Xử lý sự kiện: yêu cầu xóa quá hạn.
+   *
+   * Nâng mức độ ưu tiên lên CAO và ghi log cảnh báo.
+   *
+   * @param payload - Webhook payload
+   */
+  private async handleErasureOverdue(
+    payload: RetentionWebhookPayload,
+  ): Promise<{ action: string; detail: string }> {
+    const referenceNumber = payload.data.referenceNumber || payload.data.reference_number;
+
+    if (!referenceNumber) {
+      throw new BadRequestException('erasure.overdue thiếu referenceNumber');
+    }
+
+    const erasure = await this.erasureRepo.findOne({
+      where: { referenceNumber },
+    });
+
+    if (!erasure) {
+      this.logger.warn(`Yêu cầu xóa ${referenceNumber} không tồn tại`);
+      return { action: 'skipped', detail: `Erasure ${referenceNumber} không tồn tại` };
+    }
+
+    // Không nâng ưu tiên cho các trạng thái đã kết thúc
+    if (
+      erasure.status === ErasureStatus.COMPLETED ||
+      erasure.status === ErasureStatus.CANCELLED ||
+      erasure.status === ErasureStatus.REJECTED
+    ) {
+      return { action: 'no_op', detail: `Erasure ${referenceNumber} đã kết thúc` };
+    }
+
+    erasure.priority = ErasurePriority.CẤP_BÁCH;
+    await this.erasureRepo.save(erasure);
+
+    this.logger.warn(
+      `Yêu cầu xóa quá hạn: ref=${referenceNumber}, user=${erasure.userId} — nâng lên CẤP_BÁCH`,
+    );
+
+    return {
+      action: 'priority_escalated',
+      detail: `Erasure ${referenceNumber} đã nâng lên CẤP_BÁCH`,
+    };
+  }
+
+  /**
+   * Xử lý sự kiện: dữ liệu hết thời hạn bảo quản.
+   *
+   * Ghi log cảnh báo và lưu thông tin vào metadata của chính sách liên quan.
+   *
+   * @param payload - Webhook payload
+   */
+  private async handleDataExpired(
+    payload: RetentionWebhookPayload,
+  ): Promise<{ action: string; detail: string }> {
+    const policyId = payload.data.policyId || payload.data.policy_id;
+    const expiredCount = payload.data.expiredCount || payload.data.expired_count || 0;
+
+    this.logger.warn(
+      `Dữ liệu hết hạn: policy=${policyId || 'unknown'}, expired=${expiredCount}`,
+    );
+
+    return {
+      action: 'logged',
+      detail: `Đã ghi log ${expiredCount} bản ghi hết hạn`,
+    };
+  }
+
+  /**
+   * Xử lý sự kiện tùy chỉnh.
+   *
+   * Ghi log thông tin sự kiện tùy chỉnh để kiểm tra sau.
+   *
+   * @param payload - Webhook payload
+   */
+  private async handleCustomEvent(
+    payload: RetentionWebhookPayload,
+  ): Promise<{ action: string; detail: string }> {
+    this.logger.log(
+      `Sự kiện tùy chỉnh: eventId=${payload.eventId}, data=${JSON.stringify(payload.data)}`,
+    );
+
+    return {
+      action: 'custom_logged',
+      detail: `Sự kiện tùy chỉnh đã ghi log`,
+    };
+  }
+
+  // ========================================================================
+  // Xác Thực Webhook
+  // ========================================================================
+
+  /**
+   * Xác thực chữ ký webhook bằng HMAC-SHA256.
+   *
+   * Tính toán: HMAC-SHA256(timestamp + "." + payload, secret)
+   * và so sánh với chữ ký nhận được (constant-time comparison).
+   *
+   * @param payload - Raw payload (JSON string)
+   * @param signature - Chữ ký nhận được từ header
+   * @param timestamp - Dấu thời gian từ header
+   * @returns True nếu chữ ký hợp lệ
+   */
+  private verifyWebhookSignature(
+    payload: string,
+    signature: string,
+    timestamp: string,
+  ): boolean {
+    if (!signature || !this.webhookSecret) {
+      // Nếu không có secret key — chế độ phát triển, bỏ qua xác thực
+      if (!this.webhookSecret) {
+        this.logger.warn('Chế độ phát triển: bỏ qua xác thực webhook signature');
+        return true;
+      }
+      return false;
+    }
+
+    try {
+      // Tính chữ ký mong đợi
+      const signedPayload = `${timestamp}.${payload}`;
+      const expectedSignature = crypto
+        .createHmac('sha256', this.webhookSecret)
+        .update(signedPayload)
+        .digest('hex');
+
+      // So sánh constant-time để chống timing attack
+      return this.constantTimeCompare(expectedSignature, signature);
+    } catch (error) {
+      this.logger.error('Lỗi xác thực chữ ký webhook', error);
+      return false;
+    }
+  }
+
+  /**
+   * So sánh constant-time để chống timing attack.
+   *
+   * @param a - Chuỗi thứ nhất
+   * @param b - Chuỗi thứ hai
+   * @returns True nếu hai chuỗi bằng nhau
+   */
+  private constantTimeCompare(a: string, b: string): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    const bufA = Buffer.from(a, 'utf8');
+    const bufB = Buffer.from(b, 'utf8');
+
+    let result = 0;
+    for (let i = 0; i < bufA.length; i++) {
+      result |= bufA[i] ^ bufB[i];
+    }
+
+    return result === 0;
+  }
+
+  // ========================================================================
+  // Utility
+  // ========================================================================
+
+  /**
+   * Tạo reference number cho yêu cầu xóa.
+   *
+   * Format: ERA-YYYYMMDD-XXXXX
+   *
+   * @returns Reference number
+   */
+  private generateReferenceNumber(): string {
+    const dateStr = new Date()
+      .toISOString()
+      .replace(/\D/g, '')
+      .substring(0, 8);
+    const seqStr = Math.floor(Math.random() * 100000)
+      .toString()
+      .padStart(5, '0');
+    return `ERA-${dateStr}-${seqStr}`;
+  }
+}
+{% endraw %}

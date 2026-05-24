@@ -1,0 +1,631 @@
+{% raw %}/**
+ * CP47 — Quản lý chu kỳ dữ liệu (Data Retention & Lifecycle Management)
+ * Định nghĩa kiểu TypeScript cho module retention.
+ *
+ * Mô-đun này cung cấp các interface, type alias, và enum
+ * phục vụ cho việc quản lý chính sách lưu trữ, lưu trữ dữ liệu,
+ * và yêu cầu xóa dữ liệu theo GDPR.
+ */
+
+import { Type } from '@angular/core';
+import { MatDialogRef } from '@angular/material/dialog';
+
+// ──────────────────────────────────────────────
+// Enums
+// ──────────────────────────────────────────────
+
+/** Trạng thái chính sách lưu trữ */
+export enum RetentionPolicyStatus {
+  /** Đang hoạt động — chính sách được áp dụng tự động */
+  Active = 'active',
+  /** Tạm ngưng — chính sách được giữ lại nhưng không áp dụng */
+  Suspended = 'suspended',
+  /** Đã hoàn thành — chính sách đã chạy hết chu kỳ */
+  Completed = 'completed',
+  /** Đã vô hiệu hóa — chính sách bị huỷ bỏ */
+  Disabled = 'disabled',
+}
+
+/** Loại đối tượng dữ liệu được quản lý bởi chính sách */
+export enum RetentionDataType {
+  /** Nhật ký hệ thống */
+  Logs = 'logs',
+  /** Dữ liệu phiên người dùng */
+  Sessions = 'sessions',
+  /** Bản nháp mã nguồn */
+  CodeDrafts = 'code_drafts',
+  /** Kết quả phân tích */
+  Analytics = 'analytics',
+  /** Sao lưu cơ sở dữ liệu */
+  DatabaseBackups = 'database_backups',
+  /** Tệp đa phương tiện */
+  MediaAssets = 'media_assets',
+  /** Nhắn tin nội bộ */
+  InternalMessages = 'internal_messages',
+  /** Dữ liệu người dùng cá nhân (PII) */
+  PersonalData = 'personal_data',
+}
+
+/** Đơn vị thời gian cho chu kỳ lưu trữ */
+export enum RetentionPeriodUnit {
+  /** Theo ngày */
+  Days = 'days',
+  /** Theo tuần */
+  Weeks = 'weeks',
+  /** Theo tháng */
+  Months = 'months',
+  /** Theo năm */
+  Years = 'years',
+}
+
+/** Trạng thái yêu cầu xóa dữ liệu (GDPR Erasure) */
+export enum ErasureRequestStatus {
+  /** Mới tạo — chưa được xem xét */
+  Pending = 'pending',
+  /** Đang được xử lý */
+  Processing = 'processing',
+  /** Đã xác minh danh tính */
+  Verified = 'verified',
+  /** Đang xóa dữ liệu */
+  Erasing = 'erasing',
+  /** Đã xóa thành công */
+  Completed = 'completed',
+  /** Đã từ chối */
+  Denied = 'denied',
+  /** Đã hết hạn */
+  Expired = 'expired',
+}
+
+/** Lý do từ chối yêu cầu xóa */
+export enum ErasureDenialReason {
+  /** Yêu cầu thiếu thông tin xác minh */
+  InsufficientVerification = 'insufficient_verification',
+  /** Dữ liệu bắt buộc phải lưu theo luật */
+  LegalHold = 'legal_hold',
+  /** Vượt quá tần suất yêu cầu */
+  RateLimitExceeded = 'rate_limit_exceeded',
+  /** Không tìm thấy dữ liệu liên quan */
+  NoDataFound = 'no_data_found',
+  /** Khác — cần mô tả tự do */
+  Other = 'other',
+}
+
+/** Hành động nhanh trên dashboard */
+export enum QuickActionType {
+  /** Tạo chính sách mới */
+  CreatePolicy = 'create_policy',
+  /** Khởi tạo lưu trữ hàng loạt */
+  BulkArchive = 'bulk_archive',
+  /** Gửi yêu cầu xóa */
+  SubmitErasure = 'submit_erasure',
+  /** Xuất báo cáo tuân thủ */
+  ExportCompliance = 'export_compliance',
+  /** Làm mới bộ đếm */
+  RefreshCounts = 'refresh_counts',
+  /** Kiểm tra nhật ký thính giác */
+  AuditLog = 'audit_log',
+}
+
+/** Sắp xếp cho bảng dữ liệu */
+export enum SortDirection {
+  Asc = 'asc',
+  Desc = 'desc',
+  None = '',
+}
+
+/** Loại tab trong dialog chính sách */
+export enum PolicyDialogMode {
+  /** Tạo mới */
+  Create = 'create',
+  /** Chỉnh sửa */
+  Edit = 'edit',
+  /** Xem chi tiết (chỉ đọc) */
+  View = 'view',
+}
+
+// ──────────────────────────────────────────────
+// Interfaces — Chính sách lưu trữ
+// ──────────────────────────────────────────────
+
+/** Chính sách lưu trữ dữ liệu */
+export interface RetentionPolicy {
+  /** Định danh duy nhất */
+  id: string;
+  /** Tên hiển thị */
+  name: string;
+  /** Mô tả chi tiết */
+  description: string;
+  /** Loại dữ liệu áp dụng */
+  dataType: RetentionDataType;
+  /** Số lượng chu kỳ */
+  periodCount: number;
+  /** Đơn vị chu kỳ */
+  periodUnit: RetentionPeriodUnit;
+  /** Trạng thái hiện tại */
+  status: RetentionPolicyStatus;
+  /** Ngày bắt đầu áp dụng (ISO 8601) */
+  startDate: string;
+  /** Ngày hết hạn (ISO 8601) — null nếu không giới hạn */
+  expirationDate: string | null;
+  /** Hành động khi hết hạn: 'archive' | 'delete' | 'notify' */
+  onExpiration: 'archive' | 'delete' | 'notify';
+  /** Số lượng bản ghi đang được quản lý */
+  recordCount: number;
+  /** Dung lượng dữ liệu (MB) */
+  dataUsageMB: number;
+  /** Người tạo */
+  createdBy: string;
+  /** Thời gian tạo (ISO 8601) */
+  createdAt: string;
+  /** Thời gian cập nhật cuối (ISO 8601) */
+  updatedAt: string;
+  /** Cờ: có áp dụng ngay không */
+  enforceImmediately: boolean;
+  /** Cờ: thông báo trước khi hết hạn (số ngày) */
+  notifyBeforeDays: number;
+}
+
+/** Form tạo/chỉnh sửa chính sách */
+export interface RetentionPolicyForm {
+  name: string;
+  description: string;
+  dataType: RetentionDataType;
+  periodCount: number;
+  periodUnit: RetentionPeriodUnit;
+  onExpiration: 'archive' | 'delete' | 'notify';
+  enforceImmediately: boolean;
+  notifyBeforeDays: number;
+  /** chỉ dùng khi Edit — id chính sách gốc */
+  policyId?: string;
+}
+
+/** Lọc danh sách chính sách */
+export interface RetentionPolicyFilters {
+  search?: string;
+  dataType?: RetentionDataType | 'all';
+  status?: RetentionPolicyStatus | 'all';
+  sortBy?: keyof RetentionPolicy;
+  sortOrder?: SortDirection;
+  page?: number;
+  pageSize?: number;
+}
+
+// ──────────────────────────────────────────────
+// Interfaces — Lưu trữ (Archive)
+// ──────────────────────────────────────────────
+
+/** Một bản ghi lưu trữ */
+export interface ArchiveRecord {
+  /** Định danh */
+  id: string;
+  /** Tên dữ liệu được lưu */
+  name: string;
+  /** Loại dữ liệu */
+  dataType: RetentionDataType;
+  /** Chính sách đã áp dụng (id) */
+  policyId: string;
+  /** Dung lượng (MB) */
+  sizeMB: number;
+  /** Số bản ghi */
+  recordCount: number;
+  /** Ngày lưu trữ (ISO 8601) */
+  archivedAt: string;
+  /** Người khởi tạo */
+  archivedBy: string;
+  /** Định dạng lưu: 'zip' | 'tar.gz' | 'parquet' */
+  format: 'zip' | 'tar.gz' | 'parquet';
+  /** URL download */
+  downloadUrl: string;
+  /** Trạng thái: 'ready' | 'corrupt' | 'deleted' */
+  integrity: 'ready' | 'corrupt' | 'deleted';
+}
+
+// ──────────────────────────────────────────────
+// Interfaces — Yêu cầu xóa dữ liệu (GDPR Erasure)
+// ──────────────────────────────────────────────
+
+/** Yêu cầu xóa dữ liệu */
+export interface ErasureRequest {
+  /** Định danh */
+  id: string;
+  /** Họ tên chủ thể dữ liệu */
+  subjectName: string;
+  /** Địa chỉ email */
+  subjectEmail: string;
+  /** Số điện thoại liên hệ */
+  subjectPhone: string;
+  /** Phương thức xác minh: 'email' | 'phone' | 'document' */
+  verificationMethod: 'email' | 'phone' | 'document';
+  /** Đã xác minh chưa */
+  isVerified: boolean;
+  /** Trạng thái yêu cầu */
+  status: ErasureRequestStatus;
+  /** Các loại dữ liệu cần xóa */
+  dataTypes: RetentionDataType[];
+  /** Lý do xóa (mô tả tự do) */
+  reason: string;
+  /** Lý do từ chối (nếu bị từ chối) */
+  denialReason?: ErasureDenialReason;
+  /** Mô tả bổ sung khi từ chối */
+  denialNote?: string;
+  /** Phần trăm tiến độ xóa (0–100) */
+  progressPercent: number;
+  /** Người tạo yêu cầu */
+  createdBy: string;
+  /** Người phê duyệt */
+  approvedBy: string | null;
+  /** Thời gian tạo (ISO 8601) */
+  createdAt: string;
+  /** Thời gian cập nhật cuối (ISO 8601) */
+  updatedAt: string;
+  /** Thời gian hoàn thành (ISO 8601) */
+  completedAt: string | null;
+  /** Số bản ghi đã xóa */
+  recordsErased: number;
+  /** Tổng số bản ghi cần xóa */
+  totalRecords: number;
+}
+
+/** Form tạo yêu cầu xóa */
+export interface ErasureRequestForm {
+  subjectName: string;
+  subjectEmail: string;
+  subjectPhone: string;
+  verificationMethod: 'email' | 'phone' | 'document';
+  dataTypes: RetentionDataType[];
+  reason: string;
+}
+
+/** Lọc danh sách yêu cầu xóa */
+export interface ErasureRequestFilters {
+  search?: string;
+  status?: ErasureRequestStatus | 'all';
+  sortBy?: keyof ErasureRequest;
+  sortOrder?: SortDirection;
+  page?: number;
+  pageSize?: number;
+}
+
+// ──────────────────────────────────────────────
+// Interfaces — Thống kê Dashboard
+// ──────────────────────────────────────────────
+
+/** Thống kê tổng quan về chính sách */
+export interface RetentionStats {
+  /** Tổng số chính sách */
+  totalPolicies: number;
+  /** Số chính sách đang hoạt động */
+  activePolicies: number;
+  /** Số chính sách tạm ngưng */
+  suspendedPolicies: number;
+  /** Tổng bản ghi đang được quản lý */
+  totalManagedRecords: number;
+  /** Tổng dung lượng (MB) */
+  totalDataUsageMB: number;
+  /** Số bản ghi đã lưu trữ */
+  totalArchivedRecords: number;
+  /** Dung lượng đã lưu (MB) */
+  totalArchivedMB: number;
+  /** Số yêu cầu xóa đang chờ */
+  pendingErasureRequests: number;
+  /** Số yêu cầu xóa đã hoàn thành trong tháng */
+  completedErasureThisMonth: number;
+  /** Tỷ lệ tuân thủ (%) */
+  compliancePercentage: number;
+  /** Số cảnh báo sắp hết hạn */
+  expiringSoonCount: number;
+  /** Chính sách sắp hết hạn (tối đa 5) */
+  expiringPolicies: Array<{
+    id: string;
+    name: string;
+    expirationDate: string;
+    daysRemaining: number;
+  }>;
+}
+
+// ──────────────────────────────────────────────
+// Interfaces — Phản hồi API
+// ──────────────────────────────────────────────
+
+/** Phản hồi phân trang chung */
+export interface PaginatedResponse<T> {
+  /** Danh sách bản ghi */
+  items: T[];
+  /** Tổng số bản ghi */
+  total: number;
+  /** Trang hiện tại (1-based) */
+  page: number;
+  /** Kích thước trang */
+  pageSize: number;
+  /** Tổng số trang */
+  totalPages: number;
+  /** Còn có trang tiếp theo không */
+  hasMore: boolean;
+}
+
+/** Phản hồi lỗi chuẩn */
+export interface ApiError {
+  /** Mã lỗi */
+  code: string;
+  /** Tin nhắn lỗi */
+  message: string;
+  /** Chi tiết lỗi (tùy chọn) */
+  details?: Record<string, unknown>;
+  /** Dấu thời gian (ISO 8601) */
+  timestamp: string;
+}
+
+// ──────────────────────────────────────────────
+// Type Aliases
+// ──────────────────────────────────────────────
+
+/** Label hiển thị cho trạng thái chính sách */
+export type PolicyStatusLabel = {
+  [K in RetentionPolicyStatus]: string;
+};
+
+/** Label hiển thị cho loại dữ liệu */
+export type DataTypeLabel = {
+  [K in RetentionDataType]: string;
+};
+
+/** Label hiển thị cho trạng thái yêu cầu xóa */
+export type ErasureStatusLabel = {
+  [K in ErasureRequestStatus]: string;
+};
+
+/** Cấu hình màu chip cho trạng thái */
+export type StatusColorConfig = Record<string, 'primary' | 'accent' | 'warn' | 'basic'>;
+
+/** Cấu hình hành động nhanh */
+export type QuickActionConfig = {
+  type: QuickActionType;
+  label: string;
+  icon: string;
+  permission?: string;
+  disabled?: boolean;
+};
+
+/** Hàm handler cho sự kiện bảng */
+export type TableEventHandler<K extends string, P = unknown> = (
+  event: { key: K; payload: P }
+) => void;
+
+/** Kiểu dialog tham chiếu chung */
+export type PolicyDialogRef = MatDialogRef<unknown, RetentionPolicyForm>;
+
+/** Cấu hình cột bảng */
+export type ColumnConfig<T> = {
+  key: keyof T;
+  header: string;
+  sortable: boolean;
+  width?: string;
+  cellTemplate?: Type<unknown>;
+};
+
+/** Kết hợp chính sách với thông tin người dùng */
+export interface RetentionPolicyWithUser extends RetentionPolicy {
+  createdByDisplayName: string;
+  createdByAvatarUrl: string;
+}
+
+/** Kết hợp yêu cầu xóa với progress chi tiết */
+export interface ErasureRequestWithProgress extends ErasureRequest {
+  progressSteps: Array<{
+    step: string;
+    status: 'done' | 'current' | 'pending';
+    completedAt?: string;
+  }>;
+}
+
+/** Cấu hình bộ đếm dashboard card */
+export interface StatCardConfig {
+  title: string;
+  valueKey: keyof RetentionStats;
+  icon: string;
+  color: 'primary' | 'accent' | 'warn' | 'info';
+  trend?: {
+    value: number;
+    direction: 'up' | 'down';
+    period: string;
+  };
+}
+
+// ──────────────────────────────────────────────
+// Hằng số
+// ──────────────────────────────────────────────
+
+/** API endpoint cơ sở cho retention */
+export const RETENTION_API_BASE = '/api/v1/retention';
+
+/** Các endpoint cụ thể */
+export const RETENTION_ENDPOINTS = {
+  policies: `${RETENTION_API_BASE}/policies`,
+  archives: `${RETENTION_API_BASE}/archives`,
+  erasure: `${RETENTION_API_BASE}/erasure`,
+  stats: `${RETENTION_API_BASE}/stats`,
+  export: `${RETENTION_API_BASE}/export`,
+} as const;
+
+/** Kích thước trang mặc định */
+export const DEFAULT_PAGE_SIZE = 20;
+
+/** Kích thước trang cho bảng lưu trữ */
+export const ARCHIVE_PAGE_SIZE = 15;
+
+/** Kích thước trang cho yêu cầu xóa */
+export const ERASURE_PAGE_SIZE = 10;
+
+/** Thời gian làm mới dashboard (ms) */
+export const DASHBOARD_REFRESH_INTERVAL = 60_000;
+
+/** Số ngày cảnh báo sớm cho chính sách sắp hết hạn */
+export const EXPIRY_WARNING_DAYS = 30;
+
+/** Giới hạn tần suất yêu cầu xóa (số lượng / 30 ngày) */
+export const ERASURE_RATE_LIMIT = 3;
+
+/** Mapping trạng thái chính sách → label tiếng Việt */
+export const POLICY_STATUS_LABELS: PolicyStatusLabel = {
+  [RetentionPolicyStatus.Active]: 'Đang hoạt động',
+  [RetentionPolicyStatus.Suspended]: 'Tạm ngưng',
+  [RetentionPolicyStatus.Completed]: 'Đã hoàn thành',
+  [RetentionPolicyStatus.Disabled]: 'Đã vô hiệu hóa',
+};
+
+/** Mapping loại dữ liệu → label tiếng Việt */
+export const DATA_TYPE_LABELS: DataTypeLabel = {
+  [RetentionDataType.Logs]: 'Nhật ký hệ thống',
+  [RetentionDataType.Sessions]: 'Phiên người dùng',
+  [RetentionDataType.CodeDrafts]: 'Bản nháp mã nguồn',
+  [RetentionDataType.Analytics]: 'Kết quả phân tích',
+  [RetentionDataType.DatabaseBackups]: 'Sao lưu CSDL',
+  [RetentionDataType.MediaAssets]: 'Tệp đa phương tiện',
+  [RetentionDataType.InternalMessages]: 'Nhắn tin nội bộ',
+  [RetentionDataType.PersonalData]: 'Dữ liệu cá nhân (PII)',
+};
+
+/** Mapping trạng thái yêu cầu xóa → label tiếng Việt */
+export const ERASURE_STATUS_LABELS: ErasureStatusLabel = {
+  [ErasureRequestStatus.Pending]: 'Đang chờ xử lý',
+  [ErasureRequestStatus.Processing]: 'Đang xử lý',
+  [ErasureRequestStatus.Verified]: 'Đã xác minh',
+  [ErasureRequestStatus.Erasing]: 'Đang xóa dữ liệu',
+  [ErasureRequestStatus.Completed]: 'Đã hoàn thành',
+  [ErasureRequestStatus.Denied]: 'Đã từ chối',
+  [ErasureRequestStatus.Expired]: 'Đã hết hạn',
+};
+
+/** Màu chip cho trạng thái chính sách */
+export const POLICY_STATUS_COLORS: StatusColorConfig = {
+  [RetentionPolicyStatus.Active]: 'primary',
+  [RetentionPolicyStatus.Suspended]: 'warn',
+  [RetentionPolicyStatus.Completed]: 'accent',
+  [RetentionPolicyStatus.Disabled]: 'basic',
+};
+
+/** Màu chip cho trạng thái yêu cầu xóa */
+export const ERASURE_STATUS_COLORS: StatusColorConfig = {
+  [ErasureRequestStatus.Pending]: 'warn',
+  [ErasureRequestStatus.Processing]: 'primary',
+  [ErasureRequestStatus.Verified]: 'accent',
+  [ErasureRequestStatus.Erasing]: 'primary',
+  [ErasureRequestStatus.Completed]: 'accent',
+  [ErasureRequestStatus.Denied]: 'warn',
+  [ErasureRequestStatus.Expired]: 'basic',
+};
+
+/** Cấu hình hành động nhanh trên dashboard */
+export const QUICK_ACTIONS: QuickActionConfig[] = [
+  {
+    type: QuickActionType.CreatePolicy,
+    label: 'Tạo chính sách mới',
+    icon: 'add_circle',
+    permission: 'retention:policy:create',
+  },
+  {
+    type: QuickActionType.BulkArchive,
+    label: 'Lưu trữ hàng loạt',
+    icon: 'archive',
+    permission: 'retention:archive:bulk',
+  },
+  {
+    type: QuickActionType.SubmitErasure,
+    label: 'Gửi yêu cầu xóa',
+    icon: 'delete_sweep',
+    permission: 'retention:erasure:create',
+  },
+  {
+    type: QuickActionType.ExportCompliance,
+    label: 'Xuất báo cáo tuân thủ',
+    icon: 'download',
+    permission: 'retention:report:export',
+  },
+  {
+    type: QuickActionType.RefreshCounts,
+    label: 'Làm mới bộ đếm',
+    icon: 'refresh',
+  },
+  {
+    type: QuickActionType.AuditLog,
+    label: 'Nhật ký thính giác',
+    icon: 'assignment',
+    permission: 'retention:audit:view',
+  },
+];
+
+/** Cấu hình card thống kê dashboard */
+export const STAT_CARDS: StatCardConfig[] = [
+  {
+    title: 'Chính sách hoạt động',
+    valueKey: 'activePolicies',
+    icon: 'policy',
+    color: 'primary',
+  },
+  {
+    title: 'Bản ghi đang quản lý',
+    valueKey: 'totalManagedRecords',
+    icon: 'database',
+    color: 'info',
+    trend: { value: 12, direction: 'up', period: '7 ngày' },
+  },
+  {
+    title: 'Dung lượng đã lưu',
+    valueKey: 'totalArchivedMB',
+    icon: 'storage',
+    color: 'accent',
+  },
+  {
+    title: 'Yêu cầu xóa chờ xử lý',
+    valueKey: 'pendingErasureRequests',
+    icon: 'hourglass_bottom',
+    color: 'warn',
+  },
+  {
+    title: 'Tuân thủ chung',
+    valueKey: 'compliancePercentage',
+    icon: 'shield',
+    color: 'primary',
+  },
+  {
+    title: 'Sắp hết hạn',
+    valueKey: 'expiringSoonCount',
+    icon: 'warning',
+    color: 'warn',
+  },
+];
+
+/** Cấu hình cột cho bảng chính sách */
+export const POLICY_COLUMNS: ColumnConfig<RetentionPolicy>[] = [
+  { key: 'name', header: 'Tên chính sách', sortable: true, width: '200px' },
+  { key: 'dataType', header: 'Loại dữ liệu', sortable: true, width: '150px' },
+  { key: 'status', header: 'Trạng thái', sortable: true, width: '130px' },
+  { key: 'periodCount', header: 'Chu kỳ', sortable: true, width: '100px' },
+  { key: 'recordCount', header: 'Số bản ghi', sortable: true, width: '110px' },
+  { key: 'dataUsageMB', header: 'Dung lượng', sortable: true, width: '110px' },
+  { key: 'expirationDate', header: 'Hết hạn', sortable: true, width: '130px' },
+  { key: 'updatedAt', header: 'Cập nhật', sortable: true, width: '140px' },
+];
+
+/** Cấu hình cột cho bảng lưu trữ */
+export const ARCHIVE_COLUMNS: ColumnConfig<ArchiveRecord>[] = [
+  { key: 'name', header: 'Tên', sortable: true, width: '200px' },
+  { key: 'dataType', header: 'Loại', sortable: true, width: '130px' },
+  { key: 'sizeMB', header: 'Dung lượng', sortable: true, width: '110px' },
+  { key: 'recordCount', header: 'Số bản ghi', sortable: true, width: '110px' },
+  { key: 'archivedAt', header: 'Ngày lưu', sortable: true, width: '140px' },
+  { key: 'format', header: 'Định dạng', sortable: false, width: '100px' },
+  { key: 'integrity', header: 'Kiểm tra', sortable: false, width: '100px' },
+];
+
+/** Cấu hình cột cho bảng yêu cầu xóa */
+export const ERASURE_COLUMNS: ColumnConfig<ErasureRequest>[] = [
+  { key: 'subjectName', header: 'Chủ thể', sortable: true, width: '180px' },
+  { key: 'subjectEmail', header: 'Email', sortable: false, width: '200px' },
+  { key: 'status', header: 'Trạng thái', sortable: true, width: '140px' },
+  { key: 'progressPercent', header: 'Tiến độ', sortable: false, width: '120px' },
+  { key: 'dataTypes', header: 'Loại dữ liệu', sortable: false, width: '150px' },
+  { key: 'createdAt', header: 'Ngày tạo', sortable: true, width: '140px' },
+  { key: 'completedAt', header: 'Hoàn thành', sortable: true, width: '140px' },
+];
+{% endraw %}

@@ -1,0 +1,484 @@
+{% raw %}
+// ============================================================================
+// CP47 — Data Retention & Lifecycle Management
+// NestJS Controller — REST endpoints cho mô-đun quản lý vòng đời dữ liệu
+// ============================================================================
+// File: retention.controller.ts.jinja2
+// Template context: (không sử dụng biến Jinja2 — template tĩnh)
+//
+// Rule V1: NO @midicoder imports — generated code standalone, use relative imports
+// Rule V2: NO business logic in decorators — only structure
+// ============================================================================
+
+import {
+  Controller,
+  Post,
+  Get,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  ParseUUIDPipe,
+  HttpCode,
+  HttpStatus,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
+
+import { RetentionService } from './services/retention.service';
+import {
+  CreateRetentionPolicyDto,
+  UpdateRetentionPolicyDto,
+  RetentionPolicyDto,
+  RetentionPolicyQueryDto,
+  CreateArchivedRecordDto,
+  UpdateArchivedRecordDto,
+  ArchivedRecordDto,
+  ArchivedRecordQueryDto,
+  CreateErasureRequestDto,
+  UpdateErasureRequestDto,
+  ErasureRequestDto,
+  ErasureRequestQueryDto,
+  ScanResultDto,
+  RetentionStatsDto,
+  RetentionPolicyStatus,
+} from './dtos/retention.dto';
+
+/**
+ * RetentionController — Controller chính cho mô-đun quản lý vòng đời dữ liệu.
+ *
+ * Cung cấp các REST endpoints cho:
+ * - Quản lý chính sách bảo quản (CRUD + kích hoạt/tạm dừng)
+ * - Quản lý bản ghi lưu trữ (tạo, lấy danh sách, thực thi, thử lại)
+ * - Quản lý yêu cầu xóa dữ liệu (tạo, phê duyệt, từ chối, thực thi)
+ * - Quét dữ liệu hết hạn (scan)
+ * - Thống kê tổng quan (statistics)
+ */
+@ApiTags('Retention & Lifecycle')
+@ApiBearerAuth()
+@Controller('retention')
+export class RetentionController {
+  private readonly logger = new Logger(RetentionController.name);
+
+  constructor(private readonly retentionService: RetentionService) {}
+
+  // ========================================================================
+  // RetentionPolicy Endpoints
+  // ========================================================================
+
+  /**
+   * POST /retention/policies — Tạo chính sách bảo quản mới.
+   */
+  @Post('policies')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Tạo chính sách bảo quản mới' })
+  @ApiResponse({ status: 201, description: 'Chính sách đã tạo', type: RetentionPolicyDto })
+  @ApiResponse({ status: 409, description: 'Tên chính sách đã tồn tại' })
+  @ApiResponse({ status: 400, description: 'Tham số không hợp lệ theo loại chính sách' })
+  async createPolicy(
+    @Body() dto: CreateRetentionPolicyDto,
+  ): Promise<RetentionPolicyDto> {
+    this.logger.log(`Tạo chính sách: ${dto.name}, type=${dto.policyType}`);
+    return await this.retentionService.createPolicy(dto);
+  }
+
+  /**
+   * GET /retention/policies/:id — Lấy thông tin chính sách theo ID.
+   */
+  @Get('policies/:id')
+  @ApiOperation({ summary: 'Lấy thông tin chính sách theo ID' })
+  @ApiParam({ name: 'id', description: 'ID chính sách bảo quản' })
+  @ApiResponse({ status: 200, description: 'Thông tin chính sách', type: RetentionPolicyDto })
+  @ApiResponse({ status: 404, description: 'Chính sách không tồn tại' })
+  async getPolicy(
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<RetentionPolicyDto> {
+    return await this.retentionService.getPolicy(id);
+  }
+
+  /**
+   * GET /retention/policies — Lấy danh sách chính sách với bộ lọc và phân trang.
+   */
+  @Get('policies')
+  @ApiOperation({ summary: 'Lấy danh sách chính sách bảo quản' })
+  @ApiQuery({ name: 'status', required: false, enum: RetentionPolicyStatus })
+  @ApiQuery({ name: 'policyType', required: false, description: 'Lọc theo loại chính sách' })
+  @ApiQuery({ name: 'scope', required: false, description: 'Lọc theo phạm vi' })
+  @ApiQuery({ name: 'tenantId', required: false, description: 'Lọc theo tenant' })
+  @ApiQuery({ name: 'search', required: false, description: 'Tìm kiếm theo tên' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiQuery({ name: 'orderBy', required: false, description: 'Sắp xếp theo trường' })
+  @ApiQuery({ name: 'orderDirection', required: false, enum: ['ASC', 'DESC'] })
+  @ApiResponse({ status: 200, description: 'Danh sách chính sách', type: [RetentionPolicyDto] })
+  async listPolicies(
+    @Query() query: RetentionPolicyQueryDto,
+  ): Promise<RetentionPolicyDto[]> {
+    return await this.retentionService.listPolicies(query);
+  }
+
+  /**
+   * PUT /retention/policies/:id — Cập nhật chính sách bảo quản.
+   */
+  @Put('policies/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cập nhật chính sách bảo quản' })
+  @ApiParam({ name: 'id', description: 'ID chính sách' })
+  @ApiResponse({ status: 200, description: 'Chính sách đã cập nhật', type: RetentionPolicyDto })
+  @ApiResponse({ status: 404, description: 'Chính sách không tồn tại' })
+  @ApiResponse({ status: 400, description: 'Không thể cập nhật chính sách ARCHIVED' })
+  @ApiResponse({ status: 409, description: 'Tên chính sách trùng lặp' })
+  async updatePolicy(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: UpdateRetentionPolicyDto,
+  ): Promise<RetentionPolicyDto> {
+    this.logger.log(`Cập nhật chính sách: id=${id}`);
+    return await this.retentionService.updatePolicy(id, dto);
+  }
+
+  /**
+   * DELETE /retention/policies/:id — Xóa chính sách bảo quản (soft delete).
+   */
+  @Delete('policies/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Xóa chính sách bảo quản' })
+  @ApiParam({ name: 'id', description: 'ID chính sách' })
+  @ApiResponse({ status: 204, description: 'Đã xóa thành công' })
+  @ApiResponse({ status: 404, description: 'Chính sách không tồn tại' })
+  @ApiResponse({ status: 400, description: 'Không thể xóa chính sách ACTIVE hoặc có bản ghi liên kết' })
+  async deletePolicy(
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<void> {
+    this.logger.log(`Xóa chính sách: id=${id}`);
+    await this.retentionService.deletePolicy(id);
+  }
+
+  /**
+   * PUT /retention/policies/:id/status — Kích hoạt hoặc tạm dừng chính sách.
+   *
+   * Body: { "status": "active" | "paused" }
+   */
+  @Put('policies/:id/status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Thay đổi trạng thái chính sách (kích hoạt/tạm dừng)' })
+  @ApiParam({ name: 'id', description: 'ID chính sách' })
+  @ApiResponse({ status: 200, description: 'Đã thay đổi trạng thái', type: RetentionPolicyDto })
+  @ApiResponse({ status: 404, description: 'Chính sách không tồn tại' })
+  async changePolicyStatus(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body('status') status: 'active' | 'paused',
+  ): Promise<RetentionPolicyDto> {
+    if (status !== 'active' && status !== 'paused') {
+      throw new BadRequestException('status phải là "active" hoặc "paused"');
+    }
+    this.logger.log(`Thay đổi trạng thái chính sách: id=${id}, status=${status}`);
+    return await this.retentionService.changePolicyStatus(id, status as any);
+  }
+
+  // ========================================================================
+  // ArchivedRecord Endpoints
+  // ========================================================================
+
+  /**
+   * POST /retention/archives — Tạo bản ghi lưu trữ mới.
+   */
+  @Post('archives')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Tạo bản ghi lưu trữ mới' })
+  @ApiResponse({ status: 201, description: 'Bản ghi lưu trữ đã tạo', type: ArchivedRecordDto })
+  @ApiResponse({ status: 404, description: 'Chính sách bảo quản không tồn tại' })
+  async createArchive(
+    @Body() dto: CreateArchivedRecordDto,
+  ): Promise<ArchivedRecordDto> {
+    this.logger.log(
+      `Tạo bản ghi lưu trữ: source=${dto.sourceEntityType}:${dto.sourceEntityId}`,
+    );
+    return await this.retentionService.createArchive(dto);
+  }
+
+  /**
+   * GET /retention/archives/:id — Lấy thông tin bản ghi lưu trữ.
+   */
+  @Get('archives/:id')
+  @ApiOperation({ summary: 'Lấy thông tin bản ghi lưu trữ' })
+  @ApiParam({ name: 'id', description: 'ID bản ghi lưu trữ' })
+  @ApiResponse({ status: 200, description: 'Thông tin bản ghi lưu trữ', type: ArchivedRecordDto })
+  @ApiResponse({ status: 404, description: 'Bản ghi không tồn tại' })
+  async getArchive(
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<ArchivedRecordDto> {
+    return await this.retentionService.getArchive(id);
+  }
+
+  /**
+   * GET /retention/archives — Lấy danh sách bản ghi lưu trữ với bộ lọc.
+   */
+  @Get('archives')
+  @ApiOperation({ summary: 'Lấy danh sách bản ghi lưu trữ' })
+  @ApiQuery({ name: 'status', required: false, description: 'Lọc theo trạng thái' })
+  @ApiQuery({ name: 'policyId', required: false, description: 'Lọc theo chính sách' })
+  @ApiQuery({ name: 'userId', required: false, description: 'Lọc theo user' })
+  @ApiQuery({ name: 'tenantId', required: false, description: 'Lọc theo tenant' })
+  @ApiQuery({ name: 'sourceEntityType', required: false, description: 'Lọc theo loại thực thể nguồn' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'Danh sách bản ghi lưu trữ', type: [ArchivedRecordDto] })
+  async listArchives(
+    @Query() query: ArchivedRecordQueryDto,
+  ): Promise<ArchivedRecordDto[]> {
+    return await this.retentionService.listArchives(query);
+  }
+
+  /**
+   * PUT /retention/archives/:id — Cập nhật bản ghi lưu trữ.
+   */
+  @Put('archives/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cập nhật bản ghi lưu trữ' })
+  @ApiParam({ name: 'id', description: 'ID bản ghi lưu trữ' })
+  @ApiResponse({ status: 200, description: 'Đã cập nhật', type: ArchivedRecordDto })
+  @ApiResponse({ status: 404, description: 'Bản ghi không tồn tại' })
+  async updateArchive(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: UpdateArchivedRecordDto,
+  ): Promise<ArchivedRecordDto> {
+    this.logger.log(`Cập nhật bản ghi lưu trữ: id=${id}`);
+    return await this.retentionService.updateArchive(id, dto);
+  }
+
+  /**
+   * POST /retention/archives/:id/execute — Thực thi lưu trữ bản ghi.
+   *
+   * Mô phỏng quá trình nén và lưu trữ dữ liệu.
+   */
+  @Post('archives/:id/execute')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Thực thi lưu trữ bản ghi' })
+  @ApiParam({ name: 'id', description: 'ID bản ghi lưu trữ' })
+  @ApiResponse({ status: 200, description: 'Đã thực thi lưu trữ', type: ArchivedRecordDto })
+  @ApiResponse({ status: 404, description: 'Bản ghi không tồn tại' })
+  async executeArchive(
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<ArchivedRecordDto> {
+    this.logger.log(`Thực thi lưu trữ: id=${id}`);
+    return await this.retentionService.executeArchive(id);
+  }
+
+  /**
+   * POST /retention/archives/:id/retry — Thử lại lưu trữ cho bản ghi thất bại.
+   */
+  @Post('archives/:id/retry')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Thử lại lưu trữ bản ghi thất bại' })
+  @ApiParam({ name: 'id', description: 'ID bản ghi lưu trữ' })
+  @ApiResponse({ status: 200, description: 'Đã thử lại', type: ArchivedRecordDto })
+  @ApiResponse({ status: 400, description: 'Không thể thử lại — vượt quá số lần tối đa' })
+  @ApiResponse({ status: 404, description: 'Bản ghi không tồn tại' })
+  async retryArchive(
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<ArchivedRecordDto> {
+    this.logger.log(`Thử lại lưu trữ: id=${id}`);
+    return await this.retentionService.retryArchive(id);
+  }
+
+  // ========================================================================
+  // ErasureRequest Endpoints
+  // ========================================================================
+
+  /**
+   * POST /retention/erasure — Tạo yêu cầu xóa dữ liệu mới.
+   */
+  @Post('erasure')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Tạo yêu cầu xóa dữ liệu mới (GDPR Article 17)' })
+  @ApiResponse({ status: 201, description: 'Yêu cầu xóa đã tạo', type: ErasureRequestDto })
+  @ApiResponse({ status: 400, description: 'Dữ liệu không hợp lệ' })
+  async createErasureRequest(
+    @Body() dto: CreateErasureRequestDto,
+  ): Promise<ErasureRequestDto> {
+    this.logger.log(
+      `Tạo yêu cầu xóa: user=${dto.userId}, reason=${dto.erasureReason}`,
+    );
+    return await this.retentionService.createErasureRequest(dto);
+  }
+
+  /**
+   * GET /retention/erasure/:id — Lấy thông tin yêu cầu xóa theo ID.
+   */
+  @Get('erasure/:id')
+  @ApiOperation({ summary: 'Lấy thông tin yêu cầu xóa theo ID' })
+  @ApiParam({ name: 'id', description: 'ID yêu cầu xóa' })
+  @ApiResponse({ status: 200, description: 'Thông tin yêu cầu xóa', type: ErasureRequestDto })
+  @ApiResponse({ status: 404, description: 'Yêu cầu không tồn tại' })
+  async getErasureRequest(
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<ErasureRequestDto> {
+    return await this.retentionService.getErasureRequest(id);
+  }
+
+  /**
+   * GET /retention/erasure/ref/:referenceNumber — Lấy yêu cầu xóa theo mã tham chiếu.
+   */
+  @Get('erasure/ref/:referenceNumber')
+  @ApiOperation({ summary: 'Lấy yêu cầu xóa theo mã tham chiếu' })
+  @ApiParam({ name: 'referenceNumber', description: 'Mã tham chiếu (ERA-YYYYMMDD-XXXXX)' })
+  @ApiResponse({ status: 200, description: 'Thông tin yêu cầu xóa', type: ErasureRequestDto })
+  @ApiResponse({ status: 404, description: 'Yêu cầu không tồn tại' })
+  async getErasureByReference(
+    @Param('referenceNumber') referenceNumber: string,
+  ): Promise<ErasureRequestDto> {
+    return await this.retentionService.getErasureByReference(referenceNumber);
+  }
+
+  /**
+   * GET /retention/erasure — Lấy danh sách yêu cầu xóa với bộ lọc.
+   */
+  @Get('erasure')
+  @ApiOperation({ summary: 'Lấy danh sách yêu cầu xóa dữ liệu' })
+  @ApiQuery({ name: 'status', required: false, description: 'Lọc theo trạng thái' })
+  @ApiQuery({ name: 'erasureReason', required: false, description: 'Lọc theo lý do' })
+  @ApiQuery({ name: 'priority', required: false, description: 'Lọc theo mức độ ưu tiên' })
+  @ApiQuery({ name: 'userId', required: false, description: 'Lọc theo user' })
+  @ApiQuery({ name: 'overdue', required: false, type: Boolean, description: 'Chỉ yêu cầu quá hạn' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'Danh sách yêu cầu xóa', type: [ErasureRequestDto] })
+  async listErasureRequests(
+    @Query() query: ErasureRequestQueryDto,
+  ): Promise<ErasureRequestDto[]> {
+    return await this.retentionService.listErasureRequests(query);
+  }
+
+  /**
+   * PUT /retention/erasure/:id — Cập nhật yêu cầu xóa.
+   */
+  @Put('erasure/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cập nhật yêu cầu xóa' })
+  @ApiParam({ name: 'id', description: 'ID yêu cầu xóa' })
+  @ApiResponse({ status: 200, description: 'Đã cập nhật', type: ErasureRequestDto })
+  @ApiResponse({ status: 404, description: 'Yêu cầu không tồn tại' })
+  async updateErasureRequest(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: UpdateErasureRequestDto,
+  ): Promise<ErasureRequestDto> {
+    this.logger.log(`Cập nhật yêu cầu xóa: id=${id}`);
+    return await this.retentionService.updateErasureRequest(id, dto);
+  }
+
+  /**
+   * POST /retention/erasure/:id/approve — Phê duyệt yêu cầu xóa.
+   *
+   * Body: { "approvedBy": "user-id-cua-nguoi-phay-duyet" }
+   */
+  @Post('erasure/:id/approve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Phê duyệt yêu cầu xóa dữ liệu' })
+  @ApiParam({ name: 'id', description: 'ID yêu cầu xóa' })
+  @ApiResponse({ status: 200, description: 'Đã phê duyệt', type: ErasureRequestDto })
+  @ApiResponse({ status: 400, description: 'Không thể phê duyệt — trạng thái không hợp lệ' })
+  @ApiResponse({ status: 404, description: 'Yêu cầu không tồn tại' })
+  async approveErasure(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body('approvedBy') approvedBy: string,
+  ): Promise<ErasureRequestDto> {
+    if (!approvedBy) {
+      throw new BadRequestException('approvedBy là bắt buộc');
+    }
+    this.logger.log(`Phê duyệt yêu cầu xóa: id=${id}, by=${approvedBy}`);
+    return await this.retentionService.approveErasure(id, approvedBy);
+  }
+
+  /**
+   * POST /retention/erasure/:id/reject — Từ chối yêu cầu xóa.
+   *
+   * Body: { "rejectedBy": "user-id", "reason": "lý do từ chối" }
+   */
+  @Post('erasure/:id/reject')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Từ chối yêu cầu xóa dữ liệu' })
+  @ApiParam({ name: 'id', description: 'ID yêu cầu xóa' })
+  @ApiResponse({ status: 200, description: 'Đã từ chối', type: ErasureRequestDto })
+  @ApiResponse({ status: 400, description: 'Không thể từ chối — trạng thái không hợp lệ' })
+  @ApiResponse({ status: 404, description: 'Yêu cầu không tồn tại' })
+  async rejectErasure(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body('rejectedBy') rejectedBy: string,
+    @Body('reason') reason: string,
+  ): Promise<ErasureRequestDto> {
+    if (!rejectedBy) {
+      throw new BadRequestException('rejectedBy là bắt buộc');
+    }
+    if (!reason) {
+      throw new BadRequestException('Lý do từ chối là bắt buộc');
+    }
+    this.logger.log(`Từ chối yêu cầu xóa: id=${id}, by=${rejectedBy}`);
+    return await this.retentionService.rejectErasure(id, rejectedBy, reason);
+  }
+
+  /**
+   * POST /retention/erasure/:id/execute — Thực thi xóa dữ liệu.
+   *
+   * Chỉ cho phép thực thi yêu cầu đã được phê duyệt (APPROVED).
+   */
+  @Post('erasure/:id/execute')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Thực thi xóa dữ liệu cho yêu cầu đã phê duyệt' })
+  @ApiParam({ name: 'id', description: 'ID yêu cầu xóa' })
+  @ApiResponse({ status: 200, description: 'Đã thực thi xóa', type: ErasureRequestDto })
+  @ApiResponse({ status: 400, description: 'Không thể thực thi — trạng thái không hợp lệ' })
+  @ApiResponse({ status: 404, description: 'Yêu cầu không tồn tại' })
+  async executeErasure(
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<ErasureRequestDto> {
+    this.logger.log(`Thực thi xóa: id=${id}`);
+    return await this.retentionService.executeErasure(id);
+  }
+
+  // ========================================================================
+  // Scan & Statistics Endpoints
+  // ========================================================================
+
+  /**
+   * POST /retention/scan — Quét dữ liệu hết hạn.
+   *
+   * Quét tất cả chính sách active và tìm bản ghi đã vượt quá thời hạn bảo quản.
+   * Optional: chỉ định policyId để quét một chính sách cụ thể.
+   */
+  @Post('scan')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Quét dữ liệu hết hạn theo chính sách bảo quản' })
+  @ApiQuery({ name: 'policyId', required: false, description: 'ID chính sách cần quét (optional)' })
+  @ApiResponse({ status: 200, description: 'Kết quả quét', type: ScanResultDto })
+  async scanExpiredData(
+    @Query('policyId') policyId?: string,
+  ): Promise<ScanResultDto> {
+    this.logger.log(
+      `Bắt đầu quét dữ liệu hết hạn${policyId ? ` cho chính sách ${policyId}` : ''}`,
+    );
+    return await this.retentionService.scanExpiredData(policyId);
+  }
+
+  /**
+   * GET /retention/stats — Lấy thống kê tổng quan.
+   *
+   * Trả về số liệu tổng quan: tổng chính sách, bản ghi lưu trữ,
+   * kích thước lưu trữ, yêu cầu xóa, yêu cầu quá hạn, v.v.
+   */
+  @Get('stats')
+  @ApiOperation({ summary: 'Lấy thống kê tổng quan về bảo quản dữ liệu' })
+  @ApiResponse({ status: 200, description: 'Thống kê tổng quan', type: RetentionStatsDto })
+  async getStats(): Promise<RetentionStatsDto> {
+    return await this.retentionService.getStats();
+  }
+}
+{% endraw %}

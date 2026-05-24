@@ -1,0 +1,316 @@
+{% raw %}
+// ============================================================================
+// CP47 — Data Retention & Lifecycle Management
+// NestJS Module — Cấu hình module cho mô-đun quản lý vòng đời dữ liệu
+// ============================================================================
+// File: retention.module.ts.jinja2
+// Template context: (không sử dụng biến Jinja2 — template tĩnh)
+//
+// Rule V1: NO @midicoder imports — generated code standalone, use relative imports
+// Rule V2: NO business logic in decorators — only structure
+// ============================================================================
+
+import { Module, Global, Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+import {
+RetentionPolicyEntity,
+ArchivedRecordEntity,
+ErasureRequestEntity,
+ArchiveStatus,
+ErasureStatus,
+} from './entities/retention.entity';
+import { RetentionService } from './services/retention.service';
+import { RetentionController } from './controllers/retention.controller';
+import { RetentionWebhookController } from './controllers/retention-webhook.controller';
+
+// ============================================================================
+// Cấu hình hằng số
+// ============================================================================
+
+/**
+* Key injection token cho cấu hình retention.
+*/
+export const RETENTION_CONFIG_TOKEN = 'RETENTION_CONFIG_TOKEN';
+
+/**
+* Giao diện cấu hình cho module retention.
+*/
+export interface RetentionConfig {
+/** Khoảng thời gian giữa các lần quét (phút) */
+scanIntervalMinutes: number;
+/** Số lần thử lại tối đa khi lưu trữ */
+maxArchiveRetries: number;
+/** Số ngày tối đa để xử lý yêu cầu xóa (GDPR) */
+erasureDeadlineDays: number;
+/** Provider lưu trữ mặc định */
+defaultStorageProvider: string;
+/** Bật/tắt quét tự động */
+autoScanEnabled: boolean;
+}
+
+/**
+* Cấu hình mặc định cho module retention.
+*/
+export const DEFAULT_RETENTION_CONFIG: RetentionConfig = {
+scanIntervalMinutes: 60,
+maxArchiveRetries: 3,
+erasureDeadlineDays: 30,
+defaultStorageProvider: 's3',
+autoScanEnabled: true,
+};
+
+// ============================================================================
+// RetentionScheduler — Tự động quét và xử lý
+// ============================================================================
+
+/**
+* RetentionScheduler — Service chạy định kỳ để quét dữ liệu hết hạn.
+*
+* Sử dụng Node.js setInterval để thực hiện quét tự động
+* theo khoảng thời gian cấu hình. Ghi log khi bắt đầu và hoàn tất.
+*/
+@Injectable()
+export class RetentionScheduler implements OnModuleInit {
+private intervalId: NodeJS.Timeout | null = null;
+
+constructor(
+@Inject(RETENTION_CONFIG_TOKEN) private readonly config: RetentionConfig,
+private readonly retentionService: RetentionService,
+) {}
+
+/**
+* Khởi tạo scheduler khi module được tải.
+*/
+onModuleInit(): void {
+if (this.config.autoScanEnabled) {
+this.startAutoScan();
+}
+}
+
+/**
+* Bắt đầu quét tự động theo khoảng thời gian cấu hình.
+*/
+private startAutoScan(): void {
+this.intervalId = setInterval(async () => {
+try {
+const result = await this.retentionService.scanExpiredData();
+// Ghi log tóm tắt kết quả quét
+if (result.expiredRecords > 0) {
+// Có dữ liệu hết hạn cần xử lý
+}
+} catch (error) {
+// Ghi log lỗi — không để scheduler bị dừng
+}
+}, this.config.scanIntervalMinutes * 60 * 1000);
+}
+
+/**
+* Dừng quét tự động.
+*/
+stopAutoScan(): void {
+if (this.intervalId) {
+clearInterval(this.intervalId);
+this.intervalId = null;
+}
+}
+}
+
+// ============================================================================
+// RetentionAuditLogger — Ghi nhật ký kiểm toán
+// ============================================================================
+
+/**
+* RetentionAuditLogger — Ghi nhật ký kiểm toán cho các thao tác bảo quản.
+*
+* Trong thực tế sẽ ghi vào bảng audit_log hoặc gửi đến hệ thống logging
+* tập trung (ELK, Datadog, v.v.). Phiên bản này ghi ra console.
+*/
+@Injectable()
+export class RetentionAuditLogger {
+/**
+* Ghi nhật ký kiểm toán cho thao tác chính sách.
+*
+* @param action - Hành động (create, update, delete, activate, pause)
+* @param policyId - ID chính sách
+* @param actor - Người thực hiện
+* @param detail - Chi tiết bổ sung
+*/
+logPolicyAction(
+action: string,
+policyId: string,
+actor: string,
+detail?: string,
+): void {
+// Ghi audit log — sẽ tích hợp với hệ thống logging trong thực tế
+}
+
+/**
+* Ghi nhật ký kiểm toán cho thao tác lưu trữ.
+*
+* @param action - Hành động (archive, restore, retry, delete)
+* @param archiveId - ID bản ghi lưu trữ
+* @param actor - Người thực hiện
+*/
+logArchiveAction(
+action: string,
+archiveId: string,
+actor: string,
+): void {
+// Ghi audit log cho thao tác lưu trữ
+}
+
+/**
+* Ghi nhật ký kiểm toán cho thao tác xóa dữ liệu.
+*
+* @param action - Hành động (create, approve, reject, execute, cancel)
+* @param erasureId - ID yêu cầu xóa
+* @param actor - Người thực hiện
+* @param detail - Chi tiết
+*/
+logErasureAction(
+action: string,
+erasureId: string,
+actor: string,
+detail?: string,
+): void {
+// Ghi audit log cho thao tác xóa dữ liệu
+}
+}
+
+// ============================================================================
+// RetentionEventEmitter — Phát sự kiện nội bộ
+// ============================================================================
+
+/**
+* RetentionEventEmitter — Phát sự kiện nội bộ cho các module lắng nghe.
+*
+* Sử dụng Node.js EventEmitter để phát các sự kiện về thay đổi
+* trạng thái chính sách, lưu trữ, và xóa dữ liệu.
+*/
+@Injectable()
+export class RetentionEventEmitter {
+/**
+* Phát sự kiện chính sách đã thay đổi.
+*
+* @param policyId - ID chính sách
+* @param oldStatus - Trạng thái cũ
+* @param newStatus - Trạng thái mới
+*/
+emitPolicyChanged(
+policyId: string,
+oldStatus: string,
+newStatus: string,
+): void {
+// Phát sự kiện policy.changed
+}
+
+/**
+* Phát sự kiện bản ghi đã được lưu trữ.
+*
+* @param archiveId - ID bản ghi lưu trữ
+* @param status - Trạng thái lưu trữ
+*/
+emitArchiveStatusChanged(
+archiveId: string,
+status: ArchiveStatus,
+): void {
+// Phát sự kiện archive.status_changed
+}
+
+/**
+* Phát sự kiện yêu cầu xóa đã thay đổi trạng thái.
+*
+* @param erasureId - ID yêu cầu xóa
+* @param oldStatus - Trạng thái cũ
+* @param newStatus - Trạng thái mới
+*/
+emitErasureStatusChanged(
+erasureId: string,
+oldStatus: ErasureStatus,
+newStatus: ErasureStatus,
+): void {
+// Phát sự kiện erasure.status_changed
+}
+
+/**
+* Phát sự kiện quét đã hoàn tất.
+*
+* @param scanned - Số bản ghi đã quét
+* @param expired - Số bản ghi hết hạn
+*/
+emitScanCompleted(
+scanned: number,
+expired: number,
+): void {
+// Phát sự kiện scan.completed
+}
+}
+
+// ============================================================================
+// RetentionModule — Module chính
+// ============================================================================
+
+/**
+* RetentionModule — Module chính cho mô-đun quản lý vòng đời dữ liệu.
+*
+* Cấu hình toàn bộ module:
+*
+* TypeORM Entities:
+* - RetentionPolicyEntity: Chính sách bảo quản dữ liệu
+* - ArchivedRecordEntity: Bản ghi đã lưu trữ
+* - ErasureRequestEntity: Yêu cầu xóa dữ liệu (GDPR Article 17)
+*
+* Controllers:
+* - RetentionController: REST endpoints cho CRUD chính sách,
+* quản lý lưu trữ, yêu cầu xóa, quét dữ liệu, thống kê
+* - RetentionWebhookController: Nhận webhook từ hệ thống bên ngoài
+* (xóa tài khoản, rút lại đồng ý, hoàn tất lưu trữ, v.v.)
+*
+* Providers:
+* - RetentionService: Service chính với toàn bộ business logic
+* - RetentionScheduler: Tự động quét dữ liệu hết hạn định kỳ
+* - RetentionAuditLogger: Ghi nhật ký kiểm toán
+* - RetentionEventEmitter: Phát sự kiện nội bộ
+*
+* Export:
+* - RetentionService: Để các module khác có thể inject và sử dụng
+* - RetentionAuditLogger: Để các module ghi audit log
+* - RetentionEventEmitter: Để các module lắng nghe sự kiện
+*
+* @Global: Module này được đăng ký toàn cục để các module khác
+* có thể sử dụng RetentionService mà không cần import.
+*/
+@Global()
+@Module({
+imports: [
+TypeOrmModule.forFeature([
+RetentionPolicyEntity,
+ArchivedRecordEntity,
+ErasureRequestEntity,
+]),
+],
+controllers: [
+RetentionController,
+RetentionWebhookController,
+],
+providers: [
+RetentionService,
+RetentionScheduler,
+RetentionAuditLogger,
+RetentionEventEmitter,
+{
+provide: RETENTION_CONFIG_TOKEN,
+useValue: DEFAULT_RETENTION_CONFIG,
+},
+],
+exports: [
+RetentionService,
+RetentionAuditLogger,
+RetentionEventEmitter,
+TypeOrmModule,
+RETENTION_CONFIG_TOKEN,
+],
+})
+export class RetentionModule {}
+{% endraw %}

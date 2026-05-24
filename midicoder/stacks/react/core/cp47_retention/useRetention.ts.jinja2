@@ -1,0 +1,732 @@
+{% raw %}/**
+ * useRetention — Custom React hook cho thao tác quản lý vòng đời dữ liệu:
+ * CRUD chính sách, yêu cầu xóa GDPR, theo dõi công việc, tải thống kê.
+ * Sinh bởi CP47 Data Retention & Lifecycle Management.
+ */
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+
+/* ---- Interface dữ liệu ---- */
+
+/** Trạng thái chính sách lưu trữ */
+export type RetentionPolicyStatus = 'active' | 'inactive' | 'expired' | 'draft';
+
+/** Loại dữ liệu áp dụng chính sách */
+export type DataType = 'user_data' | 'log_data' | 'session_data' | 'audit_trail' | 'file_attachment' | 'analytics';
+
+/** Hành động sau khi hết hạn */
+export type ExpiryAction = 'archive' | 'erase' | 'anonymize';
+
+/** Trạng thái yêu cầu xóa */
+export type ErasureRequestStatus = 'submitted' | 'under_review' | 'approved' | 'in_progress' | 'completed' | 'denied' | 'expired';
+
+/** Loại định danh chủ thể */
+export type IdentityType = 'email' | 'phone' | 'national_id' | 'passport' | 'user_id';
+
+/** Phạm vi xóa */
+export type ErasureScope = 'all_personal_data' | 'account_data' | 'communication_data' | 'usage_data' | 'file_data' | 'consent_data';
+
+/** Trạng thái công việc */
+export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+/** Trạng thái tiến độ công việc */
+export type JobProgressStatus = 'queued' | 'initializing' | 'processing' | 'verifying' | 'finalizing' | 'completed' | 'failed' | 'cancelled';
+
+/** Loại công việc */
+export type JobType = 'archive' | 'erase' | 'anonymize' | 'bulk_delete' | 'data_export';
+
+/* ---- Entity interfaces ---- */
+
+/** Một chính sách lưu trữ */
+export interface RetentionPolicy {
+    id: string;
+    name: string;
+    description: string;
+    data_type: DataType;
+    retention_days: number;
+    archive_after_days: number | null;
+    action_after_expiry: ExpiryAction;
+    status: RetentionPolicyStatus;
+    applied_count: number;
+    created_at: string;
+    updated_at: string;
+    created_by?: string;
+}
+
+/** Một công việc lưu trữ/xóa */
+export interface RetentionJob {
+    id: string;
+    type: JobType;
+    policy_id?: string;
+    policy_name?: string;
+    status: JobProgressStatus;
+    total_records: number;
+    processed_records: number;
+    steps: JobStep[];
+    created_at: string;
+    started_at?: string;
+    completed_at?: string;
+    error_message?: string;
+    estimated_remaining_seconds?: number;
+}
+
+/** Một bước trong công việc */
+export interface JobStep {
+    key: string;
+    label: string;
+    description: string;
+    status: 'pending' | 'active' | 'completed' | 'failed' | 'skipped';
+    icon: string;
+    duration_ms?: number;
+    records_processed?: number;
+    error_message?: string;
+}
+
+/** Một yêu cầu xóa GDPR */
+export interface ErasureRequest {
+    id: string;
+    subject_id: string;
+    subject_email: string;
+    subject_name: string;
+    status: ErasureRequestStatus;
+    reason: string;
+    legal_basis: string;
+    scope: ErasureScope[];
+    requested_by: string;
+    identity_verified: boolean;
+    records_found: number;
+    records_erased: number;
+    created_at: string;
+    reviewed_at?: string;
+    completed_at?: string;
+    denial_reason?: string;
+    notes?: string;
+}
+
+/** Một chủ thể dữ liệu (kết quả tìm kiếm) */
+export interface DataSubject {
+    id: string;
+    email: string;
+    phone?: string;
+    display_name: string;
+    national_id?: string;
+    last_activity: string;
+    data_sources_count: number;
+    estimated_records: number;
+}
+
+/** Dữ liệu thống kê tổng quan */
+export interface RetentionStats {
+    total_policies: number;
+    active_policies: number;
+    total_data_size_gb: number;
+    archived_size_gb: number;
+    erased_size_gb: number;
+    pending_jobs: number;
+    running_jobs: number;
+    expired_records_count: number;
+}
+
+/* ---- Payload interfaces ---- */
+
+/** Dữ liệu tạo/sửa chính sách */
+export interface PolicyPayload {
+    name: string;
+    description: string;
+    data_type: DataType;
+    retention_days: number;
+    archive_after_days?: number | null;
+    action_after_expiry: ExpiryAction;
+    status?: RetentionPolicyStatus;
+}
+
+/** Dữ liệu tạo yêu cầu xóa */
+export interface ErasurePayload {
+    subject_identifier: string;
+    identity_type: IdentityType;
+    subject_id?: string;
+    reason: string;
+    legal_basis: string;
+    scope: ErasureScope[];
+    notes?: string;
+}
+
+/** Dữ liệu trả về từ hook */
+export interface UseRetentionReturn {
+    /* ---- Chính sách ---- */
+    policies: RetentionPolicy[];
+    createPolicy: (payload: PolicyPayload) => Promise<RetentionPolicy | null>;
+    updatePolicy: (id: string, payload: Partial<PolicyPayload>) => Promise<RetentionPolicy | null>;
+    deletePolicy: (id: string) => Promise<boolean>;
+    togglePolicyStatus: (id: string, status: RetentionPolicyStatus) => Promise<boolean>;
+    triggerPolicy: (id: string) => Promise<RetentionJob | null>;
+    getPolicies: (filters?: PolicyFilters) => Promise<RetentionPolicy[]>;
+
+    /* ---- Công việc ---- */
+    jobs: RetentionJob[];
+    currentJob: RetentionJob | null;
+    getJobs: (limit?: number) => Promise<RetentionJob[]>;
+    getJob: (id: string) => Promise<RetentionJob | null>;
+    cancelJob: (id: string) => Promise<boolean>;
+    retryJob: (id: string) => Promise<RetentionJob | null>;
+    refreshJob: (id: string) => Promise<RetentionJob | null>;
+
+    /* ---- Yêu cầu xóa ---- */
+    erasureRequests: ErasureRequest[];
+    createErasureRequest: (payload: ErasurePayload) => Promise<ErasureRequest | null>;
+    reviewErasureRequest: (id: string, action: 'approve' | 'deny', reason?: string) => Promise<ErasureRequest | null>;
+    getErasureRequests: (filters?: ErasureFilters) => Promise<ErasureRequest[]>;
+
+    /* ---- Chủ thể dữ liệu ---- */
+    searchSubjects: (query: string) => Promise<DataSubject[]>;
+
+    /* ---- Thống kê ---- */
+    stats: RetentionStats | null;
+    getStats: () => Promise<RetentionStats | null>;
+
+    /* ---- Trạng thái chung ---- */
+    isLoading: boolean;
+    error: string | null;
+    clearError: () => void;
+    refreshAll: () => Promise<void>;
+}
+
+/** Bộ lọc lấy danh sách chính sách */
+export interface PolicyFilters {
+    status?: RetentionPolicyStatus | 'all';
+    data_type?: DataType | 'all';
+    search?: string;
+}
+
+/** Bộ lọc lấy danh sách yêu cầu xóa */
+export interface ErasureFilters {
+    status?: ErasureRequestStatus | 'all';
+    own_only?: boolean;
+}
+
+/* ---- API helper ---- */
+
+/** Gửi yêu cầu fetch với timeout và xử lý lỗi chung */
+async function apiRequest(
+    url: string,
+    options: RequestInit = {},
+    timeout: number,
+): Promise<any> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+        const defaultHeaders: Record<string, string> = {
+            'Content-Type': 'application/json',
+        };
+
+        const res = await fetch(url, {
+            ...options,
+            headers: {
+                ...defaultHeaders,
+                ...(options.headers as Record<string, string>),
+            },
+            signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+            const errorBody = await res.json().catch(() => null);
+            throw new Error(
+                errorBody?.detail || errorBody?.message || `Lỗi API: ${res.status} ${res.statusText}`
+            );
+        }
+
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            return res.json();
+        }
+        return null;
+    } catch (err: any) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+            throw new Error('Yêu cầu hết giờ — vui lòng thử lại');
+        }
+        throw err;
+    }
+}
+
+/* ---- Custom Hook: useRetention ---- */
+
+export function useRetention(apiBase?: string, defaultTimeout?: number): UseRetentionReturn {
+    const baseUrl = apiBase || '/api';
+    const apiTimeout = defaultTimeout || 30000;
+
+    /* State */
+    const [policies, setPolicies] = useState<RetentionPolicy[]>([]);
+    const [jobs, setJobs] = useState<RetentionJob[]>([]);
+    const [currentJob, setCurrentJob] = useState<RetentionJob | null>(null);
+    const [erasureRequests, setErasureRequests] = useState<ErasureRequest[]>([]);
+    const [stats, setStats] = useState<RetentionStats | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    /* Ref để theo dõi việc hủy mount */
+    const isMounted = useRef(true);
+
+    useEffect(() => {
+        isMounted.current = true;
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
+
+    /* Hàm an toàn — chỉ cập nhật state nếu component vẫn mount */
+    const safeSet = useCallback(<T>(setter: (val: T) => void, value: T) => {
+        if (isMounted.current) {
+            setter(value);
+        }
+    }, []);
+
+    /* ---- Chính sách ---- */
+
+    /** Lấy danh sách chính sách với bộ lọc */
+    const getPolicies = useCallback(async (filters?: PolicyFilters): Promise<RetentionPolicy[]> => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const params = new URLSearchParams();
+            if (filters?.status && filters.status !== 'all') params.set('status', filters.status);
+            if (filters?.data_type && filters.data_type !== 'all') params.set('data_type', filters.data_type);
+            if (filters?.search?.trim()) params.set('q', filters.search.trim());
+
+            const queryString = params.toString();
+            const data = await apiRequest(
+                `${baseUrl}/api/retention/policies${queryString ? `?${queryString}` : ''}`,
+                {},
+                apiTimeout,
+            );
+            const items = data || [];
+            safeSet(setPolicies, items);
+            return items;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể tải danh sách chính sách';
+            safeSet(setError, msg);
+            return [];
+        } finally {
+            safeSet(setIsLoading, false);
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /** Tạo chính sách mới */
+    const createPolicy = useCallback(async (payload: PolicyPayload): Promise<RetentionPolicy | null> => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const created = await apiRequest(
+                `${baseUrl}/api/retention/policies`,
+                { method: 'POST', body: JSON.stringify(payload) },
+                apiTimeout,
+            );
+            safeSet(setPolicies, (prev) => [...prev, created]);
+            return created;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể tạo chính sách';
+            safeSet(setError, msg);
+            return null;
+        } finally {
+            safeSet(setIsLoading, false);
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /** Cập nhật chính sách */
+    const updatePolicy = useCallback(async (
+        id: string,
+        payload: Partial<PolicyPayload>,
+    ): Promise<RetentionPolicy | null> => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const updated = await apiRequest(
+                `${baseUrl}/api/retention/policies/${id}`,
+                { method: 'PUT', body: JSON.stringify(payload) },
+                apiTimeout,
+            );
+            safeSet(setPolicies, (prev) =>
+                prev.map((p) => (p.id === id ? updated : p))
+            );
+            return updated;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể cập nhật chính sách';
+            safeSet(setError, msg);
+            return null;
+        } finally {
+            safeSet(setIsLoading, false);
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /** Xóa chính sách */
+    const deletePolicy = useCallback(async (id: string): Promise<boolean> => {
+        setError(null);
+        try {
+            await apiRequest(
+                `${baseUrl}/api/retention/policies/${id}`,
+                { method: 'DELETE' },
+                apiTimeout,
+            );
+            safeSet(setPolicies, (prev) => prev.filter((p) => p.id !== id));
+            return true;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể xóa chính sách';
+            safeSet(setError, msg);
+            return false;
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /** Chuyển đổi trạng thái chính sách */
+    const togglePolicyStatus = useCallback(async (
+        id: string,
+        status: RetentionPolicyStatus,
+    ): Promise<boolean> => {
+        setError(null);
+        try {
+            const updated = await apiRequest(
+                `${baseUrl}/api/retention/policies/${id}`,
+                { method: 'PATCH', body: JSON.stringify({ status }) },
+                apiTimeout,
+            );
+            safeSet(setPolicies, (prev) =>
+                prev.map((p) => (p.id === id ? updated : p))
+            );
+            return true;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể thay đổi trạng thái chính sách';
+            safeSet(setError, msg);
+            return false;
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /** Kích hoạt chính sách ngay lập tức (tạo công việc) */
+    const triggerPolicy = useCallback(async (id: string): Promise<RetentionJob | null> => {
+        setError(null);
+        try {
+            const job = await apiRequest(
+                `${baseUrl}/api/retention/policies/${id}/trigger`,
+                { method: 'POST' },
+                apiTimeout,
+            );
+            if (job) {
+                safeSet(setJobs, (prev) => [job, ...prev]);
+                safeSet(setCurrentJob, job);
+            }
+            return job;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể kích hoạt chính sách';
+            safeSet(setError, msg);
+            return null;
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /* ---- Công việc ---- */
+
+    /** Lấy danh sách công việc */
+    const getJobs = useCallback(async (limit: number = 20): Promise<RetentionJob[]> => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const data = await apiRequest(
+                `${baseUrl}/api/retention/jobs?limit=${limit}`,
+                {},
+                apiTimeout,
+            );
+            const items = data || [];
+            safeSet(setJobs, items);
+            return items;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể tải danh sách công việc';
+            safeSet(setError, msg);
+            return [];
+        } finally {
+            safeSet(setIsLoading, false);
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /** Lấy chi tiết công việc */
+    const getJob = useCallback(async (id: string): Promise<RetentionJob | null> => {
+        setError(null);
+        try {
+            const data = await apiRequest(
+                `${baseUrl}/api/retention/jobs/${id}`,
+                {},
+                apiTimeout,
+            );
+            if (data) {
+                safeSet(setCurrentJob, data);
+                safeSet(setJobs, (prev) => {
+                    const idx = prev.findIndex((j) => j.id === id);
+                    if (idx >= 0) {
+                        const updated = [...prev];
+                        updated[idx] = data;
+                        return updated;
+                    }
+                    return [data, ...prev];
+                });
+            }
+            return data;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể tải công việc';
+            safeSet(setError, msg);
+            return null;
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /** Làm mới công việc hiện tại */
+    const refreshJob = useCallback(async (id: string): Promise<RetentionJob | null> => {
+        return getJob(id);
+    }, [getJob]);
+
+    /** Hủy công việc */
+    const cancelJob = useCallback(async (id: string): Promise<boolean> => {
+        setError(null);
+        try {
+            const cancelled = await apiRequest(
+                `${baseUrl}/api/retention/jobs/${id}/cancel`,
+                { method: 'POST' },
+                apiTimeout,
+            );
+            if (cancelled) {
+                safeSet(setJobs, (prev) =>
+                    prev.map((j) => (j.id === id ? cancelled : j))
+                );
+                if (currentJob?.id === id) {
+                    safeSet(setCurrentJob, cancelled);
+                }
+            }
+            return true;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể hủy công việc';
+            safeSet(setError, msg);
+            return false;
+        }
+    }, [baseUrl, apiTimeout, currentJob, safeSet]);
+
+    /** Thử lại công việc thất bại */
+    const retryJob = useCallback(async (id: string): Promise<RetentionJob | null> => {
+        setError(null);
+        try {
+            const retried = await apiRequest(
+                `${baseUrl}/api/retention/jobs/${id}/retry`,
+                { method: 'POST' },
+                apiTimeout,
+            );
+            if (retried) {
+                safeSet(setJobs, (prev) =>
+                    prev.map((j) => (j.id === id ? retried : j))
+                );
+                if (currentJob?.id === id) {
+                    safeSet(setCurrentJob, retried);
+                }
+            }
+            return retried;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể thử lại công việc';
+            safeSet(setError, msg);
+            return null;
+        }
+    }, [baseUrl, apiTimeout, currentJob, safeSet]);
+
+    /* ---- Yêu cầu xóa GDPR ---- */
+
+    /** Tạo yêu cầu xóa mới */
+    const createErasureRequest = useCallback(async (
+        payload: ErasurePayload,
+    ): Promise<ErasureRequest | null> => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const created = await apiRequest(
+                `${baseUrl}/api/retention/erasure-requests`,
+                { method: 'POST', body: JSON.stringify(payload) },
+                apiTimeout,
+            );
+            safeSet(setErasureRequests, (prev) => [created, ...prev]);
+            return created;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể gửi yêu cầu xóa';
+            safeSet(setError, msg);
+            return null;
+        } finally {
+            safeSet(setIsLoading, false);
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /** Xem xét (duyệt/từ chối) yêu cầu xóa */
+    const reviewErasureRequest = useCallback(async (
+        id: string,
+        action: 'approve' | 'deny',
+        reason?: string,
+    ): Promise<ErasureRequest | null> => {
+        setError(null);
+        try {
+            const payload: Record<string, any> = { action };
+            if (reason) payload.reason = reason;
+
+            const updated = await apiRequest(
+                `${baseUrl}/api/retention/erasure-requests/${id}/review`,
+                { method: 'POST', body: JSON.stringify(payload) },
+                apiTimeout,
+            );
+            safeSet(setErasureRequests, (prev) =>
+                prev.map((r) => (r.id === id ? updated : r))
+            );
+            return updated;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể xử lý yêu cầu xem xét';
+            safeSet(setError, msg);
+            return null;
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /** Lấy danh sách yêu cầu xóa */
+    const getErasureRequests = useCallback(async (
+        filters?: ErasureFilters,
+    ): Promise<ErasureRequest[]> => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const params = new URLSearchParams();
+            if (filters?.status && filters.status !== 'all') params.set('status', filters.status);
+            if (filters?.own_only) params.set('own_only', 'true');
+
+            const queryString = params.toString();
+            const data = await apiRequest(
+                `${baseUrl}/api/retention/erasure-requests${queryString ? `?${queryString}` : ''}`,
+                {},
+                apiTimeout,
+            );
+            const items = data || [];
+            safeSet(setErasureRequests, items);
+            return items;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể tải danh sách yêu cầu xóa';
+            safeSet(setError, msg);
+            return [];
+        } finally {
+            safeSet(setIsLoading, false);
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /* ---- Chủ thể dữ liệu ---- */
+
+    /** Tìm kiếm chủ thể dữ liệu */
+    const searchSubjects = useCallback(async (query: string): Promise<DataSubject[]> => {
+        if (!query.trim() || query.trim().length < 2) return [];
+        setError(null);
+        try {
+            const data = await apiRequest(
+                `${baseUrl}/api/retention/subjects?q=${encodeURIComponent(query.trim())}`,
+                {},
+                apiTimeout,
+            );
+            return data || [];
+        } catch {
+            return [];
+        }
+    }, [baseUrl, apiTimeout]);
+
+    /* ---- Thống kê ---- */
+
+    /** Lấy thống kê tổng quan */
+    const getStats = useCallback(async (): Promise<RetentionStats | null> => {
+        setError(null);
+        try {
+            const data = await apiRequest(
+                `${baseUrl}/api/retention/stats`,
+                {},
+                apiTimeout,
+            );
+            safeSet(setStats, data || null);
+            return data;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Không thể tải thống kê';
+            safeSet(setError, msg);
+            return null;
+        }
+    }, [baseUrl, apiTimeout, safeSet]);
+
+    /* ---- Tiện ích ---- */
+
+    /** Xóa thông báo lỗi */
+    const clearError = useCallback(() => {
+        safeSet(setError, null);
+    }, [safeSet]);
+
+    /** Làm mới tất cả dữ liệu */
+    const refreshAll = useCallback(async (): Promise<void> => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const [polData, jobsData, reqData, statsData] = await Promise.all([
+                apiRequest(`${baseUrl}/api/retention/policies`, {}, apiTimeout).catch(() => []),
+                apiRequest(`${baseUrl}/api/retention/jobs?limit=20`, {}, apiTimeout).catch(() => []),
+                apiRequest(`${baseUrl}/api/retention/erasure-requests`, {}, apiTimeout).catch(() => []),
+                apiRequest(`${baseUrl}/api/retention/stats`, {}, apiTimeout).catch(() => null),
+            ]);
+            safeSet(setPolicies, polData || []);
+            safeSet(setJobs, jobsData || []);
+            safeSet(setErasureRequests, reqData || []);
+            safeSet(setStats, statsData || null);
+        } catch (err) {
+            if (isMounted.current) {
+                setError(err instanceof Error ? err.message : 'Lỗi làm mới dữ liệu');
+            }
+        } finally {
+            if (isMounted.current) {
+                setIsLoading(false);
+            }
+        }
+    }, [baseUrl, apiTimeout]);
+
+    /* Tính toán衍生值 */
+    const activeJobCount = useMemo(
+        () => jobs.filter((j) => !['completed', 'failed', 'cancelled'].includes(j.status)).length,
+        [jobs],
+    );
+
+    return {
+        /* Chính sách */
+        policies,
+        createPolicy,
+        updatePolicy,
+        deletePolicy,
+        togglePolicyStatus,
+        triggerPolicy,
+        getPolicies,
+
+        /* Công việc */
+        jobs,
+        currentJob,
+        getJobs,
+        getJob,
+        cancelJob,
+        retryJob,
+        refreshJob,
+
+        /* Yêu cầu xóa */
+        erasureRequests,
+        createErasureRequest,
+        reviewErasureRequest,
+        getErasureRequests,
+
+        /* Chủ thể */
+        searchSubjects,
+
+        /* Thống kê */
+        stats,
+        getStats,
+
+        /* Trạng thái */
+        isLoading,
+        error,
+        clearError,
+        refreshAll,
+    };
+}
+
+export default useRetention;
+{% endraw %}

@@ -1,0 +1,574 @@
+{% raw %}
+// ============================================================================
+// CP47 — Data Retention & Lifecycle Management
+// TypeORM Entities cho mô-đun quản lý vòng đời dữ liệu
+// ============================================================================
+// File: retention.entity.ts.jinja2
+// Template context: (không sử dụng biến Jinja2 — template tĩnh)
+//
+// Rule V1: NO @midicoder imports — generated code standalone, use relative imports
+// Rule V2: NO business logic in decorators — only structure
+// ============================================================================
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  DeleteDateColumn,
+  Index,
+  Unique,
+  OneToMany,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
+
+/**
+ * Loại chính sách bảo quản dữ liệu.
+ */
+export enum RetentionPolicyType {
+  /** Bảo quản theo khoảng thời gian (số ngày) */
+  TIME_BASED = 'time_based',
+  /** Bảo quản theo kích thước dữ liệu */
+  SIZE_BASED = 'size_based',
+  /** Bảo quản theo sự kiện (sự kiện kích hoạt) */
+  EVENT_BASED = 'event_based',
+  /** Bảo quản theo luật định (tuân thủ pháp lý) */
+  LEGAL_COMPLIANCE = 'legal_compliance',
+}
+
+/**
+ * Phạm vi áp dụng của chính sách bảo quản.
+ */
+export enum RetentionPolicyScope {
+  /** Áp dụng toàn bộ hệ thống */
+  GLOBAL = 'global',
+  /** Áp dụng theo tenant */
+  TENANT = 'tenant',
+  /** Áp dụng theo user cụ thể */
+  USER = 'user',
+  /** Áp dụng theo loại dữ liệu */
+  DATA_TYPE = 'data_type',
+}
+
+/**
+ * Trạng thái chính sách bảo quản.
+ */
+export enum RetentionPolicyStatus {
+  DRAFT = 'draft',
+  ACTIVE = 'active',
+  PAUSED = 'paused',
+  EXPIRED = 'expired',
+  ARCHIVED = 'archived',
+}
+
+/**
+ * Trạng thái bản ghi đã lưu trữ.
+ */
+export enum ArchiveStatus {
+  /** Đang chờ xử lý lưu trữ */
+  PENDING = 'pending',
+  /** Đang trong quá trình lưu trữ */
+  PROCESSING = 'processing',
+  /** Đã lưu trữ thành công */
+  COMPLETED = 'completed',
+  /** Lưu trữ thất bại */
+  FAILED = 'failed',
+  /** Đã hủy lưu trữ */
+  CANCELLED = 'cancelled',
+}
+
+/**
+ * Loại bản ghi được lưu trữ.
+ */
+export enum ArchiveRecordType {
+  /** Dữ liệu giao dịch */
+  TRANSACTION = 'transaction',
+  /** Dữ liệu người dùng */
+  USER_DATA = 'user_data',
+  /** Nhật ký hoạt động */
+  AUDIT_LOG = 'audit_log',
+  /** Dữ liệu phiên làm việc */
+  SESSION_DATA = 'session_data',
+  /** Dữ liệu tạm thời */
+  TEMPORARY_DATA = 'temporary_data',
+  /** Dữ liệu phân tích */
+  ANALYTICS_DATA = 'analytics_data',
+  /** Dữ liệu tệp tin / tài liệu */
+  DOCUMENT = 'document',
+  /** Dữ liệu tùy chỉnh */
+  CUSTOM = 'custom',
+}
+
+/**
+ * Trạng thái yêu cầu xóa dữ liệu.
+ */
+export enum ErasureStatus {
+  /** Yêu cầu mới, đang chờ xem xét */
+  SUBMITTED = 'submitted',
+  /** Đang được xem xét */
+  UNDER_REVIEW = 'under_review',
+  /** Đã được phê duyệt */
+  APPROVED = 'approved',
+  /** Đã bị từ chối */
+  REJECTED = 'rejected',
+  /** Đang trong quá trình xóa */
+  IN_PROGRESS = 'in_progress',
+  /** Đã xóa thành công */
+  COMPLETED = 'completed',
+  /** Xóa thất bại */
+  FAILED = 'failed',
+  /** Đã hủy yêu cầu */
+  CANCELLED = 'cancelled',
+}
+
+/**
+ * Lý do yêu cầu xóa dữ liệu.
+ */
+export enum ErasureReason {
+  /** Quyền được quên — GDPR Article 17 */
+  RIGHT_TO_FORGET = 'right_to_forget',
+  /** Hết thời hạn bảo quản */
+  RETENTION_EXPIRED = 'retention_expired',
+  /** Người dùng hủy tài khoản */
+  ACCOUNT_DELETION = 'account_deletion',
+  /** Yêu cầu từ cơ quan chức năng */
+  REGULATORY_REQUEST = 'regulatory_request',
+  /** Dữ liệu không còn cần thiết */
+  DATA_NO_LONGER_NEEDED = 'data_no_longer_needed',
+  /** Rút lại sự đồng ý */
+  CONSENT_WITHDRAWN = 'consent_withdrawn',
+  /** Lý do tùy chỉnh */
+  CUSTOM = 'custom',
+}
+
+/**
+ * Mức độ ưu tiên của yêu cầu xóa.
+ */
+export enum ErasurePriority {
+  THẤP = 'low',
+  TRUNG_BÌNH = 'medium',
+  CAO = 'high',
+  CẤP_BÁCH = 'critical',
+}
+
+// ============================================================================
+// RetentionPolicyEntity
+// ============================================================================
+
+/**
+ * Entity lưu trữ chính sách bảo quản dữ liệu.
+ *
+ * Định nghĩa các quy tắc về thời gian lưu trữ dữ liệu, phạm vi áp dụng,
+ * hành động khi hết hạn (lưu trữ hoặc xóa), và các tham số cấu hình.
+ */
+@Entity('retention_policies')
+@Index('IDX_retention_policy_scope', ['scope'])
+@Index('IDX_retention_policy_status', ['status'])
+@Index('IDX_retention_policy_type', ['policyType'])
+@Unique('UQ_retention_policy_name', ['name'])
+export class RetentionPolicyEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ length: 255 })
+  name: string;
+
+  @Column({ length: 1024, nullable: true, default: null })
+  description: string | null;
+
+  @Column({
+    name: 'policy_type',
+    type: 'enum',
+    enum: RetentionPolicyType,
+    default: RetentionPolicyType.TIME_BASED,
+  })
+  policyType: RetentionPolicyType;
+
+  @Column({
+    type: 'enum',
+    enum: RetentionPolicyScope,
+    default: RetentionPolicyScope.GLOBAL,
+  })
+  scope: RetentionPolicyScope;
+
+  @Column({
+    type: 'enum',
+    enum: RetentionPolicyStatus,
+    default: RetentionPolicyStatus.DRAFT,
+  })
+  status: RetentionPolicyStatus;
+
+  /**
+   * Số ngày bảo quản dữ liệu (áp dụng cho time-based policy).
+   */
+  @Column({ name: 'retention_days', type: 'int', nullable: true, default: null })
+  retentionDays: number | null;
+
+  /**
+   * Kích thước tối đa (MB) trước khi kích hoạt lưu trữ (áp dụng cho size-based).
+   */
+  @Column({ name: 'max_size_mb', type: 'int', nullable: true, default: null })
+  maxSizeMode: number | null;
+
+  /**
+   * Scope target — ID tenant, user, hoặc data type tùy theo scope.
+   */
+  @Column({ name: 'scope_target', length: 255, nullable: true, default: null })
+  scopeTarget: string | null;
+
+  /**
+   * Hành động khi hết hạn: 'archive' hoặc 'delete'.
+   */
+  @Column({
+    name: 'action_on_expiry',
+    length: 50,
+    default: 'archive',
+  })
+  actionOnExpiry: 'archive' | 'delete';
+
+  /**
+   * Các loại dữ liệu áp dụng chính sách này.
+   */
+  @Column({
+    name: 'applicable_data_types',
+    type: 'simple-array',
+    nullable: true,
+    default: null,
+  })
+  applicableDataTypes: string[] | null;
+
+  /**
+   * Dữ liệu cấu hình bổ sung dưới dạng JSON.
+   */
+  @Column({ type: 'jsonb', nullable: true, default: null })
+  metadata: Record<string, any> | null;
+
+  /**
+   * ID người tạo chính sách.
+   */
+  @Column({ name: 'created_by', length: 255, nullable: true, default: null })
+  createdBy: string | null;
+
+  /**
+   * ID tenant (nếu scope là TENANT).
+   */
+  @Column({ name: 'tenant_id', length: 255, nullable: true, default: null })
+  tenantId: string | null;
+
+  /**
+   * Ngày hết hạn của chính sách.
+   */
+  @Column({ name: 'expires_at', type: 'timestamp', nullable: true, default: null })
+  expiresAt: Date | null;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at' })
+  deletedAt: Date | null;
+
+  // Quan hệ one-to-many với ArchivedRecord
+  @OneToMany(() => ArchivedRecordEntity, (archive) => archive.policy)
+  archivedRecords: ArchivedRecordEntity[];
+
+  // Quan hệ one-to-many với ErasureRequest
+  @OneToMany(() => ErasureRequestEntity, (erasure) => erasure.policy)
+  erasureRequests: ErasureRequestEntity[];
+}
+
+// ============================================================================
+// ArchivedRecordEntity
+// ============================================================================
+
+/**
+ * Entity lưu trữ thông tin về bản ghi dữ liệu đã được lưu trữ.
+ *
+ * Theo dõi quá trình lưu trữ: trạng thái, vị trí lưu trữ, kích thước,
+ * checksum để đảm bảo tính toàn vẹn dữ liệu.
+ */
+@Entity('archived_records')
+@Index('IDX_archived_record_policy', ['policyId'])
+@Index('IDX_archived_record_status', ['status'])
+@Index('IDX_archived_record_type', ['recordType'])
+@Index('IDX_archived_record_source', ['sourceEntityId'])
+@Index('IDX_archived_record_tenant', ['tenantId'])
+export class ArchivedRecordEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  /**
+   * ID chính sách bảo quản đã kích hoạt lưu trữ.
+   */
+  @Column({ name: 'policy_id', length: 255 })
+  policyId: string;
+
+  @ManyToOne(() => RetentionPolicyEntity)
+  @JoinColumn({ name: 'policy_id' })
+  policy: RetentionPolicyEntity;
+
+  /**
+   * ID thực thể nguồn (bản ghi gốc được lưu trữ).
+   */
+  @Column({ name: 'source_entity_id', length: 255 })
+  sourceEntityId: string;
+
+  /**
+   * Tên bảng/model nguồn.
+   */
+  @Column({ name: 'source_entity_type', length: 255 })
+  sourceEntityType: string;
+
+  @Column({
+    name: 'record_type',
+    type: 'enum',
+    enum: ArchiveRecordType,
+    default: ArchiveRecordType.CUSTOM,
+  })
+  recordType: ArchiveRecordType;
+
+  @Column({
+    type: 'enum',
+    enum: ArchiveStatus,
+    default: ArchiveStatus.PENDING,
+  })
+  status: ArchiveStatus;
+
+  /**
+   * Kích thước dữ liệu gốc (byte).
+   */
+  @Column({ name: 'original_size_bytes', type: 'bigint', default: 0 })
+  originalSizeBytes: number;
+
+  /**
+   * Kích thước sau khi nén (byte).
+   */
+  @Column({ name: 'compressed_size_bytes', type: 'bigint', nullable: true, default: null })
+  compressedSizeBytes: number | null;
+
+  /**
+   * Thuật toán nén được sử dụng.
+   */
+  @Column({
+    name: 'compression_algorithm',
+    length: 50,
+    nullable: true,
+    default: null,
+  })
+  compressionAlgorithm: string | null;
+
+  /**
+   * Checksum SHA-256 của dữ liệu gốc để xác minh tính toàn vẹn.
+   */
+  @Column({ name: 'checksum_sha256', length: 64, nullable: true, default: null })
+  checksumSha256: string | null;
+
+  /**
+   * Đường dẫn lưu trữ (S3 path, filesystem path, v.v.).
+   */
+  @Column({ name: 'storage_path', length: 1024, nullable: true, default: null })
+  storagePath: string | null;
+
+  /**
+   * Provider lưu trữ (s3, gcs, azure_blobs, local).
+   */
+  @Column({ name: 'storage_provider', length: 50, nullable: true, default: null })
+  storageProvider: string | null;
+
+  /**
+   * ID người dùng liên quan đến bản ghi.
+   */
+  @Column({ name: 'user_id', length: 255, nullable: true, default: null })
+  userId: string | null;
+
+  /**
+   * ID tenant liên quan.
+   */
+  @Column({ name: 'tenant_id', length: 255, nullable: true, default: null })
+  tenantId: string | null;
+
+  /**
+   * Lỗi xảy ra trong quá trình lưu trữ.
+   */
+  @Column({ name: 'error_message', length: 2048, nullable: true, default: null })
+  errorMessage: string | null;
+
+  /**
+   * Số lần thử lại khi lưu trữ thất bại.
+   */
+  @Column({ name: 'retry_count', type: 'int', default: 0 })
+  retryCount: number;
+
+  /**
+   * Dữ liệu bổ sung.
+   */
+  @Column({ type: 'jsonb', nullable: true, default: null })
+  metadata: Record<string, any> | null;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+
+  /**
+   * Thời điểm hoàn tất lưu trữ.
+   */
+  @Column({ name: 'completed_at', type: 'timestamp', nullable: true, default: null })
+  completedAt: Date | null;
+}
+
+// ============================================================================
+// ErasureRequestEntity
+// ============================================================================
+
+/**
+ * Entity lưu trữ yêu cầu xóa dữ liệu.
+ *
+ * Quản lý toàn bộ vòng đời của yêu cầu xóa: từ khi nộp đơn,
+ * xem xét, phê duyệt, thực hiện xóa, đến khi hoàn tất.
+ * Tuân thủ GDPR Article 17 (Right to Erasure).
+ */
+@Entity('erasure_requests')
+@Index('IDX_erasure_request_status', ['status'])
+@Index('IDX_erasure_request_user', ['userId'])
+@Index('IDX_erasure_request_priority', ['priority'])
+@Index('IDX_erasure_request_policy', ['policyId'])
+@Unique('UQ_erasure_request_reference', ['referenceNumber'])
+export class ErasureRequestEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  /**
+   * Mã tham chiếu duy nhất cho yêu cầu xóa (human-readable).
+   * Format: ERA-YYYYMMDD-XXXXX
+   */
+  @Column({ name: 'reference_number', length: 50 })
+  referenceNumber: string;
+
+  /**
+   * ID người dùng yêu cầu xóa (đối tượng bị xóa dữ liệu).
+   */
+  @Column({ name: 'user_id', length: 255 })
+  userId: string;
+
+  /**
+   * ID người nộp yêu cầu (có thể khác userId — ví dụ: DPO).
+   */
+  @Column({ name: 'requested_by', length: 255, nullable: true, default: null })
+  requestedBy: string | null;
+
+  @Column({
+    name: 'erasure_reason',
+    type: 'enum',
+    enum: ErasureReason,
+    default: ErasureReason.RIGHT_TO_FORGET,
+  })
+  erasureReason: ErasureReason;
+
+  /**
+   * Lý do chi tiết (tùy chỉnh) cho yêu cầu xóa.
+   */
+  @Column({ length: 2048, nullable: true, default: null })
+  reasonDetail: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: ErasureStatus,
+    default: ErasureStatus.SUBMITTED,
+  })
+  status: ErasureStatus;
+
+  @Column({
+    type: 'enum',
+    enum: ErasurePriority,
+    default: ErasurePriority.TRUNG_BÌNH,
+  })
+  priority: ErasurePriority;
+
+  /**
+   * ID chính sách bảo quản liên quan (nếu có).
+   */
+  @Column({ name: 'policy_id', length: 255, nullable: true, default: null })
+  policyId: string | null;
+
+  @ManyToOne(() => RetentionPolicyEntity, { nullable: true })
+  @JoinColumn({ name: 'policy_id' })
+  policy: RetentionPolicyEntity;
+
+  /**
+   * Danh sách các loại dữ liệu cần xóa.
+   */
+  @Column({
+    name: 'data_types_to_erase',
+    type: 'simple-array',
+    nullable: true,
+    default: null,
+  })
+  dataTypesToErase: string[] | null;
+
+  /**
+   * ID tenant liên quan.
+   */
+  @Column({ name: 'tenant_id', length: 255, nullable: true, default: null })
+  tenantId: string | null;
+
+  /**
+   * ID người phê duyệt yêu cầu.
+   */
+  @Column({ name: 'approved_by', length: 255, nullable: true, default: null })
+  approvedBy: string | null;
+
+  /**
+   * Thời điểm phê duyệt.
+   */
+  @Column({ name: 'approved_at', type: 'timestamp', nullable: true, default: null })
+  approvedAt: Date | null;
+
+  /**
+   * Lý do từ chối (nếu bị reject).
+   */
+  @Column({ name: 'rejection_reason', length: 2048, nullable: true, default: null })
+  rejectionReason: string | null;
+
+  /**
+   * Số lượng bản ghi đã xóa thành công.
+   */
+  @Column({ name: 'records_erased_count', type: 'int', default: 0 })
+  recordsErasedCount: number;
+
+  /**
+   * Lỗi xảy ra trong quá trình xóa.
+   */
+  @Column({ name: 'error_message', length: 2048, nullable: true, default: null })
+  errorMessage: string | null;
+
+  /**
+   * Thời hạn pháp lý để xử lý yêu cầu (thường 30 ngày theo GDPR).
+   */
+  @Column({ name: 'legal_deadline', type: 'timestamp', nullable: true, default: null })
+  legalDeadline: Date | null;
+
+  /**
+   * Dữ liệu bổ sung.
+   */
+  @Column({ type: 'jsonb', nullable: true, default: null })
+  metadata: Record<string, any> | null;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+
+  /**
+   * Thời điểm hoàn tất xóa dữ liệu.
+   */
+  @Column({ name: 'completed_at', type: 'timestamp', nullable: true, default: null })
+  completedAt: Date | null;
+}
+{% endraw %}

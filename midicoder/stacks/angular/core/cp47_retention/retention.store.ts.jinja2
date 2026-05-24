@@ -1,0 +1,1090 @@
+{% raw %}/**
+ * CP47 — Store Signal cho quản lý chu kỳ dữ liệu
+ *
+ * Quản lý toàn bộ state của module retention thông qua Angular Signals.
+ * Pattern: writable signals cho state + computed signals cho dữ liệu dẫn xuất
+ * + effect() cho side effects (log, persist filters).
+ */
+
+import {
+  Injectable,
+  inject,
+  signal,
+  computed,
+  effect,
+  untracked,
+} from '@angular/core';
+import {
+  RetentionPolicy,
+  RetentionPolicyForm,
+  RetentionPolicyFilters,
+  RetentionPolicyStatus,
+  RetentionDataType,
+  SortDirection,
+  ArchiveRecord,
+  ErasureRequest,
+  ErasureRequestForm,
+  ErasureRequestFilters,
+  ErasureRequestStatus,
+  RetentionStats,
+  PaginatedResponse,
+  ApiError,
+  PolicyDialogMode,
+  DEFAULT_PAGE_SIZE,
+  ARCHIVE_PAGE_SIZE,
+  ERASURE_PAGE_SIZE,
+} from './retention-types';
+import { RetentionService } from './retention.service';
+
+// ──────────────────────────────────────────────
+// Internal state interfaces
+// ──────────────────────────────────────────────
+
+/** State cho danh sách chính sách */
+interface PoliciesState {
+  items: RetentionPolicy[];
+  paginated: PaginatedResponse<RetentionPolicy> | null;
+  loading: boolean;
+  error: ApiError | null;
+  filters: RetentionPolicyFilters;
+}
+
+/** State cho danh sách lưu trữ */
+interface ArchivesState {
+  items: ArchiveRecord[];
+  paginated: PaginatedResponse<ArchiveRecord> | null;
+  loading: boolean;
+  error: ApiError | null;
+  dataTypeFilter: RetentionDataType | 'all';
+  page: number;
+}
+
+/** State cho yêu cầu xóa */
+interface ErasureState {
+  items: ErasureRequest[];
+  paginated: PaginatedResponse<ErasureRequest> | null;
+  loading: boolean;
+  error: ApiError | null;
+  filters: ErasureRequestFilters;
+  selectedRequest: ErasureRequest | null;
+}
+
+/** State cho thống kê dashboard */
+interface StatsState {
+  data: RetentionStats | null;
+  loading: boolean;
+  error: ApiError | null;
+  lastUpdated: string | null;
+}
+
+/** State cho dialog chính sách */
+interface PolicyDialogState {
+  open: boolean;
+  mode: PolicyDialogMode;
+  currentForm: RetentionPolicyForm;
+  currentPolicy: RetentionPolicy | null;
+}
+
+/** State cho form yêu cầu xóa */
+interface ErasureFormState {
+  open: boolean;
+  form: ErasureRequestForm;
+  submitting: boolean;
+  error: ApiError | null;
+}
+
+// ──────────────────────────────────────────────
+// Giá trị mặc định
+// ──────────────────────────────────────────────
+
+const defaultPolicyFilters: RetentionPolicyFilters = {
+  search: '',
+  dataType: 'all',
+  status: 'all',
+  sortBy: 'updatedAt',
+  sortOrder: SortDirection.Desc,
+  page: 1,
+  pageSize: DEFAULT_PAGE_SIZE,
+};
+
+const defaultErasureFilters: ErasureRequestFilters = {
+  search: '',
+  status: 'all',
+  sortBy: 'createdAt',
+  sortOrder: SortDirection.Desc,
+  page: 1,
+  pageSize: ERASURE_PAGE_SIZE,
+};
+
+const emptyPolicyForm: RetentionPolicyForm = {
+  name: '',
+  description: '',
+  dataType: RetentionDataType.Logs,
+  periodCount: 90,
+  periodUnit: 'days',
+  onExpiration: 'archive',
+  enforceImmediately: false,
+  notifyBeforeDays: 14,
+};
+
+const emptyErasureForm: ErasureRequestForm = {
+  subjectName: '',
+  subjectEmail: '',
+  subjectPhone: '',
+  verificationMethod: 'email',
+  dataTypes: [],
+  reason: '',
+};
+
+// ──────────────────────────────────────────────
+// Store Service chính
+// ──────────────────────────────────────────────
+
+/**
+ * Store trung tâm cho module CP47 Retention.
+ *
+ * Mỗi domain (policies, archives, erasure, stats) có bộ signal riêng
+ * để tránh hiệu ứng lan truyền khi chỉ một phần state thay đổi.
+ * OnPush change detection sẽ chỉ kích hoạt cho component subscribe
+ * vào signal thay đổi.
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class RetentionStore {
+  private readonly service = inject(RetentionService);
+
+  // ──────────────────────────────────────────
+  // Policies State
+  // ──────────────────────────────────────────
+
+  private readonly policiesState = signal<PoliciesState>({
+    items: [],
+    paginated: null,
+    loading: false,
+    error: null,
+    filters: { ...defaultPolicyFilters },
+  });
+
+  /** Danh sách chính sách hiện tại */
+  readonly policies = computed(() => this.policiesState().items);
+
+  /** Dữ liệu phân trang */
+  readonly policiesPagination = computed(() => this.policiesState().paginated);
+
+  /** Đang tải chính sách? */
+  readonly policiesLoading = computed(() => this.policiesState().loading);
+
+  /** Lỗi chính sách */
+  readonly policiesError = computed(() => this.policiesState().error);
+
+  /** Bộ lọc hiện tại */
+  readonly policyFilters = computed(() => this.policiesState().filters);
+
+  /**
+   * Danh sách chính sách đã lọc theo trạng thái (tiện íchcomputed)
+   * Trả về số lượng chính sách theo từng trạng thái — dùng cho tab count badge.
+   */
+  readonly policiesByStatus = computed(() => {
+    const items = this.policiesState().items;
+    return {
+      active: items.filter((p) => p.status === 'active').length,
+      suspended: items.filter((p) => p.status === 'suspended').length,
+      completed: items.filter((p) => p.status === 'completed').length,
+      disabled: items.filter((p) => p.status === 'disabled').length,
+    };
+  });
+
+  /**
+   * Chính sách sắp hết hạn (còn dưới 30 ngày)
+   * Dùng cho cảnh báo dashboard.
+   */
+  readonly expiringSoonPolicies = computed(() => {
+    const items = this.policiesState().items;
+    const threshold = Date.now() + 30 * 24 * 60 * 60 * 1000;
+
+    return items
+      .filter((p) => {
+        if (!p.expirationDate) return false;
+        return new Date(p.expirationDate).getTime() < threshold;
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.expirationDate!).getTime() -
+          new Date(b.expirationDate!).getTime()
+      );
+  });
+
+  // ──────────────────────────────────────────
+  // Archives State
+  // ──────────────────────────────────────────
+
+  private readonly archivesState = signal<ArchivesState>({
+    items: [],
+    paginated: null,
+    loading: false,
+    error: null,
+    dataTypeFilter: 'all',
+    page: 1,
+  });
+
+  /** Danh sách bản ghi lưu trữ */
+  readonly archives = computed(() => this.archivesState().items);
+
+  /** Phân trang lưu trữ */
+  readonly archivesPagination = computed(() => this.archivesState().paginated);
+
+  /** Đang tải lưu trữ? */
+  readonly archivesLoading = computed(() => this.archivesState().loading);
+
+  /** Lỗi lưu trữ */
+  readonly archivesError = computed(() => this.archivesState().error);
+
+  /** Bộ lọc loại dữ liệu cho lưu trữ */
+  readonly archiveDataTypeFilter = computed(() => this.archivesState().dataTypeFilter);
+
+  /** Trang hiện tại cho lưu trữ */
+  readonly archivePage = computed(() => this.archivesState().page);
+
+  /**
+   * Tổng dung lượng đã lưu trữ (MB) — computed từ danh sách archives.
+   */
+  readonly totalArchiveSizeMB = computed(() => {
+    return this.archivesState().items.reduce(
+      (sum, item) => sum + item.sizeMB,
+      0
+    );
+  });
+
+  // ──────────────────────────────────────────
+  // Erasure State
+  // ──────────────────────────────────────────
+
+  private readonly erasureState = signal<ErasureState>({
+    items: [],
+    paginated: null,
+    loading: false,
+    error: null,
+    filters: { ...defaultErasureFilters },
+    selectedRequest: null,
+  });
+
+  /** Danh sách yêu cầu xóa */
+  readonly erasureRequests = computed(() => this.erasureState().items);
+
+  /** Phân trang yêu cầu xóa */
+  readonly erasurePagination = computed(() => this.erasureState().paginated);
+
+  /** Đang tải yêu cầu xóa? */
+  readonly erasureLoading = computed(() => this.erasureState().loading);
+
+  /** Lỗi yêu cầu xóa */
+  readonly erasureError = computed(() => this.erasureState().error);
+
+  /** Bộ lọc yêu cầu xóa */
+  readonly erasureFilters = computed(() => this.erasureState().filters);
+
+  /** Yêu cầu đang được chọn để xem chi tiết */
+  readonly selectedErasureRequest = computed(() => this.erasureState().selectedRequest);
+
+  /**
+   * Số yêu cầu đang chờ xử lý — computed nhanh cho badge.
+   */
+  readonly pendingErasureCount = computed(() => {
+    return this.erasureState().items.filter(
+      (r) => r.status === 'pending' || r.status === 'processing'
+    ).length;
+  });
+
+  /**
+   * Tiến độ trung bình của các yêu cầu đang xử lý.
+   */
+  readonly averageErasureProgress = computed(() => {
+    const active = this.erasureState().items.filter(
+      (r) =>
+        r.status === 'erasing' ||
+        r.status === 'processing' ||
+        r.status === 'verified'
+    );
+
+    if (!active.length) return 0;
+
+    return Math.round(
+      active.reduce((sum, r) => sum + r.progressPercent, 0) / active.length
+    );
+  });
+
+  // ──────────────────────────────────────────
+  // Stats State
+  // ──────────────────────────────────────────
+
+  private readonly statsState = signal<StatsState>({
+    data: null,
+    loading: false,
+    error: null,
+    lastUpdated: null,
+  });
+
+  /** Dữ liệu thống kê */
+  readonly stats = computed(() => this.statsState().data);
+
+  /** Đang tải thống kê? */
+  readonly statsLoading = computed(() => this.statsState().loading);
+
+  /** Lỗi thống kê */
+  readonly statsError = computed(() => this.statsState().error);
+
+  /** Thời gian cập nhật cuối cùng */
+  readonly statsLastUpdated = computed(() => this.statsState().lastUpdated);
+
+  // ──────────────────────────────────────────
+  // Policy Dialog State
+  // ──────────────────────────────────────────
+
+  private readonly dialogState = signal<PolicyDialogState>({
+    open: false,
+    mode: PolicyDialogMode.Create,
+    currentForm: { ...emptyPolicyForm },
+    currentPolicy: null,
+  });
+
+  /** Dialog có đang mở? */
+  readonly isPolicyDialogOpen = computed(() => this.dialogState().open);
+
+  /** Chế độ dialog (Create/Edit/View) */
+  readonly policyDialogMode = computed(() => this.dialogState().mode);
+
+  /** Form hiện tại trong dialog */
+  readonly policyDialogForm = computed(() => this.dialogState().currentForm);
+
+  /** Chính sách đang xem/sửa */
+  readonly policyDialogPolicy = computed(() => this.dialogState().currentPolicy);
+
+  // ──────────────────────────────────────────
+  // Erasure Form State
+  // ──────────────────────────────────────────
+
+  private readonly erasureFormState = signal<ErasureFormState>({
+    open: false,
+    form: { ...emptyErasureForm },
+    submitting: false,
+    error: null,
+  });
+
+  /** Form erasure có đang mở? */
+  readonly isErasureFormOpen = computed(() => this.erasureFormState().open);
+
+  /** Form erasure hiện tại */
+  readonly erasureForm = computed(() => this.erasureFormState().form);
+
+  /** Đang gửi yêu cầu xóa? */
+  readonly erasureSubmitting = computed(() => this.erasureFormState().submitting);
+
+  /** Lỗi form erasure */
+  readonly erasureFormError = computed(() => this.erasureFormState().error);
+
+  // ──────────────────────────────────────────
+  // Computed cross-domain
+  // ──────────────────────────────────────────
+
+  /**
+   * Tổng quan nhanh: số lượng bản ghi đang được quản lý bởi tất cả chính sách.
+   */
+  readonly totalManagedRecords = computed(() => {
+    return this.policiesState().items.reduce(
+      (sum, p) => sum + p.recordCount,
+      0
+    );
+  });
+
+  /**
+   * Tổng dung lượng dữ liệu đang được quản lý (MB).
+   */
+  readonly totalManagedDataMB = computed(() => {
+    return this.policiesState().items.reduce(
+      (sum, p) => sum + p.dataUsageMB,
+      0
+    );
+  });
+
+  /**
+   * Tỷ lệ tuân thủ: dựa trên stats nếu có, ngược lại tính từ policies.
+   */
+  readonly complianceRate = computed(() => {
+    const stats = this.statsState().data;
+    if (stats) return stats.compliancePercentage;
+
+    const policies = this.policiesState().items;
+    if (!policies.length) return 0;
+
+    // Ước lượng: tỷ lệ chính sách đang hoạt động
+    const active = policies.filter((p) => p.status === 'active').length;
+    return Math.round((active / policies.length) * 100);
+  });
+
+  // ──────────────────────────────────────────
+  // Effects — side effects khi state thay đổi
+  // ──────────────────────────────────────────
+
+  constructor() {
+    /** Log khi có lỗi từ bất kỳ domain nào */
+    effect(() => {
+      const polError = this.policiesError();
+      const archError = this.archivesError();
+      const eraseError = this.erasureError();
+      const statsErr = this.statsError();
+
+      const errors = [polError, archError, eraseError, statsErr].filter(
+        Boolean
+      ) as ApiError[];
+
+      if (errors.length) {
+        console.warn('[CP47 Store] Phát hiện lỗi:', errors);
+      }
+    });
+
+    /** Persist bộ lọc chính sách vào sessionStorage */
+    effect(() => {
+      const filters = this.policyFilters();
+      untracked(() => {
+        try {
+          sessionStorage.setItem(
+            'cp47_policy_filters',
+            JSON.stringify(filters)
+          );
+        } catch {
+          // sessionStorage không khả dụng — bỏ qua
+        }
+      });
+    });
+
+    /** Persist bộ lọc yêu cầu xóa vào sessionStorage */
+    effect(() => {
+      const filters = this.erasureFilters();
+      untracked(() => {
+        try {
+          sessionStorage.setItem(
+            'cp47_erasure_filters',
+            JSON.stringify(filters)
+          );
+        } catch {
+          // sessionStorage không khả dụng — bỏ qua
+        }
+      });
+    });
+
+    /** Log khi yêu cầu xóa hoàn thành */
+    effect(() => {
+      const selected = this.selectedErasureRequest();
+      if (selected && selected.status === 'completed') {
+        console.log(
+          `[CP47 Store] Yêu cầu xóa ${selected.id} đã hoàn thành — ${selected.recordsErased} bản ghi`
+        );
+      }
+    });
+  }
+
+  // ──────────────────────────────────────────
+  // Actions — Policies
+  // ──────────────────────────────────────────
+
+  /**
+   * Tải danh sách chính sách từ API.
+   * Tự động áp dụng bộ lọc hiện tại.
+   */
+  loadPolicies = (overrideFilters?: Partial<RetentionPolicyFilters>) => {
+    const current = this.policiesState();
+    const mergedFilters = { ...current.filters, ...overrideFilters };
+
+    this.policiesState.update((s) => ({
+      ...s,
+      loading: true,
+      error: null,
+      filters: mergedFilters,
+    }));
+
+    this.service.getPolicies(mergedFilters).subscribe({
+      next: (response) => {
+        this.policiesState.set({
+          items: response.items,
+          paginated: response,
+          loading: false,
+          error: null,
+          filters: mergedFilters,
+        });
+      },
+      error: (err: ApiError) => {
+        this.policiesState.update((s) => ({
+          ...s,
+          loading: false,
+          error: err,
+        }));
+      },
+    });
+  };
+
+  /**
+   * Tạo chính sách mới.
+   */
+  createPolicy = (form: RetentionPolicyForm) => {
+    this.policiesState.update((s) => ({ ...s, loading: true, error: null }));
+
+    this.service.createPolicy(form).subscribe({
+      next: (policy) => {
+        this.policiesState.update((s) => ({
+          ...s,
+          items: [policy, ...s.items],
+          loading: false,
+          error: null,
+        }));
+        this.closePolicyDialog();
+      },
+      error: (err: ApiError) => {
+        this.policiesState.update((s) => ({
+          ...s,
+          loading: false,
+          error: err,
+        }));
+      },
+    });
+  };
+
+  /**
+   * Cập nhật chính sách hiện có.
+   */
+  updatePolicy = (id: string, form: Partial<RetentionPolicyForm>) => {
+    this.policiesState.update((s) => ({ ...s, loading: true, error: null }));
+
+    this.service.updatePolicy(id, form).subscribe({
+      next: (updated) => {
+        this.policiesState.update((s) => ({
+          ...s,
+          items: s.items.map((p) => (p.id === id ? updated : p)),
+          loading: false,
+          error: null,
+        }));
+        this.closePolicyDialog();
+      },
+      error: (err: ApiError) => {
+        this.policiesState.update((s) => ({
+          ...s,
+          loading: false,
+          error: err,
+        }));
+      },
+    });
+  };
+
+  /**
+   * Xóa chính sách sau khi xác nhận.
+   */
+  deletePolicy = (id: string) => {
+    this.service.deletePolicy(id).subscribe({
+      next: () => {
+        this.policiesState.update((s) => ({
+          ...s,
+          items: s.items.filter((p) => p.id !== id),
+        }));
+      },
+      error: (err: ApiError) => {
+        this.policiesState.update((s) => ({
+          ...s,
+          error: err,
+        }));
+      },
+    });
+  };
+
+  /**
+   * Thay đổi trạng thái chính sách (kích hoạt/tạm ngưng).
+   */
+  togglePolicyStatus = (id: string, status: RetentionPolicyStatus) => {
+    this.service.setPolicyStatus(id, status).subscribe({
+      next: (updated) => {
+        this.policiesState.update((s) => ({
+          ...s,
+          items: s.items.map((p) => (p.id === id ? updated : p)),
+        }));
+      },
+      error: (err: ApiError) => {
+        this.policiesState.update((s) => ({
+          ...s,
+          error: err,
+        }));
+      },
+    });
+  };
+
+  /**
+   * Cập nhật bộ lọc và tải lại danh sách.
+   */
+  setPolicyFilters = (filters: Partial<RetentionPolicyFilters>) => {
+    this.policiesState.update((s) => ({
+      ...s,
+      filters: { ...s.filters, ...filters, page: filters.page ?? 1 },
+    }));
+    this.loadPolicies();
+  };
+
+  /**
+   * Thay đổi thứ tự sắp xếp.
+   */
+  sortPolicies = (sortBy: keyof RetentionPolicy) => {
+    const current = this.policiesState().filters;
+    const newOrder =
+      current.sortBy === sortBy && current.sortOrder === 'asc'
+        ? 'desc'
+        : 'asc';
+
+    this.policiesState.update((s) => ({
+      ...s,
+      filters: { ...s.filters, sortBy, sortOrder: newOrder },
+    }));
+    this.loadPolicies();
+  };
+
+  // ──────────────────────────────────────────
+  // Actions — Archives
+  // ──────────────────────────────────────────
+
+  /**
+   * Tải danh sách bản ghi lưu trữ.
+   */
+  loadArchives = (
+    page: number = 1,
+    dataType?: RetentionDataType
+  ) => {
+    const current = this.archivesState();
+
+    this.archivesState.update((s) => ({
+      ...s,
+      loading: true,
+      error: null,
+      page,
+      dataTypeFilter: dataType ?? s.dataTypeFilter,
+    }));
+
+    const filterType = dataType ?? current.dataTypeFilter;
+    this.service
+      .getArchives(page, ARCHIVE_PAGE_SIZE, filterType !== 'all' ? filterType : undefined)
+      .subscribe({
+        next: (response) => {
+          this.archivesState.set({
+            items: response.items,
+            paginated: response,
+            loading: false,
+            error: null,
+            dataTypeFilter: filterType,
+            page,
+          });
+        },
+        error: (err: ApiError) => {
+          this.archivesState.update((s) => ({
+            ...s,
+            loading: false,
+            error: err,
+          }));
+        },
+      });
+  };
+
+  /**
+   * Lọc lưu trữ theo loại dữ liệu.
+   */
+  filterArchivesByType = (dataType: RetentionDataType | 'all') => {
+    this.archivesState.update((s) => ({
+      ...s,
+      dataTypeFilter: dataType,
+      page: 1,
+    }));
+    this.loadArchives(1, dataType);
+  };
+
+  /**
+   * Xóa bản ghi lưu trữ.
+   */
+  deleteArchive = (archiveId: string) => {
+    this.service.deleteArchive(archiveId).subscribe({
+      next: () => {
+        this.archivesState.update((s) => ({
+          ...s,
+          items: s.items.filter((a) => a.id !== archiveId),
+        }));
+      },
+      error: (err: ApiError) => {
+        this.archivesState.update((s) => ({
+          ...s,
+          error: err,
+        }));
+      },
+    });
+  };
+
+  // ──────────────────────────────────────────
+  // Actions — Erasure Requests
+  // ──────────────────────────────────────────
+
+  /**
+   * Tải danh sách yêu cầu xóa.
+   */
+  loadErasureRequests = (
+    overrideFilters?: Partial<ErasureRequestFilters>
+  ) => {
+    const current = this.erasureState();
+    const mergedFilters = { ...current.filters, ...overrideFilters };
+
+    this.erasureState.update((s) => ({
+      ...s,
+      loading: true,
+      error: null,
+      filters: mergedFilters,
+    }));
+
+    this.service.getErasureRequests(mergedFilters).subscribe({
+      next: (response) => {
+        this.erasureState.set({
+          items: response.items,
+          paginated: response,
+          loading: false,
+          error: null,
+          filters: mergedFilters,
+          selectedRequest: current.selectedRequest,
+        });
+      },
+      error: (err: ApiError) => {
+        this.erasureState.update((s) => ({
+          ...s,
+          loading: false,
+          error: err,
+        }));
+      },
+    });
+  };
+
+  /**
+   * Tạo yêu cầu xóa mới từ form.
+   */
+  submitErasureRequest = (form: ErasureRequestForm) => {
+    this.erasureFormState.update((s) => ({
+      ...s,
+      submitting: true,
+      error: null,
+    }));
+
+    this.service.createErasureRequest(form).subscribe({
+      next: (request) => {
+        // Thêm vào đầu danh sách
+        this.erasureState.update((s) => ({
+          ...s,
+          items: [request, ...s.items],
+        }));
+        // Đóng form và reset
+        this.erasureFormState.set({
+          open: false,
+          form: { ...emptyErasureForm },
+          submitting: false,
+          error: null,
+        });
+      },
+      error: (err: ApiError) => {
+        this.erasureFormState.update((s) => ({
+          ...s,
+          submitting: false,
+          error: err,
+        }));
+      },
+    });
+  };
+
+  /**
+   * Chọn yêu cầu xóa để xem chi tiết.
+   */
+  selectErasureRequest = (id: string) => {
+    const request = this.erasureState().items.find((r) => r.id === id);
+    if (request) {
+      this.erasureState.update((s) => ({
+        ...s,
+        selectedRequest: request,
+      }));
+    }
+  };
+
+  /**
+   * Phê duyệt yêu cầu xóa.
+   */
+  approveErasure = (id: string, note?: string) => {
+    this.service.approveErasureRequest(id, note).subscribe({
+      next: (updated) => {
+        this.erasureState.update((s) => ({
+          ...s,
+          items: s.items.map((r) => (r.id === id ? updated : r)),
+          selectedRequest:
+            s.selectedRequest?.id === id ? updated : s.selectedRequest,
+        }));
+      },
+      error: (err: ApiError) => {
+        this.erasureState.update((s) => ({
+          ...s,
+          error: err,
+        }));
+      },
+    });
+  };
+
+  /**
+   * Từ chối yêu cầu xóa.
+   */
+  denyErasure = (id: string, reasonCode: string, note?: string) => {
+    this.service.denyErasureRequest(id, reasonCode, note).subscribe({
+      next: (updated) => {
+        this.erasureState.update((s) => ({
+          ...s,
+          items: s.items.map((r) => (r.id === id ? updated : r)),
+          selectedRequest:
+            s.selectedRequest?.id === id ? updated : s.selectedRequest,
+        }));
+      },
+      error: (err: ApiError) => {
+        this.erasureState.update((s) => ({
+          ...s,
+          error: err,
+        }));
+      },
+    });
+  };
+
+  /**
+   * Cập nhật bộ lọc yêu cầu xóa.
+   */
+  setErasureFilters = (filters: Partial<ErasureRequestFilters>) => {
+    this.erasureState.update((s) => ({
+      ...s,
+      filters: { ...s.filters, ...filters, page: filters.page ?? 1 },
+    }));
+    this.loadErasureRequests();
+  };
+
+  // ──────────────────────────────────────────
+  // Actions — Stats
+  // ──────────────────────────────────────────
+
+  /**
+   * Tải thống kê dashboard.
+   */
+  loadStats = () => {
+    this.statsState.update((s) => ({
+      ...s,
+      loading: true,
+      error: null,
+    }));
+
+    this.service.getStats().subscribe({
+      next: (data) => {
+        this.statsState.set({
+          data,
+          loading: false,
+          error: null,
+          lastUpdated: new Date().toISOString(),
+        });
+      },
+      error: (err: ApiError) => {
+        this.statsState.set({
+          ...this.statsState(),
+          loading: false,
+          error: err,
+        });
+      },
+    });
+  };
+
+  /**
+   * Làm mới thống kê — bỏ qua cache.
+   */
+  refreshStats = () => {
+    // force reload bằng cách set loading trước
+    this.statsState.update((s) => ({ ...s, loading: true }));
+    this.loadStats();
+  };
+
+  // ──────────────────────────────────────────
+  // Actions — Dialog
+  // ──────────────────────────────────────────
+
+  /**
+   * Mở dialog tạo chính sách mới.
+   */
+  openCreatePolicyDialog = () => {
+    this.dialogState.set({
+      open: true,
+      mode: PolicyDialogMode.Create,
+      currentForm: { ...emptyPolicyForm },
+      currentPolicy: null,
+    });
+  };
+
+  /**
+   * Mở dialog chỉnh sửa chính sách.
+   */
+  openEditPolicyDialog = (policy: RetentionPolicy) => {
+    this.dialogState.set({
+      open: true,
+      mode: PolicyDialogMode.Edit,
+      currentForm: {
+        name: policy.name,
+        description: policy.description,
+        dataType: policy.dataType,
+        periodCount: policy.periodCount,
+        periodUnit: policy.periodUnit,
+        onExpiration: policy.onExpiration,
+        enforceImmediately: policy.enforceImmediately,
+        notifyBeforeDays: policy.notifyBeforeDays,
+        policyId: policy.id,
+      },
+      currentPolicy: policy,
+    });
+  };
+
+  /**
+   * Mở dialog xem chi tiết chính sách.
+   */
+  openViewPolicyDialog = (policy: RetentionPolicy) => {
+    this.dialogState.set({
+      open: true,
+      mode: PolicyDialogMode.View,
+      currentForm: {
+        name: policy.name,
+        description: policy.description,
+        dataType: policy.dataType,
+        periodCount: policy.periodCount,
+        periodUnit: policy.periodUnit,
+        onExpiration: policy.onExpiration,
+        enforceImmediately: policy.enforceImmediately,
+        notifyBeforeDays: policy.notifyBeforeDays,
+        policyId: policy.id,
+      },
+      currentPolicy: policy,
+    });
+  };
+
+  /**
+   * Đóng dialog chính sách.
+   */
+  closePolicyDialog = () => {
+    this.dialogState.update((s) => ({
+      ...s,
+      open: false,
+      currentPolicy: null,
+    }));
+  };
+
+  /**
+   * Cập nhật form trong dialog.
+   */
+  updatePolicyDialogForm = (form: Partial<RetentionPolicyForm>) => {
+    this.dialogState.update((s) => ({
+      ...s,
+      currentForm: { ...s.currentForm, ...form },
+    }));
+  };
+
+  // ──────────────────────────────────────────
+  // Actions — Erasure Form Dialog
+  // ──────────────────────────────────────────
+
+  /**
+   * Mở form tạo yêu cầu xóa.
+   */
+  openErasureForm = () => {
+    this.erasureFormState.set({
+      open: true,
+      form: { ...emptyErasureForm },
+      submitting: false,
+      error: null,
+    });
+  };
+
+  /**
+   * Đóng form yêu cầu xóa.
+   */
+  closeErasureForm = () => {
+    this.erasureFormState.update((s) => ({
+      ...s,
+      open: false,
+      error: null,
+    }));
+  };
+
+  /**
+   * Cập nhật form yêu cầu xóa.
+   */
+  updateErasureForm = (form: Partial<ErasureRequestForm>) => {
+    this.erasureFormState.update((s) => ({
+      ...s,
+      form: { ...s.form, ...form },
+    }));
+  };
+
+  // ──────────────────────────────────────────
+  // Utility — Reset toàn bộ store
+  // ──────────────────────────────────────────
+
+  /**
+   * Reset toàn bộ state về giá trị mặc định.
+   * Dùng khi đăng xuất hoặc chuyển module.
+   */
+  resetAll = () => {
+    this.policiesState.set({
+      items: [],
+      paginated: null,
+      loading: false,
+      error: null,
+      filters: { ...defaultPolicyFilters },
+    });
+    this.archivesState.set({
+      items: [],
+      paginated: null,
+      loading: false,
+      error: null,
+      dataTypeFilter: 'all',
+      page: 1,
+    });
+    this.erasureState.set({
+      items: [],
+      paginated: null,
+      loading: false,
+      error: null,
+      filters: { ...defaultErasureFilters },
+      selectedRequest: null,
+    });
+    this.statsState.set({
+      data: null,
+      loading: false,
+      error: null,
+      lastUpdated: null,
+    });
+    this.dialogState.set({
+      open: false,
+      mode: PolicyDialogMode.Create,
+      currentForm: { ...emptyPolicyForm },
+      currentPolicy: null,
+    });
+    this.erasureFormState.set({
+      open: false,
+      form: { ...emptyErasureForm },
+      submitting: false,
+      error: null,
+    });
+  };
+
+  /**
+   * Tải toàn bộ dữ liệu ban đầu.
+   * Gọi trong ngAfterViewInit của component cha.
+   */
+  initialize = () => {
+    this.loadPolicies();
+    this.loadArchives();
+    this.loadErasureRequests();
+    this.loadStats();
+  };
+}
+{% endraw %}

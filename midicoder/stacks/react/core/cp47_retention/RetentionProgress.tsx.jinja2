@@ -1,0 +1,855 @@
+{% raw %}/**
+ * RetentionProgress — Thành phần theo dõi tiến độ cho các công việc lưu trữ và xóa dữ liệu:
+ * thanh tiến độ, trạng thái từng bước, đếm ngược thời gian chờ, hiệu ứng thành công/thất bại, nút thử lại.
+ * Sinh bởi CP47 Data Retention & Lifecycle Management.
+ */
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+
+/* ---- Interface dữ liệu ---- */
+
+/** Loại công việc */
+export type JobType = 'archive' | 'erase' | 'anonymize' | 'bulk_delete' | 'data_export';
+
+/** Trạng thái từng bước trong công việc */
+export type JobStepStatus = 'pending' | 'active' | 'completed' | 'failed' | 'skipped';
+
+/** Một bước trong công việc */
+export interface JobStep {
+    key: string;
+    label: string;
+    description: string;
+    status: JobStepStatus;
+    icon: string;
+    duration_ms?: number;
+    records_processed?: number;
+    error_message?: string;
+}
+
+/** Trạng thái tổng thể của công việc */
+export type JobProgressStatus = 'queued' | 'initializing' | 'processing' | 'verifying' | 'finalizing' | 'completed' | 'failed' | 'cancelled';
+
+/** Một công việc đang chạy */
+export interface RetentionJob {
+    id: string;
+    type: JobType;
+    policy_name?: string;
+    status: JobProgressStatus;
+    total_records: number;
+    processed_records: number;
+    steps: JobStep[];
+    created_at: string;
+    started_at?: string;
+    completed_at?: string;
+    error_message?: string;
+    estimated_remaining_seconds?: number;
+}
+
+/** Props của component */
+export interface RetentionProgressProps {
+    /** Công việc đang hiển thị tiến độ */
+    job: RetentionJob;
+    /** URL API cơ sở để lấy cập nhật */
+    apiBase?: string;
+    /** Thời gian làm mới (ms) — 0 để tắt tự động làm mới */
+    refreshInterval?: number;
+    /** Bật nút thử lại khi thất bại */
+    retryEnabled?: boolean;
+    /** Callback khi nhấn thử lại */
+    onRetry?: (jobId: string) => void;
+    /** Callback khi nhấn hủy */
+    onCancel?: (jobId: string) => void;
+    /** Callback khi công việc hoàn thành */
+    onComplete?: (job: RetentionJob) => void;
+    /** Callback khi cần đóng thành phần này */
+    onClose?: () => void;
+    /** Kích thước hiển thị */
+    size?: 'small' | 'medium' | 'large';
+    /** Hiển thị thông tin debug */
+    showDebug?: boolean;
+}
+
+/* ---- Keyframes CSS ---- */
+
+const animationKeyframes = `
+@keyframes rp-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+@keyframes rp-fadeInUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes rp-successPulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
+    50% { transform: scale(1.05); box-shadow: 0 0 0 14px rgba(34,197,94,0); }
+}
+@keyframes rp-errorShake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+    20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+@keyframes rp-progressFill {
+    from { width: 0%; }
+}
+`;
+
+/* ---- Cấu hình theo kích thước ---- */
+
+const SIZE_CONFIG: Record<string, {
+    containerPadding: string;
+    stepIconSize: number;
+    stepLabelSize: number;
+    stepDescSize: number;
+    lineWidth: number;
+    gap: string;
+    borderRadius: number;
+    infoFontSize: number;
+    buttonPadding: string;
+}> = {
+    small: {
+        containerPadding: '16px',
+        stepIconSize: 28,
+        stepLabelSize: 13,
+        stepDescSize: 11,
+        lineWidth: 2,
+        gap: '12px',
+        borderRadius: 8,
+        infoFontSize: 11,
+        buttonPadding: '6px 12px',
+    },
+    medium: {
+        containerPadding: '24px',
+        stepIconSize: 36,
+        stepLabelSize: 15,
+        stepDescSize: 13,
+        lineWidth: 3,
+        gap: '20px',
+        borderRadius: 12,
+        infoFontSize: 12,
+        buttonPadding: '8px 16px',
+    },
+    large: {
+        containerPadding: '32px',
+        stepIconSize: 44,
+        stepLabelSize: 17,
+        stepDescSize: 14,
+        lineWidth: 4,
+        gap: '28px',
+        borderRadius: 16,
+        infoFontSize: 13,
+        buttonPadding: '10px 20px',
+    },
+};
+
+/* ---- Style helpers ---- */
+
+function containerStyle(size: string): React.CSSProperties {
+    const config = SIZE_CONFIG[size] || SIZE_CONFIG.medium;
+    return {
+        padding: config.containerPadding,
+        background: '#fff',
+        borderRadius: config.borderRadius,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+        border: '1px solid #e2e8f0',
+        maxWidth: '720px',
+        margin: '0 auto',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+    };
+}
+
+function headerStyle(): React.CSSProperties {
+    return {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '20px',
+        paddingBottom: '16px',
+        borderBottom: '1px solid #f1f5f9',
+        flexWrap: 'wrap',
+        gap: '8px',
+    };
+}
+
+function headerTitleStyle(size: string): React.CSSProperties {
+    const fontSize = size === 'small' ? 16 : size === 'large' ? 22 : 19;
+    return {
+        margin: 0,
+        fontSize: `${fontSize}px`,
+        fontWeight: 700,
+        color: '#0f172a',
+    };
+}
+
+function statusTagStyle(status: JobProgressStatus): React.CSSProperties {
+    const map: Record<JobProgressStatus, { bg: string; color: string }> = {
+        queued:      { bg: '#f1f5f9', color: '#475569' },
+        initializing:{ bg: '#dbeafe', color: '#1e40af' },
+        processing:  { bg: '#fef3c7', color: '#92400e' },
+        verifying:   { bg: '#e0e7ff', color: '#3730a3' },
+        finalizing:  { bg: '#ccfbf1', color: '#115e59' },
+        completed:   { bg: '#d1fae5', color: '#065f46' },
+        failed:      { bg: '#fee2e2', color: '#991b1b' },
+        cancelled:   { bg: '#f3f4f6', color: '#6b7280' },
+    };
+    const c = map[status] || { bg: '#f1f5f9', color: '#475569' };
+    return {
+        display: 'inline-flex',
+        padding: '4px 12px',
+        borderRadius: '12px',
+        fontSize: '12px',
+        fontWeight: 600,
+        backgroundColor: c.bg,
+        color: c.color,
+    };
+}
+
+function progressBarTrackStyle(): React.CSSProperties {
+    return {
+        width: '100%',
+        height: '8px',
+        background: '#e2e8f0',
+        borderRadius: '4px',
+        overflow: 'hidden',
+        marginTop: '12px',
+        marginBottom: '20px',
+    };
+}
+
+function progressBarFillStyle(percent: number, status: JobProgressStatus): React.CSSProperties {
+    const colorMap: Record<JobProgressStatus, string> = {
+        queued: '#94a3b8',
+        initializing: '#3b82f6',
+        processing: '#f59e0b',
+        verifying: '#8b5cf6',
+        finalizing: '#14b8a6',
+        completed: '#22c55e',
+        failed: '#ef4444',
+        cancelled: '#94a3b8',
+    };
+    return {
+        height: '100%',
+        width: `${percent}%`,
+        backgroundColor: colorMap[status] || '#3b82f6',
+        borderRadius: '4px',
+        transition: 'width 0.5s ease, background-color 0.3s ease',
+    };
+}
+
+function stepContainerStyle(size: string): React.CSSProperties {
+    const config = SIZE_CONFIG[size] || SIZE_CONFIG.medium;
+    return {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: config.gap,
+    };
+}
+
+function stepRowStyle(status: JobStepStatus): React.CSSProperties {
+    const base: React.CSSProperties = {
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '12px',
+    };
+    switch (status) {
+        case 'active':
+            return { ...base, animation: 'rp-fadeInUp 0.3s ease-out' };
+        case 'failed':
+            return { ...base, animation: 'rp-errorShake 0.5s ease-in-out' };
+        case 'completed':
+            return { ...base, animation: 'rp-fadeInUp 0.3s ease-out' };
+        default:
+            return { ...base, opacity: 0.5 };
+    }
+}
+
+function stepIconStyle(status: JobStepStatus, iconSize: number, isActive: boolean): React.CSSProperties {
+    const base: React.CSSProperties = {
+        width: iconSize,
+        height: iconSize,
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: iconSize * 0.5,
+        flexShrink: 0,
+    };
+    switch (status) {
+        case 'active':
+            return {
+                ...base,
+                backgroundColor: '#dbeafe',
+                border: '2px solid #3b82f6',
+                animation: isActive ? 'rp-successPulse 2s ease-in-out infinite' : undefined,
+            };
+        case 'completed':
+            return { ...base, backgroundColor: '#d1fae5', border: '2px solid #22c55e' };
+        case 'failed':
+            return { ...base, backgroundColor: '#fee2e2', border: '2px solid #ef4444' };
+        case 'skipped':
+            return { ...base, backgroundColor: '#f3f4f6', border: '2px solid #d1d5db', opacity: 0.6 };
+        default:
+            return { ...base, backgroundColor: '#f3f4f6', border: '2px solid #e2e8f0' };
+    }
+}
+
+function stepLineStyle(size: string, status: JobStepStatus, iconSize: number): React.CSSProperties {
+    const config = SIZE_CONFIG[size] || SIZE_CONFIG.medium;
+    const colorMap: Record<JobStepStatus, string> = {
+        active: '#3b82f6',
+        completed: '#22c55e',
+        failed: '#ef4444',
+        skipped: '#d1d5db',
+        pending: '#e2e8f0',
+    };
+    return {
+        width: config.lineWidth,
+        minHeight: '20px',
+        backgroundColor: colorMap[status] || colorMap.pending,
+        borderRadius: config.lineWidth,
+        marginLeft: iconSize / 2,
+        alignSelf: 'center',
+        transition: 'background-color 0.3s ease',
+    };
+}
+
+function stepLabelStyle(status: JobStepStatus, labelSize: number): React.CSSProperties {
+    const colorMap: Record<JobStepStatus, string> = {
+        active: '#1e40af',
+        completed: '#065f46',
+        failed: '#991b1b',
+        skipped: '#9ca3af',
+        pending: '#64748b',
+    };
+    return {
+        margin: 0,
+        fontSize: `${labelSize}px`,
+        fontWeight: status === 'active' ? 700 : 500,
+        color: colorMap[status] || '#334155',
+    };
+}
+
+function stepDescStyle(descSize: number, status: JobStepStatus): React.CSSProperties {
+    return {
+        margin: '2px 0 0',
+        fontSize: `${descSize}px`,
+        color: status === 'failed' ? '#ef4444' : '#64748b',
+    };
+}
+
+function spinnerStyle(size: number): React.CSSProperties {
+    return {
+        width: size,
+        height: size,
+        border: '3px solid #dbeafe',
+        borderTop: '3px solid #3b82f6',
+        borderRadius: '50%',
+        animation: 'rp-spin 0.8s linear infinite',
+    };
+}
+
+function actionBarStyle(): React.CSSProperties {
+    return {
+        display: 'flex',
+        gap: '10px',
+        marginTop: '24px',
+        justifyContent: 'center',
+        flexWrap: 'wrap',
+    };
+}
+
+function btnStyle(variant: 'primary' | 'danger' | 'secondary'): React.CSSProperties {
+    const base: React.CSSProperties = {
+        padding: '8px 20px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        border: 'none',
+        transition: 'all 0.15s',
+    };
+    switch (variant) {
+        case 'primary':
+            return { ...base, background: '#6366f1', color: '#fff' };
+        case 'danger':
+            return { ...base, background: '#ef4444', color: '#fff' };
+        case 'secondary':
+            return { ...base, background: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0' };
+    }
+}
+
+function countdownStyle(size: string): React.CSSProperties {
+    const config = SIZE_CONFIG[size] || SIZE_CONFIG.medium;
+    return {
+        textAlign: 'center',
+        padding: '8px 16px',
+        marginTop: '12px',
+        backgroundColor: '#fffbeb',
+        borderRadius: '8px',
+        border: '1px solid #fde68a',
+        fontSize: `${config.infoFontSize}px`,
+        color: '#92400e',
+        fontWeight: 500,
+    };
+}
+
+function statsRowStyle(): React.CSSProperties {
+    return {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: '12px',
+        marginBottom: '20px',
+    };
+}
+
+function statItemStyle(): React.CSSProperties {
+    return {
+        textAlign: 'center',
+        padding: '12px',
+        background: '#f8fafc',
+        borderRadius: '8px',
+        border: '1px solid #e2e8f0',
+    };
+}
+
+function statValueStyle(): React.CSSProperties {
+    return {
+        margin: 0,
+        fontSize: '20px',
+        fontWeight: 700,
+        color: '#0f172a',
+    };
+}
+
+function statLabelStyle(): React.CSSProperties {
+    return {
+        margin: '4px 0 0',
+        fontSize: '11px',
+        fontWeight: 500,
+        color: '#64748b',
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+    };
+}
+
+function debugStyle(): React.CSSProperties {
+    return {
+        marginTop: '16px',
+        padding: '12px',
+        backgroundColor: '#f8fafc',
+        borderRadius: '8px',
+        border: '1px solid #e2e8f0',
+        fontSize: '12px',
+        fontFamily: 'ui-monospace, monospace',
+        color: '#475569',
+        whiteSpace: 'pre-wrap',
+    };
+}
+
+/* ---- SVG Success Checkmark ---- */
+
+const SuccessCheckmark: React.FC<{ size: number }> = ({ size }) => (
+    <svg
+        width={size}
+        height={size}
+        viewBox="0 0 52 52"
+        style={{ display: 'block', margin: '0 auto' }}
+    >
+        <circle cx="26" cy="26" r="25" fill="none" stroke="#22c55e" strokeWidth="2" />
+        <path
+            d="M14.1 27.2l7.1 7.2 16.7-16.8"
+            fill="none"
+            stroke="#22c55e"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        />
+    </svg>
+);
+
+/* ---- SVG Error X ---- */
+
+const ErrorIcon: React.FC<{ size: number }> = ({ size }) => (
+    <svg
+        width={size}
+        height={size}
+        viewBox="0 0 52 52"
+        style={{ display: 'block', margin: '0 auto' }}
+    >
+        <circle cx="26" cy="26" r="25" fill="none" stroke="#ef4444" strokeWidth="2" />
+        <path
+            d="M17 17l18 18M35 17l-18 18"
+            fill="none"
+            stroke="#ef4444"
+            strokeWidth="3"
+            strokeLinecap="round"
+        />
+    </svg>
+);
+
+/* ---- Sub-component: StepIcon ---- */
+
+const StepIcon: React.FC<{ step: JobStep; iconSize: number; isCurrentActive: boolean }> = ({
+    step, iconSize, isCurrentActive,
+}) => {
+    const iconStyle = stepIconStyle(step.status, iconSize, isCurrentActive);
+
+    let content: React.ReactNode;
+    switch (step.status) {
+        case 'active':
+            content = <div style={spinnerStyle(iconSize * 0.4)} />;
+            break;
+        case 'completed':
+            content = <span style={{ color: '#22c55e', fontWeight: 700 }}>&#10003;</span>;
+            break;
+        case 'failed':
+            content = <span style={{ color: '#ef4444', fontWeight: 700 }}>&#10005;</span>;
+            break;
+        case 'skipped':
+            content = <span style={{ color: '#9ca3af' }}>&#8212;</span>;
+            break;
+        default:
+            content = step.icon;
+    }
+
+    return <div style={iconStyle}>{content}</div>;
+};
+
+/* ---- Helper functions ---- */
+
+function jobStatusLabel(status: JobProgressStatus): string {
+    const map: Record<JobProgressStatus, string> = {
+        queued: 'Đang xếp hàng',
+        initializing: 'Đang khởi tạo',
+        processing: 'Đang xử lý',
+        verifying: 'Đang xác thực',
+        finalizing: 'Đang hoàn tất',
+        completed: 'Hoàn thành',
+        failed: 'Thất bại',
+        cancelled: 'Đã hủy',
+    };
+    return map[status];
+}
+
+function jobTypeLabel(type: JobType): string {
+    const map: Record<JobType, string> = {
+        archive: 'Lưu trữ dữ liệu',
+        erase: 'Xóa dữ liệu',
+        anonymize: 'Ẩn danh hóa',
+        bulk_delete: 'Xóa hàng loạt',
+        data_export: 'Xuất dữ liệu',
+    };
+    return map[type];
+}
+
+function calcProgressPercent(job: RetentionJob): number {
+    if (job.total_records <= 0) return 0;
+    return Math.min(100, Math.round((job.processed_records / job.total_records) * 100));
+}
+
+function formatDuration(seconds: number): string {
+    if (seconds <= 0) return '< 1s';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins > 0) return `${mins}p ${secs}s`;
+    return `${secs}s`;
+}
+
+/* ---- Component chính: RetentionProgress ---- */
+
+export const RetentionProgress: React.FC<RetentionProgressProps> = ({
+    job,
+    apiBase,
+    refreshInterval = 5000,
+    retryEnabled = true,
+    onRetry,
+    onCancel,
+    onComplete,
+    onClose,
+    size = 'medium',
+    showDebug = false,
+}) => {
+    const baseUrl = apiBase || '/api';
+    const config = SIZE_CONFIG[size] || SIZE_CONFIG.medium;
+
+    /* State local cho job (làm mới từ API) */
+    const [localJob, setLocalJob] = useState<RetentionJob>(job);
+    const [showSuccessAnim, setShowSuccessAnim] = useState(false);
+    const [showErrorAnim, setShowErrorAnim] = useState(false);
+    const [countdown, setCountdown] = useState<number | null>(null);
+
+    /* Sync job prop vào local state */
+    useEffect(() => {
+        setLocalJob(job);
+    }, [job]);
+
+    /* Inject CSS keyframes */
+    useEffect(() => {
+        const styleId = 'cp47-retention-progress-styles';
+        if (!document.getElementById(styleId)) {
+            const styleEl = document.createElement('style');
+            styleEl.id = styleId;
+            styleEl.textContent = animationKeyframes;
+            document.head.appendChild(styleEl);
+        }
+        return () => {
+            const existing = document.getElementById(styleId);
+            if (existing) existing.remove();
+        };
+    }, []);
+
+    /* Tự động làm mới công việc */
+    useEffect(() => {
+        const terminalStatuses = ['completed', 'failed', 'cancelled'];
+        if (terminalStatuses.includes(localJob.status) || refreshInterval <= 0) return;
+
+        const id = setInterval(async () => {
+            try {
+                const res = await fetch(`${baseUrl}/api/retention/jobs/${localJob.id}`);
+                if (res.ok) {
+                    const updated = await res.json();
+                    setLocalJob(updated);
+                }
+            } catch {
+                // Bỏ qua lỗi làm mới — công việc vẫn chạy
+            }
+        }, refreshInterval);
+
+        return () => clearInterval(id);
+    }, [localJob.id, localJob.status, baseUrl, refreshInterval]);
+
+    /* Countdown từ estimated_remaining_seconds */
+    useEffect(() => {
+        if (localJob.estimated_remaining_seconds && localJob.estimated_remaining_seconds > 0) {
+            setCountdown(localJob.estimated_remaining_seconds);
+        } else {
+            setCountdown(null);
+        }
+    }, [localJob.estimated_remaining_seconds]);
+
+    useEffect(() => {
+        if (countdown === null || countdown <= 0) return;
+        const id = setInterval(() => {
+            setCountdown((prev) => {
+                if (prev === null || prev <= 1) {
+                    clearInterval(id);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(id);
+    }, [countdown]);
+
+    /* Kích hoạt animation thành công/thất bại */
+    useEffect(() => {
+        if (localJob.status === 'completed') {
+            setShowSuccessAnim(true);
+            setShowErrorAnim(false);
+            onComplete?.(localJob);
+        } else if (localJob.status === 'failed') {
+            setShowErrorAnim(true);
+            setShowSuccessAnim(false);
+        } else {
+            setShowSuccessAnim(false);
+            setShowErrorAnim(false);
+        }
+    }, [localJob.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    /* Tính toán */
+    const progressPercent = useMemo(() => calcProgressPercent(localJob), [localJob]);
+    const activeStep = useMemo(
+        () => localJob.steps.find((s) => s.status === 'active'),
+        [localJob.steps],
+    );
+
+    const debugInfo = useMemo(() => {
+        if (!showDebug) return null;
+        return localJob.steps
+            .map(
+                (s) =>
+                    `[${s.key}] status=${s.status}`
+                    + (s.duration_ms ? `, duration=${s.duration_ms}ms` : '')
+                    + (s.records_processed != null ? `, records=${s.records_processed}` : '')
+                    + (s.error_message ? `, error=${s.error_message}` : '')
+            )
+            .join('\n');
+    }, [localJob.steps, showDebug]);
+
+    /* Callbacks */
+    const handleRetry = useCallback(() => {
+        onRetry?.(localJob.id);
+    }, [localJob.id, onRetry]);
+
+    const handleCancel = useCallback(() => {
+        onCancel?.(localJob.id);
+    }, [localJob.id, onCancel]);
+
+    const handleClose = useCallback(() => {
+        onClose?.();
+    }, [onClose]);
+
+    const isTerminal = ['completed', 'failed', 'cancelled'].includes(localJob.status);
+
+    return (
+        <div style={containerStyle(size)}>
+            {/* Header */}
+            <div style={headerStyle()}>
+                <h2 style={headerTitleStyle(size)}>
+                    {jobTypeLabel(localJob.type)}
+                </h2>
+                <span style={statusTagStyle(localJob.status)}>
+                    {jobStatusLabel(localJob.status)}
+                </span>
+            </div>
+
+            {/* Thông tin phụ */}
+            {localJob.policy_name && (
+                <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>
+                    Chính sách: <strong>{localJob.policy_name}</strong>
+                </div>
+            )}
+
+            {/* Thanh tiến độ tổng */}
+            <div style={progressBarTrackStyle()}>
+                <div style={progressBarFillStyle(progressPercent, localJob.status)} />
+            </div>
+
+            {/* Thống kê nhanh */}
+            <div style={statsRowStyle()}>
+                <div style={statItemStyle()}>
+                    <p style={statValueStyle()}>{localJob.total_records.toLocaleString('vi-VN')}</p>
+                    <p style={statLabelStyle()}>Tổng bản ghi</p>
+                </div>
+                <div style={statItemStyle()}>
+                    <p style={statValueStyle()}>{localJob.processed_records.toLocaleString('vi-VN')}</p>
+                    <p style={statLabelStyle()}>Đã xử lý</p>
+                </div>
+                <div style={statItemStyle()}>
+                    <p style={statValueStyle()}>{progressPercent}%</p>
+                    <p style={statLabelStyle()}>Tiến độ</p>
+                </div>
+            </div>
+
+            {/* Countdown */}
+            {countdown !== null && countdown > 0 && !isTerminal && (
+                <div style={countdownStyle(size)}>
+                    Thời gian ước tính c&#242;n lại: {formatDuration(countdown)}
+                </div>
+            )}
+
+            {/* Hiệu ứng thành công */}
+            {showSuccessAnim && (
+                <div
+                    style={{
+                        textAlign: 'center',
+                        marginBottom: '20px',
+                        animation: 'rp-fadeInUp 0.5s ease-out',
+                    }}
+                >
+                    <SuccessCheckmark size={config.stepIconSize * 2} />
+                    <p
+                        style={{
+                            margin: '10px 0 0',
+                            fontSize: `${config.stepLabelSize + 2}px`,
+                            fontWeight: 700,
+                            color: '#22c55e',
+                        }}
+                    >
+                        C&#244;ng việc hoàn tất th&#224;nh c&#244;ng!
+                    </p>
+                    {localJob.completed_at && (
+                        <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                            Hoàn thành l&#224;c {new Date(localJob.completed_at).toLocaleString('vi-VN')}
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {/* Hiệu ứng thất bại */}
+            {showErrorAnim && (
+                <div
+                    style={{
+                        textAlign: 'center',
+                        marginBottom: '20px',
+                        animation: 'rp-fadeInUp 0.5s ease-out',
+                    }}
+                >
+                    <ErrorIcon size={config.stepIconSize * 2} />
+                    <p
+                        style={{
+                            margin: '10px 0 0',
+                            fontSize: `${config.stepLabelSize + 2}px`,
+                            fontWeight: 700,
+                            color: '#ef4444',
+                        }}
+                    >
+                        C&#244;ng việc th&#224;t bại
+                    </p>
+                    {localJob.error_message && (
+                        <p style={{ fontSize: '13px', color: '#991b1b', marginTop: '4px' }}>
+                            {localJob.error_message}
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {/* Các bước */}
+            <div style={stepContainerStyle(size)}>
+                {localJob.steps.map((step, index) => {
+                    const isLast = index === localJob.steps.length - 1;
+                    const isActive = step === activeStep;
+                    return (
+                        <React.Fragment key={step.key}>
+                            <div style={stepRowStyle(step.status)}>
+                                <StepIcon step={step} iconSize={config.stepIconSize} isCurrentActive={isActive} />
+                                <div style={{ flex: 1 }}>
+                                    <p style={stepLabelStyle(step.status, config.stepLabelSize)}>
+                                        {step.label}
+                                    </p>
+                                    <p style={stepDescStyle(config.stepDescSize, step.status)}>
+                                        {step.status === 'failed' && step.error_message
+                                            ? step.error_message
+                                            : step.description}
+                                        {step.records_processed != null && step.status === 'completed' && (
+                                            <span style={{ marginLeft: '8px', color: '#22c55e' }}>
+                                                ({step.records_processed.toLocaleString('vi-VN')} bản ghi)
+                                            </span>
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+                            {!isLast && (
+                                <div style={stepLineStyle(size, step.status, config.stepIconSize)} />
+                            )}
+                        </React.Fragment>
+                    );
+                })}
+            </div>
+
+            {/* Debug */}
+            {debugInfo && <div style={debugStyle}>{debugInfo}</div>}
+
+            {/* Hành động */}
+            <div style={actionBarStyle()}>
+                {localJob.status === 'failed' && retryEnabled && (
+                    <button onClick={handleRetry} style={btnStyle('primary')}>
+                        Th&#259; l&#224;i
+                    </button>
+                )}
+                {!isTerminal && (
+                    <button onClick={handleCancel} style={btnStyle('danger')}>
+                        H&#417;y c&#244;ng việc
+                    </button>
+                )}
+                {isTerminal && (
+                    <button onClick={handleClose} style={btnStyle('secondary')}>
+                        &#1088;ng
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default RetentionProgress;
+{% endraw %}

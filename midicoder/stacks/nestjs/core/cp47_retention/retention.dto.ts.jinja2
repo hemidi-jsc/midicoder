@@ -1,0 +1,823 @@
+{% raw %}
+// ============================================================================
+// CP47 — Data Retention & Lifecycle Management
+// DTOs (Data Transfer Objects) cho mô-đun quản lý vòng đời dữ liệu
+// ============================================================================
+// File: retention.dto.ts.jinja2
+// Template context: (không sử dụng biến Jinja2 — template tĩnh)
+//
+// Rule V1: NO @midicoder imports — generated code standalone, use relative imports
+// Rule V2: NO business logic in decorators — only structure
+// ============================================================================
+
+import {
+  IsString,
+  IsNumber,
+  IsBoolean,
+  IsOptional,
+  IsEnum,
+  IsUUID,
+  IsArray,
+  IsDateString,
+  IsEmail,
+  Min,
+  Max,
+  MaxLength,
+  MinLength,
+  ValidateNested,
+  IsNotEmpty,
+  IsPositive,
+  IsInt,
+  ArrayMinSize,
+  ArrayMaxItems,
+  IsIn,
+  Matches,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+import {
+  RetentionPolicyType,
+  RetentionPolicyScope,
+  RetentionPolicyStatus,
+  ArchiveStatus,
+  ArchiveRecordType,
+  ErasureStatus,
+  ErasureReason,
+  ErasurePriority,
+} from './entities/retention.entity';
+
+// ============================================================================
+// RetentionPolicy DTOs
+// ============================================================================
+
+/**
+ * DTO tạo chính sách bảo quản mới.
+ */
+export class CreateRetentionPolicyDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Tên chính sách không được để trống' })
+  @MinLength(3, { message: 'Tên chính sách phải có ít nhất 3 ký tự' })
+  @MaxLength(255, { message: 'Tên chính sách không được vượt quá 255 ký tự' })
+  name: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(1024)
+  description?: string;
+
+  @IsEnum(RetentionPolicyType, { message: 'policyType không hợp lệ' })
+  policyType: RetentionPolicyType;
+
+  @IsEnum(RetentionPolicyScope, { message: 'scope không hợp lệ' })
+  scope: RetentionPolicyScope;
+
+  @IsEnum(RetentionPolicyStatus, { message: 'status không hợp lệ' })
+  @IsOptional()
+  status?: RetentionPolicyStatus;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1, { message: 'retentionDays phải từ 1 ngày trở lên' })
+  @Max(36500, { message: 'retentionDays không được vượt quá 36500 ngày (100 năm)' })
+  retentionDays?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1, { message: 'maxSizeMode phải từ 1 MB trở lên' })
+  maxSizeMode?: number;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  scopeTarget?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['archive', 'delete'], { message: 'actionOnExpiry phải là "archive" hoặc "delete"' })
+  actionOnExpiry?: 'archive' | 'delete';
+
+  @IsArray()
+  @IsOptional()
+  @ArrayMaxItems(20)
+  @IsString({ each: true })
+  applicableDataTypes?: string[];
+
+  @IsOptional()
+  metadata?: Record<string, any>;
+
+  @IsString()
+  @IsOptional()
+  createdBy?: string;
+
+  @IsString()
+  @IsOptional()
+  tenantId?: string;
+
+  @IsDateString()
+  @IsOptional()
+  expiresAt?: string;
+}
+
+/**
+ * DTO cập nhật chính sách bảo quản.
+ */
+export class UpdateRetentionPolicyDto {
+  @IsString()
+  @IsOptional()
+  @MinLength(3)
+  @MaxLength(255)
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(1024)
+  description?: string;
+
+  @IsEnum(RetentionPolicyType, { message: 'policyType không hợp lệ' })
+  @IsOptional()
+  policyType?: RetentionPolicyType;
+
+  @IsEnum(RetentionPolicyScope, { message: 'scope không hợp lệ' })
+  @IsOptional()
+  scope?: RetentionPolicyScope;
+
+  @IsEnum(RetentionPolicyStatus, { message: 'status không hợp lệ' })
+  @IsOptional()
+  status?: RetentionPolicyStatus;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @Max(36500)
+  retentionDays?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  maxSizeMode?: number;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  scopeTarget?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['archive', 'delete'], { message: 'actionOnExpiry phải là "archive" hoặc "delete"' })
+  actionOnExpiry?: 'archive' | 'delete';
+
+  @IsArray()
+  @IsOptional()
+  @ArrayMaxItems(20)
+  @IsString({ each: true })
+  applicableDataTypes?: string[];
+
+  @IsOptional()
+  metadata?: Record<string, any>;
+
+  @IsString()
+  @IsOptional()
+  tenantId?: string;
+
+  @IsDateString()
+  @IsOptional()
+  expiresAt?: string;
+}
+
+/**
+ * DTO trả về thông tin chính sách bảo quản.
+ */
+export class RetentionPolicyDto {
+  @IsUUID()
+  id: string;
+
+  @IsString()
+  name: string;
+
+  @IsString()
+  @IsOptional()
+  description: string | null;
+
+  @IsEnum(RetentionPolicyType)
+  policyType: RetentionPolicyType;
+
+  @IsEnum(RetentionPolicyScope)
+  scope: RetentionPolicyScope;
+
+  @IsEnum(RetentionPolicyStatus)
+  status: RetentionPolicyStatus;
+
+  @IsNumber()
+  @IsOptional()
+  retentionDays: number | null;
+
+  @IsNumber()
+  @IsOptional()
+  maxSizeMode: number | null;
+
+  @IsString()
+  @IsOptional()
+  scopeTarget: string | null;
+
+  @IsString()
+  actionOnExpiry: 'archive' | 'delete';
+
+  @IsArray()
+  @IsOptional()
+  applicableDataTypes: string[] | null;
+
+  @IsOptional()
+  metadata: Record<string, any> | null;
+
+  @IsString()
+  @IsOptional()
+  createdBy: string | null;
+
+  @IsString()
+  @IsOptional()
+  tenantId: string | null;
+
+  @IsOptional()
+  expiresAt: Date | null;
+
+  createdAt: Date;
+
+  updatedAt: Date;
+
+  @IsNumber()
+  archivedRecordsCount: number;
+
+  @IsNumber()
+  erasureRequestsCount: number;
+}
+
+// ============================================================================
+// ArchivedRecord DTOs
+// ============================================================================
+
+/**
+ * DTO tạo bản ghi lưu trữ mới.
+ */
+export class CreateArchivedRecordDto {
+  @IsString()
+  @IsNotEmpty({ message: 'policyId không được để trống' })
+  policyId: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'sourceEntityId không được để trống' })
+  sourceEntityId: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'sourceEntityType không được để trống' })
+  @MaxLength(255)
+  sourceEntityType: string;
+
+  @IsEnum(ArchiveRecordType, { message: 'recordType không hợp lệ' })
+  @IsOptional()
+  recordType?: ArchiveRecordType;
+
+  @IsNumber()
+  @IsOptional()
+  @IsPositive()
+  originalSizeBytes?: number;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  compressionAlgorithm?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(64)
+  @Matches(/^[a-fA-F0-9]{64}$/, { message: 'checksumSha256 phải là chuỗi hex 64 ký tự hợp lệ' })
+  checksumSha256?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(1024)
+  storagePath?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  storageProvider?: string;
+
+  @IsString()
+  @IsOptional()
+  userId?: string;
+
+  @IsString()
+  @IsOptional()
+  tenantId?: string;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO cập nhật bản ghi lưu trữ.
+ */
+export class UpdateArchivedRecordDto {
+  @IsEnum(ArchiveStatus, { message: 'status không hợp lệ' })
+  @IsOptional()
+  status?: ArchiveStatus;
+
+  @IsNumber()
+  @IsOptional()
+  @IsPositive()
+  compressedSizeBytes?: number;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  compressionAlgorithm?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(64)
+  checksumSha256?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(1024)
+  storagePath?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  storageProvider?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  retryCount?: number;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(2048)
+  errorMessage?: string;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO trả về thông tin bản ghi lưu trữ.
+ */
+export class ArchivedRecordDto {
+  @IsUUID()
+  id: string;
+
+  @IsString()
+  policyId: string;
+
+  @IsString()
+  sourceEntityId: string;
+
+  @IsString()
+  sourceEntityType: string;
+
+  @IsEnum(ArchiveRecordType)
+  recordType: ArchiveRecordType;
+
+  @IsEnum(ArchiveStatus)
+  status: ArchiveStatus;
+
+  @IsNumber()
+  originalSizeBytes: number;
+
+  @IsNumber()
+  @IsOptional()
+  compressedSizeBytes: number | null;
+
+  @IsString()
+  @IsOptional()
+  compressionAlgorithm: string | null;
+
+  @IsString()
+  @IsOptional()
+  checksumSha256: string | null;
+
+  @IsString()
+  @IsOptional()
+  storagePath: string | null;
+
+  @IsString()
+  @IsOptional()
+  storageProvider: string | null;
+
+  @IsString()
+  @IsOptional()
+  userId: string | null;
+
+  @IsString()
+  @IsOptional()
+  tenantId: string | null;
+
+  @IsString()
+  @IsOptional()
+  errorMessage: string | null;
+
+  @IsNumber()
+  retryCount: number;
+
+  @IsOptional()
+  metadata: Record<string, any> | null;
+
+  createdAt: Date;
+
+  updatedAt: Date;
+
+  @IsOptional()
+  completedAt: Date | null;
+}
+
+// ============================================================================
+// ErasureRequest DTOs
+// ============================================================================
+
+/**
+ * DTO tạo yêu cầu xóa dữ liệu mới.
+ */
+export class CreateErasureRequestDto {
+  @IsString()
+  @IsNotEmpty({ message: 'userId không được để trống' })
+  userId: string;
+
+  @IsString()
+  @IsOptional()
+  requestedBy?: string;
+
+  @IsEnum(ErasureReason, { message: 'erasureReason không hợp lệ' })
+  erasureReason: ErasureReason;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(2048)
+  reasonDetail?: string;
+
+  @IsEnum(ErasurePriority, { message: 'priority không hợp lệ' })
+  @IsOptional()
+  priority?: ErasurePriority;
+
+  @IsString()
+  @IsOptional()
+  policyId?: string;
+
+  @IsArray()
+  @IsOptional()
+  @ArrayMinSize(1, { message: 'Phải chỉ định ít nhất 1 loại dữ liệu để xóa' })
+  @IsString({ each: true })
+  dataTypesToErase?: string[];
+
+  @IsString()
+  @IsOptional()
+  tenantId?: string;
+
+  @IsDateString()
+  @IsOptional()
+  legalDeadline?: string;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO cập nhật yêu cầu xóa dữ liệu.
+ */
+export class UpdateErasureRequestDto {
+  @IsEnum(ErasureStatus, { message: 'status không hợp lệ' })
+  @IsOptional()
+  status?: ErasureStatus;
+
+  @IsEnum(ErasurePriority, { message: 'priority không hợp lệ' })
+  @IsOptional()
+  priority?: ErasurePriority;
+
+  @IsString()
+  @IsOptional()
+  approvedBy?: string;
+
+  @IsDateString()
+  @IsOptional()
+  approvedAt?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(2048)
+  rejectionReason?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  recordsErasedCount?: number;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(2048)
+  errorMessage?: string;
+
+  @IsDateString()
+  @IsOptional()
+  legalDeadline?: string;
+
+  @IsOptional()
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO trả về thông tin yêu cầu xóa dữ liệu.
+ */
+export class ErasureRequestDto {
+  @IsUUID()
+  id: string;
+
+  @IsString()
+  referenceNumber: string;
+
+  @IsString()
+  userId: string;
+
+  @IsString()
+  @IsOptional()
+  requestedBy: string | null;
+
+  @IsEnum(ErasureReason)
+  erasureReason: ErasureReason;
+
+  @IsString()
+  @IsOptional()
+  reasonDetail: string | null;
+
+  @IsEnum(ErasureStatus)
+  status: ErasureStatus;
+
+  @IsEnum(ErasurePriority)
+  priority: ErasurePriority;
+
+  @IsString()
+  @IsOptional()
+  policyId: string | null;
+
+  @IsArray()
+  @IsOptional()
+  dataTypesToErase: string[] | null;
+
+  @IsString()
+  @IsOptional()
+  tenantId: string | null;
+
+  @IsString()
+  @IsOptional()
+  approvedBy: string | null;
+
+  @IsOptional()
+  approvedAt: Date | null;
+
+  @IsString()
+  @IsOptional()
+  rejectionReason: string | null;
+
+  @IsNumber()
+  recordsErasedCount: number;
+
+  @IsString()
+  @IsOptional()
+  errorMessage: string | null;
+
+  @IsOptional()
+  legalDeadline: Date | null;
+
+  @IsOptional()
+  metadata: Record<string, any> | null;
+
+  createdAt: Date;
+
+  updatedAt: Date;
+
+  @IsOptional()
+  completedAt: Date | null;
+}
+
+// ============================================================================
+// Query DTOs
+// ============================================================================
+
+/**
+ * DTO lọc và phân trang cho chính sách bảo quản.
+ */
+export class RetentionPolicyQueryDto {
+  @IsEnum(RetentionPolicyStatus)
+  @IsOptional()
+  status?: RetentionPolicyStatus;
+
+  @IsEnum(RetentionPolicyType)
+  @IsOptional()
+  policyType?: RetentionPolicyType;
+
+  @IsEnum(RetentionPolicyScope)
+  @IsOptional()
+  scope?: RetentionPolicyScope;
+
+  @IsString()
+  @IsOptional()
+  tenantId?: string;
+
+  @IsString()
+  @IsOptional()
+  search?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @Max(500)
+  limit?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  offset?: number;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['createdAt', 'updatedAt', 'name'], { message: 'orderBy không hợp lệ' })
+  orderBy?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['ASC', 'DESC'], { message: 'orderDirection không hợp lệ' })
+  orderDirection?: string;
+}
+
+/**
+ * DTO lọc và phân trang cho bản ghi lưu trữ.
+ */
+export class ArchivedRecordQueryDto {
+  @IsEnum(ArchiveStatus)
+  @IsOptional()
+  status?: ArchiveStatus;
+
+  @IsEnum(ArchiveRecordType)
+  @IsOptional()
+  recordType?: ArchiveRecordType;
+
+  @IsString()
+  @IsOptional()
+  policyId?: string;
+
+  @IsString()
+  @IsOptional()
+  userId?: string;
+
+  @IsString()
+  @IsOptional()
+  tenantId?: string;
+
+  @IsString()
+  @IsOptional()
+  sourceEntityType?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @Max(500)
+  limit?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  offset?: number;
+
+  @IsDateString()
+  @IsOptional()
+  createdAtFrom?: string;
+
+  @IsDateString()
+  @IsOptional()
+  createdAtTo?: string;
+}
+
+/**
+ * DTO lọc và phân trang cho yêu cầu xóa.
+ */
+export class ErasureRequestQueryDto {
+  @IsEnum(ErasureStatus)
+  @IsOptional()
+  status?: ErasureStatus;
+
+  @IsEnum(ErasureReason)
+  @IsOptional()
+  erasureReason?: ErasureReason;
+
+  @IsEnum(ErasurePriority)
+  @IsOptional()
+  priority?: ErasurePriority;
+
+  @IsString()
+  @IsOptional()
+  userId?: string;
+
+  @IsString()
+  @IsOptional()
+  tenantId?: string;
+
+  @IsString()
+  @IsOptional()
+  referenceNumber?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  overdue?: boolean;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @Max(500)
+  limit?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  offset?: number;
+}
+
+// ============================================================================
+// Response DTOs
+// ============================================================================
+
+/**
+ * DTO trả về kết quả quét dữ liệu hết hạn.
+ */
+export class ScanResultDto {
+  @IsNumber()
+  totalScanned: number;
+
+  @IsNumber()
+  expiredRecords: number;
+
+  @IsNumber()
+  archivedRecords: number;
+
+  @IsNumber()
+  markedForErasure: number;
+
+  @IsNumber()
+  errors: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScanErrorDto)
+  errorsDetail: ScanErrorDto[];
+
+  @IsDateString()
+  scannedAt: string;
+}
+
+/**
+ * DTO lỗi khi quét dữ liệu.
+ */
+export class ScanErrorDto {
+  @IsString()
+  sourceEntityId: string;
+
+  @IsString()
+  sourceEntityType: string;
+
+  @IsString()
+  errorMessage: string;
+
+  @IsDateString()
+  occurredAt: string;
+}
+
+/**
+ * DTO thống kê tổng quan về bảo quản dữ liệu.
+ */
+export class RetentionStatsDto {
+  @IsNumber()
+  totalPolicies: number;
+
+  @IsNumber()
+  activePolicies: number;
+
+  @IsNumber()
+  totalArchivedRecords: number;
+
+  @IsNumber()
+  totalArchiveSizeBytes: number;
+
+  @IsNumber()
+  pendingErasureRequests: number;
+
+  @IsNumber()
+  completedErasureRequests: number;
+
+  @IsNumber()
+  overdueErasureRequests: number;
+
+  @IsNumber()
+  recordsAwaitingArchive: number;
+}
+{% endraw %}

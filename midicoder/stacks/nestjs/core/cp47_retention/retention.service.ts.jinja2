@@ -1,0 +1,1165 @@
+{% raw %}
+// ============================================================================
+// CP47 — Data Retention & Lifecycle Management
+// NestJS Service với các phương thức CRUD, archive, erasure, scan
+// ============================================================================
+// File: retention.service.ts.jinja2
+// Template context: (không sử dụng biến Jinja2 — template tĩnh)
+//
+// Rule V1: NO @midicoder imports — generated code standalone, use relative imports
+// Rule V2: NO business logic in decorators — only structure
+// ============================================================================
+
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between, MoreThan, LessThan, Like, Brackets } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
+import * as crypto from 'crypto';
+
+import {
+  RetentionPolicyEntity,
+  ArchivedRecordEntity,
+  ErasureRequestEntity,
+  RetentionPolicyType,
+  RetentionPolicyScope,
+  RetentionPolicyStatus,
+  ArchiveStatus,
+  ArchiveRecordType,
+  ErasureStatus,
+  ErasureReason,
+  ErasurePriority,
+} from './entities/retention.entity';
+import {
+  CreateRetentionPolicyDto,
+  UpdateRetentionPolicyDto,
+  RetentionPolicyDto,
+  CreateArchivedRecordDto,
+  UpdateArchivedRecordDto,
+  ArchivedRecordDto,
+  CreateErasureRequestDto,
+  UpdateErasureRequestDto,
+  ErasureRequestDto,
+  RetentionPolicyQueryDto,
+  ArchivedRecordQueryDto,
+  ErasureRequestQueryDto,
+  ScanResultDto,
+  ScanErrorDto,
+  RetentionStatsDto,
+} from './dtos/retention.dto';
+
+// ============================================================================
+// RetentionService — NestJS Service chính
+// ============================================================================
+
+/**
+ * RetentionService — Service chính cho mô-đun quản lý vòng đời dữ liệu.
+ *
+ * Quản lý toàn bộ vòng đời dữ liệu:
+ * - CRUD chính sách bảo quản (RetentionPolicy)
+ * - Lưu trữ bản ghi (Archive) khi hết thời hạn bảo quản
+ * - Xử lý yêu cầu xóa dữ liệu (Erasure) theo GDPR Article 17
+ * - Quét dữ liệu hết hạn (Scan) để phát hiện bản ghi cần xử lý
+ * - Thống kê tổng quan về trạng thái bảo quản
+ */
+@Injectable()
+export class RetentionService {
+  private readonly logger = new Logger(RetentionService.name);
+
+  // Số ngày tối đa để xử lý yêu cầu xóa theo GDPR
+  private readonly GDPR_ERASURE_DEADLINE_DAYS = 30;
+
+  // Số lần thử lại tối đa khi lưu trữ thất bại
+  private readonly MAX_ARCHIVE_RETRIES = 3;
+
+  constructor(
+    @InjectRepository(RetentionPolicyEntity)
+    private readonly policyRepo: Repository<RetentionPolicyEntity>,
+    @InjectRepository(ArchivedRecordEntity)
+    private readonly archiveRepo: Repository<ArchivedRecordEntity>,
+    @InjectRepository(ErasureRequestEntity)
+    private readonly erasureRepo: Repository<ErasureRequestEntity>,
+  ) {}
+
+  // ========================================================================
+  // RetentionPolicy — CRUD Methods
+  // ========================================================================
+
+  /**
+   * Tạo chính sách bảo quản mới.
+   *
+   * Tự động gán trạng thái DRAFT, xác thực tính duy nhất của tên chính sách.
+   * Kiểm tra tham số hợp lệ theo loại chính sách.
+   *
+   * @param dto - Dữ liệu tạo chính sách
+   * @returns RetentionPolicyDto đã tạo
+   */
+  async createPolicy(dto: CreateRetentionPolicyDto): Promise<RetentionPolicyDto> {
+    // Kiểm tra tên chính sách đã tồn tại chưa
+    const existing = await this.policyRepo.findOne({
+      where: { name: dto.name },
+    });
+    if (existing) {
+      throw new ConflictException(`Chính sách '${dto.name}' đã tồn tại`);
+    }
+
+    // Xác thực tham số theo loại chính sách
+    if (dto.policyType === RetentionPolicyType.TIME_BASED && !dto.retentionDays) {
+      throw new BadRequestException(
+        'Chính sách time-based yêu cầu tham số retentionDays',
+      );
+    }
+    if (dto.policyType === RetentionPolicyType.SIZE_BASED && !dto.maxSizeMode) {
+      throw new BadRequestException(
+        'Chính sách size-based yêu cầu tham số maxSizeMode',
+      );
+    }
+
+    const policy = this.policyRepo.create({
+      name: dto.name,
+      description: dto.description || null,
+      policyType: dto.policyType,
+      scope: dto.scope,
+      status: dto.status || RetentionPolicyStatus.DRAFT,
+      retentionDays: dto.retentionDays || null,
+      maxSizeMode: dto.maxSizeMode || null,
+      scopeTarget: dto.scopeTarget || null,
+      actionOnExpiry: dto.actionOnExpiry || 'archive',
+      applicableDataTypes: dto.applicableDataTypes || null,
+      metadata: dto.metadata || null,
+      createdBy: dto.createdBy || null,
+      tenantId: dto.tenantId || null,
+      expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+    });
+
+    const saved = await this.policyRepo.save(policy);
+    this.logger.log(`Tạo chính sách bảo quản: ${saved.name} (id: ${saved.id})`);
+
+    return await this.mapPolicyToDto(saved);
+  }
+
+  /**
+   * Lấy chính sách theo ID.
+   *
+   * @param id - ID chính sách
+   * @returns RetentionPolicyDto hoặc ném NotFoundException
+   */
+  async getPolicy(id: string): Promise<RetentionPolicyDto> {
+    const policy = await this.policyRepo.findOne({
+      where: { id },
+    });
+    if (!policy) {
+      throw new NotFoundException(`Chính sách bảo quản '${id}' không tồn tại`);
+    }
+    return await this.mapPolicyToDto(policy);
+  }
+
+  /**
+   * Lấy danh sách chính sách với bộ lọc và phân trang.
+   *
+   * @param query - Tham số lọc và phân trang
+   * @returns Mảng RetentionPolicyDto
+   */
+  async listPolicies(query: RetentionPolicyQueryDto): Promise<RetentionPolicyDto[]> {
+    const where: any = {};
+
+    if (query.status) {
+      where.status = query.status;
+    }
+    if (query.policyType) {
+      where.policyType = query.policyType;
+    }
+    if (query.scope) {
+      where.scope = query.scope;
+    }
+    if (query.tenantId) {
+      where.tenantId = query.tenantId;
+    }
+    if (query.search) {
+      where.name = Like(`%${query.search}%`);
+    }
+
+    const policies = await this.policyRepo.find({
+      where,
+      order: {
+        [query.orderBy || 'createdAt']: query.orderDirection || 'DESC',
+      },
+      take: query.limit || 50,
+      skip: query.offset || 0,
+    });
+
+    return Promise.all(policies.map((p) => this.mapPolicyToDto(p)));
+  }
+
+  /**
+   * Cập nhật chính sách bảo quản.
+   *
+   * Không cho phép cập nhật tên chính sách nếu đã có chính sách khác dùng tên đó.
+   * Không cho phép sửa chính sách đang ở trạng thái ARCHIVED.
+   *
+   * @param id - ID chính sách
+   * @param dto - Dữ liệu cập nhật
+   * @returns RetentionPolicyDto đã cập nhật
+   */
+  async updatePolicy(id: string, dto: UpdateRetentionPolicyDto): Promise<RetentionPolicyDto> {
+    const policy = await this.policyRepo.findOne({
+      where: { id },
+    });
+    if (!policy) {
+      throw new NotFoundException(`Chính sách bảo quản '${id}' không tồn tại`);
+    }
+
+    // Không cho phép sửa chính sách đã lưu trữ
+    if (policy.status === RetentionPolicyStatus.ARCHIVED) {
+      throw new BadRequestException(
+        `Không thể cập nhật chính sách '${policy.name}' đang ở trạng thái ARCHIVED`,
+      );
+    }
+
+    // Kiểm tra tính duy nhất của tên nếu có thay đổi
+    if (dto.name && dto.name !== policy.name) {
+      const existing = await this.policyRepo.findOne({
+        where: { name: dto.name },
+      });
+      if (existing) {
+        throw new ConflictException(`Chính sách '${dto.name}' đã tồn tại`);
+      }
+    }
+
+    // Áp dụng các trường cập nhật
+    if (dto.name !== undefined) policy.name = dto.name;
+    if (dto.description !== undefined) policy.description = dto.description;
+    if (dto.policyType !== undefined) policy.policyType = dto.policyType;
+    if (dto.scope !== undefined) policy.scope = dto.scope;
+    if (dto.status !== undefined) policy.status = dto.status;
+    if (dto.retentionDays !== undefined) policy.retentionDays = dto.retentionDays;
+    if (dto.maxSizeMode !== undefined) policy.maxSizeMode = dto.maxSizeMode;
+    if (dto.scopeTarget !== undefined) policy.scopeTarget = dto.scopeTarget;
+    if (dto.actionOnExpiry !== undefined) policy.actionOnExpiry = dto.actionOnExpiry;
+    if (dto.applicableDataTypes !== undefined) policy.applicableDataTypes = dto.applicableDataTypes;
+    if (dto.metadata !== undefined) policy.metadata = dto.metadata;
+    if (dto.tenantId !== undefined) policy.tenantId = dto.tenantId;
+    if (dto.expiresAt !== undefined) policy.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
+
+    const saved = await this.policyRepo.save(policy);
+    this.logger.log(`Cập nhật chính sách bảo quản: ${saved.name} (id: ${saved.id})`);
+
+    return await this.mapPolicyToDto(saved);
+  }
+
+  /**
+   * Xóa chính sách bảo quản (soft delete).
+   *
+   * Không cho phép xóa chính sách đang ACTIVE hoặc có bản ghi lưu trữ liên kết.
+   *
+   * @param id - ID chính sách
+   */
+  async deletePolicy(id: string): Promise<void> {
+    const policy = await this.policyRepo.findOne({
+      where: { id },
+    });
+    if (!policy) {
+      throw new NotFoundException(`Chính sách bảo quản '${id}' không tồn tại`);
+    }
+
+    if (policy.status === RetentionPolicyStatus.ACTIVE) {
+      throw new BadRequestException(
+        `Không thể xóa chính sách '${policy.name}' đang hoạt động. Vui lòng vô hiệu hóa trước khi xóa.`,
+      );
+    }
+
+    // Kiểm tra bản ghi lưu trữ liên kết
+    const archivedCount = await this.archiveRepo.count({
+      where: { policyId: id },
+    });
+    if (archivedCount > 0) {
+      throw new BadRequestException(
+        `Không thể xóa chính sách '${policy.name}' có ${archivedCount} bản ghi lưu trữ liên kết`,
+      );
+    }
+
+    await this.policyRepo.softDelete(id);
+    this.logger.log(`Xóa chính sách bảo quản: ${policy.name} (id: ${id})`);
+  }
+
+  /**
+   * Kích hoạt hoặc tạm dừng chính sách.
+   *
+   * @param id - ID chính sách
+   * @param status - Trạng thái mới (ACTIVE hoặc PAUSED)
+   * @returns RetentionPolicyDto
+   */
+  async changePolicyStatus(
+    id: string,
+    status: RetentionPolicyStatus.ACTIVE | RetentionPolicyStatus.PAUSED,
+  ): Promise<RetentionPolicyDto> {
+    const policy = await this.policyRepo.findOne({
+      where: { id },
+    });
+    if (!policy) {
+      throw new NotFoundException(`Chính sách bảo quản '${id}' không tồn tại`);
+    }
+
+    policy.status = status;
+    const saved = await this.policyRepo.save(policy);
+
+    this.logger.log(
+      `Thay đổi trạng thái chính sách: ${policy.name} -> ${status} (id: ${id})`,
+    );
+
+    return await this.mapPolicyToDto(saved);
+  }
+
+  // ========================================================================
+  // ArchivedRecord — Methods
+  // ========================================================================
+
+  /**
+   * Tạo bản ghi lưu trữ mới.
+   *
+   * Tự động tính checksum nếu chưa được cung cấp. Thiết lập trạng thái PENDING.
+   *
+   * @param dto - Dữ liệu tạo bản ghi lưu trữ
+   * @returns ArchivedRecordDto
+   */
+  async createArchive(dto: CreateArchivedRecordDto): Promise<ArchivedRecordDto> {
+    // Xác thực chính sách tồn tại
+    const policy = await this.policyRepo.findOne({
+      where: { id: dto.policyId },
+    });
+    if (!policy) {
+      throw new NotFoundException(`Chính sách bảo quản '${dto.policyId}' không tồn tại`);
+    }
+
+    const archive = this.archiveRepo.create({
+      policyId: dto.policyId,
+      sourceEntityId: dto.sourceEntityId,
+      sourceEntityType: dto.sourceEntityType,
+      recordType: dto.recordType || ArchiveRecordType.CUSTOM,
+      status: ArchiveStatus.PENDING,
+      originalSizeBytes: dto.originalSizeBytes || 0,
+      compressionAlgorithm: dto.compressionAlgorithm || null,
+      checksumSha256: dto.checksumSha256 || null,
+      storagePath: dto.storagePath || null,
+      storageProvider: dto.storageProvider || null,
+      userId: dto.userId || null,
+      tenantId: dto.tenantId || null,
+      retryCount: 0,
+      metadata: dto.metadata || null,
+    });
+
+    const saved = await this.archiveRepo.save(archive);
+    this.logger.log(
+      `Tạo bản ghi lưu trữ: source=${dto.sourceEntityType}:${dto.sourceEntityId} (id: ${saved.id})`,
+    );
+
+    return this.mapArchiveToDto(saved);
+  }
+
+  /**
+   * Lấy bản ghi lưu trữ theo ID.
+   *
+   * @param id - ID bản ghi lưu trữ
+   * @returns ArchivedRecordDto
+   */
+  async getArchive(id: string): Promise<ArchivedRecordDto> {
+    const archive = await this.archiveRepo.findOne({
+      where: { id },
+    });
+    if (!archive) {
+      throw new NotFoundException(`Bản ghi lưu trữ '${id}' không tồn tại`);
+    }
+    return this.mapArchiveToDto(archive);
+  }
+
+  /**
+   * Lấy danh sách bản ghi lưu trữ với bộ lọc.
+   *
+   * @param query - Tham số lọc và phân trang
+   * @returns Mảng ArchivedRecordDto
+   */
+  async listArchives(query: ArchivedRecordQueryDto): Promise<ArchivedRecordDto[]> {
+    const where: any = {};
+
+    if (query.status) where.status = query.status;
+    if (query.recordType) where.recordType = query.recordType;
+    if (query.policyId) where.policyId = query.policyId;
+    if (query.userId) where.userId = query.userId;
+    if (query.tenantId) where.tenantId = query.tenantId;
+    if (query.sourceEntityType) where.sourceEntityType = query.sourceEntityType;
+
+    // Lọc theo khoảng thời gian tạo
+    if (query.createdAtFrom || query.createdAtTo) {
+      where.createdAt = new Brackets((qb: any) => {
+        if (query.createdAtFrom) qb.gte('createdAt', new Date(query.createdAtFrom));
+        if (query.createdAtTo) qb.lte('createdAt', new Date(query.createdAtTo));
+      });
+    }
+
+    const archives = await this.archiveRepo.find({
+      where,
+      order: { createdAt: 'DESC' },
+      take: query.limit || 50,
+      skip: query.offset || 0,
+    });
+
+    return archives.map((a) => this.mapArchiveToDto(a));
+  }
+
+  /**
+   * Cập nhật bản ghi lưu trữ.
+   *
+   * @param id - ID bản ghi lưu trữ
+   * @param dto - Dữ liệu cập nhật
+   * @returns ArchivedRecordDto
+   */
+  async updateArchive(id: string, dto: UpdateArchivedRecordDto): Promise<ArchivedRecordDto> {
+    const archive = await this.archiveRepo.findOne({
+      where: { id },
+    });
+    if (!archive) {
+      throw new NotFoundException(`Bản ghi lưu trữ '${id}' không tồn tại`);
+    }
+
+    // Không cho phép cập nhật bản ghi đã hoàn tất (trừ retry)
+    if (
+      archive.status === ArchiveStatus.COMPLETED &&
+      !dto.retryCount &&
+      !dto.errorMessage
+    ) {
+      throw new BadRequestException(
+        `Không thể cập nhật bản ghi lưu trữ đã hoàn tất (id: ${id})`,
+      );
+    }
+
+    if (dto.status !== undefined) archive.status = dto.status;
+    if (dto.compressedSizeBytes !== undefined) archive.compressedSizeBytes = dto.compressedSizeBytes;
+    if (dto.compressionAlgorithm !== undefined) archive.compressionAlgorithm = dto.compressionAlgorithm;
+    if (dto.checksumSha256 !== undefined) archive.checksumSha256 = dto.checksumSha256;
+    if (dto.storagePath !== undefined) archive.storagePath = dto.storagePath;
+    if (dto.storageProvider !== undefined) archive.storageProvider = dto.storageProvider;
+    if (dto.retryCount !== undefined) archive.retryCount = dto.retryCount;
+    if (dto.errorMessage !== undefined) archive.errorMessage = dto.errorMessage;
+    if (dto.metadata !== undefined) archive.metadata = dto.metadata;
+
+    const saved = await this.archiveRepo.save(archive);
+    this.logger.log(`Cập nhật bản ghi lưu trữ: id=${id}, status=${saved.status}`);
+
+    return this.mapArchiveToDto(saved);
+  }
+
+  /**
+   * Thực thi lưu trữ — mô phỏng quá trình nén và lưu trữ dữ liệu.
+   *
+   * Cập nhật trạng thái từ PENDING -> PROCESSING -> COMPLETED (hoặc FAILED).
+   * Thiết lập timestamp completedAt khi thành công.
+   *
+   * @param id - ID bản ghi lưu trữ
+   * @returns ArchivedRecordDto
+   */
+  async executeArchive(id: string): Promise<ArchivedRecordDto> {
+    const archive = await this.archiveRepo.findOne({
+      where: { id },
+    });
+    if (!archive) {
+      throw new NotFoundException(`Bản ghi lưu trữ '${id}' không tồn tại`);
+    }
+
+    // Kiểm tra số lần thử lại
+    if (archive.retryCount >= this.MAX_ARCHIVE_RETRIES) {
+      archive.status = ArchiveStatus.FAILED;
+      archive.errorMessage = `Vượt quá số lần thử lại tối đa (${this.MAX_ARCHIVE_RETRIES})`;
+      await this.archiveRepo.save(archive);
+      this.logger.warn(`Lưu trữ thất bại sau ${archive.retryCount} lần thử: id=${id}`);
+      return this.mapArchiveToDto(archive);
+    }
+
+    // Cập nhật trạng thái processing
+    archive.status = ArchiveStatus.PROCESSING;
+    await this.archiveRepo.save(archive);
+
+    try {
+      // Mô phỏng quá trình lưu trữ:
+      // 1. Tính checksum nếu chưa có
+      if (!archive.checksumSha256) {
+        archive.checksumSha256 = crypto
+          .createHash('sha256')
+          .update(`${archive.sourceEntityType}:${archive.sourceEntityId}`)
+          .digest('hex');
+      }
+
+      // 2. Mô phỏng nén — tính kích thước nén (80% kích thước gốc)
+      if (archive.originalSizeBytes > 0) {
+        archive.compressedSizeBytes = Math.floor(archive.originalSizeBytes * 0.8);
+        archive.compressionAlgorithm = archive.compressionAlgorithm || 'gzip';
+      }
+
+      // 3. Mô phỏng lưu trữ — tạo đường dẫn lưu trữ
+      if (!archive.storagePath) {
+        const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '/');
+        archive.storagePath = `archives/${dateStr}/${archive.id}`;
+        archive.storageProvider = archive.storageProvider || 's3';
+      }
+
+      // 4. Hoàn tất
+      archive.status = ArchiveStatus.COMPLETED;
+      archive.completedAt = new Date();
+
+    } catch (error: any) {
+      // Xử lý lỗi — tăng retry count
+      archive.retryCount += 1;
+      archive.status = ArchiveStatus.FAILED;
+      archive.errorMessage = error.message || 'Lỗi không xác định khi lưu trữ';
+
+      this.logger.error(`Lỗi lưu trữ bản ghi: id=${id}, retry=${archive.retryCount}`, error);
+    }
+
+    const saved = await this.archiveRepo.save(archive);
+    this.logger.log(`Thực thi lưu trữ: id=${id}, status=${saved.status}`);
+
+    return this.mapArchiveToDto(saved);
+  }
+
+  /**
+   * Thử lại lưu trữ cho bản ghi thất bại.
+   *
+   * @param id - ID bản ghi lưu trữ
+   * @returns ArchivedRecordDto
+   */
+  async retryArchive(id: string): Promise<ArchivedRecordDto> {
+    const archive = await this.archiveRepo.findOne({
+      where: { id },
+    });
+    if (!archive) {
+      throw new NotFoundException(`Bản ghi lưu trữ '${id}' không tồn tại`);
+    }
+
+    if (archive.status !== ArchiveStatus.FAILED) {
+      throw new BadRequestException(
+        `Chỉ có thể thử lại bản ghi lưu trữ ở trạng thái FAILED (hiện tại: ${archive.status})`,
+      );
+    }
+
+    if (archive.retryCount >= this.MAX_ARCHIVE_RETRIES) {
+      throw new BadRequestException(
+        `Không thể thử lại — đã vượt quá ${this.MAX_ARCHIVE_RETRIES} lần thử`,
+      );
+    }
+
+    archive.status = ArchiveStatus.PENDING;
+    archive.errorMessage = null;
+    await this.archiveRepo.save(archive);
+
+    this.logger.log(`Đặt bản ghi lưu trữ về PENDING để thử lại: id=${id}`);
+
+    // Tự động thực thi lưu trữ
+    return await this.executeArchive(id);
+  }
+
+  // ========================================================================
+  // ErasureRequest — Methods
+  // ========================================================================
+
+  /**
+   * Tạo yêu cầu xóa dữ liệu mới.
+   *
+   * Tự động tạo reference number và legal deadline theo GDPR.
+   *
+   * @param dto - Dữ liệu tạo yêu cầu xóa
+   * @returns ErasureRequestDto
+   */
+  async createErasureRequest(dto: CreateErasureRequestDto): Promise<ErasureRequestDto> {
+    // Tạo reference number: ERA-YYYYMMDD-XXXXX
+    const dateStr = new Date()
+      .toISOString()
+      .replace(/\D/g, '')
+      .substring(0, 8);
+    const seqStr = Math.floor(Math.random() * 100000)
+      .toString()
+      .padStart(5, '0');
+    const referenceNumber = `ERA-${dateStr}-${seqStr}`;
+
+    // Tính legal deadline (30 ngày theo GDPR)
+    const legalDeadline = new Date();
+    legalDeadline.setDate(legalDeadline.getDate() + this.GDPR_ERASURE_DEADLINE_DAYS);
+
+    const erasure = this.erasureRepo.create({
+      referenceNumber,
+      userId: dto.userId,
+      requestedBy: dto.requestedBy || null,
+      erasureReason: dto.erasureReason,
+      reasonDetail: dto.reasonDetail || null,
+      status: ErasureStatus.SUBMITTED,
+      priority: dto.priority || ErasurePriority.TRUNG_BÌNH,
+      policyId: dto.policyId || null,
+      dataTypesToErase: dto.dataTypesToErase || null,
+      tenantId: dto.tenantId || null,
+      legalDeadline: dto.legalDeadline ? new Date(dto.legalDeadline) : legalDeadline,
+      metadata: dto.metadata || null,
+      recordsErasedCount: 0,
+    });
+
+    const saved = await this.erasureRepo.save(erasure);
+    this.logger.log(
+      `Tạo yêu cầu xóa: ref=${referenceNumber}, user=${dto.userId}, reason=${dto.erasureReason}`,
+    );
+
+    return this.mapErasureToDto(saved);
+  }
+
+  /**
+   * Lấy yêu cầu xóa theo ID.
+   *
+   * @param id - ID yêu cầu xóa
+   * @returns ErasureRequestDto
+   */
+  async getErasureRequest(id: string): Promise<ErasureRequestDto> {
+    const erasure = await this.erasureRepo.findOne({
+      where: { id },
+    });
+    if (!erasure) {
+      throw new NotFoundException(`Yêu cầu xóa '${id}' không tồn tại`);
+    }
+    return this.mapErasureToDto(erasure);
+  }
+
+  /**
+   * Lấy yêu cầu xóa theo reference number.
+   *
+   * @param referenceNumber - Mã tham chiếu
+   * @returns ErasureRequestDto
+   */
+  async getErasureByReference(referenceNumber: string): Promise<ErasureRequestDto> {
+    const erasure = await this.erasureRepo.findOne({
+      where: { referenceNumber },
+    });
+    if (!erasure) {
+      throw new NotFoundException(`Yêu cầu xóa '${referenceNumber}' không tồn tại`);
+    }
+    return this.mapErasureToDto(erasure);
+  }
+
+  /**
+   * Lấy danh sách yêu cầu xóa với bộ lọc.
+   *
+   * Hỗ trợ lọc theo yêu cầu quá hạn (overdue).
+   *
+   * @param query - Tham số lọc
+   * @returns Mảng ErasureRequestDto
+   */
+  async listErasureRequests(query: ErasureRequestQueryDto): Promise<ErasureRequestDto[]> {
+    const where: any = {};
+
+    if (query.status) where.status = query.status;
+    if (query.erasureReason) where.erasureReason = query.erasureReason;
+    if (query.priority) where.priority = query.priority;
+    if (query.userId) where.userId = query.userId;
+    if (query.tenantId) where.tenantId = query.tenantId;
+    if (query.referenceNumber) where.referenceNumber = Like(`%${query.referenceNumber}%`);
+
+    // Lọc yêu cầu quá hạn
+    if (query.overdue === true) {
+      where.status = [
+        ErasureStatus.SUBMITTED,
+        ErasureStatus.UNDER_REVIEW,
+        ErasureStatus.APPROVED,
+        ErasureStatus.IN_PROGRESS,
+      ];
+      where.legalDeadline = LessThan(new Date());
+    }
+
+    const erasures = await this.erasureRepo.find({
+      where,
+      order: { createdAt: 'DESC' },
+      take: query.limit || 50,
+      skip: query.offset || 0,
+    });
+
+    return erasures.map((e) => this.mapErasureToDto(e));
+  }
+
+  /**
+   * Cập nhật yêu cầu xóa.
+   *
+   * @param id - ID yêu cầu xóa
+   * @param dto - Dữ liệu cập nhật
+   * @returns ErasureRequestDto
+   */
+  async updateErasureRequest(
+    id: string,
+    dto: UpdateErasureRequestDto,
+  ): Promise<ErasureRequestDto> {
+    const erasure = await this.erasureRepo.findOne({
+      where: { id },
+    });
+    if (!erasure) {
+      throw new NotFoundException(`Yêu cầu xóa '${id}' không tồn tại`);
+    }
+
+    // Không cho phép cập nhật yêu cầu đã hoàn tất hoặc đã hủy
+    if (
+      erasure.status === ErasureStatus.COMPLETED ||
+      erasure.status === ErasureStatus.CANCELLED
+    ) {
+      throw new BadRequestException(
+        `Không thể cập nhật yêu cầu xóa ở trạng thái '${erasure.status}'`,
+      );
+    }
+
+    if (dto.status !== undefined) erasure.status = dto.status;
+    if (dto.priority !== undefined) erasure.priority = dto.priority;
+    if (dto.approvedBy !== undefined) erasure.approvedBy = dto.approvedBy;
+    if (dto.approvedAt !== undefined) erasure.approvedAt = dto.approvedAt ? new Date(dto.approvedAt) : null;
+    if (dto.rejectionReason !== undefined) erasure.rejectionReason = dto.rejectionReason;
+    if (dto.recordsErasedCount !== undefined) erasure.recordsErasedCount = dto.recordsErasedCount;
+    if (dto.errorMessage !== undefined) erasure.errorMessage = dto.errorMessage;
+    if (dto.legalDeadline !== undefined) erasure.legalDeadline = dto.legalDeadline ? new Date(dto.legalDeadline) : null;
+    if (dto.metadata !== undefined) erasure.metadata = dto.metadata;
+
+    const saved = await this.erasureRepo.save(erasure);
+    this.logger.log(`Cập nhật yêu cầu xóa: ref=${saved.referenceNumber}, status=${saved.status}`);
+
+    return this.mapErasureToDto(saved);
+  }
+
+  /**
+   * Phê duyệt yêu cầu xóa.
+   *
+   * Chỉ cho phép phê duyệt yêu cầu ở trạng thái UNDER_REVIEW.
+   *
+   * @param id - ID yêu cầu xóa
+   * @param approvedBy - ID người phê duyệt
+   * @returns ErasureRequestDto
+   */
+  async approveErasure(id: string, approvedBy: string): Promise<ErasureRequestDto> {
+    const erasure = await this.erasureRepo.findOne({
+      where: { id },
+    });
+    if (!erasure) {
+      throw new NotFoundException(`Yêu cầu xóa '${id}' không tồn tại`);
+    }
+
+    if (erasure.status !== ErasureStatus.UNDER_REVIEW) {
+      throw new BadRequestException(
+        `Không thể phê duyệt yêu cầu ở trạng thái '${erasure.status}'. Chỉ yêu cầu UNDER_REVIEW mới được phê duyệt.`,
+      );
+    }
+
+    erasure.status = ErasureStatus.APPROVED;
+    erasure.approvedBy = approvedBy;
+    erasure.approvedAt = new Date();
+
+    const saved = await this.erasureRepo.save(erasure);
+    this.logger.log(
+      `Phê duyệt yêu cầu xóa: ref=${saved.referenceNumber}, approved_by=${approvedBy}`,
+    );
+
+    return this.mapErasureToDto(saved);
+  }
+
+  /**
+   * Từ chối yêu cầu xóa.
+   *
+   * @param id - ID yêu cầu xóa
+   * @param rejectedBy - ID người từ chối
+   * @param reason - Lý do từ chối
+   * @returns ErasureRequestDto
+   */
+  async rejectErasure(
+    id: string,
+    rejectedBy: string,
+    reason: string,
+  ): Promise<ErasureRequestDto> {
+    const erasure = await this.erasureRepo.findOne({
+      where: { id },
+    });
+    if (!erasure) {
+      throw new NotFoundException(`Yêu cầu xóa '${id}' không tồn tại`);
+    }
+
+    if (
+      erasure.status !== ErasureStatus.SUBMITTED &&
+      erasure.status !== ErasureStatus.UNDER_REVIEW
+    ) {
+      throw new BadRequestException(
+        `Không thể từ chối yêu cầu ở trạng thái '${erasure.status}'`,
+      );
+    }
+
+    erasure.status = ErasureStatus.REJECTED;
+    erasure.approvedBy = rejectedBy;
+    erasure.rejectionReason = reason;
+
+    const saved = await this.erasureRepo.save(erasure);
+    this.logger.log(`Từ chối yêu cầu xóa: ref=${saved.referenceNumber}`);
+
+    return this.mapErasureToDto(saved);
+  }
+
+  /**
+   * Thực thi xóa dữ liệu cho yêu cầu đã được phê duyệt.
+   *
+   * Mô phỏng quá trình xóa: cập nhật trạng thái, tăng recordsErasedCount.
+   *
+   * @param id - ID yêu cầu xóa
+   * @returns ErasureRequestDto
+   */
+  async executeErasure(id: string): Promise<ErasureRequestDto> {
+    const erasure = await this.erasureRepo.findOne({
+      where: { id },
+    });
+    if (!erasure) {
+      throw new NotFoundException(`Yêu cầu xóa '${id}' không tồn tại`);
+    }
+
+    if (erasure.status !== ErasureStatus.APPROVED) {
+      throw new BadRequestException(
+        `Không thể thực thi xóa cho yêu cầu ở trạng thái '${erasure.status}'. Chỉ yêu cầu APPROVED mới được thực thi.`,
+      );
+    }
+
+    // Cập nhật trạng thái đang xử lý
+    erasure.status = ErasureStatus.IN_PROGRESS;
+    await this.erasureRepo.save(erasure);
+
+    try {
+      // Mô phỏng quá trình xóa dữ liệu:
+      // Trong thực tế, đây là nơi gọi các API để xóa dữ liệu thực tế
+      // từ các service/bảng khác nhau dựa trên dataTypesToErase
+
+      let recordsCount = 0;
+
+      // Mô phỏng xóa theo từng loại dữ liệu
+      if (erasure.dataTypesToErase) {
+        for (const dataType of erasure.dataTypesToErase) {
+          // Mô phỏng: đếm số bản ghi giả định của mỗi loại dữ liệu
+          const simulatedCount = Math.floor(Math.random() * 100) + 1;
+          recordsCount += simulatedCount;
+
+          this.logger.log(
+            `Đã xóa ${simulatedCount} bản ghi loại '${dataType}' cho user '${erasure.userId}'`,
+          );
+        }
+      } else {
+        // Nếu không chỉ định loại dữ liệu — xóa toàn bộ dữ liệu của user
+        recordsCount = Math.floor(Math.random() * 500) + 10;
+        this.logger.log(
+          `Đã xóa ${recordsCount} bản ghi của user '${erasure.userId}' (toàn bộ)`,
+        );
+      }
+
+      erasure.recordsErasedCount = recordsCount;
+      erasure.status = ErasureStatus.COMPLETED;
+      erasure.completedAt = new Date();
+
+    } catch (error: any) {
+      erasure.status = ErasureStatus.FAILED;
+      erasure.errorMessage = error.message || 'Lỗi không xác định khi xóa dữ liệu';
+
+      this.logger.error(
+        `Lỗi thực thi xóa: ref=${erasure.referenceNumber}`,
+        error,
+      );
+    }
+
+    const saved = await this.erasureRepo.save(erasure);
+    this.logger.log(
+      `Thực thi xóa: ref=${saved.referenceNumber}, status=${saved.status}, records=${saved.recordsErasedCount}`,
+    );
+
+    return this.mapErasureToDto(saved);
+  }
+
+  // ========================================================================
+  // Scan Methods — Quét dữ liệu hết hạn
+  // ========================================================================
+
+  /**
+   * Quét tất cả chính sách active và tìm dữ liệu hết hạn.
+   *
+   * Duyệt qua từng chính sách active, kiểm tra các bản ghi dữ liệu
+   * đã vượt quá thời hạn bảo quản. Tự động tạo yêu cầu lưu trữ
+   * hoặc xóa tùy theo action_on_expiry của chính sách.
+   *
+   * @param policyId - ID chính sách cụ thể (optional — nếu không có thì quét tất cả)
+   * @returns ScanResultDto
+   */
+  async scanExpiredData(policyId?: string): Promise<ScanResultDto> {
+    this.logger.log(
+      `Bắt đầu quét dữ liệu hết hạn${policyId ? ` cho chính sách ${policyId}` : ' (tất cả chính sách)'}`,
+    );
+
+    // Lấy danh sách chính sách active
+    const policies = await this.policyRepo.find({
+      where: {
+        status: RetentionPolicyStatus.ACTIVE,
+        ...(policyId ? { id: policyId } : {}),
+      },
+    });
+
+    let totalScanned = 0;
+    let expiredRecords = 0;
+    let archivedRecords = 0;
+    let markedForErasure = 0;
+    const errorsDetail: ScanErrorDto[] = [];
+
+    for (const policy of policies) {
+      try {
+        // Xử lý quét theo từng chính sách
+        const result = await this.scanPolicy(policy);
+        totalScanned += result.scanned;
+        expiredRecords += result.expired;
+        archivedRecords += result.archived;
+        markedForErasure += result.markedForErasure;
+      } catch (error: any) {
+        this.logger.error(`Lỗi quét chính sách ${policy.id}: ${error.message}`, error);
+        errorsDetail.push({
+          sourceEntityId: policy.id,
+          sourceEntityType: 'RetentionPolicy',
+          errorMessage: error.message || 'Lỗi không xác định',
+          occurredAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    const scanResult: ScanResultDto = {
+      totalScanned,
+      expiredRecords,
+      archivedRecords,
+      markedForErasure,
+      errors: errorsDetail.length,
+      errorsDetail,
+      scannedAt: new Date().toISOString(),
+    };
+
+    this.logger.log(
+      `Hoàn tất quét: scanned=${totalScanned}, expired=${expiredRecords}, archived=${archivedRecords}, erasure=${markedForErasure}, errors=${errorsDetail.length}`,
+    );
+
+    return scanResult;
+  }
+
+  /**
+   * Quét dữ liệu hết hạn cho một chính sách cụ thể.
+   *
+   * @param policy - Chính sách cần quét
+   * @returns Kết quả quét nội bộ
+   */
+  private async scanPolicy(
+    policy: RetentionPolicyEntity,
+  ): Promise<{ scanned: number; expired: number; archived: number; markedForErasure: number }> {
+    let scanned = 0;
+    let expired = 0;
+    let archived = 0;
+    let markedForErasure = 0;
+
+    // Lấy các bản ghi lưu trữ liên quan đến chính sách
+    const records = await this.archiveRepo.find({
+      where: { policyId: policy.id },
+    });
+
+    scanned = records.length;
+
+    for (const record of records) {
+      // Kiểm tra xem bản ghi có hết hạn không
+      // (dựa trên retentionDays của chính sách)
+      if (policy.policyType === RetentionPolicyType.TIME_BASED && policy.retentionDays) {
+        const expiryDate = new Date(record.createdAt);
+        expiryDate.setDate(expiryDate.getDate() + policy.retentionDays);
+
+        if (expiryDate < new Date()) {
+          expired++;
+
+          // Hành động khi hết hạn
+          if (policy.actionOnExpiry === 'archive' && record.status === ArchiveStatus.PENDING) {
+            // Đã là pending — sẽ được xử lý bởi executeArchive
+            archived++;
+          } else if (policy.actionOnExpiry === 'delete') {
+            // Tạo yêu cầu xóa tự động
+            markedForErasure++;
+          }
+        }
+      }
+    }
+
+    return { scanned, expired, archived, markedForErasure };
+  }
+
+  // ========================================================================
+  // Statistics Methods
+  // ========================================================================
+
+  /**
+   * Lấy thống kê tổng quan về bảo quản dữ liệu.
+   *
+   * @returns RetentionStatsDto
+   */
+  async getStats(): Promise<RetentionStatsDto> {
+    const totalPolicies = await this.policyRepo.count();
+    const activePolicies = await this.policyRepo.count({
+      where: { status: RetentionPolicyStatus.ACTIVE },
+    });
+
+    const totalArchivedRecords = await this.archiveRepo.count();
+
+    const sizeResult = await this.archiveRepo
+      .createQueryBuilder('archive')
+      .select('SUM(archive.compressed_size_bytes)', 'totalSize')
+      .getRawOne();
+
+    const totalArchiveSizeBytes = sizeResult?.totalSize
+      ? parseInt(sizeResult.totalSize, 10)
+      : 0;
+
+    const pendingErasureRequests = await this.erasureRepo.count({
+      where: {
+        status: [
+          ErasureStatus.SUBMITTED,
+          ErasureStatus.UNDER_REVIEW,
+          ErasureStatus.APPROVED,
+        ],
+      },
+    });
+
+    const completedErasureRequests = await this.erasureRepo.count({
+      where: { status: ErasureStatus.COMPLETED },
+    });
+
+    const overdueErasureRequests = await this.erasureRepo.count({
+      where: {
+        status: [
+          ErasureStatus.SUBMITTED,
+          ErasureStatus.UNDER_REVIEW,
+          ErasureStatus.APPROVED,
+          ErasureStatus.IN_PROGRESS,
+        ],
+        legalDeadline: LessThan(new Date()),
+      },
+    });
+
+    const recordsAwaitingArchive = await this.archiveRepo.count({
+      where: { status: ArchiveStatus.PENDING },
+    });
+
+    return {
+      totalPolicies,
+      activePolicies,
+      totalArchivedRecords,
+      totalArchiveSizeBytes,
+      pendingErasureRequests,
+      completedErasureRequests,
+      overdueErasureRequests,
+      recordsAwaitingArchive,
+    };
+  }
+
+  // ========================================================================
+  // Mapper Methods — Entity to DTO
+  // ========================================================================
+
+  /**
+   * Ánh xạ RetentionPolicyEntity sang RetentionPolicyDto.
+   *
+   * @param policy - Entity cần ánh xạ
+   * @returns RetentionPolicyDto
+   */
+  private async mapPolicyToDto(policy: RetentionPolicyEntity): Promise<RetentionPolicyDto> {
+    const archivedCount = await this.archiveRepo.count({
+      where: { policyId: policy.id },
+    });
+    const erasureCount = await this.erasureRepo.count({
+      where: { policyId: policy.id },
+    });
+
+    return {
+      id: policy.id,
+      name: policy.name,
+      description: policy.description,
+      policyType: policy.policyType,
+      scope: policy.scope,
+      status: policy.status,
+      retentionDays: policy.retentionDays,
+      maxSizeMode: policy.maxSizeMode,
+      scopeTarget: policy.scopeTarget,
+      actionOnExpiry: policy.actionOnExpiry,
+      applicableDataTypes: policy.applicableDataTypes,
+      metadata: policy.metadata,
+      createdBy: policy.createdBy,
+      tenantId: policy.tenantId,
+      expiresAt: policy.expiresAt,
+      createdAt: policy.createdAt,
+      updatedAt: policy.updatedAt,
+      archivedRecordsCount: archivedCount,
+      erasureRequestsCount: erasureCount,
+    };
+  }
+
+  /**
+   * Ánh xạ ArchivedRecordEntity sang ArchivedRecordDto.
+   *
+   * @param archive - Entity cần ánh xạ
+   * @returns ArchivedRecordDto
+   */
+  private mapArchiveToDto(archive: ArchivedRecordEntity): ArchivedRecordDto {
+    return {
+      id: archive.id,
+      policyId: archive.policyId,
+      sourceEntityId: archive.sourceEntityId,
+      sourceEntityType: archive.sourceEntityType,
+      recordType: archive.recordType,
+      status: archive.status,
+      originalSizeBytes: archive.originalSizeBytes,
+      compressedSizeBytes: archive.compressedSizeBytes,
+      compressionAlgorithm: archive.compressionAlgorithm,
+      checksumSha256: archive.checksumSha256,
+      storagePath: archive.storagePath,
+      storageProvider: archive.storageProvider,
+      userId: archive.userId,
+      tenantId: archive.tenantId,
+      errorMessage: archive.errorMessage,
+      retryCount: archive.retryCount,
+      metadata: archive.metadata,
+      createdAt: archive.createdAt,
+      updatedAt: archive.updatedAt,
+      completedAt: archive.completedAt,
+    };
+  }
+
+  /**
+   * Ánh xạ ErasureRequestEntity sang ErasureRequestDto.
+   *
+   * @param erasure - Entity cần ánh xạ
+   * @returns ErasureRequestDto
+   */
+  private mapErasureToDto(erasure: ErasureRequestEntity): ErasureRequestDto {
+    return {
+      id: erasure.id,
+      referenceNumber: erasure.referenceNumber,
+      userId: erasure.userId,
+      requestedBy: erasure.requestedBy,
+      erasureReason: erasure.erasureReason,
+      reasonDetail: erasure.reasonDetail,
+      status: erasure.status,
+      priority: erasure.priority,
+      policyId: erasure.policyId,
+      dataTypesToErase: erasure.dataTypesToErase,
+      tenantId: erasure.tenantId,
+      approvedBy: erasure.approvedBy,
+      approvedAt: erasure.approvedAt,
+      rejectionReason: erasure.rejectionReason,
+      recordsErasedCount: erasure.recordsErasedCount,
+      errorMessage: erasure.errorMessage,
+      legalDeadline: erasure.legalDeadline,
+      metadata: erasure.metadata,
+      createdAt: erasure.createdAt,
+      updatedAt: erasure.updatedAt,
+      completedAt: erasure.completedAt,
+    };
+  }
+}
+{% endraw %}
