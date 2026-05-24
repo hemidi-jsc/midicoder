@@ -980,6 +980,20 @@ class ErrorCode(str, Enum):
     CP43_DSL_PARSE_ERROR = "MDC-CP43-010"
 
     # =========================================================================
+    # CP44: Bulk Operations Engine Errors
+    # =========================================================================
+    CP44_BULK_JOB_NOT_FOUND = "MDC-CP44-001"
+    CP44_BULK_JOB_ALREADY_RUNNING = "MDC-CP44-002"
+    CP44_BULK_INVALID_ACTION = "MDC-CP44-003"
+    CP44_BULK_CHUNK_SIZE_INVALID = "MDC-CP44-004"
+    CP44_BULK_CONCURRENCY_INVALID = "MDC-CP44-005"
+    CP44_BULK_RETRY_EXHAUSTED = "MDC-CP44-006"
+    CP44_BULK_DLQ_FULL = "MDC-CP44-007"
+    CP44_BULK_JOB_TIMEOUT = "MDC-CP44-008"
+    CP44_BULK_CROSS_TENANT_ACCESS = "MDC-CP44-009"
+    CP44_BULK_CANCEL_FAILED = "MDC-CP44-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

@@ -1,0 +1,375 @@
+/**
+ * BulkProgress — Thanh tiến độ phân đoạn cho bulk operations.
+ * Sinh bởi CP44 BulkOpsEmitter.
+ *
+ * Hiển thị: thành công (xanh), thất bại (đỏ), đang xử lý (xanh dương), chờ xử lý (xám).
+ */
+import React, { useMemo } from 'react';
+
+/* ---- Props ---- */
+export interface BulkProgressProps {
+    /** Tổng số bản ghi cần xử lý */
+    total: number;
+    /** Số bản ghi đã xử lý (thành công + thất bại + bỏ qua) */
+    processed: number;
+    /** Số bản ghi thành công */
+    succeeded: number;
+    /** Số bản ghi thất bại */
+    failed: number;
+    /** Số bản ghi bị bỏ qua (tùy chọn) */
+    skipped?: number;
+    /** Kích thước hiển thị */
+    size?: 'small' | 'medium' | 'large';
+    /** Callback khi click (tùy chọn) */
+    onClick?: () => void;
+}
+
+/* ---- Config theo kích thước ---- */
+const SIZE_CONFIG: Record<string, {
+    barHeight: number;
+    fontSize: number;
+    labelSize: number;
+    padding: string;
+    borderRadius: number;
+}> = {
+    small: {
+        barHeight: 8,
+        fontSize: 12,
+        labelSize: 11,
+        padding: '8px 12px',
+        borderRadius: 6,
+    },
+    medium: {
+        barHeight: 12,
+        fontSize: 14,
+        labelSize: 12,
+        padding: '10px 16px',
+        borderRadius: 8,
+    },
+    large: {
+        barHeight: 18,
+        fontSize: 16,
+        labelSize: 13,
+        padding: '14px 20px',
+        borderRadius: 10,
+    },
+};
+
+/* ---- Màu sắc cho từng phân đoạn ---- */
+const SEGMENT_COLORS = {
+    success: '#22c55e',   /* Thành công — xanh lá */
+    failed: '#ef4444',    /* Thất bại — đỏ */
+    skipped: '#9ca3af',   /* Bỏ qua — xám */
+    processing: '#3b82f6', /* Đang xử lý — xanh dương */
+    pending: '#e5e7eb',   /* Chờ xử lý — xám nhạt */
+};
+
+/* ---- Style objects ---- */
+function containerStyle(size: string): React.CSSProperties {
+    const config = SIZE_CONFIG[size] || SIZE_CONFIG.medium;
+    return {
+        padding: config.padding,
+        background: '#fff',
+        borderRadius: config.borderRadius,
+        border: '1px solid #f3f4f6',
+    };
+}
+
+function wrapperStyle(size: string): React.CSSProperties {
+    return {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+    };
+}
+
+function labelRowStyle(size: string): React.CSSProperties {
+    const config = SIZE_CONFIG[size] || SIZE_CONFIG.medium;
+    return {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        fontSize: config.labelSize,
+        color: '#6b7280',
+    };
+}
+
+function percentageStyle(size: string): React.CSSProperties {
+    const config = SIZE_CONFIG[size] || SIZE_CONFIG.medium;
+    return {
+        fontSize: config.fontSize,
+        fontWeight: 600,
+        color: '#111827',
+    };
+}
+
+function barTrackStyle(size: string): React.CSSProperties {
+    const config = SIZE_CONFIG[size] || SIZE_CONFIG.medium;
+    return {
+        width: '100%',
+        height: config.barHeight,
+        background: SEGMENT_COLORS.pending,
+        borderRadius: config.barHeight / 2,
+        overflow: 'hidden',
+        display: 'flex',
+        position: 'relative',
+    };
+}
+
+function statsRowStyle(size: string): React.CSSProperties {
+    const config = SIZE_CONFIG[size] || SIZE_CONFIG.medium;
+    const isSmall = size === 'small';
+    return {
+        display: 'flex',
+        gap: isSmall ? '8px' : '16px',
+        fontSize: isSmall ? '10px' : '11px',
+        color: '#6b7280',
+        flexWrap: 'wrap' as const,
+    };
+}
+
+function statDotColor(color: string): React.CSSProperties {
+    return {
+        display: 'inline-block',
+        width: '6px',
+        height: '6px',
+        borderRadius: '2px',
+        backgroundColor: color,
+        marginRight: '3px',
+        verticalAlign: 'middle',
+    };
+}
+
+/* ---- Tính toán phân đoạn ---- */
+function calcSegments(
+    total: number,
+    processed: number,
+    succeeded: number,
+    failed: number,
+    skipped: number,
+) {
+    /* Đảm bảo các giá trị hợp lệ */
+    const safeTotal = Math.max(total, 1);
+    const safeSucceeded = Math.max(0, Math.min(succeeded, processed));
+    const safeFailed = Math.max(0, Math.min(failed, processed - safeSucceeded - skipped));
+    const safeSkipped = Math.max(0, Math.min(skipped, processed - safeSucceeded - safeFailed));
+    const safeProcessed = safeSucceeded + safeFailed + safeSkipped;
+    const processing = Math.max(0, processed - safeProcessed);
+    const pending = Math.max(0, safeTotal - processed);
+
+    return {
+        succeeded: Math.round((safeSucceeded / safeTotal) * 100),
+        failed: Math.round((safeFailed / safeTotal) * 100),
+        skipped: Math.round((safeSkipped / safeTotal) * 100),
+        processing: Math.round((processing / safeTotal) * 100),
+        pending: Math.round((pending / safeTotal) * 100),
+        percent: Math.round((processed / safeTotal) * 100),
+        safeSucceeded,
+        safeFailed,
+        safeSkipped,
+        safeProcessed,
+        processing,
+        pending,
+    };
+}
+
+/* ---- Component chính: BulkProgress ---- */
+export const BulkProgress: React.FC<BulkProgressProps> = ({
+    total,
+    processed,
+    succeeded,
+    failed,
+    skipped = 0,
+    size = 'medium',
+    onClick,
+}) => {
+    /* Tính toán các phân đoạn */
+    const segments = useMemo(
+        () => calcSegments(total, processed, succeeded, failed, skipped),
+        [total, processed, succeeded, failed, skipped],
+    );
+
+    /* Nếu total = 0, hiển thị trạng thái rỗng */
+    if (total === 0) {
+        return (
+            <div style={containerStyle(size)} onClick={onClick}>
+                <div style={wrapperStyle(size)}>
+                    <div style={labelRowStyle(size)}>
+                        <span>Chưa có dữ liệu</span>
+                        <span style={percentageStyle(size)}>0%</span>
+                    </div>
+                    <div style={barTrackStyle(size)}>
+                        {/* Bar rỗng — chỉ hiện màu nền xám nhạt */}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    /* Xây dựng các đoạn thanh tiến độ — chỉ render nếu > 0% */
+    const barSegments = useMemo(() => {
+        const segs: { key: string; width: number; color: string; label: string }[] = [];
+        if (segments.succeeded > 0) {
+            segs.push({
+                key: 'success',
+                width: segments.succeeded,
+                color: SEGMENT_COLORS.success,
+                label: 'Thành công',
+            });
+        }
+        if (segments.failed > 0) {
+            segs.push({
+                key: 'failed',
+                width: segments.failed,
+                color: SEGMENT_COLORS.failed,
+                label: 'Thất bại',
+            });
+        }
+        if (segments.skipped > 0) {
+            segs.push({
+                key: 'skipped',
+                width: segments.skipped,
+                color: SEGMENT_COLORS.skipped,
+                label: 'Bỏ qua',
+            });
+        }
+        if (segments.processing > 0) {
+            segs.push({
+                key: 'processing',
+                width: segments.processing,
+                color: SEGMENT_COLORS.processing,
+                label: 'Đang xử lý',
+            });
+        }
+        /* Pending segment — chỉ hiển thị nếu còn và size không quá nhỏ */
+        if (segments.pending > 0 && size !== 'small') {
+            segs.push({
+                key: 'pending',
+                width: segments.pending,
+                color: SEGMENT_COLORS.pending,
+                label: 'Chờ xử lý',
+            });
+        }
+        return segs;
+    }, [segments, size]);
+
+    /* Label trạng thái tổng thể */
+    const statusText = useMemo(() => {
+        if (segments.safeProcessed === 0) return 'Chưa bắt đầu';
+        if (segments.pending === 0 && segments.processing === 0) {
+            if (segments.safeFailed === 0) return 'Hoàn thành';
+            return segments.safeSucceeded === 0 ? 'Thất bại hoàn toàn' : 'Hoàn thành có lỗi';
+        }
+        return 'Đang xử lý...';
+    }, [segments]);
+
+    /* Click handler — chỉ active nếu có onClick */
+    const containerCursor = onClick ? { cursor: 'pointer' } : {};
+
+    return (
+        <div style={{ ...containerStyle(size), ...containerCursor }} onClick={onClick}>
+            <div style={wrapperStyle(size)}>
+                {/* Dòng trên: label + percentage */}
+                <div style={labelRowStyle(size)}>
+                    <span>{statusText}</span>
+                    <span style={percentageStyle(size)}>
+                        {segments.percent}%
+                    </span>
+                </div>
+
+                {/* Thanh tiến độ phân đoạn */}
+                <div style={barTrackStyle(size)}>
+                    {barSegments.map((seg) => (
+                        <div
+                            key={seg.key}
+                            title={`${seg.label}: ${seg.width}%`}
+                            style={{
+                                width: `${seg.width}%`,
+                                height: '100%',
+                                backgroundColor: seg.color,
+                                transition: 'width 0.3s ease',
+                                minWidth: seg.width > 0 ? '2px' : '0',
+                            }}
+                        />
+                    ))}
+                </div>
+
+                {/* Dòng dưới: số liệu chi tiết */}
+                <div style={statsRowStyle(size)}>
+                    <span>
+                        <span style={statDotColor(SEGMENT_COLORS.success)} />
+                        Thành công: {segments.safeSucceeded}
+                    </span>
+                    <span>
+                        <span style={statDotColor(SEGMENT_COLORS.failed)} />
+                        Thất bại: {segments.safeFailed}
+                    </span>
+                    {segments.safeSkipped > 0 && (
+                        <span>
+                            <span style={statDotColor(SEGMENT_COLORS.skipped)} />
+                            Bỏ qua: {segments.safeSkipped}
+                        </span>
+                    )}
+                    {segments.processing > 0 && (
+                        <span>
+                            <span style={statDotColor(SEGMENT_COLORS.processing)} />
+                            Đang xử lý: {segments.processing}
+                        </span>
+                    )}
+                    {segments.pending > 0 && (
+                        <span>
+                            <span style={statDotColor(SEGMENT_COLORS.pending)} />
+                            Còn lại: {segments.pending}
+                        </span>
+                    )}
+                    <span style={{ marginLeft: 'auto', fontWeight: 500 }}>
+                        {segments.safeProcessed}/{total}
+                    </span>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+/* ---- Component thanh tiến độ đơn giản (chỉ 1 màu) — dùng cho trường hợp đơn giản ---- */
+export interface SimpleProgressBarProps {
+    /** Phần trăm tiến độ (0-100) */
+    percent: number;
+    /** Màu thanh tiến độ */
+    color?: string;
+    /** Kích thước */
+    size?: 'small' | 'medium' | 'large';
+}
+
+export const SimpleProgressBar: React.FC<SimpleProgressBarProps> = ({
+    percent,
+    color = SEGMENT_COLORS.processing,
+    size = 'medium',
+}) => {
+    const config = SIZE_CONFIG[size] || SIZE_CONFIG.medium;
+    const clamped = Math.max(0, Math.min(100, percent));
+
+    return (
+        <div
+            style={{
+                width: '100%',
+                height: config.barHeight,
+                background: SEGMENT_COLORS.pending,
+                borderRadius: config.barHeight / 2,
+                overflow: 'hidden',
+            }}
+        >
+            <div
+                style={{
+                    width: `${clamped}%`,
+                    height: '100%',
+                    backgroundColor: color,
+                    borderRadius: config.barHeight / 2,
+                    transition: 'width 0.3s ease',
+                }}
+            />
+        </div>
+    );
+};
+
+export default BulkProgress;

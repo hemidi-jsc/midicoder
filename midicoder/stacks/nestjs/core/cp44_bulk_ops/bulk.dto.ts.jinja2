@@ -1,0 +1,254 @@
+/**
+ * Bulk Operations DTOs - Sinh tự động bởi Midicoder CP44.
+ *
+ * Module này cung cấp các Data Transfer Objects (DTOs) cho bulk operations:
+ * - CreateBulkJobDto: tạo job mới
+ * - BulkJobFilterDto: lọc/lấy danh sách job
+ * - UpdateBulkJobDto: cập nhật job
+ * - BulkProgressDto: trả về tiến độ job
+ * - DLQEntryDto: trả về thông tin DLQ entry
+ * - DLQReplayDto: replay DLQ entry
+ *
+ * CP44: Bulk Operations Engine
+ */
+
+import {
+  IsNotEmpty,
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsEnum,
+  IsString,
+  IsUUID,
+  IsObject,
+  Min,
+  Max,
+  ValidateNested,
+  IsBoolean,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { BulkAction, JobStatus, RetryStrategy } from './bulk.entity';
+
+/**
+ * DTO để tạo một bulk job mới.
+ *
+ * Chứa tất cả thông tin cần thiết để khởi tạo một bulk operation,
+ * bao gồm entity type, hành động, danh sách IDs, và cấu hình xử lý.
+ */
+export class CreateBulkJobDto {
+  @ApiProperty({ description: 'Kiểu thực thể cần xử lý', example: 'Order' })
+  @IsNotEmpty()
+  @IsString()
+  entityType: string;
+
+  @ApiProperty({ description: 'Hành động bulk', enum: BulkAction, example: 'UPDATE' })
+  @IsEnum(BulkAction)
+  action: BulkAction;
+
+  @ApiProperty({ description: 'Danh sách IDs của thực thể cần xử lý', example: ['uuid-1', 'uuid-2'] })
+  @IsArray()
+  @IsNotEmpty()
+  @IsUUID('4', { each: true })
+  entityIds: string[];
+
+  @ApiPropertyOptional({ description: 'Kích thước chunk (số entity mỗi chunk)', example: {{ default_chunk_size }} })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  chunkSize?: number;
+
+  @ApiPropertyOptional({ description: 'Số lượng chunk xử lý song song tối đa', example: {{ default_concurrency }} })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  maxConcurrency?: number;
+
+  @ApiPropertyOptional({ description: 'Số lần retry tối đa', example: {{ default_max_retries }} })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  maxRetries?: number;
+
+  @ApiPropertyOptional({ description: 'Chiến lược retry', enum: RetryStrategy })
+  @IsOptional()
+  @IsEnum(RetryStrategy)
+  retryStrategy?: RetryStrategy;
+
+  @ApiPropertyOptional({ description: 'Timeout tính bằng giây', example: {{ default_timeout }} })
+  @IsOptional()
+  @IsInt()
+  @Min(10)
+  @Max(86400)
+  timeoutSeconds?: number;
+
+  @ApiPropertyOptional({ description: 'Tenant ID', example: 'tenant-123' })
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
+
+  @ApiPropertyOptional({ description: 'Operator ID - người khởi tạo job', example: 'user-456' })
+  @IsOptional()
+  @IsString()
+  operatorId?: string;
+
+  @ApiPropertyOptional({ description: 'Metadata tùy chỉnh', type: Object })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO để lọc và phân trang danh sách jobs.
+ *
+ * Hỗ trợ lọc theo status, entity type, tenant, và phân trang với page/page_size.
+ */
+export class BulkJobFilterDto {
+  @ApiPropertyOptional({ description: 'Lọc theo trạng thái', enum: JobStatus })
+  @IsOptional()
+  @IsEnum(JobStatus)
+  status?: JobStatus;
+
+  @ApiPropertyOptional({ description: 'Lọc theo kiểu thực thể', example: 'Order' })
+  @IsOptional()
+  @IsString()
+  entityType?: string;
+
+  @ApiPropertyOptional({ description: 'Lọc theo tenant ID', example: 'tenant-123' })
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
+
+  @ApiPropertyOptional({ description: 'Số trang (bắt đầu từ 1)', example: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ description: 'Số bản ghi mỗi trang', example: 20 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @Type(() => Number)
+  page_size?: number = 20;
+}
+
+/**
+ * DTO để cập nhật trạng thái hoặc metadata của job.
+ */
+export class UpdateBulkJobDto {
+  @ApiPropertyOptional({ description: 'Cập nhật trạng thái job', enum: JobStatus })
+  @IsOptional()
+  @IsEnum(JobStatus)
+  status?: JobStatus;
+
+  @ApiPropertyOptional({ description: 'Cập nhật metadata', type: Object })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO trả về thông tin tiến độ xử lý của job.
+ */
+export class BulkProgressDto {
+  @ApiProperty({ description: 'Job ID' })
+  job_id: string;
+
+  @ApiProperty({ description: 'Trạng thái hiện tại', enum: JobStatus })
+  status: JobStatus;
+
+  @ApiProperty({ description: 'Tổng số entity cần xử lý' })
+  total: number;
+
+  @ApiProperty({ description: 'Số entity đã xử lý' })
+  processed: number;
+
+  @ApiProperty({ description: 'Số entity xử lý thành công' })
+  succeeded: number;
+
+  @ApiProperty({ description: 'Số entity xử lý thất bại' })
+  failed: number;
+
+  @ApiProperty({ description: 'Số entity bị bỏ qua' })
+  skipped: number;
+
+  @ApiProperty({ description: 'Phần trăm hoàn thành (0-100)' })
+  percentage: number;
+
+  @ApiPropertyOptional({ description: 'Thông báo lỗi (nếu có)' })
+  errorMessage?: string | null;
+
+  @ApiPropertyOptional({ description: 'Thời điểm bắt đầu' })
+  startedAt?: Date | null;
+
+  @ApiPropertyOptional({ description: 'Thời điểm kết thúc' })
+  finishedAt?: Date | null;
+}
+
+/**
+ * DTO trả về thông tin của một DLQ entry.
+ */
+export class DLQEntryDto {
+  @ApiProperty({ description: 'DLQ Entry ID' })
+  entry_id: string;
+
+  @ApiProperty({ description: 'Job ID', nullable: true })
+  job_id: string | null;
+
+  @ApiProperty({ description: 'Entity ID' })
+  entity_id: string;
+
+  @ApiProperty({ description: 'Kiểu thực thể' })
+  entity_type: string;
+
+  @ApiProperty({ description: 'Thông báo lỗi' })
+  error: string;
+
+  @ApiPropertyOptional({ description: 'Loại lỗi' })
+  error_type?: string | null;
+
+  @ApiProperty({ description: 'Số lần đã retry' })
+  retry_count: number;
+
+  @ApiProperty({ description: 'Đã được replay hay chưa' })
+  replayed: boolean;
+
+  @ApiPropertyOptional({ description: 'Dữ liệu gốc' })
+  original_data?: Record<string, any> | null;
+
+  @ApiProperty({ description: 'Thời điểm thất bại' })
+  failed_at: Date | null;
+
+  @ApiProperty({ description: 'Thời điểm được replay' })
+  replayed_at: Date | null;
+
+  @ApiProperty({ description: 'Thời điểm tạo' })
+  created_at: Date;
+}
+
+/**
+ * DTO để replay một DLQ entry.
+ */
+export class DLQReplayDto {
+  @ApiProperty({ description: 'DLQ Entry ID cần replay' })
+  @IsNotEmpty()
+  @IsUUID('4')
+  entry_id: string;
+}
+
+/**
+ * DTO để bulk replay nhiều DLQ entries cùng lúc.
+ */
+export class DLQBulkReplayDto {
+  @ApiProperty({ description: 'Danh sách DLQ Entry IDs cần replay' })
+  @IsArray()
+  @IsNotEmpty()
+  @IsUUID('4', { each: true })
+  entry_ids: string[];
+}

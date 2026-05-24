@@ -1,0 +1,181 @@
+/**
+ * Bulk Operations Controller - Sinh tự động bởi Midicoder CP44.
+ *
+ * Controller REST API cho bulk operations engine.
+ * Cung cấp các endpoint:
+ * - CRUD jobs (tạo, đọc, liệt kê)
+ * - Theo dõi tiến độ job
+ * - Quản lý Dead-Letter Queue (DLQ)
+ *
+ * CP44: Bulk Operations Engine
+ */
+
+import {
+  Controller,
+  Post,
+  Get,
+  Param,
+  Body,
+  Query,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
+import { BulkService } from './bulk.service';
+import {
+  CreateBulkJobDto,
+  BulkJobFilterDto,
+  UpdateBulkJobDto,
+  BulkProgressDto,
+  DLQEntryDto,
+  DLQReplayDto,
+} from './bulk.dto';
+
+@ApiTags('Bulk Operations')
+@ApiBearerAuth()
+@Controller('bulk')
+export class BulkController {
+  constructor(private readonly bulkService: BulkService) {}
+
+  /**
+   * Tạo một bulk job mới.
+   *
+   * @post /bulk/jobs
+   */
+  @Post('jobs')
+  @ApiOperation({ summary: 'Tạo bulk job mới' })
+  @ApiResponse({ status: 201, description: 'Job đã được tạo thành công', type: Object })
+  @ApiResponse({ status: 400, description: 'Dữ liệu đầu vào không hợp lệ' })
+  async create(@Body() dto: CreateBulkJobDto) {
+    return await this.bulkService.createJob(dto);
+  }
+
+  /**
+   * Lấy danh sách jobs với bộ lọc và phân trang.
+   *
+   * @get /bulk/jobs
+   */
+  @Get('jobs')
+  @ApiOperation({ summary: 'Lấy danh sách bulk jobs' })
+  @ApiQuery({ name: 'status', required: false, enum: ['PENDING', 'VALIDATING', 'RUNNING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT'] })
+  @ApiQuery({ name: 'entityType', required: false, type: String })
+  @ApiQuery({ name: 'tenantId', required: false, type: String })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'page_size', required: false, type: Number, example: 20 })
+  @ApiResponse({ status: 200, description: 'Danh sách jobs' })
+  async list(@Query() filter: BulkJobFilterDto) {
+    return await this.bulkService.listJobs(filter);
+  }
+
+  /**
+   * Lấy thông tin chi tiết của một job.
+   *
+   * @get /bulk/jobs/:id
+   */
+  @Get('jobs/:id')
+  @ApiOperation({ summary: 'Lấy thông tin chi tiết bulk job' })
+  @ApiParam({ name: 'id', description: 'Job UUID' })
+  @ApiResponse({ status: 200, description: 'Thông tin job' })
+  @ApiResponse({ status: 404, description: 'Job không tìm thấy' })
+  async get(@Param('id') id: string) {
+    return await this.bulkService.getJob(id);
+  }
+
+  /**
+   * Lấy tiến độ xử lý hiện tại của job.
+   *
+   * @get /bulk/jobs/:id/progress
+   */
+  @Get('jobs/:id/progress')
+  @ApiOperation({ summary: 'Lấy tiến độ xử lý của bulk job' })
+  @ApiParam({ name: 'id', description: 'Job UUID' })
+  @ApiResponse({ status: 200, description: 'Thông tin tiến độ', type: BulkProgressDto })
+  @ApiResponse({ status: 404, description: 'Job không tìm thấy' })
+  async progress(@Param('id') id: string): Promise<BulkProgressDto> {
+    return await this.bulkService.getProgress(id);
+  }
+
+  /**
+   * Cập nhật thông tin job (trạng thái, metadata).
+   *
+   * @patch /bulk/jobs/:id
+   */
+  @Post('jobs/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cập nhật thông tin bulk job' })
+  @ApiParam({ name: 'id', description: 'Job UUID' })
+  @ApiResponse({ status: 200, description: 'Job đã được cập nhật' })
+  @ApiResponse({ status: 400, description: 'Không thể cập nhật job' })
+  @ApiResponse({ status: 404, description: 'Job không tìm thấy' })
+  async update(@Param('id') id: string, @Body() dto: UpdateBulkJobDto) {
+    return await this.bulkService.updateJob(id, dto);
+  }
+
+  /**
+   * Hủy một job đang chạy hoặc đang chờ xử lý.
+   *
+   * @post /bulk/jobs/:id/cancel
+   */
+  @Post('jobs/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Hủy bulk job' })
+  @ApiParam({ name: 'id', description: 'Job UUID' })
+  @ApiResponse({ status: 200, description: 'Job đã bị hủy' })
+  @ApiResponse({ status: 400, description: 'Job không thể hủy' })
+  @ApiResponse({ status: 404, description: 'Job không tìm thấy' })
+  async cancel(@Param('id') id: string) {
+    return await this.bulkService.cancelJob(id);
+  }
+
+  /**
+   * Bắt đầu xử lý một job đang chờ.
+   *
+   * @post /bulk/jobs/:id/process
+   */
+  @Post('jobs/:id/process')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bắt đầu xử lý bulk job' })
+  @ApiParam({ name: 'id', description: 'Job UUID' })
+  @ApiResponse({ status: 200, description: 'Job đang được xử lý' })
+  @ApiResponse({ status: 409, description: 'Job không thể xử lý (trạng thái không phù hợp)' })
+  @ApiResponse({ status: 404, description: 'Job không tìm thấy' })
+  async process(@Param('id') id: string) {
+    await this.bulkService.processJob(id);
+    return { message: 'Job đang được xử lý', jobId: id };
+  }
+
+  /**
+   * Lấy danh sách DLQ entries, có thể lọc theo job_id.
+   *
+   * @get /bulk/dlq
+   */
+  @Get('dlq')
+  @ApiOperation({ summary: 'Lấy danh sách Dead-Letter Queue entries' })
+  @ApiQuery({ name: 'job_id', required: false, type: String, description: 'Lọc theo Job ID' })
+  @ApiResponse({ status: 200, description: 'Danh sách DLQ entries' })
+  async getDLQ(@Query('job_id') jobId?: string) {
+    return await this.bulkService.getDLQEntries(jobId);
+  }
+
+  /**
+   * Replay một DLQ entry - thử lại xử lý cho entity đã thất bại.
+   *
+   * @post /bulk/dlq/replay
+   */
+  @Post('dlq/replay')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Replay DLQ entry' })
+  @ApiResponse({ status: 200, description: 'DLQ entry đã được replay', type: Boolean })
+  @ApiResponse({ status: 400, description: 'DLQ entry không thể replay' })
+  @ApiResponse({ status: 404, description: 'DLQ entry không tìm thấy' })
+  async replayDLQ(@Body() dto: DLQReplayDto) {
+    return await this.bulkService.replayDLQEntry(dto.entry_id);
+  }
+}

@@ -1,0 +1,623 @@
+/**
+ * Bulk Dashboard Component - CP44 Bulk Operations Engine.
+ *
+ * Trang tổng quan bulk operations với các thẻ thống kê
+ * và bảng jobs gần đây. Tự động làm mới khi có jobs đang chạy.
+ */
+
+{% import 'macros.jinja2' as m %}
+{% set bulk_jobs = bulk_jobs|default(true) %}
+{% set job_count = job_count|default(100) %}
+{% set default_chunk_size = default_chunk_size|default(100) %}
+{% set default_concurrency = default_concurrency|default(5) %}
+{% set default_max_retries = default_max_retries|default(3) %}
+{% set default_retry_strategy = default_retry_strategy|default('exponential_backoff') %}
+{% set default_timeout = default_timeout|default(3600) %}
+{% set dlq_enabled = dlq_enabled|default(true) %}
+{% set use_events = use_events|default(true) %}
+{% set use_audit = use_audit|default(true) %}
+
+import { Component, ChangeDetectionStrategy, AfterViewInit, OnDestroy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatIconModule } from '@angular/material/icon';
+import { MatDivider } from '@angular/material/divider';
+import { MatTableModule } from '@angular/material/table';
+import { MatChipModule } from '@angular/material/chip';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { inject, signal, computed, effect } from '@angular/core';
+import { BulkStore } from './bulk.store';
+import { BulkJob, JobStatus, JOB_STATUS_LABELS } from './bulk-types';
+
+/** Dữ liệu cho thẻ thống kê */
+interface StatCard {
+  label: string;
+  value: number;
+  icon: string;
+  color: string;
+}
+
+/**
+ * BulkDashboardComponent - Trang tổng quan CP44.
+ *
+ * Hiển thị:
+ * - 4 thẻ thống kê (Tổng, Đang chạy, Hoàn thành, Thất bại)
+ * - Bảng danh sách jobs gần đây
+ * - Nút làm mới thủ công
+ *
+ * Tự động làm mới dữ liệu mỗi 5 giây khi có job đang chạy.
+ * Sử dụng Angular Signals và OnPush change detection.
+ */
+@Component({
+  selector: 'app-bulk-dashboard',
+  standalone: true,
+  imports: [
+    CommonModule,
+    MatButtonModule,
+    MatCardModule,
+    MatProgressBarModule,
+    MatIconModule,
+    MatDivider,
+    MatTableModule,
+    MatChipModule,
+    MatTooltipModule,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="bulk-dashboard">
+      <!-- Thanh tiêu đề -->
+      <div class="dashboard-header">
+        <div class="header-left">
+          <h1>Bulk Operations - Tổng Quan</h1>
+          <p class="subtitle">Quản lý và theo dõi các job xử lý hàng loạt</p>
+        </div>
+        <div class="header-right">
+          <span class="auto-refresh-label" *ngIf="autoRefresh()">
+            <mat-icon>sync</mat-icon> Tự động làm mới
+          </span>
+          <button
+            mat-icon-button
+            (click)="refresh()"
+            [disabled]="loading()"
+            matTooltip="Làm mới dữ liệu"
+            aria-label="Làm mới"
+          >
+            <mat-icon [style.transform]="loading() ? 'rotate(360deg)' : 'none'">refresh</mat-icon>
+          </button>
+        </div>
+      </div>
+
+      <!-- Thanh tiến độ loading -->
+      <mat-progress-bar
+        *ngIf="loading()"
+        mode="indeterminate"
+        class="loading-bar"
+      ></mat-progress-bar>
+
+      <!-- Thông báo lỗi -->
+      <div class="error-banner" *ngIf="error()">
+        <mat-icon>error</mat-icon>
+        <span>{{ error() }}</span>
+        <button mat-button (click)="clearError()">Đóng</button>
+      </div>
+
+      <!-- Hàng thẻ thống kê -->
+      <div class="stats-grid">
+        <mat-card
+          class="stat-card"
+          *ngFor="let stat of statCards()"
+          (click)="onStatClick(stat.label)"
+        >
+          <div class="stat-content">
+            <div class="stat-icon" [style.background]="stat.color">
+              <mat-icon>{{ stat.icon }}</mat-icon>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value">{{ stat.value }}</span>
+              <span class="stat-label">{{ stat.label }}</span>
+            </div>
+          </div>
+        </mat-card>
+      </div>
+
+      <mat-divider></mat-divider>
+
+      <!-- Bảng jobs gần đây -->
+      <div class="recent-jobs">
+        <div class="section-header">
+          <h2>Jobs Gần Đây</h2>
+          <button mat-stroked-button (click)="loadMoreJobs()">Xem tất cả</button>
+        </div>
+
+        <div class="table-container">
+          <table mat-table [dataSource]="recentJobs()" class="recent-jobs-table">
+            <!-- Cột Job ID -->
+            <ng-container matColumnDef="job_id">
+              <th mat-header-cell *matHeaderCellDef>Job ID</th>
+              <td mat-cell *matCellDef="let job">
+                <code>{{ job.job_id | slice:0:12 }}...</code>
+              </td>
+            </ng-container>
+
+            <!-- Cột Hành động -->
+            <ng-container matColumnDef="action">
+              <th mat-header-cell *matHeaderCellDef>Hành động</th>
+              <td mat-cell *matCellDef="let job">
+                <span class="action-label">{{ job.action | replaceUnderscores }}</span>
+              </td>
+            </ng-container>
+
+            <!-- Cột Entity Type -->
+            <ng-container matColumnDef="entity_type">
+              <th mat-header-cell *matHeaderCellDef>Loại thực thể</th>
+              <td mat-cell *matCellDef="let job">{{ job.entity_type }}</td>
+            </ng-container>
+
+            <!-- Cột Trạng thái -->
+            <ng-container matColumnDef="status">
+              <th mat-header-cell *matHeaderCellDef>Trạng thái</th>
+              <td mat-cell *matCellDef="let job">
+                <mat-chip
+                  [style.background]="getStatusColor(job.status)"
+                  [style.color]="'white'"
+                  disabled
+                >
+                  {{ getStatusLabel(job.status) }}
+                </mat-chip>
+              </td>
+            </ng-container>
+
+            <!-- Cột Tiến độ -->
+            <ng-container matColumnDef="progress">
+              <th mat-header-cell *matHeaderCellDef>Tiến độ</th>
+              <td mat-cell *matCellDef="let job">
+                <span class="progress-text">
+                  {{ job.processed }}/{{ job.entity_ids.length }}
+                </span>
+              </td>
+            </ng-container>
+
+            <!-- Cột Thời gian tạo -->
+            <ng-container matColumnDef="created_at">
+              <th mat-header-cell *matHeaderCellDef>Thời gian tạo</th>
+              <td mat-cell *matCellDef="let job">
+                {{ job.created_at | date:'dd/MM/yyyy HH:mm' }}
+              </td>
+            </ng-container>
+
+            <!-- Cột Hành động -->
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef>Thao tác</th>
+              <td mat-cell *matCellDef="let job">
+                <button
+                  mat-icon-button
+                  (click)="viewJobDetails(job.job_id)"
+                  matTooltip="Xem chi tiết"
+                  aria-label="Xem chi tiết"
+                >
+                  <mat-icon>visibility</mat-icon>
+                </button>
+              </td>
+            </ng-container>
+
+            <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+          </table>
+        </div>
+
+        <!-- Trạng thái rỗng -->
+        <div class="empty-state" *ngIf="!loading() && recentJobs().length === 0">
+          <mat-icon>assignment_turned_in</mat-icon>
+          <p>Chưa có job nào được tạo</p>
+          <button mat-raised-button color="primary">Tạo job mới</button>
+        </div>
+      </div>
+    </div>
+  `,
+  styles: `
+    .bulk-dashboard {
+      padding: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .dashboard-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 24px;
+    }
+
+    .header-left h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .header-left .subtitle {
+      margin: 4px 0 0;
+      color: #666;
+      font-size: 14px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .auto-refresh-label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: #4caf50;
+    }
+
+    .auto-refresh-label mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+      animation: spin 2s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-bar {
+      margin-bottom: 16px;
+    }
+
+    .error-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #ffebee;
+      color: #c62828;
+      border-radius: 4px;
+      margin-bottom: 16px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 960px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .stat-card {
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .stat-content {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 8px;
+    }
+
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stat-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    .recent-jobs {
+      margin-top: 24px;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .section-header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .table-container {
+      overflow-x: auto;
+    }
+
+    .recent-jobs-table {
+      width: 100%;
+    }
+
+    .recent-jobs-table td,
+    .recent-jobs-table th {
+      padding: 12px 16px;
+    }
+
+    td code {
+      font-family: monospace;
+      font-size: 12px;
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .action-label {
+      text-transform: capitalize;
+    }
+
+    .progress-text {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 64px 0;
+      color: #666;
+    }
+
+    .empty-state mat-icon {
+      font-size: 64px;
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+      color: #ccc;
+    }
+  `,
+})
+export class BulkDashboardComponent implements AfterViewInit, OnDestroy {
+  private readonly store = inject(BulkStore);
+
+  //Exposed signals từ store
+  readonly loading = this.store.loading;
+  readonly error = this.store.error;
+  readonly jobs = this.store.jobs;
+  readonly runningCount = this.store.runningCount;
+  readonly completedCount = this.store.completedCount;
+  readonly failedCount = this.store.failedCount;
+  readonly pendingCount = this.store.pendingCount;
+
+  // Các cột hiển thị trong bảng
+  readonly displayedColumns: string[] = [
+    'job_id',
+    'action',
+    'entity_type',
+    'status',
+    'progress',
+    'created_at',
+    'actions',
+  ];
+
+  // Số jobs hiển thị trong bảng gần đây
+  private readonly recentLimit = 10;
+
+  // Signal cho trạng thái tự động làm mới
+  private _autoRefresh = signal<boolean>(true);
+  autoRefresh = this._autoRefresh.asReadonly();
+
+  // Interval ID cho auto-refresh
+  private refreshInterval: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Computed: danh sách thẻ thống kê.
+   *
+   * Tính toán từ các signals của store để tự động cập nhật
+   * khi dữ liệu thay đổi.
+   */
+  statCards = computed<StatCard[]>(() => [
+    {
+      label: 'Tổng Jobs',
+      value: this.store.jobs().length,
+      icon: 'inventory_2',
+      color: '#e3f2fd',
+    },
+    {
+      label: 'Đang Chạy',
+      value: this.runningCount(),
+      icon: 'pending_actions',
+      color: '#fff3e0',
+    },
+    {
+      label: 'Hoàn Thành',
+      value: this.completedCount(),
+      icon: 'check_circle',
+      color: '#e8f5e9',
+    },
+    {
+      label: 'Thất Bại',
+      value: this.failedCount(),
+      icon: 'error',
+      color: '#ffebee',
+    },
+  ]);
+
+  /**
+   * Computed: jobs gần đây (sắp xếp theo thời gian tạo).
+   *
+   * Chỉ lấy recentLimit jobs mới nhất.
+   */
+  recentJobs = computed<BulkJob[]>(() => {
+    const jobs = this.store.jobs();
+    return [...jobs]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, this.recentLimit);
+  });
+
+  /**
+   * Effect: tự động bắt đầu/dừng auto-refresh dựa trên trạng thái jobs.
+   */
+  constructor() {
+    effect(() => {
+      const hasRunning = this.store.hasRunningJobs();
+      if (hasRunning && this._autoRefresh()) {
+        this.startAutoRefresh();
+      } else {
+        this.stopAutoRefresh();
+      }
+    });
+  }
+
+  /**
+   * Sau khi view khởi tạo: tải dữ liệu ban đầu.
+   */
+  ngAfterViewInit(): void {
+    this.loadStats();
+  }
+
+  /**
+   * Cleanup khi component bị huỷ.
+   * Dừng interval và disconnect SSE.
+   */
+  ngOnDestroy(): void {
+    this.stopAutoRefresh();
+    this.store.disconnectSSE();
+  }
+
+  /**
+   * Tải thống kê và danh sách jobs từ API.
+   */
+  loadStats(): void {
+    this.store.loadJobs({ page: 1, page_size: {{ job_count }} });
+  }
+
+  /**
+   * Làm mới dữ liệu thủ công.
+   */
+  refresh(): void {
+    this.loadStats();
+    // Nếu có job đang được chọn, cũng làm mới tiến độ
+    if (this.store.selectedJob()) {
+      this.store.refreshProgress();
+    }
+  }
+
+  /**
+   * Xóa thông báo lỗi hiện tại.
+   */
+  clearError(): void {
+    this.store['clearError']?.() ?? this.store.loadJobs();
+  }
+
+  /**
+   * Bắt đầu auto-refresh interval (5 giây).
+   */
+  private startAutoRefresh(): void {
+    this.stopAutoRefresh();
+    this.refreshInterval = setInterval(() => {
+      this.refresh();
+    }, 5000);
+  }
+
+  /**
+   * Dừng auto-refresh interval.
+   */
+  private stopAutoRefresh(): void {
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+      this.refreshInterval = null;
+    }
+  }
+
+  /**
+   * Xem chi tiết một job.
+   *
+   * @param jobId - Job ID cần xem
+   */
+  viewJobDetails(jobId: string): void {
+    this.store.selectJob(jobId);
+  }
+
+  /**
+   * Lấy nhãn trạng thái tiếng Việt.
+   *
+   * @param status - JobStatus enum
+   * @returns Label string
+   */
+  getStatusLabel(status: JobStatus): string {
+    return JOB_STATUS_LABELS[status] || status;
+  }
+
+  /**
+   * Lấy màu sắc cho badge trạng thái.
+   *
+   * @param status - JobStatus enum
+   * @returns Màu nền CSS
+   */
+  getStatusColor(status: JobStatus): string {
+    const colorMap: Record<JobStatus, string> = {
+      [JobStatus.PENDING]: '#9e9e9e',      // xám
+      [JobStatus.RUNNING]: '#2196f3',       // xanh dương
+      [JobStatus.COMPLETED]: '#4caf50',     // xanh lá
+      [JobStatus.FAILED]: '#f44336',        // đỏ
+      [JobStatus.CANCELLED]: '#9e9e9e',     // xám
+      [JobStatus.TIMEOUT]: '#ff9800',       // cam
+    };
+    return colorMap[status] || '#9e9e9e';
+  }
+
+  /**
+   * Xử lý click vào thẻ thống kê.
+   *
+   * @param label - Label của thẻ được click
+   */
+  onStatClick(label: string): void {
+    const statusMap: Record<string, JobStatus | null> = {
+      'Tổng Jobs': null,
+      'Đang Chạy': JobStatus.RUNNING,
+      'Hoàn Thành': JobStatus.COMPLETED,
+      'Thất Bại': JobStatus.FAILED,
+    };
+    const status = statusMap[label];
+    if (status) {
+      this.store.loadJobs({ status, page: 1, page_size: {{ job_count }} });
+    } else {
+      this.loadStats();
+    }
+  }
+
+  /**
+   * Tải thêm jobs (chuyển đến trang tiếp theo).
+   */
+  loadMoreJobs(): void {
+    const currentPage = this.store.currentPage();
+    this.store.goToPage(currentPage + 1);
+  }
+}

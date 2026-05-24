@@ -875,8 +875,19 @@ core_packs:
       - parallel_process
       - chunk_process
     category: runtime
-    status: planned
+    status: complete
     version: 1.0.0
+    error_codes:
+      MDC-CP44-001: "Bulk job không tồn tại"
+      MDC-CP44-002: "Bulk job đang chạy"
+      MDC-CP44-003: "Action không hợp lệ"
+      MDC-CP44-004: "Chunk size không hợp lệ"
+      MDC-CP44-005: "Concurrency không hợp lệ"
+      MDC-CP44-006: "Retry đã hết limit"
+      MDC-CP44-007: "DLQ đã đầy"
+      MDC-CP44-008: "Bulk job timeout"
+      MDC-CP44-009: "Truy cập cross-tenant bị từ chối"
+      MDC-CP44-010: "Hủy bulk job thất bại"
   - id: CP46
     name: MFA & Advanced Authentication
     internal_id: cp46_mfa

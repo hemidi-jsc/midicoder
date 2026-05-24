@@ -1,0 +1,50 @@
+/**
+ * Bulk Operations Module - Sinh tự động bởi Midicoder CP44.
+ *
+ * Module NestJS cho bulk operations engine.
+ * Đóng gói toàn bộ components:
+ * - BulkController: REST API
+ * - BulkService: Logic nghiệp vụ
+ * - BulkScheduler: Các tác vụ định kỳ
+ * - BulkGateway: WebSocket cho real-time progress
+ *
+ * CP44: Bulk Operations Engine
+ */
+
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
+import { BulkJobEntity, BulkChunkEntity, BulkResultEntity, DLQEntryEntity } from './bulk.entity';
+import { BulkController } from './bulk.controller';
+import { BulkService } from './bulk.service';
+import { BulkScheduler } from './bulk.scheduler';
+import { BulkGateway } from './bulk.gateway';
+
+@Module({
+  imports: [
+    // Đăng ký các TypeORM entities
+    TypeOrmModule.forFeature([
+      BulkJobEntity,
+      BulkChunkEntity,
+      BulkResultEntity,
+      DLQEntryEntity,
+    ]),
+    // Module events cho event emitter
+    {% if use_events %}
+    {
+      provide: 'EventsModule',
+      useFactory: () => {
+        // EventsModule được import từ @nestjs/event-emitter
+        // Cần đảm bảo EventsModule đã được đăng ký ở root module
+        return {};
+      },
+    },
+    {% endif %}
+    // Module schedule cho cron jobs
+    ScheduleModule.forRoot(),
+  ],
+  controllers: [BulkController],
+  providers: [BulkService, BulkScheduler, BulkGateway],
+  exports: [BulkService],
+})
+export class BulkModule {}

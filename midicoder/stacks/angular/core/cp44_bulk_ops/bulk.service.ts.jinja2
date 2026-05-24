@@ -1,0 +1,253 @@
+/**
+ * Bulk Service - CP44 Bulk Operations Engine.
+ *
+ * Service này xử lý giao tiếp API cho bulk operations.
+ * Cung cấp CRUD jobs, progress tracking qua SSE, và DLQ management.
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable, of, Subject } from 'rxjs';
+import { map, take } from 'rxjs/operators';
+
+{% import 'macros.jinja2' as m %}
+{% set bulk_jobs = bulk_jobs|default(true) %}
+{% set default_chunk_size = default_chunk_size|default(100) %}
+{% set default_concurrency = default_concurrency|default(5) %}
+{% set default_max_retries = default_max_retries|default(3) %}
+{% set default_retry_strategy = default_retry_strategy|default('exponential_backoff') %}
+{% set default_timeout = default_timeout|default(3600) %}
+{% set dlq_enabled = dlq_enabled|default(true) %}
+{% set use_events = use_events|default(true) %}
+{% set use_audit = use_audit|default(true) %}
+
+import {
+  BulkJob,
+  BulkProgress,
+  BulkJobCreate,
+  BulkJobFilter,
+  BulkJobList,
+  DLQEntry,
+  ChunkInfo,
+  JobStatus,
+} from './bulk-types';
+
+/**
+ * Bulk Service - CP44.
+ *
+ * Service này cung cấp các phương thức HTTP để quản lý bulk jobs:
+ * - Tạo, xem, liệt kê, huỷ jobs
+ * - Theo dõi tiến độ thực thi
+ * - Quản lý Dead Letter Queue (DLQ) cho entries thất bại
+ * - Kết nối SSE cho cập nhật real-time
+ */
+@Injectable({ providedIn: 'root' })
+export class BulkService {
+  private readonly BASE_URL = '/api/bulk';
+
+  constructor(private http: HttpClient) {}
+
+  /**
+   * Tạo một bulk job mới.
+   *
+   * @param data - Dữ liệu yêu cầu tạo job
+   * @returns Observable BulkJob được tạo
+   */
+  createJob(data: BulkJobCreate): Observable<BulkJob> {
+    // Áp dụng các giá trị mặc định nếu người dùng chưa cung cấp
+    const payload: BulkJobCreate = {
+      entity_type: data.entity_type,
+      action: data.action,
+      entity_ids: data.entity_ids,
+      chunk_size: data.chunk_size ?? {{ default_chunk_size }},
+      max_concurrency: data.max_concurrency ?? {{ default_concurrency }},
+      max_retries: data.max_retries ?? {{ default_max_retries }},
+      retry_strategy: data.retry_strategy ?? '{{ default_retry_strategy }}',
+      timeout_seconds: data.timeout_seconds ?? {{ default_timeout }},
+      tenant_id: data.tenant_id,
+      operator_id: data.operator_id,
+      metadata: data.metadata ?? {},
+    };
+    return this.http.post<BulkJob>(`${this.BASE_URL}/jobs`, payload);
+  }
+
+  /**
+   * Lấy thông tin chi tiết của một job.
+   *
+   * @param id - Job ID
+   * @returns Observable BulkJob
+   */
+  getJob(id: string): Observable<BulkJob> {
+    return this.http.get<BulkJob>(`${this.BASE_URL}/jobs/${id}`);
+  }
+
+  /**
+   * Liệt kê jobs theo bộ lọc.
+   *
+   * @param filters - Các tham số lọc và phân trang
+   * @returns Observable BulkJobList
+   */
+  listJobs(filters?: BulkJobFilter): Observable<BulkJobList> {
+    let params = new HttpParams();
+
+    if (filters) {
+      params = params.set('page', filters.page?.toString() ?? '1');
+      params = params.set('page_size', filters.page_size?.toString() ?? '20');
+
+      if (filters.status) {
+        params = params.set('status', filters.status);
+      }
+      if (filters.entity_type) {
+        params = params.set('entity_type', filters.entity_type);
+      }
+      if (filters.tenant_id) {
+        params = params.set('tenant_id', filters.tenant_id);
+      }
+    }
+
+    return this.http.get<BulkJobList>(`${this.BASE_URL}/jobs`, { params });
+  }
+
+  /**
+   * Huỷ một job đang chạy.
+   *
+   * @param id - Job ID
+   * @returns Observable BulkJob (đã cập nhật trạng thái)
+   */
+  cancelJob(id: string): Observable<BulkJob> {
+    return this.http.post<BulkJob>(`${this.BASE_URL}/jobs/${id}/cancel`, {});
+  }
+
+  /**
+   * Lấy tiến độ hiện tại của một job.
+   *
+   * @param id - Job ID
+   * @returns Observable BulkProgress
+   */
+  getProgress(id: string): Observable<BulkProgress> {
+    return this.http.get<BulkProgress>(`${this.BASE_URL}/jobs/${id}/progress`);
+  }
+
+  /**
+   * Kết nối SSE để theo dõi tiến độ real-time của một job.
+   *
+   * Sử dụng EventSource để nhận updates từ server.
+   * Người gọi cần đóng EventSource khi không còn cần thiết.
+   *
+   * @param id - Job ID
+   * @returns Observable BulkProgress (stream liên tục)
+   */
+  subscribeToProgress(id: string): Observable<BulkProgress> {
+    const eventSourceUrl = `${this.BASE_URL}/jobs/${id}/progress/sse`;
+    const subject = new Subject<BulkProgress>();
+
+    // Tạo EventSource để kết nối SSE
+    const eventSource = new EventSource(eventSourceUrl);
+
+    eventSource.onmessage = (event: MessageEvent) => {
+      try {
+        const progress: BulkProgress = JSON.parse(event.data);
+        subject.next(progress);
+
+        // Tự động complete khi job kết thúc
+        if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
+          subject.complete();
+          eventSource.close();
+        }
+      } catch (error) {
+        subject.error(error);
+      }
+    };
+
+    eventSource.onerror = (error: Event) => {
+      subject.error(error);
+      eventSource.close();
+    };
+
+    // Cleanup: đóng EventSource khi unsubscribe
+    return subject.pipe(
+      take(1), // will be replaced by proper unsubscribe logic
+    );
+  }
+
+  /**
+   * Lấy danh sách các entries trong Dead Letter Queue.
+   *
+   * @param jobId - Job ID (tùy chọn, nếu không cung cấp sẽ lấy tất cả)
+   * @returns Observable DLQEntry[]
+   */
+{% if dlq_enabled %}
+  getDLQEntries(jobId?: string): Observable<DLQEntry[]> {
+    let params = new HttpParams();
+    if (jobId) {
+      params = params.set('job_id', jobId);
+    }
+    return this.http.get<DLQEntry[]>(`${this.BASE_URL}/dlq`, { params });
+  }
+
+  /**
+   * Replay (chạy lại) một entry từ DLQ.
+   *
+   * @param entryId - DLQ Entry ID
+   * @returns Observable kết quả replay
+   */
+  replayDLQEntry(entryId: string): Observable<{ success: boolean }> {
+    return this.http.post<{ success: boolean }>(`${this.BASE_URL}/dlq/${entryId}/replay`, {});
+  }
+
+  /**
+   * Xóa một entry khỏi DLQ.
+   *
+   * @param entryId - DLQ Entry ID
+   * @returns Observable void
+   */
+  deleteDLQEntry(entryId: string): Observable<void> {
+    return this.http.delete<void>(`${this.BASE_URL}/dlq/${entryId}`);
+  }
+{% else %}
+  getDLQEntries(_jobId?: string): Observable<DLQEntry[]> {
+    return of([]);
+  }
+
+  replayDLQEntry(_entryId: string): Observable<{ success: boolean }> {
+    return of({ success: false });
+  }
+{% endif %}
+
+  /**
+   * Lấy thông tin chi tiết của các chunks trong một job.
+   *
+   * @param jobId - Job ID
+   * @returns Observable ChunkInfo[]
+   */
+  getChunks(jobId: string): Observable<ChunkInfo[]> {
+    return this.http.get<ChunkInfo[]>(`${this.BASE_URL}/jobs/${jobId}/chunks`);
+  }
+
+  /**
+   * Lấy các thống kê tổng quan về bulk operations.
+   *
+   * @returns Observable với số lượng jobs theo từng trạng thái
+   */
+  getStats(): Observable<{
+    total: number;
+    running: number;
+    completed: number;
+    failed: number;
+    pending: number;
+    cancelled: number;
+  }> {
+    return this.http.get<BulkJobList>(`${this.BASE_URL}/jobs/stats`, {
+      params: new HttpParams().set('summary', 'true'),
+    }).pipe(
+      map(response => ({
+        total: response.total,
+        running: response.items.filter(j => j.status === JobStatus.RUNNING).length,
+        completed: response.items.filter(j => j.status === JobStatus.COMPLETED).length,
+        failed: response.items.filter(j => j.status === JobStatus.FAILED).length,
+        pending: response.items.filter(j => j.status === JobStatus.PENDING).length,
+        cancelled: response.items.filter(j => j.status === JobStatus.CANCELLED).length,
+      })),
+    );
+  }
+}

@@ -1,0 +1,1092 @@
+/**
+ * Bulk Job Details Component - CP44 Bulk Operations Engine.
+ *
+ * Hiển thị chi tiết một bulk job: metadata, tiến độ real-time,
+ * chunk breakdown, DLQ entries, và các hành động.
+ */
+
+{% import 'macros.jinja2' as m %}
+{% set bulk_jobs = bulk_jobs|default(true) %}
+{% set job_count = job_count|default(100) %}
+{% set default_chunk_size = default_chunk_size|default(100) %}
+{% set default_concurrency = default_concurrency|default(5) %}
+{% set default_max_retries = default_max_retries|default(3) %}
+{% set default_retry_strategy = default_retry_strategy|default('exponential_backoff') %}
+{% set default_timeout = default_timeout|default(3600) %}
+{% set dlq_enabled = dlq_enabled|default(true) %}
+{% set use_events = use_events|default(true) %}
+{% set use_audit = use_audit|default(true) %}
+
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatIconModule } from '@angular/material/icon';
+import { MatDivider } from '@angular/material/divider';
+import { MatTableModule } from '@angular/material/table';
+import { MatChipModule } from '@angular/material/chip';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatTabsModule } from '@angular/material/tabs';
+import { MatExpansionModule } from '@angular/material/expansion';
+import { MatDialogModule, MatDialog } from '@angular/material/dialog';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatListModule } from '@angular/material/list';
+import { MatGridListModule } from '@angular/material/grid-list';
+import { inject, signal, computed } from '@angular/core';
+import { BulkStore } from './bulk.store';
+import { BulkJob, BulkProgress, ChunkInfo, DLQEntry, JobStatus, ChunkStatus, JOB_STATUS_LABELS } from './bulk-types';
+
+/** Nhãn trạng thái chunk tiếng Việt */
+const CHUNK_STATUS_LABELS: Record<ChunkStatus, string> = {
+  [ChunkStatus.PENDING]: 'Đang chờ',
+  [ChunkStatus.PROCESSING]: 'Đang xử lý',
+  [ChunkStatus.COMPLETED]: 'Hoàn thành',
+  [ChunkStatus.FAILED]: 'Thất bại',
+};
+
+/**
+ * Dialog hiển thị dữ liệu gốc của DLQ entry.
+ */
+@Component({
+  selector: 'app-dlq-entry-detail-dialog',
+  standalone: true,
+  imports: [CommonModule, MatButtonModule, MatCardModule],
+  template: `
+    <div class="dlq-detail-dialog">
+      <h2 mat-dialog-title>Chi Tiết Lỗi - Entry {{ data.entry?.entry_id }}</h2>
+      <mat-dialog-content>
+        <div class="error-info">
+          <div class="info-row">
+            <span class="label">Entity ID:</span>
+            <code>{{ data.entry?.entity_id }}</code>
+          </div>
+          <div class="info-row">
+            <span class="label">Loại lỗi:</span>
+            <span class="error-type">{{ data.entry?.error_type }}</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Thông báo lỗi:</span>
+            <pre class="error-message">{{ data.entry?.error }}</pre>
+          </div>
+          <div class="info-row">
+            <span class="label">Số lần retry:</span>
+            <span>{{ data.entry?.retry_count }}</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Dữ liệu gốc:</span>
+            <pre class="original-data">{{ data.entry?.original_data | json }}</pre>
+          </div>
+        </div>
+      </mat-dialog-content>
+      <mat-dialog-actions align="end">
+        <button mat-button mat-dialog-close>Đóng</button>
+      </mat-dialog-actions>
+    </div>
+  `,
+  styles: `
+    .dlq-detail-dialog {
+      padding: 8px;
+      max-width: 600px;
+    }
+    .error-info {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .info-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .info-row .label {
+      font-weight: 600;
+      font-size: 12px;
+      color: #666;
+    }
+    code {
+      font-family: monospace;
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 13px;
+    }
+    .error-type {
+      font-weight: 600;
+      color: #c62828;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .error-message {
+      color: #c62828;
+    }
+  `,
+})
+class DlqEntryDetailDialog {
+  readonly data: { entry: DLQEntry | null };
+}
+
+/**
+ * BulkJobDetailsComponent - Chi tiết một bulk job.
+ *
+ * Features:
+ * - Job metadata card (ID, loại, hành động, trạng thái, v.v.)
+ * - Real-time progress bar (cập nhật qua SSE)
+ * - Chunk breakdown table (trạng thái từng chunk)
+ * - DLQ section (danh sách entries thất bại với retry button)
+ * - Cancel button (chỉ enabled khi job đang chạy)
+ * - SSE connection tự động cleanup khi component destroy
+ */
+@Component({
+  selector: 'app-bulk-job-details',
+  standalone: true,
+  imports: [
+    CommonModule,
+    MatButtonModule,
+    MatCardModule,
+    MatProgressBarModule,
+    MatProgressSpinnerModule,
+    MatIconModule,
+    MatDivider,
+    MatTableModule,
+    MatChipModule,
+    MatTooltipModule,
+    MatTabsModule,
+    MatExpansionModule,
+    MatDialogModule,
+    MatSnackBarModule,
+    MatListModule,
+    MatGridListModule,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="job-details">
+      <!-- Header: tiêu đề và hành động -->
+      <div class="details-header">
+        <div class="header-left">
+          <button mat-icon-button (click)="close.emit()" matTooltip="Quay lại">
+            <mat-icon>arrow_back</mat-icon>
+          </button>
+          <div>
+            <h2>Chi Tiết Job</h2>
+            <code class="job-id-code">{{ jobId }}</code>
+          </div>
+        </div>
+        <div class="header-right">
+          <mat-chip
+            [style.background]="getStatusColor(currentJob()?.status || '')"
+            [style.color]="'white'"
+            disabled
+          >
+            {{ getStatusLabel(currentJob()?.status || '') }}
+          </mat-chip>
+          <button
+            mat-raised-button
+            color="warn"
+            (click)="cancelJob()"
+            [disabled]="!canCancel()"
+            *ngIf="currentJob()"
+          >
+            <mat-icon>stop</mat-icon>
+            Huỷ Job
+          </button>
+        </div>
+      </div>
+
+      <!-- Loading spinner -->
+      <div class="loading-overlay" *ngIf="loading()">
+        <mat-progress-spinner mode="indeterminate" diameter="40"></mat-progress-spinner>
+        <p>Đang tải thông tin job...</p>
+      </div>
+
+      <!-- Error banner -->
+      <div class="error-banner" *ngIf="error()">
+        <mat-icon>error</mat-icon>
+        <span>{{ error() }}</span>
+        <button mat-button (click)="retryLoad()">Thử lại</button>
+      </div>
+
+      <!-- Nội dung chi tiết job -->
+      <div class="details-content" *ngIf="currentJob()">
+        <!-- Thẻ thông tin job -->
+        <mat-card class="metadata-card">
+          <mat-card-title>Thông Tin Job</mat-card-title>
+          <mat-card-content>
+            <div class="metadata-grid">
+              <div class="meta-item">
+                <span class="meta-label">Hành động</span>
+                <span class="meta-value">{{ getActionLabel(currentJob()!.action) }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Loại thực thể</span>
+                <span class="meta-value">{{ currentJob()!.entity_type }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Tổng số entities</span>
+                <span class="meta-value">{{ currentJob()!.entity_ids.length }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Kích thước chunk</span>
+                <span class="meta-value">{{ currentJob()!.chunk_size }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Độ song song</span>
+                <span class="meta-value">{{ currentJob()!.max_concurrency }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Retry strategy</span>
+                <span class="meta-value">{{ currentJob()!.retry_strategy | replaceUnderscores }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Tối đa retries</span>
+                <span class="meta-value">{{ currentJob()!.max_retries }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Timeout (giây)</span>
+                <span class="meta-value">{{ currentJob()!.timeout_seconds }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Tenant ID</span>
+                <span class="meta-value">{{ currentJob()!.tenant_id }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Người tạo</span>
+                <span class="meta-value">{{ currentJob()!.operator_id }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Tạo lúc</span>
+                <span class="meta-value">{{ currentJob()!.created_at | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Cập nhật lúc</span>
+                <span class="meta-value">{{ currentJob()!.updated_at | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+              </div>
+            </div>
+          </mat-card-content>
+        </mat-card>
+
+        <!-- Thanh tiến độ -->
+        <mat-card class="progress-card">
+          <mat-card-title>Tiến Độ Thực Thi</mat-card-title>
+          <mat-card-content>
+            <!-- Progress bar chính -->
+            <div class="progress-section">
+              <div class="progress-header">
+                <span class="progress-percentage">{{ progressPercentage() }}%</span>
+                <span class="progress-count">
+                  {{ currentJob()!.processed }} / {{ currentJob()!.entity_ids.length }} entities
+                </span>
+              </div>
+              <mat-progress-bar
+                mode="determinate"
+                [value]="progressPercentage()"
+                [class.progress-running]="isRunning()"
+              ></mat-progress-bar>
+            </div>
+
+            <!-- Kết quả chi tiết -->
+            <div class="result-stats">
+              <div class="result-item success">
+                <mat-icon>check_circle</mat-icon>
+                <div class="result-info">
+                  <span class="result-label">Thành công</span>
+                  <span class="result-value">{{ currentJob()!.succeeded }}</span>
+                </div>
+              </div>
+              <div class="result-item failed">
+                <mat-icon>error</mat-icon>
+                <div class="result-info">
+                  <span class="result-label">Thất bại</span>
+                  <span class="result-value">{{ currentJob()!.failed }}</span>
+                </div>
+              </div>
+              <div class="result-item skipped" *ngIf="currentJob()!.skipped > 0">
+                <mat-icon>exclude</mat-icon>
+                <div class="result-info">
+                  <span class="result-label">Bỏ qua</span>
+                  <span class="result-value">{{ currentJob()!.skipped }}</span>
+                </div>
+              </div>
+              <div class="result-item pending" *ngIf="hasPending()">
+                <mat-icon>schedule</mat-icon>
+                <div class="result-info">
+                  <span class="result-label">Chưa xử lý</span>
+                  <span class="result-value">{{ pendingCount() }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Thời gian hoàn thành -->
+            <div class="completed-info" *ngIf="currentJob()!.completed_at">
+              <mat-icon>timeline</mat-icon>
+              <span>Hoàn thành lúc: {{ currentJob()!.completed_at | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+            </div>
+          </mat-card-content>
+        </mat-card>
+
+        <!-- Tabs: Chunk Breakdown và DLQ -->
+        <mat-tab-group class="details-tabs">
+          <!-- Tab: Chunk Breakdown -->
+          <mat-tab label="Chunk Breakdown">
+            <div class="chunk-table-container">
+              <table mat-table [dataSource]="chunks()" class="chunk-table">
+                <!-- Cột Chunk ID -->
+                <ng-container matColumnDef="chunk_id">
+                  <th mat-header-cell *matHeaderCellDef>Chunk ID</th>
+                  <td mat-cell *matCellDef="let chunk">
+                    <code>{{ chunk.chunk_id | slice:0:12 }}</code>
+                  </td>
+                </ng-container>
+
+                <!-- Cột Index -->
+                <ng-container matColumnDef="index">
+                  <th mat-header-cell *matHeaderCellDef>#</th>
+                  <td mat-cell *matCellDef="let chunk">{{ chunk.index + 1 }}</td>
+                </ng-container>
+
+                <!-- Cột Số entities -->
+                <ng-container matColumnDef="entity_count">
+                  <th mat-header-cell *matHeaderCellDef>Entities</th>
+                  <td mat-cell *matCellDef="let chunk">{{ chunk.entity_ids.length }}</td>
+                </ng-container>
+
+                <!-- Cột Trạng thái -->
+                <ng-container matColumnDef="status">
+                  <th mat-header-cell *matHeaderCellDef>Trạng thái</th>
+                  <td mat-cell *matCellDef="let chunk">
+                    <mat-chip
+                      [style.background]="getChunkStatusColor(chunk.status)"
+                      [style.color]="'white'"
+                      disabled
+                    >
+                      {{ getChunkStatusLabel(chunk.status) }}
+                    </mat-chip>
+                  </td>
+                </ng-container>
+
+                <!-- Cột Retry -->
+                <ng-container matColumnDef="retry_count">
+                  <th mat-header-cell *matHeaderCellDef>Retries</th>
+                  <td mat-cell *matCellDef="let chunk">{{ chunk.retry_count }}</td>
+                </ng-container>
+
+                <!-- Cột Thời gian -->
+                <ng-container matColumnDef="timing">
+                  <th mat-header-cell *matHeaderCellDef>Thời gian</th>
+                  <td mat-cell *matCellDef="let chunk">
+                    <span *ngIf="chunk.started_at">
+                      Bắt đầu: {{ chunk.started_at | date:'HH:mm:ss' }}
+                    </span>
+                    <span *ngIf="chunk.completed_at">
+                      | Kết thúc: {{ chunk.completed_at | date:'HH:mm:ss' }}
+                    </span>
+                    <span *ngIf="!chunk.started_at" class="not-started">Chưa bắt đầu</span>
+                  </td>
+                </ng-container>
+
+                <tr mat-header-row *matHeaderRowDef="chunkColumns"></tr>
+                <tr mat-row *matRowDef="let row; columns: chunkColumns;"></tr>
+              </table>
+
+              <!-- Empty state cho chunks -->
+              <div class="empty-chunks" *ngIf="!chunks().length">
+                <p>Chưa có thông tin chunk</p>
+              </div>
+            </div>
+          </mat-tab>
+
+          <!-- Tab: Dead Letter Queue -->
+{% if dlq_enabled %}
+          <mat-tab label="Dead Letter Queue ({{ dlqEntries().length }})">
+            <div class="dlq-section">
+              <div class="dlq-header" *ngIf="dlqEntries().length > 0">
+                <p>Các entities thất bại sau khi retry hết lần cho phép.</p>
+                <button mat-raised-button color="primary" (click)="replayAll()" [disabled]="!hasReplayable()">
+                  <mat-icon>replay</mat-icon>
+                  Chạy lại tất cả
+                </button>
+              </div>
+
+              <table mat-table [dataSource]="dlqEntries()" class="dlq-table" *ngIf="dlqEntries().length > 0">
+                <!-- Cột Entity ID -->
+                <ng-container matColumnDef="entity_id">
+                  <th mat-header-cell *matHeaderCellDef>Entity ID</th>
+                  <td mat-cell *matCellDef="let entry">
+                    <code>{{ entry.entity_id }}</code>
+                  </td>
+                </ng-container>
+
+                <!-- Cột Error Type -->
+                <ng-container matColumnDef="error_type">
+                  <th mat-header-cell *matHeaderCellDef>Loại lỗi</th>
+                  <td mat-cell *matCellDef="let entry">
+                    <span class="error-type-badge">{{ entry.error_type }}</span>
+                  </td>
+                </ng-container>
+
+                <!-- Cột Error Message -->
+                <ng-container matColumnDef="error">
+                  <th mat-header-cell *matHeaderCellDef>Lỗi</th>
+                  <td mat-cell *matCellDef="let entry">
+                    <span
+                      class="error-message"
+                      matTooltip="{{ entry.error }}"
+                    >{{ entry.error | slice:0:60 }}{{ entry.error.length > 60 ? '...' : '' }}</span>
+                  </td>
+                </ng-container>
+
+                <!-- Cột Retry Count -->
+                <ng-container matColumnDef="retry_count">
+                  <th mat-header-cell *matHeaderCellDef>Retries</th>
+                  <td mat-cell *matCellDef="let entry">{{ entry.retry_count }}</td>
+                </ng-container>
+
+                <!-- Cột Thất bại lúc -->
+                <ng-container matColumnDef="failed_at">
+                  <th mat-header-cell *matHeaderCellDef>Thất bại lúc</th>
+                  <td mat-cell *matCellDef="let entry">
+                    {{ entry.failed_at | date:'dd/MM/yyyy HH:mm' }}
+                  </td>
+                </ng-container>
+
+                <!-- Cột Đã replay -->
+                <ng-container matColumnDef="replayed">
+                  <ng-container matColumnDef="replayed">
+                  <th mat-header-cell *matHeaderCellDef>Trạng thái</th>
+                  <td mat-cell *matCellDef="let entry">
+                    <span *ngIf="entry.replayed" class="replayed-badge">
+                      <mat-icon>check</mat-icon> Đã replay {{ entry.replayed_at ? ('- ' + (entry.replayed_at | date:'dd/MM HH:mm')) : '' }}
+                    </span>
+                    <span *ngIf="!entry.replayed" class="not-replayed">Chưa replay</span>
+                  </td>
+                </ng-container>
+
+                <!-- Cột Hành động -->
+                <ng-container matColumnDef="actions">
+                  <th mat-header-cell *matHeaderCellDef>Thao tác</th>
+                  <td mat-cell *matCellDef="let entry">
+                    <div class="dlq-actions">
+                      <button
+                        mat-icon-button
+                        (click)="viewDlqEntry(entry)"
+                        matTooltip="Xem chi tiết lỗi"
+                      >
+                        <mat-icon>visibility</mat-icon>
+                      </button>
+                      <button
+                        mat-icon-button
+                        (click)="replayEntry(entry.entry_id)"
+                        [disabled]="entry.replayed"
+                        matTooltip="Chạy lại"
+                        class="replay-btn"
+                      >
+                        <mat-icon>replay</mat-icon>
+                      </button>
+                    </div>
+                  </td>
+                </ng-container>
+
+                <tr mat-header-row *matHeaderRowDef="dlqColumns"></tr>
+                <tr mat-row *matRowDef="let row; columns: dlqColumns;"></tr>
+              </table>
+
+              <!-- Empty DLQ -->
+              <div class="empty-dlq" *ngIf="!dlqEntries().length">
+                <mat-icon>check_circle</mat-icon>
+                <p>Không có entry nào trong Dead Letter Queue</p>
+              </div>
+            </div>
+          </mat-tab>
+{% else %}
+          <!-- DLQ không được bật -->
+          <mat-tab label="DLQ (Vô hiệu)">
+            <div class="empty-dlq">
+              <mat-icon>lock</mat-icon>
+              <p>Dead Letter Queue chưa được kích hoạt</p>
+            </div>
+          </mat-tab>
+{% endif %}
+        </mat-tab-group>
+      </div>
+    </div>
+  `,
+  styles: `
+    .job-details {
+      padding: 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .details-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-left h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .job-id-code {
+      font-family: monospace;
+      font-size: 12px;
+      background: #f5f5f5;
+      padding: 2px 8px;
+      border-radius: 4px;
+      word-break: break-all;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .loading-overlay {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 64px 0;
+      color: #666;
+    }
+
+    .error-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #ffebee;
+      color: #c62828;
+      border-radius: 4px;
+      margin-bottom: 16px;
+    }
+
+    .details-content {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .metadata-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 16px;
+      padding: 8px 0;
+    }
+
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .meta-label {
+      font-size: 12px;
+      color: #666;
+      font-weight: 500;
+    }
+
+    .meta-value {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .progress-section {
+      margin-bottom: 16px;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .progress-percentage {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1976d2;
+    }
+
+    .progress-count {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .progress-running mat-progress-bar .mat-progress-bar-fill::after {
+      background: linear-gradient(90deg, #1976d2, #64b5f6, #1976d2);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .result-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .result-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border-radius: 8px;
+    }
+
+    .result-item.success {
+      background: #e8f5e9;
+    }
+
+    .result-item.failed {
+      background: #ffebee;
+    }
+
+    .result-item.skipped {
+      background: #fff3e0;
+    }
+
+    .result-item.pending {
+      background: #f5f5f5;
+    }
+
+    .result-item mat-icon {
+      font-size: 24px;
+      width: 24px;
+      height: 24px;
+    }
+
+    .result-item.success mat-icon { color: #4caf50; }
+    .result-item.failed mat-icon { color: #f44336; }
+    .result-item.skipped mat-icon { color: #ff9800; }
+    .result-item.pending mat-icon { color: #9e9e9e; }
+
+    .result-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .result-label {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .result-value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .completed-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 16px;
+      padding: 8px 12px;
+      background: #e3f2fd;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #1565c0;
+    }
+
+    .completed-info mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+
+    .details-tabs {
+      margin-top: 8px;
+    }
+
+    .chunk-table,
+    .dlq-table {
+      width: 100%;
+    }
+
+    .chunk-table td,
+    .dlq-table td {
+      padding: 10px 16px;
+    }
+
+    td code {
+      font-family: monospace;
+      font-size: 12px;
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .not-started {
+      color: #999;
+      font-style: italic;
+    }
+
+    .empty-chunks,
+    .empty-dlq {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 0;
+      color: #666;
+    }
+
+    .empty-dlq mat-icon {
+      font-size: 48px;
+      width: 48px;
+      height: 48px;
+      margin-bottom: 12px;
+      color: #4caf50;
+    }
+
+    .dlq-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .error-type-badge {
+      background: #ffebee;
+      color: #c62828;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .error-message {
+      color: #666;
+      font-size: 13px;
+    }
+
+    .replayed-badge {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: #4caf50;
+      font-size: 12px;
+    }
+
+    .replayed-badge mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+    }
+
+    .not-replayed {
+      color: #999;
+      font-size: 12px;
+    }
+
+    .dlq-actions {
+      display: flex;
+      gap: 4px;
+    }
+
+    .replay-btn {
+      color: #1976d2;
+    }
+  `,
+})
+export class BulkJobDetailsComponent implements OnInit, OnDestroy {
+  private readonly store = inject(BulkStore);
+  private readonly dialog = inject(MatDialog);
+  private readonly snackBar = inject(MatSnackBar);
+
+  // Exposed signals
+  readonly loading = this.store.loading;
+  readonly error = this.store.error;
+  readonly progress = this.store.progress;
+  readonly chunks = this.store.chunks;
+  readonly dlqEntries = this.store.dlqEntries;
+
+  // Các cột hiển thị cho bảng chunks
+  readonly chunkColumns: string[] = ['chunk_id', 'index', 'entity_count', 'status', 'retry_count', 'timing'];
+
+  // Các cột hiển thị cho bảng DLQ
+{% if dlq_enabled %}
+  readonly dlqColumns: string[] = ['entity_id', 'error_type', 'error', 'retry_count', 'failed_at', 'replayed', 'actions'];
+{% else %}
+  readonly dlqColumns: string[] = [];
+{% endif %}
+
+  // Input: Job ID để xem chi tiết
+  @Input() jobId!: string;
+
+  // Output: phát ra khi đóng
+  @Output() close = new EventEmitter<void>();
+
+  // SSE connection
+  private eventSource: EventSource | null = null;
+
+  /**
+   * Computed: job hiện tại từ store.
+   */
+  currentJob = computed<BulkJob | null>(() => this.store.selectedJob());
+
+  /**
+   * Computed: phần trăm tiến độ.
+   */
+  progressPercentage = computed<number>(() => {
+    const job = this.currentJob();
+    if (!job || !job.entity_ids.length) return 0;
+    return Math.round((job.processed / job.entity_ids.length) * 100);
+  });
+
+  /**
+   * Computed: job có đang chạy không.
+   */
+  isRunning = computed<boolean>(() => {
+    return this.currentJob()?.status === JobStatus.RUNNING;
+  });
+
+  /**
+   * Computed: có thể huỷ job không.
+   */
+  canCancel = computed<boolean>(() => {
+    const job = this.currentJob();
+    return !!job && (job.status === JobStatus.RUNNING || job.status === JobStatus.PENDING);
+  });
+
+  /**
+   * Computed: số entities chưa xử lý.
+   */
+  pendingCount = computed<number>(() => {
+    const job = this.currentJob();
+    if (!job) return 0;
+    return job.entity_ids.length - job.processed;
+  });
+
+  /**
+   * Computed: có entities chưa xử lý không.
+   */
+  hasPending = computed<boolean>(() => this.pendingCount() > 0);
+
+  /**
+   * Computed: có entries có thể replay không.
+   */
+  hasReplayable = computed<boolean>(() => {
+    return this.dlqEntries().some(e => !e.replayed);
+  });
+
+  ngOnInit(): void {
+    // Load chi tiết job từ store
+    this.store.selectJob(this.jobId);
+    // Kết nối SSE cho tiến độ real-time
+    this.connectSSE();
+  }
+
+  ngOnDestroy(): void {
+    // Cleanup SSE connection
+    this.disconnectSSE();
+    // Clear selection khi component bị destroy
+    this.store.clearSelection();
+  }
+
+  /**
+   * Kết nối SSE để nhận tiến độ real-time.
+   */
+  private connectSSE(): void {
+    this.disconnectSSE();
+
+    const eventSource = new EventSource(`/api/bulk/jobs/${this.jobId}/progress/sse`);
+
+    eventSource.onmessage = (event: MessageEvent) => {
+      try {
+        const progress: BulkProgress = JSON.parse(event.data);
+        // Store sẽ tự động cập nhật thông qua signal
+        this.store['refreshProgress']?.();
+
+        // Tự động đóng khi job kết thúc
+        if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
+          eventSource.close();
+          this.eventSource = null;
+        }
+      } catch (error) {
+        console.error('[BulkJobDetails] Lỗi parse SSE data:', error);
+      }
+    };
+
+    eventSource.onerror = () => {
+      console.warn('[BulkJobDetails] Kết nối SSE bị mất');
+      eventSource.close();
+      this.eventSource = null;
+      // Tự động reconnect sau 3 giây
+      setTimeout(() => this.connectSSE(), 3000);
+    };
+
+    this.eventSource = eventSource;
+  }
+
+  /**
+   * Đóng SSE connection.
+   */
+  private disconnectSSE(): void {
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+  }
+
+  /**
+   * Huỷ job hiện tại.
+   */
+  cancelJob(): void {
+    const job = this.currentJob();
+    if (!job || !this.canCancel()) return;
+
+    this.store.cancelJob(this.jobId);
+    this.snackBar.open('Đã gửi yêu cầu huỷ job', 'Đóng', {
+      duration: 3000,
+      horizontalPosition: 'end',
+      verticalPosition: 'top',
+    });
+  }
+
+  /**
+   * Làm mới dữ liệu job.
+   */
+  retryLoad(): void {
+    this.store.selectJob(this.jobId);
+    this.connectSSE();
+  }
+
+  /**
+   * Lấy nhãn trạng thái job.
+   *
+   * @param status - JobStatus
+   * @returns Label string
+   */
+  getStatusLabel(status: JobStatus | string): string {
+    if (status in JOB_STATUS_LABELS) {
+      return JOB_STATUS_LABELS[status as JobStatus];
+    }
+    return status;
+  }
+
+  /**
+   * Lấy màu sắc cho trạng thái job.
+   *
+   * @param status - JobStatus
+   * @returns Màu CSS
+   */
+  getStatusColor(status: JobStatus | string): string {
+    const colorMap: Record<string, string> = {
+      'pending': '#9e9e9e',
+      'running': '#2196f3',
+      'completed': '#4caf50',
+      'failed': '#f44336',
+      'cancelled': '#9e9e9e',
+      'timeout': '#ff9800',
+    };
+    return colorMap[status] || '#9e9e9e';
+  }
+
+  /**
+   * Lấy nhãn hành động.
+   *
+   * @param action - BulkAction
+   * @returns Label string
+   */
+  getActionLabel(action: string): string {
+    const labels: Record<string, string> = {
+      'batch_create': 'Tạo hàng loạt',
+      'batch_update': 'Cập nhật hàng loạt',
+      'batch_delete': 'Xoá hàng loạt',
+      'batch_read': 'Đọc hàng loạt',
+    };
+    return labels[action] || action;
+  }
+
+  /**
+   * Lấy nhãn trạng thái chunk.
+   *
+   * @param status - ChunkStatus
+   * @returns Label string
+   */
+  getChunkStatusLabel(status: ChunkStatus): string {
+    return CHUNK_STATUS_LABELS[status] || status;
+  }
+
+  /**
+   * Lấy màu sắc cho trạng thái chunk.
+   *
+   * @param status - ChunkStatus
+   * @returns Màu CSS
+   */
+  getChunkStatusColor(status: ChunkStatus): string {
+    const colorMap: Record<ChunkStatus, string> = {
+      [ChunkStatus.PENDING]: '#9e9e9e',
+      [ChunkStatus.PROCESSING]: '#2196f3',
+      [ChunkStatus.COMPLETED]: '#4caf50',
+      [ChunkStatus.FAILED]: '#f44336',
+    };
+    return colorMap[status] || '#9e9e9e';
+  }
+
+  /**
+   * Xem chi tiết DLQ entry trong dialog.
+   *
+   * @param entry - DLQEntry cần xem
+   */
+  viewDlqEntry(entry: DLQEntry): void {
+    this.dialog.open(DlqEntryDetailDialog, {
+      width: '600px',
+      data: { entry },
+    });
+  }
+
+  /**
+   * Replay một DLQ entry.
+   *
+   * @param entryId - DLQ Entry ID
+   */
+  replayEntry(entryId: string): void {
+    this.store.replayDLQEntry(entryId);
+    this.snackBar.open('Đã gửi yêu cầu chạy lại entry', 'Đóng', {
+      duration: 3000,
+      horizontalPosition: 'end',
+      verticalPosition: 'top',
+    });
+  }
+
+  /**
+   * Replay tất cả DLQ entries chưa được replay.
+   */
+  async replayAll(): Promise<void> {
+    const replayable = this.dlqEntries().filter(e => !e.replayed);
+    if (!replayable.length) return;
+
+    for (const entry of replayable) {
+      this.store.replayDLQEntry(entry.entry_id);
+    }
+
+    this.snackBar.open(`Đã gửi yêu cầu chạy lại ${replayable.length} entries`, 'Đóng', {
+      duration: 4000,
+      horizontalPosition: 'end',
+      verticalPosition: 'top',
+    });
+  }
+}

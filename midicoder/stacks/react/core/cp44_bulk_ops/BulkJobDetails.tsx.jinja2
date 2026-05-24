@@ -1,0 +1,1112 @@
+/**
+* BulkJobDetails — Chi tiết một bulk job: metadata, tiến độ, chunk breakdown, DLQ, audit log.
+* Sinh bởi CP44 BulkOpsEmitter.
+*
+* Sử dụng events (SSE): {{ use_events }}
+* DLQ enabled: {{ dlq_enabled }}
+* Sử dụng audit: {{ use_audit }}
+*/
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useBulkOps, BulkJob, JobProgress, DLQEntry } from './useBulkOps';
+import { BulkProgress } from './BulkProgress';
+
+/* ---- Props ---- */
+export interface BulkJobDetailsProps {
+jobId: string;
+onClose?: () => void;
+onCancelJob?: (jobId: string) => Promise<void>;
+    onJobSelect?: (jobId: string) => void;
+    }
+
+    /* ---- Style objects ---- */
+    const sOverlay: React.CSSProperties = {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    padding: '20px',
+    };
+
+    const sModal: React.CSSProperties = {
+    background: '#fff',
+    borderRadius: '16px',
+    width: '100%',
+    maxWidth: '900px',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    boxShadow: '0 25px 80px rgba(0,0,0,0.25)',
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    };
+
+    const sModalHeader: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    padding: '20px 24px',
+    borderBottom: '1px solid #f3f4f6',
+    position: 'sticky',
+    top: 0,
+    background: '#fff',
+    borderRadius: '16px 16px 0 0',
+    zIndex: 1,
+    };
+
+    const sModalTitle: React.CSSProperties = {
+    margin: 0,
+    fontSize: '20px',
+    fontWeight: 700,
+    color: '#111827',
+    };
+
+    const sModalSubtitle: React.CSSProperties = {
+    margin: '4px 0 0',
+    fontSize: '13px',
+    color: '#6b7280',
+    fontFamily: 'ui-monospace, monospace',
+    };
+
+    const sCloseBtn: React.CSSProperties = {
+    padding: '6px 10px',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    background: '#fff',
+    cursor: 'pointer',
+    fontSize: '16px',
+    color: '#6b7280',
+    lineHeight: 1,
+    };
+
+    const sModalBody: React.CSSProperties = {
+    padding: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px',
+    };
+
+    const sSection: React.CSSProperties = {
+    background: '#f9fafb',
+    borderRadius: '12px',
+    padding: '16px 20px',
+    border: '1px solid #f3f4f6',
+    };
+
+    const sSectionTitle: React.CSSProperties = {
+    margin: '0 0 12px',
+    fontSize: '15px',
+    fontWeight: 600,
+    color: '#111827',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    };
+
+    const sMetaGrid: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+    gap: '12px',
+    };
+
+    const sMetaItem: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    };
+
+    const sMetaLabel: React.CSSProperties = {
+    fontSize: '11px',
+    fontWeight: 600,
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    };
+
+    const sMetaValue: React.CSSProperties = {
+    fontSize: '14px',
+    color: '#111827',
+    fontWeight: 500,
+    };
+
+    const sProgressBar: React.CSSProperties = {
+    marginTop: '8px',
+    };
+
+    const sProgressStats: React.CSSProperties = {
+    display: 'flex',
+    gap: '16px',
+    marginTop: '12px',
+    fontSize: '13px',
+    color: '#6b7280',
+    flexWrap: 'wrap',
+    };
+
+    const sProgressStat: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    };
+
+    const sStatDot: React.CSSProperties = {
+    width: '8px',
+    height: '8px',
+    borderRadius: '2px',
+    };
+
+    /* Chunk breakdown table */
+    const sChunkTable: React.CSSProperties = {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '13px',
+    };
+
+    const sChunkTh: React.CSSProperties = {
+    padding: '8px 10px',
+    textAlign: 'left',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    borderBottom: '2px solid #e5e7eb',
+    };
+
+    const sChunkTd: React.CSSProperties = {
+    padding: '8px 10px',
+    borderBottom: '1px solid #f3f4f6',
+    color: '#374151',
+    };
+
+    /* DLQ table */
+    const sDlqTable: React.CSSProperties = {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '13px',
+    };
+
+    const sDlqTh: React.CSSProperties = {
+    padding: '8px 10px',
+    textAlign: 'left',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    borderBottom: '2px solid #e5e7eb',
+    };
+
+    const sDlqTd: React.CSSProperties = {
+    padding: '8px 10px',
+    borderBottom: '1px solid #f3f4f6',
+    color: '#374151',
+    fontSize: '12px',
+    };
+
+    const sDlqError: React.CSSProperties = {
+    fontFamily: 'ui-monospace, monospace',
+    fontSize: '12px',
+    color: '#991b1b',
+    background: '#fef2f2',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    maxHeight: '60px',
+    overflow: 'auto',
+    whiteSpace: 'pre-wrap',
+    };
+
+    /* Audit log */
+    const sAuditList: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    maxHeight: '240px',
+    overflowY: 'auto',
+    };
+
+    const sAuditItem: React.CSSProperties = {
+    display: 'flex',
+    gap: '12px',
+    padding: '8px 12px',
+    background: '#fff',
+    borderRadius: '8px',
+    border: '1px solid #f3f4f6',
+    fontSize: '13px',
+    };
+
+    const sAuditTime: React.CSSProperties = {
+    fontSize: '11px',
+    color: '#9ca3af',
+    fontFamily: 'ui-monospace, monospace',
+    whiteSpace: 'nowrap',
+    paddingTop: '2px',
+    };
+
+    const sAuditMessage: React.CSSProperties = {
+    color: '#374151',
+    flex: 1,
+    };
+
+    /* Buttons */
+    const sBtnDanger: React.CSSProperties = {
+    padding: '8px 16px',
+    border: 'none',
+    borderRadius: '8px',
+    background: '#ef4444',
+    color: '#fff',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 500,
+    };
+
+    const sBtnPrimary: React.CSSProperties = {
+    padding: '8px 16px',
+    border: 'none',
+    borderRadius: '8px',
+    background: '#6366f1',
+    color: '#fff',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 500,
+    };
+
+    const sBtnOutline: React.CSSProperties = {
+    padding: '8px 16px',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    background: '#fff',
+    color: '#374151',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 500,
+    };
+
+    const sActionsRow: React.CSSProperties = {
+    display: 'flex',
+    gap: '10px',
+    marginTop: '8px',
+    };
+
+    /* Badge */
+    const sBadgeBase: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '3px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: 600,
+    };
+
+    const sLoadingState: React.CSSProperties = {
+    padding: '48px',
+    textAlign: 'center',
+    color: '#6b7280',
+    fontSize: '15px',
+    };
+
+    const sErrorState: React.CSSProperties = {
+    padding: '16px 20px',
+    background: '#fef2f2',
+    borderRadius: '8px',
+    color: '#991b1b',
+    fontSize: '14px',
+    border: '1px solid #fecaca',
+    };
+
+    const sSseIndicator: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '12px',
+    color: '#6b7280',
+    marginLeft: 'auto',
+    };
+
+    const sSseDot: React.CSSProperties = {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    };
+
+    /* ---- Helper: status badge style ---- */
+    function statusBadgeStyle(status: string): React.CSSProperties {
+    const map: Record<string, { bg: string; color: string }> = {
+        pending: { bg: '#fef3c7', color: '#92400e' },
+        queued: { bg: '#e0e7ff', color: '#3730a3' },
+        running: { bg: '#dbeafe', color: '#1e40af' },
+        completed: { bg: '#d1fae5', color: '#065f46' },
+        failed: { bg: '#fee2e2', color: '#991b1b' },
+        cancelled: { bg: '#f3f4f6', color: '#4b5563' },
+        timeout: { bg: '#ffedd5', color: '#9a3412' },
+        };
+        const c = map[status] || { bg: '#f3f4f6', color: '#374151' };
+        return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
+        }
+
+        function statusLabel(status: string): string {
+        const map: Record<string, string> = {
+            pending: 'Chờ xử lý',
+            queued: 'Trong hàng chờ',
+            running: 'Đang chạy',
+            completed: 'Hoàn thành',
+            failed: 'Thất bại',
+            cancelled: 'Đã hủy',
+            timeout: 'Hết giờ',
+            };
+            return map[status] || status;
+            }
+
+            /* Chunk status badge */
+            function chunkStatusStyle(status: string): React.CSSProperties {
+            const map: Record<string, string> = {
+                pending: '#fbbf24',
+                processing: '#3b82f6',
+                completed: '#22c55e',
+                failed: '#ef4444',
+                };
+                const color = map[status] || '#9ca3af';
+                return {
+                ...sBadgeBase,
+                backgroundColor: color + '22',
+                color: color,
+                };
+                }
+
+                /* Format ngày giờ */
+                function formatDateTime(iso: string): string {
+                const d = new Date(iso);
+                return d.toLocaleDateString('vi-VN', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                });
+                }
+
+                /* Tính thời gian chạy */
+                function calcDuration(started: string | null, ended: string | null): string {
+                if (!started) return '—';
+                const start = new Date(started).getTime();
+                const end = ended ? new Date(ended).getTime() : Date.now();
+                const diff = end - start;
+                const seconds = Math.floor(diff / 1000);
+                if (seconds < 60) return `${seconds}s`; const minutes=Math.floor(seconds / 60); const remainSec=seconds
+                    % 60; if (minutes < 60) return `${minutes}m ${remainSec}s`; const hours=Math.floor(minutes / 60);
+                    const remainMin=minutes % 60; return `${hours}h ${remainMin}m`; } /* ---- Interface chunk breakdown
+                    ---- */ interface ChunkInfo { chunk_id: string; chunk_index: number; entity_ids: string[];
+                    status: 'pending' | 'processing' | 'completed' | 'failed' ; started_at: string | null; completed_at:
+                    string | null; succeeded: number; failed: number; error_message: string | null; } /* ---- Interface
+                    audit log ---- */ interface AuditEntry { timestamp: string; event: string; details: string; } /*
+                    ---- Component chính: BulkJobDetails ---- */ export const BulkJobDetails:
+                    React.FC<BulkJobDetailsProps> = ({
+                    jobId,
+                    onClose,
+                    onCancelJob,
+                    onJobSelect,
+                    }) => {
+                    const { getJob, getProgress, cancelJob, subscribeToProgress } = useBulkOps();
+
+                    /* State */
+                    const [job, setJob] = useState<BulkJob | null>(null);
+                        const [progress, setProgress] = useState<JobProgress | null>(null);
+                            const [loading, setLoading] = useState(true);
+                            const [error, setError] = useState<string | null>(null);
+                                const [chunks, setChunks] = useState<ChunkInfo[]>([]);
+                                    const [dlqEntries, setDlqEntries] = useState<DLQEntry[]>([]);
+                                        const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
+                                            const [sseConnected, setSseConnected] = useState(false);
+                                            const [showDlq, setShowDlq] = useState(false);
+                                            const [showAudit, setShowAudit] = useState(false);
+
+                                            const sseRef = useRef<EventSource | null>(null);
+
+                                                /* Load job data khi mount */
+                                                useEffect(() => {
+                                                let cancelled = false;
+
+                                                async function loadData() {
+                                                setLoading(true);
+                                                setError(null);
+                                                try {
+                                                const [jobData, progressData] = await Promise.all([
+                                                getJob(jobId),
+                                                getProgress(jobId),
+                                                ]);
+
+                                                if (cancelled) return;
+
+                                                if (!jobData) {
+                                                setError(`Không tìm thấy job ${jobId}`);
+                                                setLoading(false);
+                                                return;
+                                                }
+
+                                                setJob(jobData);
+                                                setProgress(progressData || null);
+
+                                                /* Fetch chunks */
+                                                try {
+                                                const chunksRes = await
+                                                fetch(`/api/bulk-ops/jobs/${encodeURIComponent(jobId)}/chunks`);
+                                                if (chunksRes.ok) {
+                                                const chunksData: ChunkInfo[] = await chunksRes.json();
+                                                if (!cancelled) setChunks(chunksData);
+                                                }
+                                                } catch {
+                                                // Bỏ qua lỗi chunks
+                                                }
+
+                                                /* Fetch DLQ entries */
+                                                {% if dlq_enabled %}
+                                                try {
+                                                const dlqRes = await
+                                                fetch(`/api/bulk-ops/jobs/${encodeURIComponent(jobId)}/dlq`);
+                                                if (dlqRes.ok) {
+                                                const dlqData: DLQEntry[] = await dlqRes.json();
+                                                if (!cancelled) setDlqEntries(dlqData);
+                                                }
+                                                } catch {
+                                                // Bỏ qua lỗi DLQ
+                                                }
+                                                {% endif %}
+
+                                                /* Fetch audit log */
+                                                {% if use_audit %}
+                                                try {
+                                                const auditRes = await
+                                                fetch(`/api/audit?resource_type=bulk_job&resource_id=${encodeURIComponent(jobId)}`);
+                                                if (auditRes.ok) {
+                                                const auditData: AuditEntry[] = await auditRes.json();
+                                                if (!cancelled) setAuditLog(auditData);
+                                                }
+                                                } catch {
+                                                // Bỏ qua lỗi audit
+                                                }
+                                                {% endif %}
+
+                                                } catch (err) {
+                                                if (!cancelled) {
+                                                setError(err instanceof Error ? err.message : 'Tải job thất bại');
+                                                }
+                                                } finally {
+                                                if (!cancelled) setLoading(false);
+                                                }
+                                                }
+
+                                                loadData();
+
+                                                return () => {
+                                                cancelled = true;
+                                                };
+                                                }, [jobId, getJob, getProgress]);
+
+                                                /* SSE subscription cho realtime progress */
+                                                {% if use_events %}
+                                                useEffect(() => {
+                                                if (!job || job.status === 'completed' || job.status === 'failed' ||
+                                                job.status === 'cancelled') {
+                                                return;
+                                                }
+
+                                                const evtSource = new
+                                                EventSource(`/api/bulk-ops/jobs/${encodeURIComponent(jobId)}/events`);
+                                                sseRef.current = evtSource;
+
+                                                evtSource.onopen = () => {
+                                                setSseConnected(true);
+                                                };
+
+                                                evtSource.onerror = () => {
+                                                setSseConnected(false);
+                                                };
+
+                                                evtSource.addEventListener('progress', (event) => {
+                                                try {
+                                                const data: JobProgress = JSON.parse(event.data);
+                                                setProgress(data);
+                                                } catch {
+                                                // Bỏ qua lỗi parse
+                                                }
+                                                });
+
+                                                evtSource.addEventListener('chunk_completed', (event) => {
+                                                try {
+                                                const data = JSON.parse(event.data);
+                                                // Refresh chunks
+                                                setChunks((prev) =>
+                                                prev.map((c) =>
+                                                c.chunk_id === data.chunk_id
+                                                ? { ...c, status: 'completed' as const, completed_at: new
+                                                Date().toISOString(), succeeded: data.succeeded || 0, failed:
+                                                data.failed || 0 }
+                                                : c
+                                                )
+                                                );
+                                                // Thêm vào audit log
+                                                setAuditLog((prev) => [
+                                                {
+                                                timestamp: new Date().toISOString(),
+                                                event: 'chunk_completed',
+                                                details: `Chunk ${data.chunk_id}: ${data.succeeded || 0} thành công,
+                                                ${data.failed || 0} thất bại`,
+                                                },
+                                                ...prev,
+                                                ]);
+                                                } catch {
+                                                // Bỏ qua
+                                                }
+                                                });
+
+                                                evtSource.addEventListener('job_completed', () => {
+                                                setSseConnected(false);
+                                                evtSource.close();
+                                                // Reload job data
+                                                getJob(jobId).then((j) => {
+                                                if (j) setJob(j);
+                                                });
+                                                });
+
+                                                evtSource.addEventListener('job_failed', (event) => {
+                                                setSseConnected(false);
+                                                evtSource.close();
+                                                try {
+                                                const data = JSON.parse(event.data);
+                                                setAuditLog((prev) => [
+                                                {
+                                                timestamp: new Date().toISOString(),
+                                                event: 'job_failed',
+                                                details: data.error || 'Job thất bại',
+                                                },
+                                                ...prev,
+                                                ]);
+                                                getJob(jobId).then((j) => {
+                                                if (j) setJob(j);
+                                                });
+                                                } catch {
+                                                // Bỏ qua
+                                                }
+                                                });
+
+                                                return () => {
+                                                evtSource.close();
+                                                sseRef.current = null;
+                                                setSseConnected(false);
+                                                };
+                                                }, [jobId, job?.status, getJob]);
+                                                {% else %}
+                                                useEffect(() => {
+                                                // SSE không được bật — polling thay thế
+                                                setSseConnected(false);
+                                                }, []);
+                                                {% endif %}
+
+                                                /* Auto-refresh cho job đang chạy (phòng trường hợp SSE không bật) */
+                                                {% if not use_events %}
+                                                useEffect(() => {
+                                                if (!job || job.status !== 'running') return;
+                                                const interval = setInterval(async () => {
+                                                const [j, p] = await Promise.all([getJob(jobId), getProgress(jobId)]);
+                                                if (j) setJob(j);
+                                                if (p) setProgress(p);
+                                                }, 3000);
+                                                return () => clearInterval(interval);
+                                                }, [jobId, job?.status, getJob, getProgress]);
+                                                {% endif %}
+
+                                                /* Xử lý hủy job */
+                                                const handleCancel = useCallback(async () => {
+                                                if (window.confirm('Bạn có chắc muốn hủy job này? Hành động này không
+                                                thể hoàn tác.')) {
+                                                try {
+                                                await cancelJob(jobId);
+                                                setAuditLog((prev) => [
+                                                {
+                                                timestamp: new Date().toISOString(),
+                                                event: 'job_cancelled',
+                                                details: 'Job đã bị hủy bởi người dùng',
+                                                },
+                                                ...prev,
+                                                ]);
+                                                await getJob(jobId).then((j) => {
+                                                if (j) setJob(j);
+                                                });
+                                                } catch (err) {
+                                                console.error('[BulkJobDetails] Hủy job thất bại:', err);
+                                                alert('Hủy job thất bại: ' + (err instanceof Error ? err.message : 'Lỗi
+                                                không rõ'));
+                                                }
+                                                }
+                                                }, [jobId, cancelJob, getJob]);
+
+                                                /* Xử lý đóng modal */
+                                                const handleClose = useCallback(() => {
+                                                if (sseRef.current) {
+                                                sseRef.current.close();
+                                                sseRef.current = null;
+                                                }
+                                                onClose?.();
+                                                }, [onClose]);
+
+                                                /* Xử lý click overlay để đóng */
+                                                const handleOverlayClick = useCallback((e: React.MouseEvent) => {
+                                                if (e.target === e.currentTarget) {
+                                                handleClose();
+                                                }
+                                                }, [handleClose]);
+
+                                                /* Tính toán tổng từ job */
+                                                const totalRecords = useMemo(() => {
+                                                if (!job) return 0;
+                                                return job.total_records || (job.entity_ids?.length || 0);
+                                                }, [job]);
+
+                                                /* Render trạng thái đang tải */
+                                                if (loading) {
+                                                return (
+                                                <div style={sOverlay} onClick={handleOverlayClick}>
+                                                    <div style={sModal}>
+                                                        <div style={sModalHeader}>
+                                                            <h2 style={sModalTitle}>Chi tiết Job</h2>
+                                                            <button onClick={handleClose} style={sCloseBtn}
+                                                                title="Đóng">✕</button>
+                                                        </div>
+                                                        <div style={sLoadingState}>Đang tải thông tin job...</div>
+                                                    </div>
+                                                </div>
+                                                );
+                                                }
+
+                                                /* Render trạng thái lỗi */
+                                                if (error) {
+                                                return (
+                                                <div style={sOverlay} onClick={handleOverlayClick}>
+                                                    <div style={sModal}>
+                                                        <div style={sModalHeader}>
+                                                            <h2 style={sModalTitle}>Chi tiết Job</h2>
+                                                            <button onClick={handleClose} style={sCloseBtn}
+                                                                title="Đóng">✕</button>
+                                                        </div>
+                                                        <div style={sModalBody}>
+                                                            <div style={sErrorState}>{error}</div>
+                                                            <div style={sActionsRow}>
+                                                                <button onClick={handleClose}
+                                                                    style={sBtnOutline}>Đóng</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                );
+                                                }
+
+                                                if (!job) return null;
+
+                                                const canCancel = ['pending', 'queued', 'running'].includes(job.status);
+                                                const total = totalRecords || 1;
+                                                const processed = job.processed || 0;
+                                                const succeeded = job.succeeded || 0;
+                                                const failed = job.failed || 0;
+                                                const skipped = job.skipped || 0;
+
+                                                return (
+                                                <div style={sOverlay} onClick={handleOverlayClick}>
+                                                    <div style={sModal}>
+                                                        {/* Header */}
+                                                        <div style={sModalHeader}>
+                                                            <div>
+                                                                <h2 style={sModalTitle}>
+                                                                    Chi tiết Job
+                                                                    <span style={{ ...statusBadgeStyle(job.status),
+                                                                        marginLeft: '12px' }}>
+                                                                        {statusLabel(job.status)}
+                                                                    </span>
+                                                                </h2>
+                                                                <p style={sModalSubtitle}>{job.job_id}</p>
+                                                            </div>
+                                                            <div style={{ display: 'flex' , alignItems: 'center' ,
+                                                                gap: '12px' }}>
+                                                                {/* SSE connection indicator */}
+                                                                {% if use_events %}
+                                                                <div style={sSseIndicator}>
+                                                                    <span style={{ ...sSseDot, backgroundColor:
+                                                                        sseConnected ? '#22c55e' : '#9ca3af' }} />
+                                                                    {sseConnected ? 'SSE kết nối' : 'SSE ngắt'}
+                                                                </div>
+                                                                {% endif %}
+                                                                <button onClick={handleClose} style={sCloseBtn}
+                                                                    title="Đóng">✕</button>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Body */}
+                                                        <div style={sModalBody}>
+                                                            {/* ===== Meta Data ===== */}
+                                                            <div style={sSection}>
+                                                                <h3 style={sSectionTitle}>Thông tin chung</h3>
+                                                                <div style={sMetaGrid}>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Entity loại</span>
+                                                                        <span
+                                                                            style={sMetaValue}>{job.entity_type}</span>
+                                                                    </div>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Hành động</span>
+                                                                        <span style={sMetaValue}>{job.action}</span>
+                                                                    </div>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Tổng bản ghi</span>
+                                                                        <span style={sMetaValue}>{total}</span>
+                                                                    </div>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Chunk size</span>
+                                                                        <span style={sMetaValue}>{job.chunk_size ||
+                                                                            '—'}</span>
+                                                                    </div>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Concurrency</span>
+                                                                        <span style={sMetaValue}>{job.concurrency ||
+                                                                            '—'}</span>
+                                                                    </div>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Max retries</span>
+                                                                        <span style={sMetaValue}>{job.max_retries ||
+                                                                            '—'}</span>
+                                                                    </div>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Retry strategy</span>
+                                                                        <span style={sMetaValue}>{job.retry_strategy ||
+                                                                            '—'}</span>
+                                                                    </div>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Timeout</span>
+                                                                        <span style={sMetaValue}>{job.timeout ?
+                                                                            `${job.timeout}s` : '—'}</span>
+                                                                    </div>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Tạo lúc</span>
+                                                                        <span
+                                                                            style={sMetaValue}>{formatDateTime(job.created_at)}</span>
+                                                                    </div>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Cập nhật</span>
+                                                                        <span
+                                                                            style={sMetaValue}>{formatDateTime(job.updated_at)}</span>
+                                                                    </div>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Thời gian chạy</span>
+                                                                        <span style={sMetaValue}>
+                                                                            {calcDuration(
+                                                                            (job as any).started_at || null,
+                                                                            (job as any).completed_at || null
+                                                                            )}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div style={sMetaItem}>
+                                                                        <span style={sMetaLabel}>Tạo bởi</span>
+                                                                        <span style={sMetaValue}>{(job as
+                                                                            any).created_by || '—'}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* ===== Progress ===== */}
+                                                            <div style={sSection}>
+                                                                <h3 style={sSectionTitle}>Tiến độ xử lý</h3>
+                                                                <div style={sProgressBar}>
+                                                                    <BulkProgress total={total} processed={processed}
+                                                                        succeeded={succeeded} failed={failed}
+                                                                        skipped={skipped} size="large" />
+                                                                </div>
+                                                                <div style={sProgressStats}>
+                                                                    <span style={sProgressStat}>
+                                                                        <span style={{ ...sStatDot,
+                                                                            backgroundColor: '#22c55e' }} />
+                                                                        Thành công: {succeeded}
+                                                                    </span>
+                                                                    <span style={sProgressStat}>
+                                                                        <span style={{ ...sStatDot,
+                                                                            backgroundColor: '#ef4444' }} />
+                                                                        Thất bại: {failed}
+                                                                    </span>
+                                                                    {skipped > 0 && (
+                                                                    <span style={sProgressStat}>
+                                                                        <span style={{ ...sStatDot,
+                                                                            backgroundColor: '#9ca3af' }} />
+                                                                        Bỏ qua: {skipped}
+                                                                    </span>
+                                                                    )}
+                                                                    <span style={sProgressStat}>
+                                                                        <span style={{ ...sStatDot,
+                                                                            backgroundColor: '#d1d5db' }} />
+                                                                        Chưa xử lý: {total - processed}
+                                                                    </span>
+                                                                </div>
+
+                                                                {/* Progress detail từ SSE polling */}
+                                                                {progress && (
+                                                                <div style={{ marginTop: '12px' , fontSize: '13px' ,
+                                                                    color: '#6b7280' }}>
+                                                                    Chunk hiện tại: {progress.current_chunk_id}
+                                                                    {' | } Tốc độ: {progress.throughput?.toFixed(1) ||
+                                                                    0} bản ghi/giây
+                                                                </div>
+                                                                )}
+                                                            </div>
+
+                                                            {/* ===== Chunk Breakdown ===== */}
+                                                            {chunks.length > 0 && (
+                                                            <div style={sSection}>
+                                                                <h3 style={sSectionTitle}>
+                                                                    Chi tiết chunks ({chunks.length})
+                                                                </h3>
+                                                                <div style={{ overflowX: 'auto' }}>
+                                                                    <table style={sChunkTable}>
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th style={sChunkTh}>#</th>
+                                                                                <th style={sChunkTh}>Chunk ID</th>
+                                                                                <th style={sChunkTh}>Trạng thái</th>
+                                                                                <th style={sChunkTh}>Thành công</th>
+                                                                                <th style={sChunkTh}>Thất bại</th>
+                                                                                <th style={sChunkTh}>Bắt đầu</th>
+                                                                                <th style={sChunkTh}>Hoàn thành</th>
+                                                                                <th style={sChunkTh}>Lỗi</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {chunks.map((chunk) => (
+                                                                            <tr key={chunk.chunk_id}>
+                                                                                <td style={sChunkTd}>{chunk.chunk_index
+                                                                                    + 1}</td>
+                                                                                <td style={{ ...sChunkTd,
+                                                                                    fontFamily: 'ui-monospace, monospace'
+                                                                                    , fontSize: '12px' }}>
+                                                                                    {chunk.chunk_id}
+                                                                                </td>
+                                                                                <td style={sChunkTd}>
+                                                                                    <span
+                                                                                        style={chunkStatusStyle(chunk.status)}>
+                                                                                        {chunk.status}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td style={{ ...sChunkTd,
+                                                                                    color: '#22c55e' }}>
+                                                                                    {chunk.succeeded}
+                                                                                </td>
+                                                                                <td style={{ ...sChunkTd,
+                                                                                    color: '#ef4444' }}>
+                                                                                    {chunk.failed}
+                                                                                </td>
+                                                                                <td style={sChunkTd}>
+                                                                                    {chunk.started_at ?
+                                                                                    formatDateTime(chunk.started_at) :
+                                                                                    '—'}
+                                                                                </td>
+                                                                                <td style={sChunkTd}>
+                                                                                    {chunk.completed_at ?
+                                                                                    formatDateTime(chunk.completed_at) :
+                                                                                    '—'}
+                                                                                </td>
+                                                                                <td style={sChunkTd}>
+                                                                                    {chunk.error_message ? (
+                                                                                    <span style={{ ...sDlqError,
+                                                                                        display: 'inline-block' ,
+                                                                                        fontSize: '11px' ,
+                                                                                        maxHeight: '40px' }}>
+                                                                                        {chunk.error_message}
+                                                                                    </span>
+                                                                                    ) : '—'}
+                                                                                </td>
+                                                                            </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                            )}
+
+                                                            {/* ===== DLQ Section ===== */}
+                                                            {% if dlq_enabled %}
+                                                            {dlqEntries.length > 0 && (
+                                                            <div style={sSection}>
+                                                                <div style={{ display: 'flex' ,
+                                                                    justifyContent: 'space-between' ,
+                                                                    alignItems: 'center' }}>
+                                                                    <h3 style={{ ...sSectionTitle, marginBottom: 0 }}>
+                                                                        Dead Letter Queue ({dlqEntries.length})
+                                                                    </h3>
+                                                                    <button onClick={()=> setShowDlq(!showDlq)}
+                                                                        style={sBtnOutline}
+                                                                        >
+                                                                        {showDlq ? 'Thu gọn' : 'Mở rộng'}
+                                                                    </button>
+                                                                </div>
+                                                                {showDlq && (
+                                                                <div style={{ overflowX: 'auto' , marginTop: '12px' }}>
+                                                                    <table style={sDlqTable}>
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th style={sDlqTh}>Entity ID</th>
+                                                                                <th style={sDlqTh}>Chunk ID</th>
+                                                                                <th style={sDlqTh}>Lỗi</th>
+                                                                                <th style={sDlqTh}>Retry count</th>
+                                                                                <th style={sDlqTh}>Tạo lúc</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {dlqEntries.map((entry, idx) => (
+                                                                            <tr key={`${entry.entity_id}-${idx}`}>
+                                                                                <td style={{ ...sDlqTd,
+                                                                                    fontFamily: 'ui-monospace, monospace'
+                                                                                    }}>
+                                                                                    {entry.entity_id}
+                                                                                </td>
+                                                                                <td style={{ ...sDlqTd,
+                                                                                    fontFamily: 'ui-monospace, monospace'
+                                                                                    }}>
+                                                                                    {entry.chunk_id}
+                                                                                </td>
+                                                                                <td style={sDlqTd}>
+                                                                                    <div style={sDlqError}>
+                                                                                        {entry.error_message}</div>
+                                                                                </td>
+                                                                                <td style={sDlqTd}>{entry.retry_count}
+                                                                                </td>
+                                                                                <td style={sDlqTd}>
+                                                                                    {entry.created_at ?
+                                                                                    formatDateTime(entry.created_at) :
+                                                                                    '—'}
+                                                                                </td>
+                                                                            </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                                )}
+                                                            </div>
+                                                            )}
+                                                            {% else %}
+                                                            <div style={{ ...sSection, background: '#f0f9ff' ,
+                                                                borderColor: '#bae6fd' }}>
+                                                                <p style={{ margin: 0, fontSize: '13px' ,
+                                                                    color: '#0369a1' }}>
+                                                                    DLQ (Dead Letter Queue) không được bật. Không thể
+                                                                    xem các bản ghi bị lỗi.
+                                                                </p>
+                                                            </div>
+                                                            {% endif %}
+
+                                                            {/* ===== Audit Log ===== */}
+                                                            {% if use_audit %}
+                                                            <div style={sSection}>
+                                                                <div style={{ display: 'flex' ,
+                                                                    justifyContent: 'space-between' ,
+                                                                    alignItems: 'center' }}>
+                                                                    <h3 style={{ ...sSectionTitle, marginBottom: 0 }}>
+                                                                        Nhật ký Audit ({auditLog.length})
+                                                                    </h3>
+                                                                    <button onClick={()=> setShowAudit(!showAudit)}
+                                                                        style={sBtnOutline}
+                                                                        >
+                                                                        {showAudit ? 'Thu gọn' : 'Mở rộng'}
+                                                                    </button>
+                                                                </div>
+                                                                {showAudit && (
+                                                                <div style={{ ...sAuditList, marginTop: '12px' }}>
+                                                                    {auditLog.length === 0 ? (
+                                                                    <p style={{ margin: 0, fontSize: '13px' ,
+                                                                        color: '#9ca3af' }}>
+                                                                        Chưa có bản ghi audit.
+                                                                    </p>
+                                                                    ) : (
+                                                                    auditLog.map((entry, idx) => (
+                                                                    <div key={idx} style={sAuditItem}>
+                                                                        <span style={sAuditTime}>
+                                                                            {entry.timestamp ?
+                                                                            formatDateTime(entry.timestamp) : '—'}
+                                                                        </span>
+                                                                        <span style={{ ...sBadgeBase,
+                                                                            backgroundColor: '#e0e7ff' ,
+                                                                            color: '#3730a3' , fontSize: '10px' ,
+                                                                            padding: '1px 6px' , whiteSpace: 'nowrap' ,
+                                                                            }}>
+                                                                            {entry.event}
+                                                                        </span>
+                                                                        <span
+                                                                            style={sAuditMessage}>{entry.details}</span>
+                                                                    </div>
+                                                                    ))
+                                                                    )}
+                                                                </div>
+                                                                )}
+                                                            </div>
+                                                            {% else %}
+                                                            <div style={{ ...sSection, background: '#f0f9ff' ,
+                                                                borderColor: '#bae6fd' }}>
+                                                                <p style={{ margin: 0, fontSize: '13px' ,
+                                                                    color: '#0369a1' }}>
+                                                                    Audit logging không được bật cho job này.
+                                                                </p>
+                                                            </div>
+                                                            {% endif %}
+
+                                                            {/* ===== Entity IDs (nếu số lượng nhỏ) ===== */}
+                                                            {job.entity_ids && job.entity_ids.length <= 50 &&
+                                                                job.entity_ids.length> 0 && (
+                                                                <div style={sSection}>
+                                                                    <h3 style={sSectionTitle}>
+                                                                        Entity IDs ({job.entity_ids.length})
+                                                                    </h3>
+                                                                    <div style={{ display: 'flex' , flexWrap: 'wrap' ,
+                                                                        gap: '6px' , }}>
+                                                                        {job.entity_ids.map((id) => (
+                                                                        <span key={id} style={{
+                                                                            fontFamily: 'ui-monospace, monospace' ,
+                                                                            fontSize: '12px' , padding: '3px 8px' ,
+                                                                            background: '#f3f4f6' , borderRadius: '6px'
+                                                                            , color: '#374151' , }}>
+                                                                            {id}
+                                                                        </span>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                                )}
+
+                                                                {/* ===== Actions ===== */}
+                                                                <div style={sActionsRow}>
+                                                                    {canCancel && (
+                                                                    <button onClick={handleCancel} style={sBtnDanger}>
+                                                                        Hủy Job
+                                                                    </button>
+                                                                    )}
+                                                                    {% if dlq_enabled %}
+                                                                    {dlqEntries.length > 0 && (job.status === 'failed'
+                                                                    || job.status === 'completed') && (
+                                                                    <button onClick={async ()=> {
+                                                                        try {
+                                                                        await
+                                                                        fetch(`/api/bulk-ops/jobs/${encodeURIComponent(jobId)}/dlq/retry`,
+                                                                        {
+                                                                        method: 'POST',
+                                                                        });
+                                                                        alert(`Đã gửi ${dlqEntries.length} bản ghi DLQ
+                                                                        để thử lại.`);
+                                                                        handleClose();
+                                                                        } catch (err) {
+                                                                        alert('Thử lại DLQ thất bại: ' + (err instanceof
+                                                                        Error ? err.message : 'Lỗi không rõ'));
+                                                                        }
+                                                                        }}
+                                                                        style={sBtnPrimary}
+                                                                        >
+                                                                        Thử lại DLQ ({dlqEntries.length})
+                                                                    </button>
+                                                                    )}
+                                                                    {% endif %}
+                                                                    <button onClick={handleClose} style={sBtnOutline}>
+                                                                        Đóng
+                                                                    </button>
+                                                                </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                );
+                                                };
+
+                                                export default BulkJobDetails;

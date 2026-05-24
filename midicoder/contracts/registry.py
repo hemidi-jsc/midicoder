@@ -78,6 +78,7 @@ CP_ID_TO_INTERNAL: Final[dict[str, str]] = {
     "CP41": "cp41_chat",
     "CP42": "cp42_approval",
     "CP43": "cp43_versioning",
+    "CP44": "cp44_bulk_ops",
     "CP51": "cp51_blueprint",
     "CP52": "cp52_invariant",
     "CP53": "cp53_domain_bridge",

@@ -1,0 +1,637 @@
+/**
+ * useBulkOps — React hook chính cho Bulk Operations Engine.
+ * Sinh bởi CP44 BulkOpsEmitter.
+ *
+ * Cung cấp: quản lý jobs, theo dõi tiến độ, tạo/hủy job, SSE subscription, DLQ.
+ *
+ * Cấu hình:
+ *   - Chunk size mặc định: {{ default_chunk_size }}
+ *   - Concurrency mặc định: {{ default_concurrency }}
+ *   - Max retries: {{ default_max_retries }}
+ *   - Retry strategy: {{ default_retry_strategy }}
+ *   - Timeout: {{ default_timeout }}s
+ *   - DLQ enabled: {{ dlq_enabled }}
+ *   - Sử dụng events (SSE): {{ use_events }}
+ *   - Sử dụng audit: {{ use_audit }}
+ */
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+/* ======================================================================
+ * ĐỊNH NGHĨA LOẠI TYPE — đặt ở đầu file để các component import được
+ * ====================================================================== */
+
+/** Các trạng thái của job */
+export type JobStatus =
+    | 'pending'    /* Chờ xử lý — vừa được tạo */
+    | 'queued'     /* Trong hàng chờ — đang đợi worker */
+    | 'running'    /* Đang chạy — worker đang xử lý */
+    | 'completed'  /* Hoàn thành — tất cả chunks đã xong */
+    | 'failed'     /* Thất bại — có lỗi không thể khôi phục */
+    | 'cancelled'  /* Đã hủy — người dùng yêu cầu hủy */
+    | 'timeout';   /* Hết giờ — vượt quá timeout cấu hình */
+
+/** Các hành động bulk được hỗ trợ */
+export type BulkAction =
+    | 'update'    /* Cập nhật hàng loạt */
+    | 'delete'    /* Xóa hàng loạt */
+    | 'archive'   /* Lưu trữ hàng loạt */
+    | 'export'    /* Xuất dữ liệu */
+    | 'import'    /* Nhập dữ liệu */
+    | 'sync'      /* Đồng bộ */
+    | 'reindex'   /* Re-index */
+    | 'custom';   /* Hành động tùy chỉnh */
+
+/** Chiến lược retry */
+export type RetryStrategy =
+    | 'linear'       /* Retry với khoảng cách cố định */
+    | 'exponential'  /* Retry với khoảng cách tăng theo cấp số nhân */
+    | 'fixed';       /* Retry ngay lập tức với khoảng cách cố định */
+
+/**
+ * Interface chính: một bulk job
+ */
+export interface BulkJob {
+    /** ID duy nhất của job */
+    job_id: string;
+    /** Loại entity đang xử lý (e.g. 'user', 'order', 'product') */
+    entity_type: string;
+    /** Hành động thực hiện trên entities */
+    action: BulkAction | string;
+    /** Trạng thái hiện tại */
+    status: JobStatus;
+    /** Danh sách IDs của entities cần xử lý */
+    entity_ids: string[];
+    /** Tổng số bản ghi (fallback khi entity_ids không đầy đủ) */
+    total_records: number;
+    /** Số bản ghi đã xử lý */
+    processed: number;
+    /** Số bản ghi thành công */
+    succeeded: number;
+    /** Số bản ghi thất bại */
+    failed: number;
+    /** Số bản ghi bị bỏ qua */
+    skipped: number;
+    /** Kích thước mỗi chunk */
+    chunk_size: number | null;
+    /** Số lượng worker song song */
+    concurrency: number | null;
+    /** Số lần retry tối đa */
+    max_retries: number | null;
+    /** Chiến lược retry */
+    retry_strategy: RetryStrategy | null;
+    /** Timeout (giây) */
+    timeout: number | null;
+    /** Thời gian tạo job (ISO string) */
+    created_at: string;
+    /** Thời gian cập nhật cuối (ISO string) */
+    updated_at: string;
+}
+
+/**
+ * Dữ liệu khi tạo job mới
+ */
+export interface BulkJobCreate {
+    /** Loại entity */
+    entity_type: string;
+    /** Hành động */
+    action: BulkAction | string;
+    /** Danh sách entity IDs */
+    entity_ids: string[];
+    /** Chunk size (optional — override mặc định) */
+    chunk_size?: number;
+    /** Concurrency (optional — override mặc định) */
+    concurrency?: number;
+    /** Max retries (optional — override mặc định) */
+    max_retries?: number;
+    /** Retry strategy (optional — override mặc định) */
+    retry_strategy?: RetryStrategy;
+    /** Timeout giây (optional — override mặc định) */
+    timeout?: number;
+    /** Metadata tùy chỉnh (optional) */
+    metadata?: Record<string, unknown>;
+}
+
+/**
+ * Tiến độ thời gian thực của job
+ */
+export interface JobProgress {
+    /** ID của job */
+    job_id: string;
+    /** ID chunk đang xử lý */
+    current_chunk_id: string;
+    /** Tổng số bản ghi */
+    total: number;
+    /** Số bản ghi đã xử lý */
+    processed: number;
+    /** Số thành công */
+    succeeded: number;
+    /** Số thất bại */
+    failed: number;
+    /** Số bỏ qua */
+    skipped: number;
+    /** Tỷ lệ throughput (bản ghi/giây) */
+    throughput: number | null;
+    /** Thời gian ước tính còn lại (giây) */
+    eta_seconds: number | null;
+    /** Tỷ lệ phần trăm */
+    percent: number;
+}
+
+/**
+ * Một mục trong Dead Letter Queue
+ */
+export interface DLQEntry {
+    /** ID của entity bị lỗi */
+    entity_id: string;
+    /** ID chunk chứa entity này */
+    chunk_id: string;
+    /** Tin nhắn lỗi */
+    error_message: string;
+    /** Số lần đã retry */
+    retry_count: number;
+    /** Thời gian thêm vào DLQ */
+    created_at: string | null;
+}
+
+/**
+ * Callback nhận tiến độ realtime từ SSE
+ */
+export type ProgressCallback = (progress: JobProgress) => void;
+
+/**
+ * Cấu hình hook
+ */
+export interface UseBulkOpsOptions {
+    /** Base URL của API (mặc định: '/api/bulk-ops') */
+    apiBaseUrl?: string;
+    /** URL cho SSE events (mặc định: auto từ apiBaseUrl) */
+    sseBaseUrl?: string;
+    /** Khoảng thời gian polling (ms) khi không có SSE */
+    pollingIntervalMs?: number;
+    /** Tự động load danh sách jobs khi mount */
+    autoFetch?: boolean;
+}
+
+/**
+ * Giá trị trả về của hook
+ */
+export interface UseBulkOpsReturn {
+    /** Danh sách tất cả jobs */
+    jobs: BulkJob[];
+    /** Đang tải danh sách jobs? */
+    loading: boolean;
+    /** Lỗi khi tải danh sách */
+    error: string | null;
+    /** Tạo job mới */
+    createJob: (data: BulkJobCreate) => Promise<BulkJob>;
+    /** Lấy chi tiết một job */
+    getJob: (jobId: string) => Promise<BulkJob | null>;
+    /** Hủy một job đang chạy */
+    cancelJob: (jobId: string) => Promise<void>;
+    /** Lấy tiến độ của job */
+    getProgress: (jobId: string) => Promise<JobProgress | null>;
+    /** Làm mới danh sách jobs */
+    refreshJobs: () => Promise<void>;
+    /** Đăng ký nhận tiến độ realtime (SSE) */
+    subscribeToProgress: (jobId: string, callback: ProgressCallback) => () => void;
+    /** Lấy danh sách DLQ entries của job */
+    getDLQEntries: (jobId: string) => Promise<DLQEntry[]>;
+    /** Retry tất cả entries trong DLQ */
+    retryDLQ: (jobId: string) => Promise<void>;
+}
+
+/* ======================================================================
+ * CẤU HÌNH MẶC ĐỊNH — từ Jinja2 context
+ * ====================================================================== */
+
+const DEFAULT_API_BASE = '/api/bulk-ops';
+const DEFAULT_POLLING_MS = 3000;
+const DEFAULT_CHUNK_SIZE = {{ default_chunk_size }};
+const DEFAULT_CONCURRENCY = {{ default_concurrency }};
+const DEFAULT_MAX_RETRIES = {{ default_max_retries }};
+const DEFAULT_RETRY_STRATEGY = '{{ default_retry_strategy }}' as RetryStrategy;
+const DEFAULT_TIMEOUT = {{ default_timeout }};
+const DLQ_ENABLED = {{ dlq_enabled | lower }};
+const USE_EVENTS = {{ use_events | lower }};
+
+/* ======================================================================
+ * HÀM API HELPER
+ * ====================================================================== */
+
+/**
+ * GET danh sách tất cả jobs
+ */
+async function fetchJobs(apiBaseUrl: string): Promise<BulkJob[]> {
+    const response = await fetch(`${apiBaseUrl}/jobs`);
+    if (!response.ok) {
+        throw new Error(`Lấy danh sách jobs thất bại: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.jobs || []);
+}
+
+/**
+ * GET chi tiết một job
+ */
+async function fetchJob(apiBaseUrl: string, jobId: string): Promise<BulkJob | null> {
+    const response = await fetch(`${apiBaseUrl}/jobs/${encodeURIComponent(jobId)}`);
+    if (response.status === 404) {
+        return null;
+    }
+    if (!response.ok) {
+        throw new Error(`Lấy job ${jobId} thất bại: ${response.status}`);
+    }
+    return response.json();
+}
+
+/**
+ * POST tạo job mới
+ */
+async function createJobApi(apiBaseUrl: string, data: BulkJobCreate): Promise<BulkJob> {
+    /* Sử dụng cấu hình mặc định cho các trường chưa được override */
+    const payload = {
+        entity_type: data.entity_type,
+        action: data.action,
+        entity_ids: data.entity_ids,
+        chunk_size: data.chunk_size ?? DEFAULT_CHUNK_SIZE,
+        concurrency: data.concurrency ?? DEFAULT_CONCURRENCY,
+        max_retries: data.max_retries ?? DEFAULT_MAX_RETRIES,
+        retry_strategy: data.retry_strategy ?? DEFAULT_RETRY_STRATEGY,
+        timeout: data.timeout ?? DEFAULT_TIMEOUT,
+        metadata: data.metadata || {},
+    };
+
+    const response = await fetch(`${apiBaseUrl}/jobs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text().catch(() => '');
+        throw new Error(`Tạo job thất bại: ${response.status} ${errorBody}`);
+    }
+
+    return response.json();
+}
+
+/**
+ * POST hủy job
+ */
+async function cancelJobApi(apiBaseUrl: string, jobId: string): Promise<void> {
+    const response = await fetch(`${apiBaseUrl}/jobs/${encodeURIComponent(jobId)}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text().catch(() => '');
+        throw new Error(`Hủy job ${jobId} thất bại: ${response.status} ${errorBody}`);
+    }
+}
+
+/**
+ * GET tiến độ của job
+ */
+async function fetchProgress(apiBaseUrl: string, jobId: string): Promise<JobProgress | null> {
+    const response = await fetch(`${apiBaseUrl}/jobs/${encodeURIComponent(jobId)}/progress`);
+    if (response.status === 404) {
+        return null;
+    }
+    if (!response.ok) {
+        throw new Error(`Lấy tiến độ job ${jobId} thất bại: ${response.status}`);
+    }
+    return response.json();
+}
+
+/**
+ * GET danh sách DLQ entries của job
+ */
+async function fetchDLQEntries(apiBaseUrl: string, jobId: string): Promise<DLQEntry[]> {
+    if (!DLQ_ENABLED) {
+        return [];
+    }
+    const response = await fetch(`${apiBaseUrl}/jobs/${encodeURIComponent(jobId)}/dlq`);
+    if (response.status === 404) {
+        return [];
+    }
+    if (!response.ok) {
+        throw new Error(`Lấy DLQ của job ${jobId} thất bại: ${response.status}`);
+    }
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.entries || []);
+}
+
+/**
+ * POST retry tất cả DLQ entries của job
+ */
+async function retryDLQApi(apiBaseUrl: string, jobId: string): Promise<void> {
+    if (!DLQ_ENABLED) {
+        throw new Error('DLQ không được bật trên server');
+    }
+    const response = await fetch(`${apiBaseUrl}/jobs/${encodeURIComponent(jobId)}/dlq/retry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) {
+        const errorBody = await response.text().catch(() => '');
+        throw new Error(`Retry DLQ thất bại: ${response.status} ${errorBody}`);
+    }
+}
+
+/* ======================================================================
+ * HOOK CHÍNH: useBulkOps
+ * ====================================================================== */
+
+export function useBulkOps(options: UseBulkOpsOptions = {}): UseBulkOpsReturn {
+    /* Cấu hình */
+    const {
+        apiBaseUrl = DEFAULT_API_BASE,
+        sseBaseUrl,
+        pollingIntervalMs = DEFAULT_POLLING_MS,
+        autoFetch = true,
+    } = options;
+
+    /* State */
+    const [jobs, setJobs] = useState<BulkJob[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    /* Refs để tránh stale closure và cleanup đúng */
+    const sseRefs = useRef<Map<string, EventSource>>(new Map());
+    const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    /* ---- Làm mới danh sách jobs ---- */
+    const refreshJobs = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await fetchJobs(apiBaseUrl);
+            setJobs(data);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Lấy danh sách jobs thất bại';
+            setError(message);
+            console.error('[useBulkOps] refreshJobs:', message);
+        } finally {
+            setLoading(false);
+        }
+    }, [apiBaseUrl]);
+
+    /* ---- Tạo job mới ---- */
+    const createJob = useCallback(async (data: BulkJobCreate): Promise<BulkJob> => {
+        setError(null);
+        try {
+            const newJob = await createJobApi(apiBaseUrl, data);
+            /* Thêm vào danh sách jobs hiện tại */
+            setJobs((prev) => [newJob, ...prev]);
+            return newJob;
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Tạo job thất bại';
+            setError(message);
+            console.error('[useBulkOps] createJob:', message);
+            throw err;
+        }
+    }, [apiBaseUrl]);
+
+    /* ---- Lấy chi tiết job ---- */
+    const getJob = useCallback(async (jobId: string): Promise<BulkJob | null> => {
+        try {
+            const job = await fetchJob(apiBaseUrl, jobId);
+            /* Cập nhật job trong danh sách nếu tồn tại */
+            if (job) {
+                setJobs((prev) =>
+                    prev.map((j) => (j.job_id === jobId ? job : j))
+                );
+            }
+            return job;
+        } catch (err) {
+            const message = err instanceof Error ? err.message : `Lấy job ${jobId} thất bại`;
+            console.error('[useBulkOps] getJob:', message);
+            throw err;
+        }
+    }, [apiBaseUrl]);
+
+    /* ---- Hủy job ---- */
+    const cancelJob = useCallback(async (jobId: string): Promise<void> => {
+        setError(null);
+        try {
+            await cancelJobApi(apiBaseUrl, jobId);
+            /* Cập nhật trạng thái trong local state */
+            setJobs((prev) =>
+                prev.map((j) => (j.job_id === jobId ? { ...j, status: 'cancelled' as JobStatus, updated_at: new Date().toISOString() } : j))
+            );
+            /* Đóng SSE connection của job nếu đang mở */
+            const sse = sseRefs.current.get(jobId);
+            if (sse) {
+                sse.close();
+                sseRefs.current.delete(jobId);
+            }
+        } catch (err) {
+            const message = err instanceof Error ? err.message : `Hủy job ${jobId} thất bại`;
+            setError(message);
+            console.error('[useBulkOps] cancelJob:', message);
+            throw err;
+        }
+    }, [apiBaseUrl]);
+
+    /* ---- Lấy tiến độ ---- */
+    const getProgress = useCallback(async (jobId: string): Promise<JobProgress | null> => {
+        try {
+            return await fetchProgress(apiBaseUrl, jobId);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : `Lấy tiến độ thất bại`;
+            console.error('[useBulkOps] getProgress:', message);
+            return null;
+        }
+    }, [apiBaseUrl]);
+
+    /* ---- Subscribe đến tiến độ realtime (SSE) ---- */
+    const subscribeToProgress = useCallback(
+        (jobId: string, callback: ProgressCallback): (() => void) => {
+            /* Nếu SSE không được bật, fallback sang polling */
+            {% if not use_events %}
+            const interval = setInterval(async () => {
+                try {
+                    const progress = await fetchProgress(apiBaseUrl, jobId);
+                    if (progress) {
+                        callback(progress);
+                    }
+                } catch {
+                    // Bỏ qua lỗi polling
+                }
+            }, pollingIntervalMs);
+
+            return () => clearInterval(interval);
+            {% else %}
+            /* Kiểm tra xem đã có SSE connection chưa */
+            let sse = sseRefs.current.get(jobId);
+
+            if (!sse) {
+                const baseUrl = sseBaseUrl || apiBaseUrl;
+                sse = new EventSource(`${baseUrl}/jobs/${encodeURIComponent(jobId)}/events`);
+                sseRefs.current.set(jobId, sse);
+
+                sse.onerror = () => {
+                    console.warn('[useBulkOps] SSE connection lỗi cho job:', jobId);
+                    // Đóng và xóa ref — component có thể reconnect
+                    sse.close();
+                    sseRefs.current.delete(jobId);
+                };
+            }
+
+            /* Lắng nghe event 'progress' */
+            sse.addEventListener('progress', (event) => {
+                try {
+                    const data: JobProgress = JSON.parse(event.data);
+                    callback(data);
+
+                    /* Cập nhật local jobs state */
+                    setJobs((prev) =>
+                        prev.map((j) =>
+                            j.job_id === jobId
+                                ? {
+                                    ...j,
+                                    processed: data.processed,
+                                    succeeded: data.succeeded,
+                                    failed: data.failed,
+                                    skipped: data.skipped,
+                                    percent: data.percent,
+                                    updated_at: new Date().toISOString(),
+                                }
+                                : j
+                        )
+                    );
+                } catch {
+                    console.warn('[useBulkOps] Lỗi parse SSE progress event');
+                }
+            });
+
+            /* Lắng nghe job completed */
+            sse.addEventListener('job_completed', () => {
+                setJobs((prev) =>
+                    prev.map((j) =>
+                        j.job_id === jobId
+                            ? { ...j, status: 'completed' as JobStatus, updated_at: new Date().toISOString() }
+                            : j
+                    )
+                );
+                /* Đóng SSE khi job hoàn thành */
+                sse.close();
+                sseRefs.current.delete(jobId);
+            });
+
+            /* Lắng nghe job failed */
+            sse.addEventListener('job_failed', () => {
+                setJobs((prev) =>
+                    prev.map((j) =>
+                        j.job_id === jobId
+                            ? { ...j, status: 'failed' as JobStatus, updated_at: new Date().toISOString() }
+                            : j
+                    )
+                );
+                sse.close();
+                sseRefs.current.delete(jobId);
+            });
+
+            /* Lắng nghe job cancelled */
+            sse.addEventListener('job_cancelled', () => {
+                setJobs((prev) =>
+                    prev.map((j) =>
+                        j.job_id === jobId
+                            ? { ...j, status: 'cancelled' as JobStatus, updated_at: new Date().toISOString() }
+                            : j
+                    )
+                );
+                sse.close();
+                sseRefs.current.delete(jobId);
+            });
+
+            /* Return cleanup function */
+            return () => {
+                /* Không đóng connection nếu còn subscriber khác — chỉ bỏ callback này */
+                // (Trong thực tế, nên dùng ref đếm số subscriber)
+            };
+            {% endif %}
+        },
+        [apiBaseUrl, {% if use_events %}sseBaseUrl{% else %}pollingIntervalMs{% endif %}],
+    );
+
+    /* ---- Lấy DLQ entries ---- */
+    const getDLQEntries = useCallback(async (jobId: string): Promise<DLQEntry[]> => {
+        try {
+            return await fetchDLQEntries(apiBaseUrl, jobId);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Lấy DLQ thất bại';
+            console.error('[useBulkOps] getDLQEntries:', message);
+            return [];
+        }
+    }, [apiBaseUrl]);
+
+    /* ---- Retry DLQ ---- */
+    const retryDLQ = useCallback(async (jobId: string): Promise<void> => {
+        setError(null);
+        try {
+            await retryDLQApi(apiBaseUrl, jobId);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Retry DLQ thất bại';
+            setError(message);
+            console.error('[useBulkOps] retryDLQ:', message);
+            throw err;
+        }
+    }, [apiBaseUrl]);
+
+    /* ---- Auto-load jobs khi mount ---- */
+    useEffect(() => {
+        if (autoFetch) {
+            refreshJobs();
+        }
+    }, [autoFetch, refreshJobs]);
+
+    /* ---- Polling tự động cho các job đang chạy (phòng trường hợp SSE không bật) ---- */
+    {% if not use_events %}
+    useEffect(() => {
+        const hasRunning = jobs.some((j) => j.status === 'running' || j.status === 'queued' || j.status === 'pending');
+        if (!hasRunning) return;
+
+        pollingRef.current = setInterval(async () => {
+            try {
+                const data = await fetchJobs(apiBaseUrl);
+                setJobs(data);
+            } catch {
+                // Bỏ qua lỗi polling — giữ dữ liệu cũ
+            }
+        }, pollingIntervalMs);
+
+        return () => {
+            if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+                pollingRef.current = null;
+            }
+        };
+    }, [jobs, apiBaseUrl, pollingIntervalMs]);
+    {% endif %}
+
+    /* ---- Cleanup SSE connections khi unmount ---- */
+    useEffect(() => {
+        return () => {
+            sseRefs.current.forEach((sse) => sse.close());
+            sseRefs.current.clear();
+        };
+    }, []);
+
+    return {
+        jobs,
+        loading,
+        error,
+        createJob,
+        getJob,
+        cancelJob,
+        getProgress,
+        refreshJobs,
+        subscribeToProgress,
+        getDLQEntries,
+        retryDLQ,
+    };
+}
+
+export default useBulkOps;

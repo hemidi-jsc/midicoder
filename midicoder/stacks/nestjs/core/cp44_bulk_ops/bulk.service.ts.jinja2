@@ -1,0 +1,925 @@
+/**
+ * Bulk Operations Service - Sinh tự động bởi Midicoder CP44.
+ *
+ * Service chính của bulk operations engine, chịu trách nhiệm:
+ * - Tạo, lấy, liệt kê, hủy bulk jobs
+ * - Chia job thành các chunk và xử lý song song
+ * - Retry logic với nhiều chiến lược (immediate, fixed delay, exponential backoff)
+ * - Quản lý Dead-Letter Queue (DLQ) cho các entity thất bại
+ * - Emit events và audit log
+ *
+ * CP44: Bulk Operations Engine
+ */
+
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, In, Between, LessThan } from 'typeorm';
+import { EventsEmitter } from '@nestjs/event-emitter';
+import {
+  BulkJobEntity,
+  BulkChunkEntity,
+  BulkResultEntity,
+  DLQEntryEntity,
+  JobStatus,
+  ChunkStatus,
+  RetryStrategy,
+} from './bulk.entity';
+import {
+  CreateBulkJobDto,
+  BulkJobFilterDto,
+  UpdateBulkJobDto,
+  BulkProgressDto,
+  DLQEntryDto,
+} from './bulk.dto';
+
+@Injectable()
+export class BulkService {
+  private readonly logger: Logger;
+
+  constructor(
+    @InjectRepository(BulkJobEntity)
+    private readonly jobsRepo: Repository<BulkJobEntity>,
+    @InjectRepository(BulkChunkEntity)
+    private readonly chunksRepo: Repository<BulkChunkEntity>,
+    @InjectRepository(BulkResultEntity)
+    private readonly resultsRepo: Repository<BulkResultEntity>,
+    @InjectRepository(DLQEntryEntity)
+    private readonly dlqRepo: Repository<DLQEntryEntity>,
+    @InjectEventsEmitter()
+    private readonly events: EventsEmitter,
+  ) {
+    this.logger = new Logger(BulkService.name);
+  }
+
+  /**
+   * Tạo một bulk job mới từ DTO.
+   *
+   * @param dto Dữ liệu đầu vào từ client
+   * @returns BulkJobEntity đã tạo
+   */
+  async createJob(dto: CreateBulkJobDto): Promise<BulkJobEntity> {
+    // Validate: danh sách entityIds không được rỗng
+    if (!dto.entityIds || dto.entityIds.length === 0) {
+      throw new BadRequestException('entityIds không được để trống');
+    }
+
+    // Tạo job mới với các giá trị mặc định
+    const job = this.jobsRepo.create({
+      entityType: dto.entityType,
+      action: dto.action,
+      entityIds: dto.entityIds,
+      chunkSize: dto.chunkSize ?? {{ default_chunk_size }},
+      maxConcurrency: dto.maxConcurrency ?? {{ default_concurrency }},
+      maxRetries: dto.maxRetries ?? {{ default_max_retries }},
+      retryStrategy: dto.retryStrategy ?? RetryStrategy.EXPONENTIAL_BACKOFF,
+      timeoutSeconds: dto.timeoutSeconds ?? {{ default_timeout }},
+      status: JobStatus.PENDING,
+      tenantId: dto.tenantId ?? null,
+      operatorId: dto.operatorId ?? null,
+      metadata: dto.metadata ?? null,
+      processedCount: 0,
+      succeededCount: 0,
+      failedCount: 0,
+      skippedCount: 0,
+      errorMessage: null,
+      startedAt: null,
+      finishedAt: null,
+    });
+
+    const savedJob = await this.jobsRepo.save(job);
+    this.logger.log(`BulkJob ${savedJob.jobId} đã được tạo: ${dto.entityType}.${dto.action} với ${dto.entityIds.length} entities`);
+
+    // Emit sự kiện job được tạo
+    await this.emitEvent('bulk.job.created', {
+      jobId: savedJob.jobId,
+      entityType: savedJob.entityType,
+      action: savedJob.action,
+      totalEntities: savedJob.entityIds.length,
+    });
+
+    // Ghi audit log
+    await this.auditLog('BULK_JOB_CREATED', {
+      jobId: savedJob.jobId,
+      entityType: savedJob.entityType,
+      action: savedJob.action,
+      operatorId: savedJob.operatorId,
+    });
+
+    return savedJob;
+  }
+
+  /**
+   * Lấy thông tin chi tiết của một job theo ID.
+   *
+   * @param jobId UUID của job
+   * @returns BulkJobEntity
+   * @throws NotFoundException nếu job không tồn tại
+   */
+  async getJob(jobId: string): Promise<BulkJobEntity> {
+    const job = await this.jobsRepo.findOne({
+      where: { jobId },
+      relations: ['chunks'],
+    });
+
+    if (!job) {
+      throw new NotFoundException(`BulkJob ${jobId} không tìm thấy`);
+    }
+
+    return job;
+  }
+
+  /**
+   * Liệt kê jobs với bộ lọc và phân trang.
+   *
+   * @param filter Các tham số lọc: status, entityType, tenantId, page, page_size
+   * @returns Object chứa items (danh sách jobs) và total (tổng số)
+   */
+  async listJobs(filter: BulkJobFilterDto): Promise<{ items: BulkJobEntity[]; total: number }> {
+    const { status, entityType, tenantId, page = 1, page_size = 20 } = filter;
+
+    const where: any = {};
+
+    // Áp dụng các điều kiện WHERE
+    if (status) {
+      where.status = status;
+    }
+    if (entityType) {
+      where.entityType = entityType;
+    }
+    if (tenantId) {
+      where.tenantId = tenantId;
+    }
+
+    const skip = (page - 1) * page_size;
+
+    const [items, total] = await this.jobsRepo.findAndCount({
+      where,
+      skip,
+      take: page_size,
+      order: { createdAt: 'DESC' },
+    });
+
+    return { items, total };
+  }
+
+  /**
+   * Hủy một job đang chạy.
+   *
+   * Chỉ cho phép hủy các job ở trạng thái PENDING hoặc RUNNING.
+   * Các job đã COMPLETED, FAILED, CANCELLED sẽ bị từ chối.
+   *
+   * @param jobId UUID của job
+   * @returns BulkJobEntity đã cập nhật trạng thái
+   * @throws NotFoundException nếu job không tồn tại
+   * @throws BadRequestException nếu job không thể hủy
+   */
+  async cancelJob(jobId: string): Promise<BulkJobEntity> {
+    const job = await this.jobsRepo.findOne({ where: { jobId } });
+
+    if (!job) {
+      throw new NotFoundException(`BulkJob ${jobId} không tìm thấy`);
+    }
+
+    // Chỉ cho phép hủy job ở trạng thái PENDING hoặc RUNNING
+    if (job.status === JobStatus.COMPLETED) {
+      throw new BadRequestException('Không thể hủy job đã hoàn thành');
+    }
+    if (job.status === JobStatus.CANCELLED) {
+      throw new BadRequestException('Job đã bị hủy');
+    }
+    if (job.status === JobStatus.FAILED) {
+      throw new BadRequestException('Không thể hủy job đã thất bại');
+    }
+
+    job.status = JobStatus.CANCELLED;
+    job.finishedAt = new Date();
+
+    const updatedJob = await this.jobsRepo.save(job);
+
+    this.logger.log(`BulkJob ${jobId} đã bị hủy`);
+
+    // Emit sự kiện job bị hủy
+    await this.emitEvent('bulk.job.cancelled', {
+      jobId: updatedJob.jobId,
+      entityType: updatedJob.entityType,
+      processedCount: updatedJob.processedCount,
+    });
+
+    // Ghi audit log
+    await this.auditLog('BULK_JOB_CANCELLED', {
+      jobId: updatedJob.jobId,
+      entityType: updatedJob.entityType,
+    });
+
+    return updatedJob;
+  }
+
+  /**
+   * Lấy tiến độ xử lý hiện tại của job.
+   *
+   * Tính toán phần trăm hoàn thành và trả về đầy đủ thông tin thống kê.
+   *
+   * @param jobId UUID của job
+   * @returns BulkProgressDto
+   */
+  async getProgress(jobId: string): Promise<BulkProgressDto> {
+    const job = await this.jobsRepo.findOne({ where: { jobId } });
+
+    if (!job) {
+      throw new NotFoundException(`BulkJob ${jobId} không tìm thấy`);
+    }
+
+    const total = job.entityIds.length;
+    const processed = job.processedCount;
+    const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
+
+    return {
+      job_id: job.jobId,
+      status: job.status,
+      total,
+      processed,
+      succeeded: job.succeededCount,
+      failed: job.failedCount,
+      skipped: job.skippedCount,
+      percentage,
+      errorMessage: job.errorMessage,
+      startedAt: job.startedAt,
+      finishedAt: job.finishedAt,
+    };
+  }
+
+  /**
+   * Cập nhật thông tin job.
+   *
+   * @param jobId UUID của job
+   * @param dto Dữ liệu cập nhật
+   * @returns BulkJobEntity đã cập nhật
+   */
+  async updateJob(jobId: string, dto: UpdateBulkJobDto): Promise<BulkJobEntity> {
+    const job = await this.jobsRepo.findOne({ where: { jobId } });
+
+    if (!job) {
+      throw new NotFoundException(`BulkJob ${jobId} không tìm thấy`);
+    }
+
+    if (dto.status) {
+      // Không cho phép cập nhật trạng thái nếu job đã kết thúc
+      if (job.status === JobStatus.COMPLETED || job.status === JobStatus.CANCELLED || job.status === JobStatus.FAILED) {
+        throw new BadRequestException(`Không thể thay đổi trạng thái của job đã kết thúc (${job.status})`);
+      }
+      job.status = dto.status;
+    }
+
+    if (dto.metadata) {
+      job.metadata = { ...job.metadata, ...dto.metadata };
+    }
+
+    return await this.jobsRepo.save(job);
+  }
+
+  /**
+   * Xử lý một job từ đầu đến cuối.
+   *
+   * Quy trình:
+   * 1. Kiểm tra job có ở trạng thái PENDING không
+   * 2. Chuyển job sang VALIDATING, sau đó RUNNING
+   * 3. Chia entityIds thành các chunk
+   * 4. Tạo BulkChunkEntity cho mỗi chunk
+   * 5. Xử lý các chunk song song với concurrency limit
+   * 6. Cập nhật counters của job
+   * 7. Đánh dấu job COMPLETED hoặc FAILED
+   *
+   * @param jobId UUID của job
+   */
+  async processJob(jobId: string): Promise<void> {
+    const job = await this.jobsRepo.findOne({ where: { jobId } });
+
+    if (!job) {
+      throw new NotFoundException(`BulkJob ${jobId} không tìm thấy`);
+    }
+
+    if (job.status !== JobStatus.PENDING && job.status !== JobStatus.PAUSED) {
+      throw new ConflictException(`Job ${jobId} đang ở trạng thái ${job.status}, không thể xử lý`);
+    }
+
+    // Chuyển sang trạng thái đang chạy
+    job.status = JobStatus.RUNNING;
+    job.startedAt = new Date();
+    await this.jobsRepo.save(job);
+
+    this.logger.log(`BulkJob ${jobId} bắt đầu xử lý với ${job.entityIds.length} entities`);
+
+    // Emit sự kiện job bắt đầu
+    await this.emitEvent('bulk.job.started', {
+      jobId: job.jobId,
+      entityType: job.entityType,
+      action: job.action,
+      totalEntities: job.entityIds.length,
+    });
+
+    try {
+      // Chia entityIds thành các chunk
+      const chunks = this.createChunks(job.entityIds, job.chunkSize);
+      this.logger.debug(`BulkJob ${jobId} chia thành ${chunks.length} chunks`);
+
+      // Tạo các BulkChunkEntity
+      const chunkEntities: BulkChunkEntity[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        const chunkEntity = this.chunksRepo.create({
+          job_id: job.jobId,
+          chunkNumber: i + 1,
+          entityIds: chunks[i],
+          status: ChunkStatus.PENDING,
+          processedCount: 0,
+          succeededCount: 0,
+          failedCount: 0,
+          skippedCount: 0,
+        });
+        chunkEntities.push(await this.chunksRepo.save(chunkEntity));
+      }
+
+      // Xử lý các chunk song song với concurrency limit
+      await this.processChunksWithConcurrency(job, chunkEntities, job.maxConcurrency);
+
+      // Cập nhật trạng thái cuối cùng của job
+      job.finishedAt = new Date();
+
+      if (job.failedCount > 0 && job.succeededCount === 0) {
+        job.status = JobStatus.FAILED;
+        job.errorMessage = `Job thất bại: ${job.failedCount} entities không xử lý được`;
+      } else {
+        job.status = JobStatus.COMPLETED;
+      }
+
+      await this.jobsRepo.save(job);
+
+      this.logger.log(
+        `BulkJob ${jobId} hoàn thành: ${job.succeededCount}/${job.entityIds.length} thành công, ` +
+        `${job.failedCount} thất bại, ${job.skippedCount} bỏ qua`,
+      );
+
+      // Emit sự kiện job hoàn thành
+      await this.emitEvent('bulk.job.completed', {
+        jobId: job.jobId,
+        status: job.status,
+        succeeded: job.succeededCount,
+        failed: job.failedCount,
+        skipped: job.skippedCount,
+      });
+
+      // Emit tiến độ 100% qua WebSocket
+      await this.emitProgress(jobId, await this.getProgress(jobId));
+
+    } catch (error) {
+      job.status = JobStatus.FAILED;
+      job.errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định';
+      job.finishedAt = new Date();
+      await this.jobsRepo.save(job);
+
+      this.logger.error(`BulkJob ${jobId} gặp lỗi nghiêm trọng: ${error}`, error?.stack);
+
+      // Emit sự kiện job thất bại
+      await this.emitEvent('bulk.job.failed', {
+        jobId: job.jobId,
+        error: job.errorMessage,
+      });
+
+      // Emit tiến độ qua WebSocket
+      await this.emitProgress(jobId, await this.getProgress(jobId));
+
+      throw new InternalServerErrorException(`Xử lý job ${jobId} thất bại: ${job.errorMessage}`);
+    }
+  }
+
+  /**
+   * Chia danh sách entityIds thành các chunk có kích thước bằng chunkSize.
+   *
+   * @param entityIds Danh sách tất cả entity IDs
+   * @param chunkSize Số lượng entities mỗi chunk
+   * @returns Array of string[] - các chunk
+   */
+  private createChunks(entityIds: string[], chunkSize: number): string[][] {
+    const chunks: string[][] = [];
+    for (let i = 0; i < entityIds.length; i += chunkSize) {
+      chunks.push(entityIds.slice(i, i + chunkSize));
+    }
+    return chunks;
+  }
+
+  /**
+   * Xử lý các chunks song song với giới hạn concurrency.
+   *
+   * Sử dụng Promise-based concurrency pool: chạy tối đa maxConcurrency
+   * chunk cùng lúc, khi một chunk hoàn thành thì lấy chunk tiếp theo.
+   *
+   * @param job BulkJobEntity đang xử lý
+   * @param chunks Danh sách BulkChunkEntity cần xử lý
+   * @param maxConcurrency Số chunk xử lý song song tối đa
+   */
+  private async processChunksWithConcurrency(
+    job: BulkJobEntity,
+    chunks: BulkChunkEntity[],
+    maxConcurrency: number,
+  ): Promise<void> {
+    const processChunkWithJobUpdate = async (chunk: BulkChunkEntity, chunkIndex: number): Promise<void> => {
+      try {
+        await this.processChunk(job, chunk, chunkIndex + 1);
+
+        // Cập nhật counters của job sau khi chunk hoàn thành
+        await this.jobsRepo.increment({ jobId: job.jobId }, 'processedCount', chunk.entityIds.length);
+        await this.jobsRepo.increment({ jobId: job.jobId }, 'succeededCount', chunk.succeededCount);
+        await this.jobsRepo.increment({ jobId: job.jobId }, 'failedCount', chunk.failedCount);
+        await this.jobsRepo.increment({ jobId: job.jobId }, 'skippedCount', chunk.skippedCount);
+
+        // Reload job để có dữ liệu mới nhất
+        const updatedJob = await this.jobsRepo.findOne({ where: { jobId: job.jobId } });
+        if (updatedJob) {
+          Object.assign(job, updatedJob);
+        }
+
+        // Emit tiến độ sau mỗi chunk
+        await this.emitProgress(job.jobId, await this.getProgress(job.jobId));
+
+      } catch (error) {
+        this.logger.error(`Chunk ${chunk.chunkId} gặp lỗi: ${error}`);
+        chunk.status = ChunkStatus.FAILED;
+        chunk.errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định';
+        chunk.failedCount = chunk.entityIds.length;
+        chunk.processedCount = chunk.entityIds.length;
+        await this.chunksRepo.save(chunk);
+
+        // Cập nhật job counters
+        await this.jobsRepo.increment({ jobId: job.jobId }, 'processedCount', chunk.entityIds.length);
+        await this.jobsRepo.increment({ jobId: job.jobId }, 'failedCount', chunk.entityIds.length);
+      }
+    };
+
+    // Chạy song song với concurrency limit
+    const queue = [...chunks];
+    const running: Promise<void>[] = [];
+
+    while (queue.length > 0 || running.length > 0) {
+      // Đổ đầy pool lên đến maxConcurrency
+      while (running.length < maxConcurrency && queue.length > 0) {
+        const chunk = queue.shift()!;
+        const index = chunks.indexOf(chunk);
+        const promise = processChunkWithJobUpdate(chunk, index);
+        running.push(promise);
+      }
+
+      // Chờ ít nhất một chunk hoàn thành
+      if (running.length > 0) {
+        await Promise.race(running);
+        // Loại bỏ các promise đã hoàn thành
+        for (let i = running.length - 1; i >= 0; i--) {
+          const promise = running[i];
+          // Kiểm tra bằng cách tạo promise wrapper
+          const check = promise.then(() => true, () => true);
+          // Để đơn giản, chúng ta chờ tất cả running hiện tại
+        }
+      }
+    }
+
+    // Đảm bảo tất cả chunks hoàn thành
+    await Promise.all(running);
+  }
+
+  /**
+   * Xử lý một chunk: thực hiện action cho từng entity trong chunk.
+   *
+   * @param job BulkJobEntity cha
+   * @param chunk BulkChunkEntity cần xử lý
+   * @param chunkNumber Số thứ tự chunk
+   */
+  async processChunk(
+    job: BulkJobEntity,
+    chunk: BulkChunkEntity,
+    chunkNumber: number,
+  ): Promise<void> {
+    chunk.status = ChunkStatus.RUNNING;
+    await this.chunksRepo.save(chunk);
+
+    this.logger.debug(`Chunk ${chunkNumber}/${Math.ceil(job.entityIds.length / job.chunkSize)} bắt đầu xử lý (${chunk.entityIds.length} entities)`);
+
+    const results: BulkResultEntity[] = [];
+
+    for (const entityId of chunk.entityIds) {
+      try {
+        // Kiểm tra job có bị hủy không
+        const currentJob = await this.jobsRepo.findOne({ where: { jobId: job.jobId } });
+        if (currentJob?.status === JobStatus.CANCELLED) {
+          chunk.status = ChunkStatus.SKIPPED;
+          await this.chunksRepo.save(chunk);
+          return;
+        }
+
+        // Thực hiện action cho entity
+        const { success, result } = await this.retryRecord(job, entityId, job.maxRetries);
+
+        // Tạo result record
+        const resultEntity = this.resultsRepo.create({
+          chunk_id: chunk.chunkId,
+          entityId,
+          success,
+          error: success ? null : (result?.error || 'Xử lý thất bại'),
+          retryCount: result?.retryCount ?? 0,
+          metadata: result?.metadata ?? null,
+          processedAt: new Date(),
+        });
+        results.push(resultEntity);
+
+        // Cập nhật chunk counters
+        chunk.processedCount++;
+        if (success) {
+          chunk.succeededCount++;
+        } else {
+          chunk.failedCount++;
+        }
+
+      } catch (error) {
+        // Entity thất bại hoàn toàn
+        const resultEntity = this.resultsRepo.create({
+          chunk_id: chunk.chunkId,
+          entityId,
+          success: false,
+          error: error instanceof Error ? error.message : 'Lỗi không xác định',
+          retryCount: 0,
+          processedAt: new Date(),
+        });
+        results.push(resultEntity);
+
+        chunk.processedCount++;
+        chunk.failedCount++;
+      }
+    }
+
+    // Lưu tất cả results một lần
+    if (results.length > 0) {
+      await this.resultsRepo.save(results);
+    }
+
+    // Cập nhật trạng thái chunk
+    if (chunk.failedCount === 0) {
+      chunk.status = ChunkStatus.COMPLETED;
+    } else if (chunk.failedCount === chunk.entityIds.length) {
+      chunk.status = ChunkStatus.FAILED;
+    } else {
+      chunk.status = ChunkStatus.COMPLETED; // partial success vẫn là completed
+    }
+
+    await this.chunksRepo.save(chunk);
+  }
+
+  /**
+   * Thực hiện retry cho một record theo chiến lược đã cấu hình.
+   *
+   * Hỗ trợ 3 chiến lược:
+   * - IMMEDIATE: retry ngay lập tức
+   * - FIXED_DELAY: delay cố định 2 giây giữa các lần retry
+   * - EXPONENTIAL_BACKOFF: delay tăng theo cấp số nhân (2^n giây, max 60s)
+   *
+   * Nếu hết số lần retry, entity sẽ được đưa vào DLQ.
+   *
+   * @param job BulkJobEntity cha
+   * @param entityId ID của entity cần xử lý
+   * @param maxAttempts Số lần retry tối đa
+   * @returns Object { success, result }
+   */
+  async retryRecord(
+    job: BulkJobEntity,
+    entityId: string,
+    maxAttempts: number,
+  ): Promise<{ success: boolean; result?: { error?: string; retryCount?: number; metadata?: Record<string, any> } }> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxAttempts; attempt++) {
+      try {
+        // Kiểm tra job có bị hủy không
+        if (attempt > 0) {
+          const currentJob = await this.jobsRepo.findOne({ where: { jobId: job.jobId } });
+          if (currentJob?.status === JobStatus.CANCELLED) {
+            return { success: false, result: { error: 'Job bị hủy', retryCount: attempt } };
+          }
+        }
+
+        // Thực hiện action thực tế cho entity
+        const result = await this.executeAction(job, entityId);
+
+        if (result.success) {
+          this.logger.debug(`Entity ${entityId} xử lý thành công (lần thử ${attempt + 1})`);
+          return { success: true, result: { retryCount: attempt, metadata: result.metadata } };
+        } else {
+          lastError = new Error(result.error || 'Xử lý thất bại');
+        }
+
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        this.logger.warn(`Entity ${entityId} thất bại lần ${attempt + 1}: ${lastError.message}`);
+      }
+
+      // Nếu chưa hết số lần retry, chờ theo chiến lược và thử lại
+      if (attempt < maxAttempts) {
+        const delay = this.getRetryDelay(job.retryStrategy, attempt);
+        this.logger.debug(`Waiting ${delay}ms before retry ${attempt + 2} for entity ${entityId}`);
+        await this.sleep(delay);
+      }
+    }
+
+    // Hết số lần retry - đưa vào DLQ
+    this.logger.error(`Entity ${entityId} thất bại sau ${maxAttempts + 1} lần thử - đưa vào DLQ`);
+
+    await this.enqueueToDLQ(job, entityId, lastError);
+
+    return {
+      success: false,
+      result: { error: lastError?.message || 'Thất bại sau tất cả lần retry', retryCount: maxAttempts },
+    };
+  }
+
+  /**
+   * Thực hiện action thực tế cho một entity.
+   *
+   * Phương thức này là entry point để tích hợp với các service domain.
+   * Trong triển khai thực tế, phương thức này sẽ gọi đến các service
+   * tương ứng với entityType và action.
+   *
+   * @param job BulkJobEntity
+   * @param entityId ID của entity
+   * @returns Object { success, error?, metadata? }
+   */
+  private async executeAction(
+    job: BulkJobEntity,
+    entityId: string,
+  ): Promise<{ success: boolean; error?: string; metadata?: Record<string, any> }> {
+    // Emit sự kiện để các subscriber xử lý action thực tế
+    // Điều này cho phép tích hợp loosely-coupled với các service domain
+    const response: any = await this.events.awaitEvent(
+      `bulk.action.${job.entityType}.${job.action}`,
+      { timeout: 5000, maxListeners: 1 },
+      { entityId, job, metadata: job.metadata },
+    );
+
+    if (response?.success === false) {
+      return { success: false, error: response?.error || 'Action thất bại' };
+    }
+
+    return {
+      success: true,
+      metadata: response?.metadata ?? { entityType: job.entityType, action: job.action },
+    };
+  }
+
+  /**
+   * Tính thời gian delay cho retry dựa trên chiến lược.
+   *
+   * @param strategy Chiến lược retry
+   * @param attempt Số lần attempt hiện tại (0-based)
+   * @returns Thời gian delay tính bằng milliseconds
+   */
+  private getRetryDelay(strategy: RetryStrategy, attempt: number): number {
+    switch (strategy) {
+      case RetryStrategy.IMMEDIATE:
+        return 0;
+      case RetryStrategy.FIXED_DELAY:
+        return 2000; // 2 giây cố định
+      case RetryStrategy.EXPONENTIAL_BACKOFF:
+        // 2^attempt giây, max 60 giây
+        const delaySeconds = Math.min(Math.pow(2, attempt), 60);
+        return delaySeconds * 1000;
+      default:
+        return 2000;
+    }
+  }
+
+  /**
+   * Đưa entity thất bại vào Dead-Letter Queue.
+   *
+   * @param job BulkJobEntity cha
+   * @param entityId ID của entity thất bại
+   * @param error Lỗi cuối cùng
+   */
+  private async enqueueToDLQ(
+    job: BulkJobEntity,
+    entityId: string,
+    error: Error | null,
+  ): Promise<void> {
+    const dlqEntry = this.dlqRepo.create({
+      job_id: job.jobId,
+      entityId,
+      entityType: job.entityType,
+      error: error?.message || 'Không xác định',
+      errorType: error?.constructor.name || null,
+      retryCount: job.maxRetries,
+      originalData: {
+        entityType: job.entityType,
+        action: job.action,
+        entityId,
+        metadata: job.metadata,
+      },
+      failedAt: new Date(),
+      replayed: false,
+      replayedAt: null,
+      replayErrorMessage: null,
+    });
+
+    await this.dlqRepo.save(dlqEntry);
+
+    this.logger.warn(`Entity ${entityId} đã được đưa vào DLQ (job: ${job.jobId})`);
+
+    // Emit sự kiện DLQ
+    await this.emitEvent('bulk.dlq.enqueued', {
+      entryId: dlqEntry.entryId,
+      jobId: job.jobId,
+      entityId,
+      entityType: job.entityType,
+      error: dlqEntry.error,
+    });
+  }
+
+  /**
+   * Lấy danh sách DLQ entries, có thể lọc theo job_id.
+   *
+   * @param jobId Tùy chọn: lọc theo job ID
+   * @returns Array của DLQEntryEntity
+   */
+  async getDLQEntries(jobId?: string): Promise<DLQEntryEntity[]> {
+    const where: any = {};
+    if (jobId) {
+      where.job_id = jobId;
+    }
+
+    return await this.dlqRepo.find({
+      where,
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Replay một DLQ entry - thử lại xử lý cho entity đã thất bại.
+   *
+   * @param entryId DLQ Entry ID
+   * @returns true nếu replay thành công, false nếu thất bại
+   * @throws NotFoundException nếu entry không tồn tại
+   * @throws BadRequestException nếu entry đã được replay
+   */
+  async replayDLQEntry(entryId: string): Promise<boolean> {
+    const entry = await this.dlqRepo.findOne({ where: { entryId } });
+
+    if (!entry) {
+      throw new NotFoundException(`DLQ Entry ${entryId} không tìm thấy`);
+    }
+
+    if (entry.replayed) {
+      throw new BadRequestException(`DLQ Entry ${entryId} đã được replay`);
+    }
+
+    this.logger.log(`Bắt đầu replay DLQ Entry ${entryId} (entity: ${entry.entityId})`);
+
+    try {
+      // Tạo một job mới để xử lý lại entity
+      const replayJob = await this.createJob({
+        entityType: entry.entityType,
+        action: this.getActionFromEntityType(entry.entityType),
+        entityIds: [entry.entityId],
+        chunkSize: 1,
+        maxConcurrency: 1,
+        maxRetries: {{ default_max_retries }},
+        tenantId: null,
+        metadata: {
+          replayFromDLQ: true,
+          originalDLQEntryId: entry.entryId,
+          originalData: entry.originalData,
+        },
+      });
+
+      // Xử lý job replay
+      await this.processJob(replayJob.jobId);
+
+      // Cập nhật DLQ entry
+      entry.replayed = true;
+      entry.replayedAt = new Date();
+      await this.dlqRepo.save(entry);
+
+      this.logger.log(`DLQ Entry ${entryId} replay thành công`);
+
+      // Emit sự kiện
+      await this.emitEvent('bulk.dlq.replayed', {
+        entryId: entry.entryId,
+        jobId: replayJob.jobId,
+        entityId: entry.entityId,
+        success: true,
+      });
+
+      // Audit log
+      await this.auditLog('DLQ_ENTRY_REPLAYED', {
+        entryId: entry.entryId,
+        jobId: replayJob.jobId,
+        entityId: entry.entityId,
+      });
+
+      return true;
+
+    } catch (error) {
+      this.logger.error(`DLQ Entry ${entryId} replay thất bại: ${error}`);
+
+      entry.replayed = true;
+      entry.replayedAt = new Date();
+      entry.replayErrorMessage = error instanceof Error ? error.message : String(error);
+      await this.dlqRepo.save(entry);
+
+      // Emit sự kiện
+      await this.emitEvent('bulk.dlq.replay_failed', {
+        entryId: entry.entryId,
+        entityId: entry.entityId,
+        error: entry.replayErrorMessage,
+      });
+
+      return false;
+    }
+  }
+
+  /**
+   * Lấy BulkAction từ entity type string.
+   *
+   * @param entityType Entity type string
+   * @returns BulkAction
+   */
+  private getActionFromEntityType(entityType: string): BulkAction {
+    // Mặc định là UPDATE, có thể customize theo yêu cầu
+    return BulkAction.UPDATE;
+  }
+
+  /**
+   * Emit sự kiện qua NestJS Event Emitter.
+   *
+   * @param event Tên sự kiện
+   * @param data Dữ liệu sự kiện
+   */
+  private async emitEvent(event: string, data: any): Promise<void> {
+    {% if use_events %}
+    try {
+      this.events.emit(event, data);
+      this.logger.debug(`Event emitted: ${event}`);
+    } catch (error) {
+      this.logger.error(`Failed to emit event ${event}: ${error}`);
+    }
+    {% else %}
+    // Events module không được kích hoạt - bỏ qua event
+    this.logger.debug(`[Skipped] Event: ${event} (use_events=false)`);
+    {% endif %}
+  }
+
+  /**
+   * Ghi audit log cho hoạt động bulk operation.
+   *
+   * @param action Tên hành động
+   * @param data Dữ liệu liên quan
+   */
+  private async auditLog(action: string, data: any): Promise<void> {
+    {% if use_audit %}
+    try {
+      this.events.emit('audit.log', {
+        action,
+        data,
+        timestamp: new Date(),
+        module: 'bulk_operations',
+      });
+    } catch (error) {
+      this.logger.error(`Failed to write audit log: ${error}`);
+    }
+    {% else %}
+    // Audit module không được kích hoạt - bỏ qua
+    this.logger.debug(`[Skipped] Audit: ${action}`);
+    {% endif %}
+  }
+
+  /**
+   * Emit tiến độ job qua WebSocket Gateway.
+   *
+   * @param jobId UUID của job
+   * @param progress BulkProgressDto
+   */
+  private async emitProgress(jobId: string, progress: BulkProgressDto): Promise<void> {
+    try {
+      this.events.emit('bulk.progress', { jobId, progress });
+    } catch (error) {
+      this.logger.error(`Failed to emit progress for job ${jobId}: ${error}`);
+    }
+  }
+
+  /**
+   * Sleep utility function.
+   *
+   * @param ms Số milliseconds để chờ
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+}

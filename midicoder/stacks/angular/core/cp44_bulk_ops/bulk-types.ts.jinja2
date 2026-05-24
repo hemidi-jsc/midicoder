@@ -1,0 +1,181 @@
+/**
+ * Bulk Types - CP44 Bulk Operations Engine.
+ *
+ * Định nghĩa các interface, enum cho hệ thống bulk operations.
+ * Bao gồm BulkJob, BulkProgress, DLQEntry và các trạng thái liên quan.
+ */
+
+/** Các hành động bulk được hỗ trợ */
+export enum BulkAction {
+  BATCH_CREATE = 'batch_create',
+  BATCH_UPDATE = 'batch_update',
+  BATCH_DELETE = 'batch_delete',
+  BATCH_READ = 'batch_read',
+}
+
+/** Trạng thái của một bulk job */
+export enum JobStatus {
+  PENDING = 'pending',
+  RUNNING = 'running',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  CANCELLED = 'cancelled',
+  TIMEOUT = 'timeout',
+}
+
+/** Trạng thái của từng chunk trong job */
+export enum ChunkStatus {
+  PENDING = 'pending',
+  PROCESSING = 'processing',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+}
+
+/** Chiến lược retry khi xử lý chunk thất bại */
+export enum RetryStrategy {
+  EXPONENTIAL_BACKOFF = 'exponential_backoff',
+  FIXED_DELAY = 'fixed_delay',
+  LINEAR_BACKOFF = 'linear_backoff',
+}
+
+/**
+ * BulkJob - đại diện cho một job bulk operations.
+ *
+ * Mỗi job bao gồm một danh sách entity IDs cần xử lý,
+ * được chia thành các chunk và xử lý song song.
+ */
+export interface BulkJob {
+  job_id: string;
+  entity_type: string;
+  action: BulkAction;
+  status: JobStatus;
+  entity_ids: string[];
+  chunk_size: number;
+  max_concurrency: number;
+  max_retries: number;
+  retry_strategy: RetryStrategy;
+  timeout_seconds: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  tenant_id: string;
+  operator_id: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+/**
+ * BulkProgress - tiến độ thực thi của một job.
+ *
+ * Được phát qua SSE cho cập nhật real-time.
+ */
+export interface BulkProgress {
+  job_id: string;
+  status: string;
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  percentage: number;
+}
+
+/**
+ * BulkJobCreate - dữ liệu yêu cầu tạo mới job.
+ *
+ * Người dùng cung cấp danh sách entity IDs và các thông số cấu hình.
+ */
+export interface BulkJobCreate {
+  entity_type: string;
+  action: BulkAction;
+  entity_ids: string[];
+  chunk_size?: number;
+  max_concurrency?: number;
+  max_retries?: number;
+  retry_strategy?: RetryStrategy;
+  timeout_seconds?: number;
+  tenant_id?: string;
+  operator_id?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * BulkJobFilter - bộ lọc khi tra danh sách jobs.
+ *
+ * Hỗ trợ lọc theo status, entity_type, tenant_id và phân trang.
+ */
+export interface BulkJobFilter {
+  status?: JobStatus;
+  entity_type?: string;
+  tenant_id?: string;
+  page?: number;
+  page_size?: number;
+}
+
+/**
+ * BulkJobList - phản hồi danh sách jobs có phân trang.
+ */
+export interface BulkJobList {
+  items: BulkJob[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+/**
+ * DLQEntry - Dead Letter Queue entry cho các entity xử lý thất bại.
+ *
+ * Mỗi entry lưu trữ lỗi chi tiết để hỗ trợ debug và replay.
+ */
+export interface DLQEntry {
+  entry_id: string;
+  job_id: string;
+  entity_id: string;
+  entity_type: string;
+  error: string;
+  error_type: string;
+  retry_count: number;
+  original_data: Record<string, unknown>;
+  failed_at: string;
+  replayed: boolean;
+  replayed_at: string | null;
+}
+
+/**
+ * ChunkInfo - thông tin chi tiết của từng chunk.
+ */
+export interface ChunkInfo {
+  chunk_id: string;
+  job_id: string;
+  index: number;
+  entity_ids: string[];
+  status: ChunkStatus;
+  started_at: string | null;
+  completed_at: string | null;
+  retry_count: number;
+}
+
+/**
+ * Map trạng thái sang nhãn hiển thị tiếng Việt.
+ */
+export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
+  [JobStatus.PENDING]: 'Đang chờ xử lý',
+  [JobStatus.RUNNING]: 'Đang xử lý',
+  [JobStatus.COMPLETED]: 'Hoàn thành',
+  [JobStatus.FAILED]: 'Thất bại',
+  [JobStatus.CANCELLED]: 'Đã huỷ',
+  [JobStatus.TIMEOUT]: 'Hết thời gian',
+};
+
+/**
+ * Map hành động sang nhãn hiển thị tiếng Việt.
+ */
+export const ACTION_LABELS: Record<BulkAction, string> = {
+  [BulkAction.BATCH_CREATE]: 'Tạo hàng loạt',
+  [BulkAction.BATCH_UPDATE]: 'Cập nhật hàng loạt',
+  [BulkAction.BATCH_DELETE]: 'Xoá hàng loạt',
+  [BulkAction.BATCH_READ]: 'Đọc hàng loạt',
+};

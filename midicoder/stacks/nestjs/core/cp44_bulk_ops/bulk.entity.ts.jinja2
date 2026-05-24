@@ -1,0 +1,311 @@
+/**
+ * Bulk Operations Entities - Sinh tự động bởi Midicoder CP44.
+ *
+ * Module này cung cấp các TypeORM entities cho bulk operations engine:
+ * - BulkJobEntity: job chính, chứa toàn bộ thông tin của một bulk operation
+ * - BulkChunkEntity: chunk con của mỗi job, dùng để xử lý song song
+ * - BulkResultEntity: kết quả xử lý của từng entity trong chunk
+ * - DLQEntryEntity: Dead-Letter Queue cho các entity xử lý thất bại
+ *
+ * CP44: Bulk Operations Engine
+ */
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  OneToMany,
+  Index,
+  JoinColumn,
+} from 'typeorm';
+
+/**
+ * Các hành động bulk có thể thực hiện.
+ */
+export enum BulkAction {
+  CREATE = 'CREATE',
+  UPDATE = 'UPDATE',
+  DELETE = 'DELETE',
+  ARCHIVE = 'ARCHIVE',
+  RESTORE = 'RESTORE',
+  IMPORT = 'IMPORT',
+  EXPORT = 'EXPORT',
+  SYNC = 'SYNC',
+  CUSTOM = 'CUSTOM',
+}
+
+/**
+ * Trạng thái của bulk job.
+ */
+export enum JobStatus {
+  PENDING = 'PENDING',
+  VALIDATING = 'VALIDATING',
+  RUNNING = 'RUNNING',
+  PAUSED = 'PAUSED',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  CANCELLED = 'CANCELLED',
+  TIMEOUT = 'TIMEOUT',
+}
+
+/**
+ * Trạng thái của chunk.
+ */
+export enum ChunkStatus {
+  PENDING = 'PENDING',
+  RUNNING = 'RUNNING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  SKIPPED = 'SKIPPED',
+}
+
+/**
+ * Chiến lược retry khi xử lý thất bại.
+ */
+export enum RetryStrategy {
+  IMMEDIATE = 'IMMEDIATE',
+  FIXED_DELAY = 'FIXED_DELAY',
+  EXPONENTIAL_BACKOFF = 'EXPONENTIAL_BACKOFF',
+}
+
+/**
+ * Bulk Job Entity - đại diện cho một bulk operation hoàn chỉnh.
+ *
+ * Mỗi job chứa danh sách entity IDs cần xử lý, cấu hình chunk/concurrency,
+ * và các counter để theo dõi tiến độ xử lý.
+ */
+@Entity('bulk_jobs')
+@Index(['status'])
+@Index(['tenant_id'])
+@Index(['entity_type'])
+export class BulkJobEntity {
+  @PrimaryGeneratedColumn('uuid')
+  jobId: string;
+
+  @Column({ type: 'varchar', length: 100 })
+  entityType: string;
+
+  @Column({ type: 'enum', enum: BulkAction })
+  action: BulkAction;
+
+  @Column({ type: 'enum', enum: JobStatus, default: JobStatus.PENDING })
+  status: JobStatus;
+
+  @Column('json')
+  entityIds: string[];
+
+  @Column({ type: 'int', default: {{ default_chunk_size }} })
+  chunkSize: number;
+
+  @Column({ type: 'int', default: {{ default_concurrency }} })
+  maxConcurrency: number;
+
+  @Column({ type: 'int', default: {{ default_max_retries }} })
+  maxRetries: number;
+
+  @Column({ type: 'enum', enum: RetryStrategy, default: RetryStrategy.EXPONENTIAL_BACKOFF })
+  retryStrategy: RetryStrategy;
+
+  @Column({ type: 'int', default: {{ default_timeout }} })
+  timeoutSeconds: number;
+
+  /** Số entity đã xử lý (bao gồm thành công, thất bại, bỏ qua) */
+  @Column({ type: 'int', default: 0 })
+  processedCount: number;
+
+  /** Số entity xử lý thành công */
+  @Column({ type: 'int', default: 0 })
+  succeededCount: number;
+
+  /** Số entity xử lý thất bại */
+  @Column({ type: 'int', default: 0 })
+  failedCount: number;
+
+  /** Số entity bị bỏ qua (skip) */
+  @Column({ type: 'int', default: 0 })
+  skippedCount: number;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  tenantId: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  operatorId: string;
+
+  @Column('jsonb', { nullable: true, default: null })
+  metadata: Record<string, any> | null;
+
+  /** Thông tin lỗi (nếu job thất bại) */
+  @Column('text', { nullable: true, default: null })
+  errorMessage: string | null;
+
+  /** Thời điểm job bắt đầu chạy */
+  @Column('timestamp', { nullable: true, default: null })
+  startedAt: Date | null;
+
+  /** Thời điểm job kết thúc */
+  @Column('timestamp', { nullable: true, default: null })
+  finishedAt: Date | null;
+
+  @CreateDateColumn({ type: 'timestamp' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamp' })
+  updatedAt: Date;
+
+  @OneToMany(() => BulkChunkEntity, (chunk) => chunk.job)
+  chunks: BulkChunkEntity[];
+}
+
+/**
+ * Bulk Chunk Entity - chunk con của một bulk job.
+ *
+ * Mỗi chunk chứa một tập con entity IDs để xử lý song song.
+ * Chunk cho phép job phân phối tải và xử lý đồng thời.
+ */
+@Entity('bulk_chunks')
+@Index(['job_id'])
+@Index(['status'])
+export class BulkChunkEntity {
+  @PrimaryGeneratedColumn('uuid')
+  chunkId: string;
+
+  @Column({ type: 'uuid' })
+  job_id: string;
+
+  @Column({ type: 'int' })
+  chunkNumber: number;
+
+  @Column('json')
+  entityIds: string[];
+
+  @Column({ type: 'enum', enum: ChunkStatus, default: ChunkStatus.PENDING })
+  status: ChunkStatus;
+
+  @Column({ type: 'int', default: 0 })
+  processedCount: number;
+
+  @Column({ type: 'int', default: 0 })
+  succeededCount: number;
+
+  @Column({ type: 'int', default: 0 })
+  failedCount: number;
+
+  @Column({ type: 'int', default: 0 })
+  skippedCount: number;
+
+  @Column('text', { nullable: true, default: null })
+  errorMessage: string | null;
+
+  @CreateDateColumn({ type: 'timestamp' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamp' })
+  updatedAt: Date;
+
+  @ManyToOne(() => BulkJobEntity, (job) => job.chunks, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'job_id' })
+  job: BulkJobEntity;
+
+  @OneToMany(() => BulkResultEntity, (result) => result.chunk)
+  results: BulkResultEntity[];
+}
+
+/**
+ * Bulk Result Entity - kết quả xử lý của từng entity trong chunk.
+ *
+ * Lưu lại trạng thái xử lý chi tiết cho từng entity, bao gồm
+ * thành công/thất bại, thông báo lỗi, số lần retry.
+ */
+@Entity('bulk_results')
+@Index(['chunk_id'])
+@Index(['entity_id'])
+export class BulkResultEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'uuid' })
+  chunk_id: string;
+
+  @Column({ type: 'varchar', length: 255 })
+  entityId: string;
+
+  @Column({ type: 'boolean', default: false })
+  success: boolean;
+
+  @Column('text', { nullable: true, default: null })
+  error: string | null;
+
+  @Column({ type: 'int', default: 0 })
+  retryCount: number;
+
+  @Column('jsonb', { nullable: true, default: null })
+  metadata: Record<string, any> | null;
+
+  @Column('timestamp', { nullable: true, default: null })
+  processedAt: Date | null;
+
+  @CreateDateColumn({ type: 'timestamp' })
+  createdAt: Date;
+
+  @ManyToOne(() => BulkChunkEntity, (chunk) => chunk.results, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'chunk_id' })
+  chunk: BulkChunkEntity;
+}
+
+/**
+ * DLQ Entry Entity - Dead-Letter Queue cho các entity xử lý thất bại.
+ *
+ * Khi một entity thất bại sau tất cả các lần retry, nó sẽ được
+ * đưa vào DLQ để nhân viên vận hành có thể kiểm tra và replay.
+ */
+@Entity('dlq_entries')
+@Index(['job_id'])
+@Index(['entity_id'])
+@Index(['replayed'])
+@Index(['entity_type'])
+export class DLQEntryEntity {
+  @PrimaryGeneratedColumn('uuid')
+  entryId: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  job_id: string | null;
+
+  @Column({ type: 'varchar', length: 255 })
+  entityId: string;
+
+  @Column({ type: 'varchar', length: 100 })
+  entityType: string;
+
+  @Column('text')
+  error: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true, default: null })
+  errorType: string | null;
+
+  @Column({ type: 'int', default: 0 })
+  retryCount: number;
+
+  @Column('jsonb', { nullable: true, default: null })
+  originalData: Record<string, any> | null;
+
+  @Column('timestamp', { nullable: true, default: null })
+  failedAt: Date | null;
+
+  @Column({ type: 'boolean', default: false })
+  replayed: boolean;
+
+  @Column('timestamp', { nullable: true, default: null })
+  replayedAt: Date | null;
+
+  @Column('text', { nullable: true, default: null })
+  replayErrorMessage: string | null;
+
+  @CreateDateColumn({ type: 'timestamp' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamp' })
+  updatedAt: Date;
+}

@@ -1,0 +1,934 @@
+/**
+ * Bulk Jobs Component - CP44 Bulk Operations Engine.
+ *
+ * Danh sách jobs với bộ lọc, phân trang, sắp xếp và các hành động.
+ * Hỗ trợ lọc theo trạng thái, loại thực thể và tìm kiếm theo ID.
+ */
+
+{% import 'macros.jinja2' as m %}
+{% set bulk_jobs = bulk_jobs|default(true) %}
+{% set job_count = job_count|default(100) %}
+{% set default_chunk_size = default_chunk_size|default(100) %}
+{% set default_concurrency = default_concurrency|default(5) %}
+{% set default_max_retries = default_max_retries|default(3) %}
+{% set default_retry_strategy = default_retry_strategy|default('exponential_backoff') %}
+{% set default_timeout = default_timeout|default(3600) %}
+{% set dlq_enabled = dlq_enabled|default(true) %}
+{% set use_events = use_events|default(true) %}
+{% set use_audit = use_audit|default(true) %}
+
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatTableModule } from '@angular/material/table';
+import { MatPaginatorModule, MatPaginator } from '@angular/material/paginator';
+import { MatSortModule, MatSort, Sort } from '@angular/material/sort';
+import { MatInputModule } from '@angular/material/input';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatSelectModule } from '@angular/material/select';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatIconModule } from '@angular/material/icon';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialogModule, MatDialog } from '@angular/material/dialog';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatTableDataSource } from '@angular/cdk/table';
+import { debounceTime } from 'rxjs/operators';
+import { Subject } from 'rxjs';
+import { inject, ViewChild } from '@angular/core';
+import { BulkStore } from './bulk.store';
+import { BulkJob, JobStatus, JOB_STATUS_LABELS } from './bulk-types';
+
+/**
+ * Xác nhận huỷ job dialog.
+ *
+ * @param dialog - MatDialog instance
+ * @param job - Job cần xác nhận huỷ
+ * @returns Observable kết quả xác nhận
+ */
+function confirmCancelJob(dialog: MatDialog, job: BulkJob): Promise<boolean> {
+  const dialogRef = dialog.open(CancelJobDialog, {
+    width: '400px',
+    data: {
+      jobId: job.job_id,
+      entityType: job.entity_type,
+      processed: job.processed,
+      total: job.entity_ids.length,
+    },
+  });
+  return dialogRef.afterClosed().then(result => !!result);
+}
+
+/**
+ * Dialog xác nhận huỷ job.
+ */
+@Component({
+  selector: 'app-cancel-job-dialog',
+  standalone: true,
+  imports: [CommonModule, MatButtonModule, MatCardModule],
+  template: `
+    <div class="cancel-dialog">
+      <h2 mat-dialog-title>Xác Nhận Huỷ Job</h2>
+      <mat-dialog-content>
+        <p>Bạn có chắc muốn huỷ job <code>{{ data.jobId }}</code>?</p>
+        <p>Job đang xử lý loại: <strong>{{ data.entityType }}</strong></p>
+        <p>Tiến độ hiện tại: {{ data.processed }} / {{ data.total }} đã xử lý</p>
+        <p class="warning">Các entity đã xử lý thành công sẽ không bị ảnh hưởng.</p>
+      </mat-dialog-content>
+      <mat-dialog-actions align="end">
+        <button mat-button mat-dialog-close="false">Không</button>
+        <button mat-raised-button color="warn" mat-dialog-close="true">Có, Huỷ Job</button>
+      </mat-dialog-actions>
+    </div>
+  `,
+  styles: `
+    .cancel-dialog {
+      padding: 8px;
+    }
+    code {
+      font-family: monospace;
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+    .warning {
+      color: #f57c00;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+  `,
+})
+class CancelJobDialog {
+  readonly data: { jobId: string; entityType: string; processed: number; total: number };
+}
+
+/**
+ * BulkJobsComponent - Bảng danh sách jobs với đầy đủ tính năng.
+ *
+ * Features:
+ * - MatTableDataSource để quản lý dữ liệu
+ * - Bộ lọc: status chip, entity_type dropdown, search input
+ * - Pagination với MatPaginator (mặc định 20 jobs/trang)
+ * - Sort với MatSort (hỗ trợ sắp xếp theo nhiều cột)
+ * - Action buttons: Xem chi tiết, Huỷ job (chỉ với job đang chạy)
+ * - Status badges với màu sắc phân biệt
+ * - @Input entityType, statusFilter cho bộ lọc từ parent
+ * - @Output jobSelected khi user chọn job
+ */
+@Component({
+  selector: 'app-bulk-jobs',
+  standalone: true,
+  imports: [
+    CommonModule,
+    MatButtonModule,
+    MatCardModule,
+    MatTableModule,
+    MatPaginatorModule,
+    MatSortModule,
+    MatInputModule,
+    MatFormFieldModule,
+    MatSelectModule,
+    MatChipsModule,
+    MatIconModule,
+    MatProgressBarModule,
+    MatTooltipModule,
+    MatDialogModule,
+    MatCheckboxModule,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="bulk-jobs">
+      <!-- Tiêu đề -->
+      <div class="jobs-header">
+        <h2>Danh Sách Jobs</h2>
+        <span class="job-count">{{ dataSource.data.length }} jobs</span>
+      </div>
+
+      <!-- Thanh loading -->
+      <mat-progress-bar
+        *ngIf="loading()"
+        mode="indeterminate"
+        class="loading-bar"
+      ></mat-progress-bar>
+
+      <!-- Thông báo lỗi -->
+      <div class="error-banner" *ngIf="error()">
+        <mat-icon>error</mat-icon>
+        <span>{{ error() }}</span>
+      </div>
+
+      <!-- Bộ lọc -->
+      <div class="filters-bar">
+        <!-- Tìm kiếm -->
+        <mat-form-field appearance="outline" class="search-field">
+          <mat-label>Tìm kiếm job ID</mat-label>
+          <input
+            matInput
+            #searchInput
+            (input)="onSearch(searchInput.value)"
+            placeholder="Nhập job ID..."
+          />
+          <mat-icon matPrefix>search</mat-icon>
+        </mat-form-field>
+
+        <!-- Lọc trạng thái -->
+        <mat-form-field appearance="outline" class="status-field">
+          <mat-label>Trạng thái</mat-label>
+          <mat-select (selectionChange)="onStatusFilterChange($event.value)">
+            <mat-option [value]="null">Tất cả</mat-option>
+            <mat-option *ngFor="let status of allStatuses" [value]="status.value">
+              <span class="status-option">
+                <span class="status-dot" [style.background]="status.color"></span>
+                {{ status.label }}
+              </span>
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <!-- Lọc loại thực thể -->
+        <mat-form-field appearance="outline" class="entity-field">
+          <mat-label>Loại thực thể</mat-label>
+          <mat-select (selectionChange)="onEntityTypeFilterChange($event.value)">
+            <mat-option [value]="null">Tất cả</mat-option>
+            <mat-option *ngFor="let type of entityTypes" [value]="type">
+              {{ type }}
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <!-- Nút xóa bộ lọc -->
+        <button
+          mat-icon-button
+          (click)="clearFilters()"
+          matTooltip="Xóa tất cả bộ lọc"
+          *ngIf="hasActiveFilters()"
+        >
+          <mat-icon>clear_all</mat-icon>
+        </button>
+      </div>
+
+      <!-- Status chips đã chọn -->
+      <div class="active-filters" *ngIf="hasActiveFilters()">
+        <mat-chip-set>
+          <mat-chip *ngIf="selectedStatus" (removed)="onStatusFilterChange(null)">
+            Trạng thái: {{ getStatusLabel(selectedStatus!) }}
+            <button matChipRemove><mat-icon>close</mat-icon></button>
+          </mat-chip>
+          <mat-chip *ngIf="selectedEntityType" (removed)="onEntityTypeFilterChange(null)">
+            Loại: {{ selectedEntityType }}
+            <button matChipRemove><mat-icon>close</mat-icon></button>
+          </mat-chip>
+          <mat-chip *ngIf="searchTerm" (removed)="onSearch('')">
+            Tìm: "{{ searchTerm }}"
+            <button matChipRemove><mat-icon>close</mat-icon></button>
+          </mat-chip>
+        </mat-chip-set>
+      </div>
+
+      <!-- Bảng jobs -->
+      <div class="table-container">
+        <table
+          mat-table
+          [dataSource]="dataSource"
+          matSort
+          matSortActive="created_at"
+          matSortDirection="desc"
+          class="jobs-table"
+        >
+          <!-- Checkbox cột -->
+          <ng-container matColumnDef="select">
+            <th mat-header-cell *matHeaderCellDef>
+              <mat-checkbox
+                (change)="toggleAllRows($event.checked)"
+                [checked]="isAllSelected()"
+                [indeterminate]="hasPartialSelection()"
+                aria-label="Chọn tất cả"
+              ></mat-checkbox>
+            </th>
+            <td mat-cell *matCellDef="let row">
+              <mat-checkbox
+                (change)="$event ? toggleRow(row.job_id) : null"
+                [checked]="isRowSelected(row.job_id)"
+                aria-label="Chọn job"
+              ></mat-checkbox>
+            </td>
+          </ng-container>
+
+          <!-- Cột Job ID -->
+          <ng-container matColumnDef="job_id">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Job ID</th>
+            <td mat-cell *matCellDef="let row">
+              <code>{{ row.job_id | slice:0:16 }}...</code>
+            </td>
+          </ng-container>
+
+          <!-- Cột Hành động -->
+          <ng-container matColumnDef="action">
+            <th mat-header-cell *matHeaderCellDef>Hành động</th>
+            <td mat-cell *matCellDef="let row">
+              <span class="action-badge">{{ getActionLabel(row.action) }}</span>
+            </td>
+          </ng-container>
+
+          <!-- Cột Entity Type -->
+          <ng-container matColumnDef="entity_type">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Loại thực thể</th>
+            <td mat-cell *matCellDef="let row">{{ row.entity_type }}</td>
+          </ng-container>
+
+          <!-- Cột Trạng thái -->
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Trạng thái</th>
+            <td mat-cell *matCellDef="let row">
+              <span
+                class="status-badge"
+                [class]="getStatusBadgeClass(row.status)"
+              >
+                <span class="status-dot" [style.background]="getStatusDotColor(row.status)"></span>
+                {{ getStatusLabel(row.status) }}
+              </span>
+            </td>
+          </ng-container>
+
+          <!-- Cột Tổng số -->
+          <ng-container matColumnDef="total">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Tổng</th>
+            <td mat-cell *matCellDef="let row">
+              {{ row.entity_ids.length }}
+            </td>
+          </ng-container>
+
+          <!-- Cột Đã xử lý -->
+          <ng-container matColumnDef="processed">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Đã xử lý</th>
+            <td mat-cell *matCellDef="let row">
+              <span class="processed-count">{{ row.processed }}</span>
+            </td>
+          </ng-container>
+
+          <!-- Cột Thành công / Thất bại -->
+          <ng-container matColumnDef="results">
+            <th mat-header-cell *matHeaderCellDef>Kết quả</th>
+            <td mat-cell *matCellDef="let row">
+              <span class="result-success">✓ {{ row.succeeded }}</span>
+              <span class="result-failed">✗ {{ row.failed }}</span>
+              <span class="result-skipped" *ngIf="row.skipped > 0">— {{ row.skipped }}</span>
+            </td>
+          </ng-container>
+
+          <!-- Cột Thời gian tạo -->
+          <ng-container matColumnDef="created_at">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Tạo lúc</th>
+            <td mat-cell *matCellDef="let row">
+              {{ row.created_at | date:'dd/MM/yyyy HH:mm:ss' }}
+            </td>
+          </ng-container>
+
+          <!-- Cột Thao tác -->
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef>Thao tác</th>
+            <td mat-cell *matCellDef="let row">
+              <div class="action-buttons">
+                <button
+                  mat-icon-button
+                  (click)="viewJob(row.job_id)"
+                  matTooltip="Xem chi tiết"
+                  aria-label="Xem chi tiết job"
+                >
+                  <mat-icon>visibility</mat-icon>
+                </button>
+                <button
+                  mat-icon-button
+                  (click)="cancelJob(row.job_id)"
+                  [disabled]="row.status !== 'running'"
+                  matTooltip="Huỷ job"
+                  aria-label="Huỷ job"
+                  class="cancel-btn"
+                >
+                  <mat-icon>stop</mat-icon>
+                </button>
+              </div>
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="displayedColumns; sticky: true"></tr>
+          <tr
+            mat-row
+            *matRowDef="let row; columns: displayedColumns;"
+            (click)="onRowClick(row.job_id)"
+            class="clickable-row"
+          ></tr>
+        </table>
+      </div>
+
+      <!-- Phân trang -->
+      <mat-paginator
+        [length]="totalJobs()"
+        [pageSize]="20"
+        [pageSizeOptions]="[10, 20, 50, 100]"
+        [showFirstLastButtons]="true"
+        (page)="onPageChange($event)"
+        aria-label="Chọn trang jobs"
+      ></mat-paginator>
+
+      <!-- Trạng thái rỗng -->
+      <div class="empty-state" *ngIf="!loading() && dataSource.data.length === 0">
+        <mat-icon>inventory_2</mat-icon>
+        <p>Không tìm thấy job nào</p>
+        <p class="empty-hint">Thử thay đổi bộ lọc hoặc tạo job mới</p>
+      </div>
+    </div>
+  `,
+  styles: `
+    .bulk-jobs {
+      padding: 16px;
+    }
+
+    .jobs-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .jobs-header h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .job-count {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .loading-bar {
+      margin-bottom: 8px;
+    }
+
+    .error-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: #ffebee;
+      color: #c62828;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+
+    .filters-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+
+    .search-field {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .status-field,
+    .entity-field {
+      min-width: 180px;
+    }
+
+    .active-filters {
+      margin-bottom: 12px;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+    }
+
+    .jobs-table {
+      width: 100%;
+    }
+
+    .clickable-row {
+      cursor: pointer;
+    }
+
+    .clickable-row:hover {
+      background: #f5f5f5;
+    }
+
+    td code {
+      font-family: monospace;
+      font-size: 12px;
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .action-badge {
+      text-transform: capitalize;
+      font-weight: 500;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .status-badge.status-completed {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+
+    .status-badge.status-failed {
+      background: #ffebee;
+      color: #c62828;
+    }
+
+    .status-badge.status-running {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+
+    .status-badge.status-pending {
+      background: #f5f5f5;
+      color: #616161;
+    }
+
+    .status-badge.status-cancelled {
+      background: #f5f5f5;
+      color: #757575;
+    }
+
+    .status-badge.status-timeout {
+      background: #fff3e0;
+      color: #e65100;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .processed-count {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .result-success {
+      color: #4caf50;
+      font-weight: 500;
+      margin-right: 8px;
+    }
+
+    .result-failed {
+      color: #f44336;
+      font-weight: 500;
+      margin-right: 8px;
+    }
+
+    .result-skipped {
+      color: #9e9e9e;
+      font-size: 12px;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 4px;
+    }
+
+    .cancel-btn {
+      color: #f44336;
+    }
+
+    .cancel-btn:hover:not(:disabled) {
+      background: rgba(244, 67, 54, 0.1);
+    }
+
+    .status-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 0;
+      color: #666;
+    }
+
+    .empty-state mat-icon {
+      font-size: 48px;
+      width: 48px;
+      height: 48px;
+      margin-bottom: 12px;
+      color: #ccc;
+    }
+
+    .empty-hint {
+      font-size: 13px;
+      color: #999;
+    }
+  `,
+})
+export class BulkJobsComponent implements OnInit, OnDestroy {
+  // Inject dependencies
+  private readonly store = inject(BulkStore);
+  private readonly dialog = inject(MatDialog);
+
+  // Exposed signals từ store
+  readonly loading = this.store.loading;
+  readonly error = this.store.error;
+  readonly totalJobs = this.store.totalJobs;
+
+  // MatTableDataSource cho jobs
+  dataSource = new MatTableDataSource<BulkJob>([]);
+
+  // ViewChild cho paginator và sort
+  @ViewChild(MatPaginator) paginator!: MatPaginator;
+  @ViewChild(MatSort) sort!: MatSort;
+
+  // Các cột hiển thị trong bảng
+  readonly displayedColumns: string[] = [
+    'select',
+    'job_id',
+    'action',
+    'entity_type',
+    'status',
+    'total',
+    'processed',
+    'results',
+    'created_at',
+    'actions',
+  ];
+
+  // Input: bộ lọc từ parent component
+  @Input() entityType?: string;
+  @Input() statusFilter?: string;
+
+  // Output: phát ra khi user chọn job
+  @Output() jobSelected = new EventEmitter<string>();
+
+  // State cho bộ lọc
+  private searchTerm = '';
+  private selectedStatus: JobStatus | null = null;
+  private selectedEntityType: string | null = null;
+
+  // State cho checkbox selection
+  private selectedJobIds = new Set<string>();
+
+  // Debounce subject cho search input
+  private searchSubject = new Subject<string>();
+
+  // Danh sách tất cả status
+  readonly allStatuses = [
+    { value: JobStatus.PENDING, label: JOB_STATUS_LABELS[JobStatus.PENDING], color: '#9e9e9e' },
+    { value: JobStatus.RUNNING, label: JOB_STATUS_LABELS[JobStatus.RUNNING], color: '#2196f3' },
+    { value: JobStatus.COMPLETED, label: JOB_STATUS_LABELS[JobStatus.COMPLETED], color: '#4caf50' },
+    { value: JobStatus.FAILED, label: JOB_STATUS_LABELS[JobStatus.FAILED], color: '#f44336' },
+    { value: JobStatus.CANCELLED, label: JOB_STATUS_LABELS[JobStatus.CANCELLED], color: '#9e9e9e' },
+    { value: JobStatus.TIMEOUT, label: JOB_STATUS_LABELS[JobStatus.TIMEOUT], color: '#ff9800' },
+  ];
+
+  // Các loại thực thể duy nhất từ jobs
+  get entityTypes(): string[] {
+    const jobs = this.store.jobs();
+    return [...new Set(jobs.map(j => j.entity_type))].sort();
+  }
+
+  constructor() {
+    // Setup debounce cho search input (300ms)
+    this.searchSubject.pipe(debounceTime(300)).subscribe(term => {
+      this.searchTerm = term;
+      this.applyFilters();
+    });
+  }
+
+  ngOnInit(): void {
+    // Tải jobs ban đầu
+    this.loadJobs();
+
+    // Sync MatTableDataSource với store jobs
+    this.syncDataSource();
+  }
+
+  ngOnDestroy(): void {
+    this.searchSubject.complete();
+  }
+
+  /**
+   * Đồng bộ MatTableDataSource với jobs từ store.
+   *
+   * Áp dụng filter, sort, và paginator.
+   */
+  private syncDataSource(): void {
+    const jobs = this.store.jobs();
+    this.dataSource.data = jobs;
+    this.dataSource.filterPredicate = (data: BulkJob, filter: string) => {
+      const filters = JSON.parse(filter);
+      return this.matchesFilter(data, filters);
+    };
+    this.dataSource.paginator = this.paginator;
+    this.dataSource.sort = this.sort;
+    this.applyFilters();
+  }
+
+  /**
+   * Tải jobs từ store.
+   */
+  private loadJobs(): void {
+    const filters: any = { page_size: 20 };
+    if (this.statusFilter) {
+      filters.status = this.statusFilter as JobStatus;
+    }
+    if (this.entityType) {
+      filters.entity_type = this.entityType;
+    }
+    this.store.loadJobs(filters);
+  }
+
+  /**
+   * Xử lý khi người dùng nhập vào ô tìm kiếm.
+   *
+   * @param value - Giá trị tìm kiếm
+   */
+  onSearch(value: string): void {
+    this.searchSubject.next(value);
+  }
+
+  /**
+   * Xử lý khi người dùng thay đổi bộ lọc trạng thái.
+   *
+   * @param status - JobStatus hoặc null
+   */
+  onStatusFilterChange(status: JobStatus | null): void {
+    this.selectedStatus = status;
+    this.applyFilters();
+  }
+
+  /**
+   * Xử lý khi người dùng thay đổi bộ lọc loại thực thể.
+   *
+   * @param type - Loại thực thể hoặc null
+   */
+  onEntityTypeFilterChange(type: string | null): void {
+    this.selectedEntityType = type;
+    this.applyFilters();
+  }
+
+  /**
+   * Xóa tất cả bộ lọc.
+   */
+  clearFilters(): void {
+    this.searchTerm = '';
+    this.selectedStatus = null;
+    this.selectedEntityType = null;
+    this.applyFilters();
+  }
+
+  /**
+   * Kiểm tra có bộ lọc đang hoạt động không.
+   */
+  hasActiveFilters(): boolean {
+    return !!this.searchTerm || !!this.selectedStatus || !!this.selectedEntityType;
+  }
+
+  /**
+   * Áp dụng các bộ lọc hiện tại vào dataSource.
+   */
+  private applyFilters(): void {
+    const filterObj = {
+      search: this.searchTerm?.toLowerCase() || '',
+      status: this.selectedStatus,
+      entityType: this.selectedEntityType,
+    };
+    this.dataSource.filter = JSON.stringify(filterObj);
+  }
+
+  /**
+   * Kiểm tra job có khớp với bộ lọc không.
+   *
+   * @param job - Job cần kiểm tra
+   * @param filters - Đối tượng bộ lọc
+   * @returns boolean
+   */
+  private matchesFilter(job: BulkJob, filters: { search: string; status: JobStatus | null; entityType: string | null }): boolean {
+    if (filters.search && !job.job_id.toLowerCase().includes(filters.search)) {
+      return false;
+    }
+    if (filters.status && job.status !== filters.status) {
+      return false;
+    }
+    if (filters.entityType && job.entity_type !== filters.entityType) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Xử lý thay đổi trang.
+   *
+   * @param event - PageEvent từ MatPaginator
+   */
+  onPageChange(event: any): void {
+    const pageSize = event.pageSize;
+    const page = event.pageIndex + 1; // pageIndex là 0-based
+    this.store.goToPage(page);
+  }
+
+  /**
+   * Xem chi tiết một job.
+   *
+   * @param jobId - Job ID
+   */
+  viewJob(jobId: string): void {
+    this.store.selectJob(jobId);
+    this.jobSelected.emit(jobId);
+  }
+
+  /**
+   * Xử lý click vào hàng.
+   *
+   * @param jobId - Job ID của hàng được click
+   */
+  onRowClick(jobId: string): void {
+    this.jobSelected.emit(jobId);
+  }
+
+  /**
+   * Huỷ một job đang chạy.
+   *
+   * @param jobId - Job ID cần huỷ
+   */
+  async cancelJob(jobId: string): Promise<void> {
+    const job = this.store.jobs().find(j => j.job_id === jobId);
+    if (!job || job.status !== JobStatus.RUNNING) {
+      return; // Chỉ cho phép huỷ job đang chạy
+    }
+
+    const confirmed = await confirmCancelJob(this.dialog, job);
+    if (confirmed) {
+      this.store.cancelJob(jobId);
+    }
+  }
+
+  /**
+   * Lấy nhãn trạng thái tiếng Việt.
+   *
+   * @param status - JobStatus
+   * @returns Label string
+   */
+  getStatusLabel(status: JobStatus): string {
+    return JOB_STATUS_LABELS[status] || status;
+  }
+
+  /**
+   * Lấy màu dot cho badge trạng thái.
+   *
+   * @param status - JobStatus
+   * @returns Màu CSS
+   */
+  getStatusDotColor(status: JobStatus): string {
+    const colorMap: Record<JobStatus, string> = {
+      [JobStatus.PENDING]: '#9e9e9e',
+      [JobStatus.RUNNING]: '#2196f3',
+      [JobStatus.COMPLETED]: '#4caf50',
+      [JobStatus.FAILED]: '#f44336',
+      [JobStatus.CANCELLED]: '#9e9e9e',
+      [JobStatus.TIMEOUT]: '#ff9800',
+    };
+    return colorMap[status] || '#9e9e9e';
+  }
+
+  /**
+   * Lấy CSS class cho badge trạng thái.
+   *
+   * @param status - JobStatus
+   * @returns CSS class name
+   */
+  getStatusBadgeClass(status: JobStatus): string {
+    return `status-badge status-${status}`;
+  }
+
+  /**
+   * Lấy nhãn hành động.
+   *
+   * @param action - BulkAction
+   * @returns Label string
+   */
+  getActionLabel(action: string): string {
+    const labels: Record<string, string> = {
+      'batch_create': 'Tạo hàng loạt',
+      'batch_update': 'Cập nhật hàng loạt',
+      'batch_delete': 'Xoá hàng loạt',
+      'batch_read': 'Đọc hàng loạt',
+    };
+    return labels[action] || action;
+  }
+
+  // --- Checkbox selection methods ---
+
+  /**
+   * Toggle selection của một hàng.
+   *
+   * @param jobId - Job ID
+   */
+  toggleRow(jobId: string): void {
+    if (this.selectedJobIds.has(jobId)) {
+      this.selectedJobIds.delete(jobId);
+    } else {
+      this.selectedJobIds.add(jobId);
+    }
+  }
+
+  /**
+   * Toggle tất cả hàngs.
+   *
+   * @param checked - True để chọn tất cả, false để bỏ chọn
+   */
+  toggleAllRows(checked: boolean): void {
+    if (checked) {
+      this.dataSource.data.forEach(job => this.selectedJobIds.add(job.job_id));
+    } else {
+      this.selectedJobIds.clear();
+    }
+  }
+
+  /**
+   * Kiểm tra một row có được chọn không.
+   *
+   * @param jobId - Job ID
+   * @returns boolean
+   */
+  isRowSelected(jobId: string): boolean {
+    return this.selectedJobIds.has(jobId);
+  }
+
+  /**
+   * Kiểm tra tất cả rows đã được chọn chưa.
+   */
+  isAllSelected(): boolean {
+    return this.dataSource.data.length > 0 &&
+      this.selectedJobIds.size === this.dataSource.data.length;
+  }
+
+  /**
+   * Kiểm tra có partial selection (một số được chọn).
+   */
+  hasPartialSelection(): boolean {
+    return this.selectedJobIds.size > 0 &&
+      this.selectedJobIds.size < this.dataSource.data.length;
+  }
+}

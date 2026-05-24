@@ -1,0 +1,365 @@
+/**
+* Bulk Operations WebSocket Gateway - Sinh tự động bởi Midicoder CP44.
+*
+* Gateway WebSocket cho real-time progress notification.
+* Cho phép client đăng ký theo dõi tiến độ của job và nhận
+* cập nhật realtime khi job xử lý.
+*
+* Namespace: /bulk-progress
+* CORS: enabled (có thể cấu hình lại cho production)
+*
+* CP44: Bulk Operations Engine
+*/
+
+import {
+WebSocketGateway,
+WebSocketServer,
+SubscribeMessage,
+OnGatewayConnection,
+OnGatewayDisconnect,
+ConnectedSocket,
+MessageBody,
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
+
+@WebSocketGateway({
+cors: {
+origin: '*',
+credentials: true,
+},
+namespace: 'bulk-progress',
+})
+export class BulkGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
+@WebSocketServer()
+server: Server;
+
+private readonly logger: Logger;
+
+/**
+* Bản đồ theo dõi subscription: jobId -> Set của Socket clients.
+*
+* Mỗi client có thể subscribe vào nhiều job, mỗi job có thể
+* có nhiều client lắng nghe.
+*/
+private readonly subscriptions: Map<string, Set<Socket>> = new Map();
+
+    /**
+    * Bản đồ ngược: clientId -> Set của jobIds đã subscribe.
+    * Dùng để cleanup khi client disconnect.
+    */
+    private readonly clientSubscriptions: Map<string, Set<string>> = new Map();
+
+        constructor() {
+        this.logger = new Logger(BulkGateway.name);
+        }
+
+        /**
+        * Khi module khởi tạo, log thông tin gateway.
+        */
+        onModuleInit(): void {
+        this.logger.log('BulkGateway đã khởi tạo - namespace: /bulk-progress');
+        }
+
+        /**
+        * Khi module hủy, đóng tất cả connections.
+        */
+        onModuleDestroy(): void {
+        this.logger.log('BulkGateway đang đóng - cleanup tất cả connections');
+        this.server.disconnectSockets(true);
+        this.subscriptions.clear();
+        this.clientSubscriptions.clear();
+        }
+
+        /**
+        * Xử lý khi client kết nối.
+        *
+        * @param client Socket đã kết nối
+        */
+        handleConnection(@ConnectedSocket() client: Socket): void {
+        this.logger.debug(`Client ${client.id} đã kết nối đến BulkGateway`);
+
+        // Khởi tạo bản đồ subscription cho client này
+        if (!this.clientSubscriptions.has(client.id)) {
+        this.clientSubscriptions.set(client.id, new Set());
+        }
+
+        // Gửi thông báo kết nối thành công cho client
+        client.emit('connected', {
+        clientId: client.id,
+        namespace: 'bulk-progress',
+        timestamp: new Date().toISOString(),
+        });
+        }
+
+        /**
+        * Xử lý khi client ngắt kết nối.
+        *
+        * Cleanup tất cả subscriptions của client để tránh memory leak.
+        *
+        * @param client Socket đã ngắt kết nối
+        */
+        handleDisconnect(@ConnectedSocket() client: Socket): void {
+        this.logger.debug(`Client ${client.id} đã ngắt kết nối`);
+
+        // Lấy danh sách jobs mà client đang subscribe
+        const subscribedJobs = this.clientSubscriptions.get(client.id);
+
+        if (subscribedJobs) {
+        for (const jobId of subscribedJobs) {
+        this.removeSubscription(jobId, client);
+        }
+        this.clientSubscriptions.delete(client.id);
+        }
+        }
+
+        /**
+        * Xử lý đăng ký theo dõi tiến độ của job.
+        *
+        * @SubscribeMessage('subscribe_progress')
+        * @param client Socket client
+        * @param jobId UUID của job cần theo dõi
+        */
+        @SubscribeMessage('subscribe_progress')
+        handleSubscribe(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() jobId: string,
+        ): void {
+        this.logger.debug(`Client ${client.id} đăng ký theo dõi job ${jobId}`);
+
+        // Thêm client vào set của job
+        if (!this.subscriptions.has(jobId)) {
+        this.subscriptions.set(jobId, new Set());
+        }
+        this.subscriptions.get(jobId)!.add(client);
+
+        // Thêm job vào set của client
+        if (!this.clientSubscriptions.has(client.id)) {
+        this.clientSubscriptions.set(client.id, new Set());
+        }
+        this.clientSubscriptions.get(client.id)!.add(jobId);
+
+        // Gửi xác nhận cho client
+        client.emit('subscribed', {
+        jobId,
+        clientId: client.id,
+        message: `Đã đăng ký theo dõi job ${jobId}`,
+        });
+
+        this.logger.debug(
+        `Job ${jobId} hiện có ${this.subscriptions.get(jobId)!.size} subscribers`,
+        );
+        }
+
+        /**
+        * Xử lý hủy đăng ký theo dõi job.
+        *
+        * @SubscribeMessage('unsubscribe_progress')
+        * @param client Socket client
+        * @param jobId UUID của job cần hủy theo dõi
+        */
+        @SubscribeMessage('unsubscribe_progress')
+        handleUnsubscribe(
+        @ConnectedSocket() client: Socket,
+        @MessageBody() jobId: string,
+        ): void {
+        this.logger.debug(`Client ${client.id} hủy theo dõi job ${jobId}`);
+
+        this.removeSubscription(jobId, client);
+
+        // Gửi xác nhận cho client
+        client.emit('unsubscribed', {
+        jobId,
+        clientId: client.id,
+        message: `Đã hủy theo dõi job ${jobId}`,
+        });
+        }
+
+        /**
+        * Gửi tiến độ job đến tất cả clients đã subscribe.
+        *
+        * Phương thức này được gọi từ BulkService khi có cập nhật tiến độ.
+        *
+        * @param jobId UUID của job
+        * @param progress Dữ liệu tiến độ (BulkProgressDto)
+        */
+        emitProgress(jobId: string, progress: any): void {
+        const subscribers = this.subscriptions.get(jobId);
+
+        if (!subscribers || subscribers.size === 0) {
+        return;
+        }
+
+        const data = {
+        jobId,
+        progress,
+        timestamp: new Date().toISOString(),
+        };
+
+        // Gửi đến tất cả subscribers của job
+        subscribers.forEach((client) => {
+        try {
+        client.emit('job_progress', data);
+        } catch (error) {
+        this.logger.error(`Lỗi khi gửi progress đến client ${client.id}: ${error}`);
+        // Xóa client bị lỗi khỏi subscription
+        this.removeSubscription(jobId, client);
+        }
+        });
+
+        this.logger.debug(
+        `Đã gửi tiến độ job ${jobId} đến ${subscribers.size} clients`,
+        );
+        }
+
+        /**
+        * Gửi thông báo job hoàn thành đến tất cả subscribers.
+        *
+        * @param jobId UUID của job
+        * @param data Dữ liệu hoàn thành
+        */
+        emitJobCompleted(jobId: string, data: any): void {
+        const subscribers = this.subscriptions.get(jobId);
+
+        if (!subscribers || subscribers.size === 0) {
+        return;
+        }
+
+        const message = {
+        jobId,
+        ...data,
+        timestamp: new Date().toISOString(),
+        };
+
+        subscribers.forEach((client) => {
+        try {
+        client.emit('job_completed', message);
+        } catch (error) {
+        this.logger.error(`Lỗi khi gửi job_completed đến client ${client.id}: ${error}`);
+        this.removeSubscription(jobId, client);
+        }
+        });
+
+        // Tự động cleanup subscriptions sau khi job hoàn thành
+        this.cleanupJobSubscriptions(jobId);
+        }
+
+        /**
+        * Lắng nghe sự kiện bulk.progress từ BulkService.
+        *
+        * Khi BulkService emit sự kiện tiến độ, gateway sẽ nhận và
+        * chuyển tiếp đến các WebSocket clients đã subscribe.
+        *
+        * @param data Dữ liệu sự kiện { jobId, progress }
+        */
+        @OnEvent('bulk.progress')
+        handleProgressEvent(data: { jobId: string; progress: any }): void {
+        this.emitProgress(data.jobId, data.progress);
+        }
+
+        /**
+        * Lắng nghe sự kiện bulk.job.completed từ BulkService.
+        *
+        * Gửi thông báo hoàn thành đến tất cả subscribers và
+        * tự động cleanup subscriptions.
+        *
+        * @param data Dữ liệu sự kiện hoàn thành
+        */
+        @OnEvent('bulk.job.completed')
+        handleJobCompletedEvent(data: { jobId: string; status: string; succeeded: number; failed: number; skipped:
+        number }): void {
+        this.emitJobCompleted(data.jobId, data);
+        }
+
+        /**
+        * Lấy số lượng subscribers của một job.
+        *
+        * @param jobId UUID của job
+        * @returns Số subscribers
+        */
+        getSubscriberCount(jobId: string): number {
+        const subscribers = this.subscriptions.get(jobId);
+        return subscribers ? subscribers.size : 0;
+        }
+
+        /**
+        * Lấy tổng số jobs đang được theo dõi.
+        *
+        * @returns Số jobs có ít nhất 1 subscriber
+        */
+        getActiveJobCount(): number {
+        let count = 0;
+        for (const [jobId, subscribers] of this.subscriptions) {
+        if (subscribers.size > 0) {
+        count++;
+        }
+        }
+        return count;
+        }
+
+        /**
+        * Xóa subscription của một client khỏi một job.
+        *
+        * @param jobId UUID của job
+        * @param client Socket client
+        */
+        private removeSubscription(jobId: string, client: Socket): void {
+        // Xóa client khỏi job's subscribers
+        const subscribers = this.subscriptions.get(jobId);
+        if (subscribers) {
+        subscribers.delete(client);
+        // Nếu không còn subscribers, xóa job khỏi map
+        if (subscribers.size === 0) {
+        this.subscriptions.delete(jobId);
+        }
+        }
+
+        // Xóa job khỏi client's subscriptions
+        const clientJobs = this.clientSubscriptions.get(client.id);
+        if (clientJobs) {
+        clientJobs.delete(jobId);
+        // Nếu client không subscribe job nào, xóa client khỏi map
+        if (clientJobs.size === 0) {
+        this.clientSubscriptions.delete(client.id);
+        }
+        }
+        }
+
+        /**
+        * Cleanup tất cả subscriptions của một job.
+        *
+        * @param jobId UUID của job
+        */
+        private cleanupJobSubscriptions(jobId: string): void {
+        const subscribers = this.subscriptions.get(jobId);
+
+        if (subscribers) {
+        // Gửi thông báo cleanup cho từng client
+        subscribers.forEach((client) => {
+        try {
+        client.emit('job_subscription_cleanup', {
+        jobId,
+        message: 'Job đã hoàn thành - subscription tự động hủy',
+        });
+        } catch {
+        // Ignore errors during cleanup
+        }
+        });
+
+        // Xóa job khỏi client subscriptions
+        for (const client of subscribers) {
+        const clientJobs = this.clientSubscriptions.get(client.id);
+        if (clientJobs) {
+        clientJobs.delete(jobId);
+        if (clientJobs.size === 0) {
+        this.clientSubscriptions.delete(client.id);
+        }
+        }
+        }
+
+        // Xóa job khỏi subscriptions map
+        this.subscriptions.delete(jobId);
+        }
+        }
+        }

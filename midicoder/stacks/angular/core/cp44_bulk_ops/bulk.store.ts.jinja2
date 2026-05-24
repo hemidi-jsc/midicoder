@@ -1,0 +1,384 @@
+/**
+ * Bulk Store - CP44 Bulk Operations Engine.
+ *
+ * Signal-based state management cho bulk operations.
+ * Quản lý jobs, selected job, loading state và error handling.
+ */
+
+{% import 'macros.jinja2' as m %}
+{% set bulk_jobs = bulk_jobs|default(true) %}
+{% set default_chunk_size = default_chunk_size|default(100) %}
+{% set default_concurrency = default_concurrency|default(5) %}
+{% set default_max_retries = default_max_retries|default(3) %}
+{% set default_retry_strategy = default_retry_strategy|default('exponential_backoff') %}
+{% set default_timeout = default_timeout|default(3600) %}
+{% set dlq_enabled = dlq_enabled|default(true) %}
+{% set use_events = use_events|default(true) %}
+{% set use_audit = use_audit|default(true) %}
+
+import { Injectable, inject } from '@angular/core';
+import { signal, computed, effect } from '@angular/core';
+import { BulkService } from './bulk.service';
+import {
+  BulkJob,
+  BulkProgress,
+  BulkJobCreate,
+  BulkJobFilter,
+  BulkJobList,
+  DLQEntry,
+  ChunkInfo,
+  JobStatus,
+} from './bulk-types';
+
+/**
+ * BulkStore - Signal-based state management cho CP44.
+ *
+ * Store này quản lý toàn bộ trạng thái liên quan đến bulk operations:
+ * - Danh sách jobs và job được chọn
+ * - Loading và error states
+ * - DLQ entries
+ * - Chunk breakdown
+ *
+ * Sử dụng Angular Signals để đảm bảo reactive updates
+ * với minimal change detection cycles.
+ */
+@Injectable({ providedIn: 'root' })
+export class BulkStore {
+  private readonly bulkService = inject(BulkService);
+
+  // --- Private writable signals ---
+  private _jobs = signal<BulkJob[]>([]);
+  private _selectedJob = signal<BulkJob | null>(null);
+  private _loading = signal<boolean>(false);
+  private _error = signal<string | null>(null);
+  private _progress = signal<BulkProgress | null>(null);
+  private _dlqEntries = signal<DLQEntry[]>([]);
+  private _chunks = signal<ChunkInfo[]>([]);
+  private _totalJobs = signal<number>(0);
+  private _currentPage = signal<number>(1);
+  private _pageSize = signal<number>(20);
+  private _sseSource: EventSource | null = null;
+
+  // --- Readonly exposed signals ---
+  jobs = this._jobs.asReadonly();
+  selectedJob = this._selectedJob.asReadonly();
+  loading = this._loading.asReadonly();
+  error = this._error.asReadonly();
+  progress = this._progress.asReadonly();
+  dlqEntries = this._dlqEntries.asReadonly();
+  chunks = this._chunks.asReadonly();
+  totalJobs = this._totalJobs.asReadonly();
+  currentPage = this._currentPage.asReadonly();
+  pageSize = this._pageSize.asReadonly();
+
+  // --- Computed signals ---
+  // Tổng số jobs đang chạy
+  runningCount = computed(() => this._jobs().filter(j => j.status === JobStatus.RUNNING).length);
+  // Tổng số jobs hoàn thành
+  completedCount = computed(() => this._jobs().filter(j => j.status === JobStatus.COMPLETED).length);
+  // Tổng số jobs thất bại
+  failedCount = computed(() => this._jobs().filter(j => j.status === JobStatus.FAILED).length);
+  // Tổng số jobs đang chờ
+  pendingCount = computed(() => this._jobs().filter(j => j.status === JobStatus.PENDING).length);
+  // Tổng số jobs đã huỷ
+  cancelledCount = computed(() => this._jobs().filter(j => j.status === JobStatus.CANCELLED).length);
+  // Tiến độ phần trăm của job được chọn
+  progressPercentage = computed(() => {
+    const p = this._progress();
+    return p ? p.percentage : 0;
+  });
+  // totalPages tính từ total và pageSize
+  totalPages = computed(() => {
+    const total = this._totalJobs();
+    const size = this._pageSize();
+    return size > 0 ? Math.ceil(total / size) : 0;
+  });
+  // Kiểm tra có job đang chạy không (cho auto-refresh)
+  hasRunningJobs = computed(() => this._jobs().some(j => j.status === JobStatus.RUNNING));
+
+  constructor() {
+    // Effect: tự động clear error khi loading bắt đầu
+    effect(() => {
+      if (this._loading()) {
+        this._error.set(null);
+      }
+    });
+  }
+
+  /**
+   * Tải danh sách jobs từ API.
+   *
+   * @param filters - Bộ lọc tùy chọn
+   */
+  loadJobs(filters?: BulkJobFilter): void {
+    this._loading.set(true);
+    const page = filters?.page ?? this._currentPage();
+    const pageSize = filters?.page_size ?? this._pageSize();
+
+    this.bulkService.listJobs({ ...filters, page, page_size: pageSize }).subscribe({
+      next: (response: BulkJobList) => {
+        this._jobs.set(response.items);
+        this._totalJobs.set(response.total);
+        this._currentPage.set(response.page);
+        this._pageSize.set(response.page_size);
+        this._loading.set(false);
+      },
+      error: (err: unknown) => {
+        this._error.set(this.formatError(err, 'Tải danh sách jobs thất bại'));
+        this._loading.set(false);
+      },
+    });
+  }
+
+  /**
+   * Tải thông tin chi tiết của một job.
+   *
+   * @param id - Job ID
+   */
+  loadJob(id: string): void {
+    this._loading.set(true);
+    this.bulkService.getJob(id).subscribe({
+      next: (job: BulkJob) => {
+        this._selectedJob.set(job);
+        // Cập nhật job trong danh sách nếu đã tồn tại
+        const currentJobs = this._jobs();
+        const index = currentJobs.findIndex(j => j.job_id === id);
+        if (index >= 0) {
+          const updated = [...currentJobs];
+          updated[index] = job;
+          this._jobs.set(updated);
+        }
+        this._loading.set(false);
+      },
+      error: (err: unknown) => {
+        this._error.set(this.formatError(err, 'Tải chi tiết job thất bại'));
+        this._loading.set(false);
+      },
+    });
+  }
+
+  /**
+   * Tạo một bulk job mới.
+   *
+   * @param data - Dữ liệu tạo job
+   */
+  createJob(data: BulkJobCreate): void {
+    this._loading.set(true);
+    this.bulkService.createJob(data).subscribe({
+      next: (job: BulkJob) => {
+        // Thêm job mới vào đầu danh sách
+        const currentJobs = this._jobs();
+        this._jobs.set([job, ...currentJobs]);
+        this._selectedJob.set(job);
+        this._loading.set(false);
+        // Bắt đầu theo dõi tiến độ
+        this.connectSSE(job.job_id);
+      },
+      error: (err: unknown) => {
+        this._error.set(this.formatError(err, 'Tạo job thất bại'));
+        this._loading.set(false);
+      },
+    });
+  }
+
+  /**
+   * Huỷ một job đang chạy.
+   *
+   * @param id - Job ID
+   */
+  cancelJob(id: string): void {
+    this.bulkService.cancelJob(id).subscribe({
+      next: (job: BulkJob) => {
+        // Cập nhật trạng thái trong danh sách
+        const currentJobs = this._jobs();
+        const updated = currentJobs.map(j => j.job_id === id ? job : j);
+        this._jobs.set(updated);
+        // Nếu job này đang được chọn, cập nhật selected
+        if (this._selectedJob()?.job_id === id) {
+          this._selectedJob.set(job);
+        }
+        // Đóng SSE connection
+        this.disconnectSSE();
+      },
+      error: (err: unknown) => {
+        this._error.set(this.formatError(err, 'Huỷ job thất bại'));
+      },
+    });
+  }
+
+  /**
+   * Làm mới tiến độ của job được chọn.
+   *
+   * Gọi API getProgress để lấy tiến độ mới nhất.
+   */
+  refreshProgress(): void {
+    const jobId = this._selectedJob()?.job_id;
+    if (!jobId) return;
+
+    this.bulkService.getProgress(jobId).subscribe({
+      next: (progress: BulkProgress) => {
+        this._progress.set(progress);
+        // Đồng bộ thông tin job
+        this.loadJob(jobId);
+      },
+      error: (err: unknown) => {
+        this._error.set(this.formatError(err, 'Làm mới tiến độ thất bại'));
+      },
+    });
+  }
+
+  /**
+   * Kết nối SSE để theo dõi tiến độ real-time.
+   *
+   * @param jobId - Job ID cần theo dõi
+   */
+  connectSSE(jobId: string): void {
+    // Đóng connection cũ nếu có
+    this.disconnectSSE();
+
+    const eventSource = new EventSource(`/api/bulk/jobs/${jobId}/progress/sse`);
+
+    eventSource.onmessage = (event: MessageEvent) => {
+      try {
+        const progress: BulkProgress = JSON.parse(event.data);
+        this._progress.set(progress);
+
+        // Tự động đóng khi job kết thúc
+        if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
+          eventSource.close();
+          this._sseSource = null;
+          // Refresh job để lấy trạng thái mới nhất
+          this.loadJob(jobId);
+        }
+      } catch (error) {
+        this._error.set('Lỗi parse dữ liệu SSE');
+      }
+    };
+
+    eventSource.onerror = () => {
+      this._error.set('Kết nối SSE bị mất');
+      eventSource.close();
+      this._sseSource = null;
+    };
+
+    this._sseSource = eventSource;
+  }
+
+  /**
+   * Đóng SSE connection hiện tại.
+   */
+  disconnectSSE(): void {
+    if (this._sseSource) {
+      this._sseSource.close();
+      this._sseSource = null;
+    }
+  }
+
+  /**
+   * Tải danh sách DLQ entries.
+   *
+   * @param jobId - Job ID (tùy chọn)
+   */
+  loadDLQEntries(jobId?: string): void {
+    this.bulkService.getDLQEntries(jobId).subscribe({
+      next: (entries: DLQEntry[]) => {
+        this._dlqEntries.set(entries);
+      },
+      error: (err: unknown) => {
+        this._error.set(this.formatError(err, 'Tải DLQ entries thất bại'));
+      },
+    });
+  }
+
+  /**
+   * Replay một entry từ DLQ.
+   *
+   * @param entryId - DLQ Entry ID
+   */
+  replayDLQEntry(entryId: string): void {
+    this.bulkService.replayDLQEntry(entryId).subscribe({
+      next: (result: { success: boolean }) => {
+        if (result.success) {
+          // Cập nhật trạng thái trong danh sách DLQ
+          const current = this._dlqEntries();
+          this._dlqEntries.set(
+            current.map(e =>
+              e.entry_id === entryId ? { ...e, replayed: true, replayed_at: new Date().toISOString() } : e
+            )
+          );
+        }
+      },
+      error: (err: unknown) => {
+        this._error.set(this.formatError(err, 'Replay DLQ entry thất bại'));
+      },
+    });
+  }
+
+  /**
+   * Tải thông tin chunks của một job.
+   *
+   * @param jobId - Job ID
+   */
+  loadChunks(jobId: string): void {
+    this.bulkService.getChunks(jobId).subscribe({
+      next: (chunks: ChunkInfo[]) => {
+        this._chunks.set(chunks);
+      },
+      error: (err: unknown) => {
+        this._error.set(this.formatError(err, 'Tải chunk breakdown thất bại'));
+      },
+    });
+  }
+
+  /**
+   * Chọn một job để xem chi tiết.
+   *
+   * @param id - Job ID
+   */
+  selectJob(id: string): void {
+    this.loadJob(id);
+    this.loadChunks(id);
+{% if dlq_enabled %}
+    this.loadDLQEntries(id);
+{% endif %}
+    this.connectSSE(id);
+  }
+
+  /**
+   * Bỏ chọn job hiện tại và reset state.
+   */
+  clearSelection(): void {
+    this._selectedJob.set(null);
+    this._progress.set(null);
+    this._chunks.set([]);
+    this._dlqEntries.set([]);
+    this.disconnectSSE();
+  }
+
+  /**
+   * Chuyển trang trong danh sách jobs.
+   *
+   * @param page - Số trang cần chuyển đến
+   */
+  goToPage(page: number): void {
+    this._currentPage.set(page);
+    this.loadJobs({ page });
+  }
+
+  /**
+   * Format error message.
+   *
+   * @param error - Error object từ HTTP response
+   * @param defaultMessage - Thông báo mặc định nếu không xác định được lỗi
+   * @returns Message string
+   */
+  private formatError(error: unknown, defaultMessage: string): string {
+    if (error instanceof Error) {
+      return error.message || defaultMessage;
+    }
+    if (typeof error === 'string') {
+      return error;
+    }
+    return defaultMessage;
+  }
+}

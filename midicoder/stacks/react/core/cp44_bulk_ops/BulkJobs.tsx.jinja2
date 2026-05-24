@@ -1,0 +1,710 @@
+/**
+ * BulkJobs — Danh sách jobs với lọc, phân trang, sắp xếp.
+ * Sinh bởi CP44 BulkOpsEmitter.
+ *
+ * DLQ enabled: {{ dlq_enabled }}
+ * Sử dụng events: {{ use_events }}
+ */
+import React, { useState, useMemo, useCallback } from 'react';
+import { BulkJob, JobStatus } from './useBulkOps';
+import { BulkProgress } from './BulkProgress';
+
+/* ---- Props ---- */
+export interface BulkJobsProps {
+    jobs: BulkJob[];
+    loading?: boolean;
+    error?: string | null;
+    onJobSelect?: (jobId: string) => void;
+    onCancelJob?: (jobId: string) => Promise<void>;
+}
+
+/* ---- Các trạng thái có thể lọc ---- */
+const ALL_STATUSES: (JobStatus | 'all')[] = [
+    'all',
+    'pending',
+    'queued',
+    'running',
+    'completed',
+    'failed',
+    'cancelled',
+    'timeout',
+];
+
+/* Các loại entity mẫu */
+const ENTITY_TYPES = ['all', 'user', 'order', 'product', 'invoice', 'invoice_line'];
+
+/* Các hướng sắp xếp */
+type SortField = 'created_at' | 'status' | 'progress' | 'total_records';
+type SortDirection = 'asc' | 'desc';
+
+/* Kích thước trang mặc định */
+const PAGE_SIZES = [10, 25, 50, 100];
+
+/* ---- Style objects ---- */
+const sWrap: React.CSSProperties = {
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    backgroundColor: '#fff',
+    borderRadius: '12px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+    overflow: 'hidden',
+};
+
+const sToolbar: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '16px 20px',
+    borderBottom: '1px solid #f3f4f6',
+    flexWrap: 'wrap',
+};
+
+const sSearchInput: React.CSSProperties = {
+    flex: '1 1 200px',
+    padding: '8px 12px',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    fontSize: '14px',
+    outline: 'none',
+    minWidth: '0',
+};
+
+const sSelect: React.CSSProperties = {
+    padding: '8px 12px',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    fontSize: '13px',
+    background: '#fff',
+    cursor: 'pointer',
+    outline: 'none',
+};
+
+const sFilterTags: React.CSSProperties = {
+    display: 'flex',
+    gap: '6px',
+    padding: '0 20px 12px',
+    flexWrap: 'wrap',
+    borderBottom: '1px solid #f3f4f6',
+};
+
+const sTagBase: React.CSSProperties = {
+    padding: '4px 12px',
+    borderRadius: '20px',
+    fontSize: '12px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    border: '1px solid #d1d5db',
+    background: '#fff',
+    color: '#374151',
+    transition: 'all 0.15s',
+    whiteSpace: 'nowrap',
+};
+
+const sTagActive: React.CSSProperties = {
+    ...sTagBase,
+    background: '#6366f1',
+    color: '#fff',
+    borderColor: '#6366f1',
+};
+
+const sTable: React.CSSProperties = {
+    width: '100%',
+    borderCollapse: 'collapse',
+};
+
+const sTh: React.CSSProperties = {
+    padding: '10px 12px',
+    textAlign: 'left',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    borderBottom: '2px solid #e5e7eb',
+    whiteSpace: 'nowrap',
+    cursor: 'pointer',
+    userSelect: 'none',
+    background: '#fafbfc',
+};
+
+const sThSorted: React.CSSProperties = {
+    ...sTh,
+    color: '#6366f1',
+    background: '#eef2ff',
+};
+
+const sTd: React.CSSProperties = {
+    padding: '12px 12px',
+    fontSize: '14px',
+    borderBottom: '1px solid #f3f4f6',
+    color: '#374151',
+    verticalAlign: 'middle',
+};
+
+const sTdClickable: React.CSSProperties = {
+    ...sTd,
+    cursor: 'pointer',
+};
+
+const sTdCode: React.CSSProperties = {
+    fontFamily: 'ui-monospace, monospace',
+    fontSize: '12px',
+    color: '#6366f1',
+    background: '#eef2ff',
+    padding: '2px 6px',
+    borderRadius: '4px',
+};
+
+const sPagination: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '12px 20px',
+    borderTop: '1px solid #f3f4f6',
+    fontSize: '13px',
+    color: '#6b7280',
+    flexWrap: 'wrap',
+    gap: '10px',
+};
+
+const sPageButtons: React.CSSProperties = {
+    display: 'flex',
+    gap: '4px',
+};
+
+const sPageBtnBase: React.CSSProperties = {
+    padding: '6px 12px',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    background: '#fff',
+    cursor: 'pointer',
+    fontSize: '13px',
+    color: '#374151',
+    minWidth: '36px',
+};
+
+const sPageBtnActive: React.CSSProperties = {
+    ...sPageBtnBase,
+    background: '#6366f1',
+    color: '#fff',
+    borderColor: '#6366f1',
+};
+
+const sPageBtnDisabled: React.CSSProperties = {
+    ...sPageBtnBase,
+    opacity: 0.4,
+    cursor: 'not-allowed',
+};
+
+const sEmptyState: React.CSSProperties = {
+    padding: '48px 20px',
+    textAlign: 'center',
+    color: '#9ca3af',
+    fontSize: '14px',
+};
+
+const sLoadingState: React.CSSProperties = {
+    padding: '48px 20px',
+    textAlign: 'center',
+    color: '#6b7280',
+    fontSize: '14px',
+};
+
+const sErrorState: React.CSSProperties = {
+    padding: '20px',
+    textAlign: 'center',
+    color: '#991b1b',
+    background: '#fef2f2',
+    borderRadius: '8px',
+    margin: '20px',
+    fontSize: '14px',
+};
+
+const sBadgeBase: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+};
+
+const sBtnDanger: React.CSSProperties = {
+    padding: '4px 10px',
+    border: 'none',
+    borderRadius: '6px',
+    background: '#ef4444',
+    color: '#fff',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 500,
+};
+
+const sBtnSmall: React.CSSProperties = {
+    padding: '4px 10px',
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    background: '#fff',
+    color: '#374151',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 500,
+};
+
+const sJobCount: React.CSSProperties = {
+    fontSize: '13px',
+    color: '#6b7280',
+    whiteSpace: 'nowrap',
+};
+
+const sClearFilters: React.CSSProperties = {
+    padding: '4px 10px',
+    border: 'none',
+    borderRadius: '6px',
+    background: '#f3f4f6',
+    color: '#6b7280',
+    cursor: 'pointer',
+    fontSize: '12px',
+};
+
+/* ---- Helper: badge style theo status ---- */
+function statusBadgeStyle(status: string): React.CSSProperties {
+    const map: Record<string, { bg: string; color: string }> = {
+        pending:    { bg: '#fef3c7', color: '#92400e' },
+        queued:     { bg: '#e0e7ff', color: '#3730a3' },
+        running:    { bg: '#dbeafe', color: '#1e40af' },
+        completed:  { bg: '#d1fae5', color: '#065f46' },
+        failed:     { bg: '#fee2e2', color: '#991b1b' },
+        cancelled:  { bg: '#f3f4f6', color: '#4b5563' },
+        timeout:    { bg: '#ffedd5', color: '#9a3412' },
+    };
+    const c = map[status] || { bg: '#f3f4f6', color: '#374151' };
+    return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
+}
+
+/* ---- Helper: label status tiếng Việt ---- */
+function statusLabel(status: string): string {
+    const map: Record<string, string> = {
+        pending:    'Chờ xử lý',
+        queued:     'Trong hàng chờ',
+        running:    'Đang chạy',
+        completed:  'Hoàn thành',
+        failed:     'Thất bại',
+        cancelled:  'Đã hủy',
+        timeout:    'Hết giờ',
+    };
+    return map[status] || status;
+}
+
+/* ---- Helper: label status cho filter tag ---- */
+function statusTagLabel(status: JobStatus | 'all'): string {
+    const map: Record<string, string> = {
+        all: 'Tất cả',
+        pending: 'Chờ xử lý',
+        queued: 'Hàng chờ',
+        running: 'Đang chạy',
+        completed: 'Hoàn thành',
+        failed: 'Thất bại',
+        cancelled: 'Đã hủy',
+        timeout: 'Hết giờ',
+    };
+    return map[status] || status;
+}
+
+/* ---- Helper: đếm status ---- */
+function countByStatus(jobs: BulkJob[], status: string): number {
+    return jobs.filter((j) => j.status === status).length;
+}
+
+/* ---- Helper: format ngày ---- */
+function formatDateTime(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+/* ---- Helper: tính % tiến độ ---- */
+function calcProgress(job: BulkJob): number {
+    const total = job.total_records || (job.entity_ids?.length || 0);
+    if (total === 0) return 0;
+    return Math.round((job.processed / total) * 100);
+}
+
+/* ---- Helper: sort icon ---- */
+function sortIcon(field: SortField, currentField: SortField, direction: SortDirection): string {
+    if (field !== currentField) return ' ↕';
+    return direction === 'asc' ? ' ↑' : ' ↓';
+}
+
+/* ---- Component chính: BulkJobs ---- */
+export const BulkJobs: React.FC<BulkJobsProps> = ({
+    jobs,
+    loading = false,
+    error = null,
+    onJobSelect,
+    onCancelJob,
+}) => {
+    /* State: lọc và sắp xếp */
+    const [searchText, setSearchText] = useState('');
+    const [statusFilter, setStatusFilter] = useState<JobStatus | 'all'>('all');
+    const [entityFilter, setEntityFilter] = useState<string>('all');
+    const [sortField, setSortField] = useState<SortField>('created_at');
+    const [sortDir, setSortDir] = useState<SortDirection>('desc');
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+
+    /* Xóa tất cả bộ lọc */
+    const clearFilters = useCallback(() => {
+        setSearchText('');
+        setStatusFilter('all');
+        setEntityFilter('all');
+        setSortField('created_at');
+        setSortDir('desc');
+        setPage(1);
+    }, []);
+
+    /* Xử lý click tiêu đề cột để sắp xếp */
+    const handleSort = useCallback((field: SortField) => {
+        if (sortField === field) {
+            setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        } else {
+            setSortField(field);
+            setSortDir('desc');
+        }
+        setPage(1);
+    }, [sortField]);
+
+    /* Xử lý hủy job */
+    const handleCancel = useCallback(async (jobId: string) => {
+        if (window.confirm('Bạn có chắc muốn hủy job này?')) {
+            try {
+                await onCancelJob?.(jobId);
+            } catch (err) {
+                console.error('[BulkJobs] Hủy job thất bại:', err);
+            }
+        }
+    }, [onCancelJob]);
+
+    /* Lọc + sắp xếp + phân trang */
+    const processedJobs = useMemo(() => {
+        let result = [...jobs];
+
+        /* Lọc theo status */
+        if (statusFilter !== 'all') {
+            result = result.filter((j) => j.status === statusFilter);
+        }
+
+        /* Lọc theo entity_type */
+        if (entityFilter !== 'all') {
+            result = result.filter((j) => j.entity_type === entityFilter);
+        }
+
+        /* Lọc theo tìm kiếm (job_id, entity_type, action) */
+        if (searchText.trim()) {
+            const q = searchText.toLowerCase().trim();
+            result = result.filter(
+                (j) =>
+                    j.job_id.toLowerCase().includes(q) ||
+                    j.entity_type.toLowerCase().includes(q) ||
+                    j.action.toLowerCase().includes(q)
+            );
+        }
+
+        /* Sắp xếp */
+        result.sort((a, b) => {
+            let cmp = 0;
+            switch (sortField) {
+                case 'created_at':
+                    cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                    break;
+                case 'status': {
+                    const order: Record<string, number> = {
+                        pending: 0, queued: 1, running: 2, completed: 3, failed: 4, cancelled: 5, timeout: 6,
+                    };
+                    cmp = (order[a.status] ?? 99) - (order[b.status] ?? 99);
+                    break;
+                }
+                case 'progress':
+                    cmp = calcProgress(a) - calcProgress(b);
+                    break;
+                case 'total_records':
+                    cmp = (a.total_records || 0) - (b.total_records || 0);
+                    break;
+            }
+            return sortDir === 'asc' ? cmp : -cmp;
+        });
+
+        return result;
+    }, [jobs, statusFilter, entityFilter, searchText, sortField, sortDir]);
+
+    /* Phân trang */
+    const totalPages = Math.max(1, Math.ceil(processedJobs.length / pageSize));
+    const currentPageJobs = processedJobs.slice((page - 1) * pageSize, page * pageSize);
+
+    /* Đảm bảo page không vượt quá totalPages */
+    const safePage = Math.min(page, totalPages);
+
+    /* Xây dựng danh sách nút phân trang */
+    const pageNumbers = useMemo(() => {
+        const nums: number[] = [];
+        const maxVisible = 7;
+        if (totalPages <= maxVisible) {
+            for (let i = 1; i <= totalPages; i++) nums.push(i);
+        } else {
+            nums.push(1);
+            let start = Math.max(2, safePage - 1);
+            let end = Math.min(totalPages - 1, safePage + 1);
+            if (start > 2) nums.push(-1); // dấu ...
+            for (let i = start; i <= end; i++) nums.push(i);
+            if (end < totalPages - 1) nums.push(-1);
+            nums.push(totalPages);
+        }
+        return nums;
+    }, [totalPages, safePage]);
+
+    /* Có đang lọc không (để hiện nút xóa bộ lọc) */
+    const hasFilters = searchText.trim() || statusFilter !== 'all' || entityFilter !== 'all';
+
+    /* Render: trạng thái lỗi */
+    if (error) {
+        return <div style={sErrorState}>Lỗi tải danh sách: {error}</div>;
+    }
+
+    /* Render: trạng thái đang tải */
+    if (loading && !jobs.length) {
+        return <div style={sWrap}><div style={sLoadingState}>Đang tải danh sách jobs...</div></div>;
+    }
+
+    return (
+        <div style={sWrap}>
+            {/* Toolbar: tìm kiếm + lọc + phân trang size */}
+            <div style={sToolbar}>
+                <input
+                    type="text"
+                    placeholder="Tìm theo job ID, entity, hành động..."
+                    value={searchText}
+                    onChange={(e) => { setSearchText(e.target.value); setPage(1); }}
+                    style={sSearchInput}
+                />
+                <select
+                    value={entityFilter}
+                    onChange={(e) => { setEntityFilter(e.target.value); setPage(1); }}
+                    style={sSelect}
+                    title="Lọc theo loại entity"
+                >
+                    {ENTITY_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                            {t === 'all' ? 'Tất cả entity' : t}
+                        </option>
+                    ))}
+                </select>
+                <select
+                    value={pageSize}
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                    style={sSelect}
+                    title="Số lượng trên mỗi trang"
+                >
+                    {PAGE_SIZES.map((s) => (
+                        <option key={s} value={s}>{s} / trang</option>
+                    ))}
+                </select>
+                <span style={sJobCount}>
+                    {processedJobs.length} job
+                </span>
+                {hasFilters && (
+                    <button onClick={clearFilters} style={sClearFilters} title="Xóa tất cả bộ lọc">
+                        Xóa lọc
+                    </button>
+                )}
+            </div>
+
+            {/* Filter tags cho status */}
+            <div style={sFilterTags}>
+                {ALL_STATUSES.map((s) => (
+                    <button
+                        key={s}
+                        style={statusFilter === s ? sTagActive : sTagBase}
+                        onClick={() => { setStatusFilter(s); setPage(1); }}
+                    >
+                        {statusTagLabel(s)}
+                        <span style={{ opacity: 0.7 }}>
+                            ({s === 'all' ? jobs.length : countByStatus(jobs, s)})
+                        </span>
+                    </button>
+                ))}
+            </div>
+
+            {/* Bảng jobs */}
+            <div style={{ overflowX: 'auto' }}>
+                <table style={sTable}>
+                    <thead>
+                        <tr>
+                            <th
+                                style={sortField === 'created_at' ? sThSorted : sTh}
+                                onClick={() => handleSort('created_at')}
+                            >
+                                Tạo lúc{sortIcon('created_at', sortField, sortDir)}
+                            </th>
+                            <th style={sTh}>Job ID</th>
+                            <th style={sTh}>Entity</th>
+                            <th style={sTh}>Action</th>
+                            <th
+                                style={sortField === 'status' ? sThSorted : sTh}
+                                onClick={() => handleSort('status')}
+                            >
+                                Trạng thái{sortIcon('status', sortField, sortDir)}
+                            </th>
+                            <th
+                                style={{ ...sortIcon('progress', sortField, sortDir) ? sThSorted : sTh, minWidth: '180px' }}
+                                onClick={() => handleSort('progress')}
+                            >
+                                Tiến độ{sortIcon('progress', sortField, sortDir)}
+                            </th>
+                            <th
+                                style={sortField === 'total_records' ? sThSorted : sTh}
+                                onClick={() => handleSort('total_records')}
+                            >
+                                SL{sortIcon('total_records', sortField, sortDir)}
+                            </th>
+                            <th style={sTh}>Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {currentPageJobs.map((job) => {
+                            const total = job.total_records || (job.entity_ids?.length || 0);
+                            const canCancel = ['pending', 'queued', 'running'].includes(job.status);
+                            return (
+                                <tr
+                                    key={job.job_id}
+                                    onClick={() => onJobSelect?.(job.job_id)}
+                                    style={onJobSelect ? { cursor: 'pointer' } : undefined}
+                                    onMouseEnter={(e) => {
+                                        if (onJobSelect) {
+                                            (e.currentTarget as HTMLTableRowElement).style.background = '#f9fafb';
+                                        }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        (e.currentTarget as HTMLTableRowElement).style.background = '';
+                                    }}
+                                >
+                                    <td style={sTd}>
+                                        {formatDateTime(job.created_at)}
+                                    </td>
+                                    <td style={sTd}>
+                                        <span style={sTdCode}>{job.job_id}</span>
+                                    </td>
+                                    <td style={sTd}>{job.entity_type}</td>
+                                    <td style={sTd}>{job.action}</td>
+                                    <td style={sTd}>
+                                        <span style={statusBadgeStyle(job.status)}>
+                                            {statusLabel(job.status)}
+                                        </span>
+                                    </td>
+                                    <td style={{ ...sTd, minWidth: '180px' }}>
+                                        <BulkProgress
+                                            total={total}
+                                            processed={job.processed}
+                                            succeeded={job.succeeded}
+                                            failed={job.failed}
+                                            skipped={job.skipped || 0}
+                                            size="small"
+                                        />
+                                    </td>
+                                    <td style={sTd}>
+                                        {job.succeeded}/{job.failed}/{total}
+                                        <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '4px' }}>
+                                            (t/l/tổng)
+                                        </span>
+                                    </td>
+                                    <td style={sTd} onClick={(e) => e.stopPropagation()}>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                            {onJobSelect && (
+                                                <button
+                                                    style={sBtnSmall}
+                                                    onClick={() => onJobSelect(job.job_id)}
+                                                    title="Xem chi tiết"
+                                                >
+                                                    Chi tiết
+                                                </button>
+                                            )}
+                                            {canCancel && onCancelJob && (
+                                                <button
+                                                    style={sBtnDanger}
+                                                    onClick={() => handleCancel(job.job_id)}
+                                                    title="Hủy job"
+                                                >
+                                                    Hủy
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        {processedJobs.length === 0 && (
+                            <tr>
+                                <td colSpan={8} style={sEmptyState}>
+                                    {jobs.length === 0
+                                        ? 'Chưa có job nào.'
+                                        : 'Không có job nào phù hợp với bộ lọc.'}
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Phân trang */}
+            {totalPages > 1 && (
+                <div style={sPagination}>
+                    <span>
+                        Trang {safePage} / {totalPages}
+                        {' '}({processedJobs.length} kết quả)
+                    </span>
+                    <div style={sPageButtons}>
+                        {/* Nút Trước */}
+                        <button
+                            style={safePage <= 1 ? sPageBtnDisabled : sPageBtnBase}
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                            disabled={safePage <= 1}
+                        >
+                            {'<'}
+                        </button>
+                        {/* Các số trang */}
+                        {pageNumbers.map((pn, idx) =>
+                            pn === -1 ? (
+                                <span key={`ellipsis-${idx}`} style={{ ...sPageBtnBase, cursor: 'default', border: 'none' }}>
+                                    ...
+                                </span>
+                            ) : (
+                                <button
+                                    key={pn}
+                                    style={pn === safePage ? sPageBtnActive : sPageBtnBase}
+                                    onClick={() => setPage(pn)}
+                                >
+                                    {pn}
+                                </button>
+                            )
+                        )}
+                        {/* Nút Sau */}
+                        <button
+                            style={safePage >= totalPages ? sPageBtnDisabled : sPageBtnBase}
+                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                            disabled={safePage >= totalPages}
+                        >
+                            {'>'}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default BulkJobs;

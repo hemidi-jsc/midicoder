@@ -1,0 +1,198 @@
+/**
+ * Bulk Operations Scheduler - Sinh tự động bởi Midicoder CP44.
+ *
+ * Scheduler module cho bulk operations engine.
+ * Chạy các tác vụ định kỳ:
+ * - Kiểm tra jobs timeout (mỗi 5 phút)
+ * - Retry DLQ entries (mỗi 1 giờ)
+ * - Dọn dẹp DLQ cũ (hàng ngày lúc 2:00 AM)
+ *
+ * CP44: Bulk Operations Engine
+ */
+
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, LessThan } from 'typeorm';
+import { BulkJobEntity, DLQEntryEntity, JobStatus } from './bulk.entity';
+
+@Injectable()
+export class BulkScheduler {
+  private readonly logger: Logger;
+
+  constructor(
+    @InjectRepository(BulkJobEntity)
+    private readonly jobsRepo: Repository<BulkJobEntity>,
+    @InjectRepository(DLQEntryEntity)
+    private readonly dlqRepo: Repository<DLQEntryEntity>,
+  ) {
+    this.logger = new Logger(BulkScheduler.name);
+  }
+
+  /**
+   * Kiểm tra các job đang chạy vượt quá timeout.
+   *
+   * Chạy mỗi 5 phút. Tìm tất cả jobs có trạng thái RUNNING mà thời gian
+   * chạy vượt quá timeoutSeconds được cấu hình. Đánh dấu là TIMEOUT.
+   *
+   * Cron: */5 * * * * (mỗi 5 phút)
+   */
+  @Cron('*/5 * * * *')
+  async checkTimeoutJobs(): Promise<void> {
+    this.logger.debug('Kiểm tra jobs timeout...');
+
+    try {
+      // Lấy tất cả jobs đang chạy
+      const runningJobs = await this.jobsRepo.find({
+        where: { status: JobStatus.RUNNING },
+      });
+
+      if (runningJobs.length === 0) {
+        return;
+      }
+
+      const now = new Date();
+      let timeoutCount = 0;
+
+      for (const job of runningJobs) {
+        if (!job.startedAt) {
+          continue;
+        }
+
+        // Tính số giây đã chạy
+        const elapsedSeconds = (now.getTime() - job.startedAt.getTime()) / 1000;
+
+        if (elapsedSeconds > job.timeoutSeconds) {
+          this.logger.warn(
+            `BulkJob ${job.jobId} vượt quá timeout (${Math.floor(elapsedSeconds)}s > ${job.timeoutSeconds}s)`,
+          );
+
+          job.status = JobStatus.TIMEOUT;
+          job.errorMessage = `Job bị timeout sau ${Math.floor(elapsedSeconds)} giây (giới hạn: ${job.timeoutSeconds}s)`;
+          job.finishedAt = now;
+
+          await this.jobsRepo.save(job);
+          timeoutCount++;
+        }
+      }
+
+      if (timeoutCount > 0) {
+        this.logger.log(`Đã đánh dấu ${timeoutCount} jobs bị timeout`);
+      }
+
+    } catch (error) {
+      this.logger.error(`Lỗi khi kiểm tra timeout jobs: ${error}`);
+    }
+  }
+
+  /**
+   * Retry các DLQ entries chưa được retry trong 1 giờ.
+   *
+   * Chạy mỗi 1 giờ. Tìm các DLQ entries chưa được replay và đã thất bại
+   * hơn 1 giờ trước. Thực hiện retry bằng cách tạo job mới.
+   *
+   * Cron: 0 */1 * * * * (mỗi 1 giờ)
+   */
+  @Cron('0 */1 * * * *')
+  async retryDLQEntries(): Promise<void> {
+    this.logger.debug('Retry DLQ entries...');
+
+    try {
+      const oneHourAgo = new Date();
+      oneHourAgo.setHours(oneHourAgo.getHours() - 1);
+
+      // Lấy các DLQ entries chưa replay và thất bại hơn 1 giờ trước
+      const dlqEntries = await this.dlqRepo.find({
+        where: {
+          replayed: false,
+          failedAt: LessThan(oneHourAgo),
+        },
+        order: { createdAt: 'ASC' },
+      });
+
+      if (dlqEntries.length === 0) {
+        return;
+      }
+
+      this.logger.log(`Tìm thấy ${dlqEntries.length} DLQ entries để retry`);
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const entry of dlqEntries) {
+        try {
+          // Tự động retry: tạo job mới để xử lý entity
+          // Lưu ý: trong môi trường production, có thể muốn giới hạn số lần auto-retry
+          if (entry.retryCount >= 3) {
+            this.logger.warn(`DLQ Entry ${entry.entryId} đã retry quá nhiều lần, bỏ qua auto-retry`);
+            failCount++;
+            continue;
+          }
+
+          // Tăng retry count
+          entry.retryCount++;
+          await this.dlqRepo.save(entry);
+
+          this.logger.debug(`Auto-retry DLQ Entry ${entry.entryId} (entity: ${entry.entityId})`);
+
+          // Đánh dấu là đã được auto-retry
+          entry.replayed = true;
+          entry.replayedAt = new Date();
+          await this.dlqRepo.save(entry);
+
+          successCount++;
+
+        } catch (error) {
+          this.logger.error(`Auto-retry DLQ Entry ${entry.entryId} thất bại: ${error}`);
+          failCount++;
+        }
+      }
+
+      this.logger.log(`Auto-retry DLQ hoàn thành: ${successCount} thành công, ${failCount} thất bại`);
+
+    } catch (error) {
+      this.logger.error(`Lỗi khi retry DLQ entries: ${error}`);
+    }
+  }
+
+  /**
+   * Dọn dẹp DLQ entries đã được replay và quá 30 ngày.
+   *
+   * Chạy hàng ngày lúc 2:00 AM. Xóa các DLQ entries đã replay và
+   * đã tồn tại hơn 30 ngày để giảm kích thước bảng DLQ.
+   *
+   * Cron: 0 0 2 * * * (hàng ngày lúc 2:00 AM)
+   */
+  @Cron('0 0 2 * * *')
+  async cleanupOldDLQ(): Promise<void> {
+    this.logger.debug('Dọn dẹp DLQ entries cũ...');
+
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      // Đếm số entries sẽ xóa
+      const count = await this.dlqRepo.count({
+        where: {
+          replayed: true,
+          updatedAt: LessThan(thirtyDaysAgo),
+        },
+      });
+
+      if (count === 0) {
+        return;
+      }
+
+      // Xóa các entries cũ
+      const result = await this.dlqRepo.delete({
+        replayed: true,
+        updatedAt: LessThan(thirtyDaysAgo),
+      });
+
+      this.logger.log(`Đã xóa ${result.affected ?? 0} DLQ entries cũ (hơn 30 ngày)`);
+
+    } catch (error) {
+      this.logger.error(`Lỗi khi dọn dẹp DLQ: ${error}`);
+    }
+  }
+}

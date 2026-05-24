@@ -1,0 +1,698 @@
+/**
+ * BulkDashboard — Bảng điều khiển tổng quan Bulk Operations: stat cards, jobs gần đây, auto-refresh.
+ * Sinh bởi CP44 BulkOpsEmitter.
+ *
+ * Số lượng jobs mẫu: {{ job_count }}
+ * Chunk size mặc định: {{ default_chunk_size }}
+ * Concurrency mặc định: {{ default_concurrency }}
+ * DLQ enabled: {{ dlq_enabled }}
+ * Sử dụng events: {{ use_events }}
+ * Sử dụng audit: {{ use_audit }}
+ */
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useBulkOps } from './useBulkOps';
+import { BulkProgress, BulkProgressProps } from './BulkProgress';
+
+/* ---- Interface ---- */
+interface BulkJobSummary {
+    job_id: string;
+    entity_type: string;
+    action: string;
+    status: string;
+    total_records: number;
+    processed: number;
+    succeeded: number;
+    failed: number;
+    skipped: number;
+    entity_ids?: string[];
+    created_at: string;
+    updated_at: string;
+}
+
+/* ---- Style objects — pre-declared để tránh conflict double-brace trong JSX ---- */
+const sWrap: React.CSSProperties = {
+    padding: '24px',
+    maxWidth: '1200px',
+    margin: '0 auto',
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    backgroundColor: '#f9fafb',
+    minHeight: '100vh',
+};
+
+const sHeader: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '24px',
+    flexWrap: 'wrap',
+    gap: '12px',
+};
+
+const sHeaderTitle: React.CSSProperties = {
+    margin: 0,
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#111827',
+};
+
+const sHeaderActions: React.CSSProperties = {
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap',
+};
+
+const sBtnBase: React.CSSProperties = {
+    padding: '8px 16px',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    background: '#fff',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#374151',
+    transition: 'all 0.15s',
+};
+
+const sBtnPrimary: React.CSSProperties = {
+    ...sBtnBase,
+    background: '#6366f1',
+    color: '#fff',
+    border: 'none',
+    boxShadow: '0 1px 2px rgba(99,102,241,0.3)',
+};
+
+const sBtnDanger: React.CSSProperties = {
+    ...sBtnBase,
+    background: '#ef4444',
+    color: '#fff',
+    border: 'none',
+};
+
+const sStatsRow: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '16px',
+    marginBottom: '24px',
+};
+
+const sStatCardBase: React.CSSProperties = {
+    background: '#fff',
+    borderRadius: '12px',
+    padding: '20px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+    position: 'relative',
+    overflow: 'hidden',
+};
+
+const sStatLabel: React.CSSProperties = {
+    margin: 0,
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+};
+
+const sStatValue: React.CSSProperties = {
+    margin: '8px 0 0',
+    fontSize: '36px',
+    fontWeight: 700,
+    lineHeight: 1.1,
+};
+
+const sStatBar: React.CSSProperties = {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '4px',
+};
+
+const sPulseDot: React.CSSProperties = {
+    position: 'absolute',
+    top: '16px',
+    right: '16px',
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    animation: 'pulse 2s ease-in-out infinite',
+};
+
+const sCard: React.CSSProperties = {
+    background: '#fff',
+    borderRadius: '12px',
+    padding: '20px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+};
+
+const sCardTitle: React.CSSProperties = {
+    margin: '0 0 16px',
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#111827',
+};
+
+const sTable: React.CSSProperties = {
+    width: '100%',
+    borderCollapse: 'collapse',
+};
+
+const sTh: React.CSSProperties = {
+    padding: '12px 10px',
+    textAlign: 'left',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    borderBottom: '2px solid #e5e7eb',
+    whiteSpace: 'nowrap',
+};
+
+const sTd: React.CSSProperties = {
+    padding: '12px 10px',
+    fontSize: '14px',
+    borderBottom: '1px solid #f3f4f6',
+    color: '#374151',
+};
+
+const sTdCode: React.CSSProperties = {
+    fontFamily: 'ui-monospace, monospace',
+    fontSize: '13px',
+    color: '#6366f1',
+    background: '#eef2ff',
+    padding: '2px 6px',
+    borderRadius: '4px',
+};
+
+const sEmptyState: React.CSSProperties = {
+    padding: '48px 20px',
+    textAlign: 'center',
+    color: '#9ca3af',
+    fontSize: '15px',
+};
+
+const sLoading: React.CSSProperties = {
+    padding: '48px 20px',
+    textAlign: 'center',
+    color: '#6b7280',
+    fontSize: '15px',
+};
+
+const sError: React.CSSProperties = {
+    padding: '16px 20px',
+    background: '#fef2f2',
+    borderRadius: '8px',
+    color: '#991b1b',
+    fontSize: '14px',
+    border: '1px solid #fecaca',
+    marginBottom: '16px',
+};
+
+const sBadgeBase: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '3px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+};
+
+const sMetaInfo: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    marginBottom: '24px',
+    padding: '12px 16px',
+    background: '#f0f9ff',
+    borderRadius: '8px',
+    fontSize: '13px',
+    color: '#0369a1',
+    border: '1px solid #e0f2fe',
+    flexWrap: 'wrap',
+};
+
+const sMetaItem: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+};
+
+/* Pulse keyframes — inject vào document head */
+const pulseKeyframes = `
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+`;
+
+/* ---- Helper: badge style theo status ---- */
+function statusBadgeStyle(status: string): React.CSSProperties {
+    const map: Record<string, { bg: string; color: string }> = {
+        pending:    { bg: '#fef3c7', color: '#92400e' },
+        running:    { bg: '#dbeafe', color: '#1e40af' },
+        completed:  { bg: '#d1fae5', color: '#065f46' },
+        failed:     { bg: '#fee2e2', color: '#991b1b' },
+        cancelled:  { bg: '#f3f4f6', color: '#4b5563' },
+        timeout:    { bg: '#ffedd5', color: '#9a3412' },
+        queued:     { bg: '#e0e7ff', color: '#3730a3' },
+    };
+    const c = map[status] || { bg: '#f3f4f6', color: '#374151' };
+    return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
+}
+
+/* ---- Helper: label status bằng tiếng Việt ---- */
+function statusLabel(status: string): string {
+    const map: Record<string, string> = {
+        pending:    'Chờ xử lý',
+        running:    'Đang chạy',
+        completed:  'Hoàn thành',
+        failed:     'Thất bại',
+        cancelled:  'Đã hủy',
+        timeout:    'Hết giờ',
+        queued:     'Trong hàng chờ',
+    };
+    return map[status] || status;
+}
+
+/* ---- Helper: format ngày giờ ---- */
+function formatDateTime(iso: string | null): string {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+/* ---- StatCard component ---- */
+const StatCard: React.FC<{
+    title: string;
+    value: number;
+    color: string;
+    pulse?: boolean;
+}> = ({ title, value, color, pulse }) => (
+    <div style={sStatCardBase}>
+        <div style={{ ...sStatBar, backgroundColor: color }} />
+        {pulse && <div style={{ ...sPulseDot, backgroundColor: color }} />}
+        <p style={sStatLabel}>{title}</p>
+        <p style={{ ...sStatValue, color }}>{value}</p>
+    </div>
+);
+
+/* ---- StatusBadge component ---- */
+const StatusBadge: React.FC<{ status: string }> = ({ status }) => (
+    <span style={statusBadgeStyle(status)}>
+        {statusLabel(status)}
+    </span>
+);
+
+/* ---- Component chính: BulkDashboard ---- */
+export const BulkDashboard: React.FC = () => {
+    const { jobs, loading, error, refreshJobs, cancelJob } = useBulkOps();
+    const [autoRefresh, setAutoRefresh] = useState(true);
+    const [createModalOpen, setCreateModalOpen] = useState(false);
+
+    /* Tính toán thống kê từ danh sách jobs */
+    const stats = useMemo(() => ({
+        total: jobs.length,
+        running: jobs.filter((j) => j.status === 'running').length,
+        completed: jobs.filter((j) => j.status === 'completed').length,
+        failed: jobs.filter((j) => j.status === 'failed').length,
+        queued: jobs.filter((j) => j.status === 'pending' || j.status === 'queued').length,
+    }), [jobs]);
+
+    /* Auto-refresh khi có job đang chạy */
+    useEffect(() => {
+        if (!autoRefresh || stats.running === 0) return;
+        const interval = setInterval(refreshJobs, 5000);
+        return () => clearInterval(interval);
+    }, [autoRefresh, stats.running, refreshJobs]);
+
+    /* Inject pulse animation vào head */
+    useEffect(() => {
+        const styleId = 'cp44-bulk-pulse-style';
+        if (!document.getElementById(styleId)) {
+            const styleEl = document.createElement('style');
+            styleEl.id = styleId;
+            styleEl.textContent = pulseKeyframes;
+            document.head.appendChild(styleEl);
+        }
+    }, []);
+
+    /* Handle hủy job */
+    const handleCancelJob = useCallback(async (jobId: string) => {
+        if (window.confirm('Bạn có chắc muốn hủy job này?')) {
+            try {
+                await cancelJob(jobId);
+                await refreshJobs();
+            } catch (err) {
+                console.error('[BulkDashboard] Hủy job thất bại:', err);
+                alert('Hủy job thất bại: ' + (err instanceof Error ? err.message : 'Lỗi không rõ'));
+            }
+        }
+    }, [cancelJob, refreshJobs]);
+
+    /* Sắp jobs theo created_at giảm dần */
+    const sortedJobs = useMemo(() => {
+        return [...jobs].sort((a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+    }, [jobs]);
+
+    return (
+        <div style={sWrap}>
+            {/* Header với hành động */}
+            <div style={sHeader}>
+                <h1 style={sHeaderTitle}>Điều khiển Bulk Operations</h1>
+                <div style={sHeaderActions}>
+                    <button
+                        onClick={() => setAutoRefresh(!autoRefresh)}
+                        style={{
+                            ...sBtnBase,
+                            ...(autoRefresh ? { background: '#ecfdf5', borderColor: '#6ee7b7', color: '#065f46' } : {}),
+                        }}
+                        title={autoRefresh ? 'Tắt tự động làm mới' : 'Bật tự động làm mới'}
+                    >
+                        {autoRefresh ? 'Tự động' : 'Thủ công'}
+                    </button>
+                    <button onClick={refreshJobs} style={sBtnPrimary} disabled={loading}>
+                        {loading ? 'Đang tải...' : 'Làm mới'}
+                    </button>
+                    <button onClick={() => setCreateModalOpen(true)} style={sBtnPrimary}>
+                        Tạo job mới
+                    </button>
+                </div>
+            </div>
+
+            {/* Hiển thị lỗi từ hook */}
+            {error && (
+                <div style={sError}>
+                    <strong>Lỗi:</strong> {error}
+                </div>
+            )}
+
+            {/* Meta info: cấu hình mặc định */}
+            <div style={sMetaInfo}>
+                <span style={sMetaItem}>
+                    <strong>Chunk:</strong> {{ default_chunk_size }}
+                </span>
+                <span style={sMetaItem}>
+                    <strong>Concurrency:</strong> {{ default_concurrency }}
+                </span>
+                <span style={sMetaItem}>
+                    <strong>Max retries:</strong> {{ default_max_retries }}
+                </span>
+                <span style={sMetaItem}>
+                    <strong>Retry:</strong> {{ default_retry_strategy }}
+                </span>
+                <span style={sMetaItem}>
+                    <strong>Timeout:</strong> {{ default_timeout }}s
+                </span>
+                <span style={sMetaItem}>
+                    <strong>DLQ:</strong> {{ dlq_enabled | lower }}
+                </span>
+                <span style={sMetaItem}>
+                    <strong>Events:</strong> {{ use_events | lower }}
+                </span>
+                {% if use_audit %}
+                <span style={sMetaItem}>
+                    <strong>Audit:</strong> bật
+                </span>
+                {% endif %}
+            </div>
+
+            {/* Stats Cards */}
+            <div style={sStatsRow}>
+                <StatCard title="Tổng số" value={stats.total} color="#6366f1" />
+                <StatCard title="Đang chạy" value={stats.running} color="#3b82f6" pulse={stats.running > 0} />
+                <StatCard title="Trong hàng chờ" value={stats.queued} color="#f59e0b" pulse={stats.queued > 0} />
+                <StatCard title="Hoàn thành" value={stats.completed} color="#22c55e" />
+                <StatCard title="Thất bại" value={stats.failed} color="#ef4444" />
+            </div>
+
+            {/* Danh sách jobs gần đây */}
+            <div style={sCard}>
+                <h2 style={sCardTitle}>Jobs gần đây ({sortedJobs.length})</h2>
+
+                {loading && !jobs.length ? (
+                    <div style={sLoading}>Đang tải danh sách jobs...</div>
+                ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={sTable}>
+                            <thead>
+                                <tr>
+                                    <th style={sTh}>Job ID</th>
+                                    <th style={sTh}>Entity</th>
+                                    <th style={sTh}>Action</th>
+                                    <th style={sTh}>Trạng thái</th>
+                                    <th style={{ ...sTh, minWidth: '180px' }}>Tiến độ</th>
+                                    <th style={sTh}>Số lượng</th>
+                                    <th style={sTh}>Tạo lúc</th>
+                                    <th style={sTh}>Hành động</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {sortedJobs.slice(0, 10).map((job) => (
+                                    <tr key={job.job_id}>
+                                        <td style={sTd}>
+                                            <span style={sTdCode}>{job.job_id}</span>
+                                        </td>
+                                        <td style={sTd}>{job.entity_type}</td>
+                                        <td style={sTd}>{job.action}</td>
+                                        <td style={sTd}>
+                                            <StatusBadge status={job.status} />
+                                        </td>
+                                        <td style={{ ...sTd, minWidth: '180px' }}>
+                                            <BulkProgress
+                                                total={job.total_records || (job.entity_ids?.length || 0)}
+                                                processed={job.processed}
+                                                succeeded={job.succeeded}
+                                                failed={job.failed}
+                                                skipped={job.skipped}
+                                                size="small"
+                                            />
+                                        </td>
+                                        <td style={sTd}>
+                                            {job.total_records || job.entity_ids?.length || 0}
+                                        </td>
+                                        <td style={sTd}>{formatDateTime(job.created_at)}</td>
+                                        <td style={sTd}>
+                                            {(job.status === 'running' || job.status === 'pending' || job.status === 'queued') && (
+                                                <button
+                                                    onClick={() => handleCancelJob(job.job_id)}
+                                                    style={{ ...sBtnBase, padding: '4px 10px', fontSize: '12px', ...sBtnDanger }}
+                                                    title="Hủy job"
+                                                >
+                                                    Hủy
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {sortedJobs.length === 0 && (
+                                    <tr>
+                                        <td colSpan={8} style={sEmptyState}>
+                                            Chưa có job nào. Nhấn "Tạo job mới" để bắt đầu.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* Modal tạo job mới — đơn giản */}
+            {createModalOpen && (
+                <CreateJobModal
+                    onClose={() => setCreateModalOpen(false)}
+                    onCreate={() => {
+                        setCreateModalOpen(false);
+                        refreshJobs();
+                    }}
+                />
+            )}
+        </div>
+    );
+};
+
+/* ---- CreateJobModal component (inline form) ---- */
+interface CreateJobModalProps {
+    onClose: () => void;
+    onCreate: () => void;
+}
+
+const CreateJobModal: React.FC<CreateJobModalProps> = ({ onClose, onCreate }) => {
+    const { createJob } = useBulkOps();
+    const [entityType, setEntityType] = useState('');
+    const [action, setAction] = useState('');
+    const [entityIds, setEntityIds] = useState('');
+    const [chunkSize, setChunkSize] = useState({{ default_chunk_size }});
+    const [concurrency, setConcurrency] = useState({{ default_concurrency }});
+    const [submitting, setSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
+
+    const handleSubmit = async () => {
+        if (!entityType || !action || !entityIds.trim()) {
+            setSubmitError('Vui lòng điền đầy đủ thông tin bắt buộc.');
+            return;
+        }
+        setSubmitting(true);
+        setSubmitError(null);
+        try {
+            const ids = entityIds.split(',').map((s) => s.trim()).filter(Boolean);
+            await createJob({
+                entity_type: entityType,
+                action: action,
+                entity_ids: ids,
+                chunk_size: chunkSize,
+                concurrency: concurrency,
+                max_retries: {{ default_max_retries }},
+                retry_strategy: '{{ default_retry_strategy }}' as any,
+                timeout: {{ default_timeout }},
+            });
+            onCreate();
+        } catch (err) {
+            setSubmitError(err instanceof Error ? err.message : 'Tạo job thất bại');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const overlayStyle: React.CSSProperties = {
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+    };
+    const modalStyle: React.CSSProperties = {
+        background: '#fff',
+        borderRadius: '16px',
+        padding: '24px',
+        width: '100%',
+        maxWidth: '520px',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+    };
+    const formLabelStyle: React.CSSProperties = {
+        display: 'block',
+        fontSize: '13px',
+        fontWeight: 600,
+        color: '#374151',
+        marginBottom: '4px',
+    };
+    const formInputStyle: React.CSSProperties = {
+        width: '100%',
+        padding: '8px 12px',
+        border: '1px solid #d1d5db',
+        borderRadius: '8px',
+        fontSize: '14px',
+        boxSizing: 'border-box',
+        outline: 'none',
+    };
+    const formRowStyle: React.CSSProperties = {
+        marginBottom: '16px',
+    };
+    const formRowTwoCol: React.CSSProperties = {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '12px',
+    };
+
+    return (
+        <div style={overlayStyle} onClick={onClose}>
+            <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+                <h2 style={{ margin: '0 0 20px', fontSize: '20px', fontWeight: 700 }}>Tạo Bulk Job mới</h2>
+
+                <div style={formRowStyle}>
+                    <label style={formLabelStyle}>Loại entity *</label>
+                    <select
+                        style={formInputStyle}
+                        value={entityType}
+                        onChange={(e) => setEntityType(e.target.value)}
+                    >
+                        <option value="">-- Chọn --</option>
+                        <option value="user">User</option>
+                        <option value="order">Order</option>
+                        <option value="product">Product</option>
+                        <option value="invoice">Invoice</option>
+                    </select>
+                </div>
+
+                <div style={formRowStyle}>
+                    <label style={formLabelStyle}>Hành động *</label>
+                    <select
+                        style={formInputStyle}
+                        value={action}
+                        onChange={(e) => setAction(e.target.value)}
+                    >
+                        <option value="">-- Chọn --</option>
+                        <option value="update">Cập nhật</option>
+                        <option value="delete">Xóa</option>
+                        <option value="archive">Lưu trữ</option>
+                        <option value="export">Xuất</option>
+                        <option value="import">Nhập</option>
+                    </select>
+                </div>
+
+                <div style={formRowStyle}>
+                    <label style={formLabelStyle}>Entity IDs (phân cách dấu phẩy) *</label>
+                    <textarea
+                        style={{ ...formInputStyle, minHeight: '60px', resize: 'vertical' }}
+                        value={entityIds}
+                        onChange={(e) => setEntityIds(e.target.value)}
+                        placeholder="e.g. usr_001, usr_002, usr_003"
+                    />
+                </div>
+
+                <div style={{ ...formRowStyle, ...formRowTwoCol }}>
+                    <div>
+                        <label style={formLabelStyle}>Chunk size</label>
+                        <input
+                            type="number"
+                            style={formInputStyle}
+                            value={chunkSize}
+                            min={1}
+                            onChange={(e) => setChunkSize(Number(e.target.value))}
+                        />
+                    </div>
+                    <div>
+                        <label style={formLabelStyle}>Concurrency</label>
+                        <input
+                            type="number"
+                            style={formInputStyle}
+                            value={concurrency}
+                            min={1}
+                            onChange={(e) => setConcurrency(Number(e.target.value))}
+                        />
+                    </div>
+                </div>
+
+                {submitError && (
+                    <div style={{ ...sError, marginBottom: '16px' }}>{submitError}</div>
+                )}
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                    <button onClick={onClose} style={sBtnBase} disabled={submitting}>
+                        Hủy
+                    </button>
+                    <button onClick={handleSubmit} style={sBtnPrimary} disabled={submitting}>
+                        {submitting ? 'Đang tạo...' : 'Tạo job'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default BulkDashboard;
