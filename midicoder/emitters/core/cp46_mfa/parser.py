@@ -16,56 +16,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from midicoder.emitters.core.cp46_mfa.models import (
-    MFAChallenge,
     MFAMethod,
-    MFAMethodStatus,
     MFAPriority,
+    MFARule,
 )
-
-
-@dataclass
-class MFARule:
-    """Quy tắc MFA cho user/role.
-
-    Attributes:
-        rule_id: ID duy nhất của quy tắc
-        user_id: ID của user (nếu áp dụng cho user cụ thể)
-        role_id: ID của role (nếu áp dụng cho role)
-        method: Loại phương thức MFA
-        priority: Mức ưu tiên
-        enabled: Có bật quy tắc không
-        metadata: Dữ liệu bổ sung
-    """
-    rule_id: str
-    user_id: str = ""
-    role_id: str = ""
-    method: MFAMethod = MFAMethod.TOTP
-    priority: MFAPriority = MFAPriority.REQUIRED
-    enabled: bool = True
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "rule_id": self.rule_id,
-            "user_id": self.user_id,
-            "role_id": self.role_id,
-            "method": self.method.value,
-            "priority": self.priority.value,
-            "enabled": self.enabled,
-            "metadata": self.metadata,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MFARule":
-        return cls(
-            rule_id=data["rule_id"],
-            user_id=data.get("user_id", ""),
-            role_id=data.get("role_id", ""),
-            method=MFAMethod(data.get("method", "totp")),
-            priority=MFAPriority(data.get("priority", "required")),
-            enabled=data.get("enabled", True),
-            metadata=data.get("metadata", {}),
-        )
 
 
 @dataclass
@@ -218,11 +172,39 @@ def parse_methods_config(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def parse_enabled_methods(data: dict[str, Any]) -> list[MFAMethod]:
+    """Parse danh sách enabled methods từ DSL dict.
+
+    Args:
+        data: DSL dict với key 'enabled_methods'
+
+    Returns:
+        Danh sách MFAMethod được phép
+    """
+    methods_raw = data.get("enabled_methods", None)
+    if methods_raw is None:
+        # Default: lấy từ methods config
+        methods_config = parse_methods_config(data)
+        result = []
+        if methods_config["use_totp"]:
+            result.append(MFAMethod.TOTP)
+        if methods_config["use_sms_otp"]:
+            result.append(MFAMethod.SMS_OTP)
+        if methods_config["use_webauthn"]:
+            result.append(MFAMethod.WEBAUTHN_FIDO2)
+        if methods_config["use_biometric"]:
+            result.append(MFAMethod.BIOMETRIC)
+        return result if result else list(MFAMethod)
+
+    # Explicit list provided
+    return [MFAMethod(m) for m in methods_raw]
+
+
 def parse_to_ir(data: dict[str, Any]) -> MFAIR:
     """Parse DSL dict thành MFAIR.
 
     Args:
-        data: DSL dict với rules, config, methods
+        data: DSL dict với rules, config, methods, enabled_methods
 
     Returns:
         MFAIR gom tập tất cả parsed data
@@ -230,10 +212,11 @@ def parse_to_ir(data: dict[str, Any]) -> MFAIR:
     rules = parse_mfa_rules(data)
     config = parse_mfa_config(data)
     methods = parse_methods_config(data)
+    enabled = parse_enabled_methods(data)
 
     return MFAIR(
         rules=rules,
-        enabled_methods=list(MFAMethod),
+        enabled_methods=enabled,
         default_method=MFAMethod(config["default_method"]),
         default_priority=MFAPriority(config["default_priority"]),
         require_mfa=config["require_mfa"],
@@ -249,10 +232,11 @@ def parse_to_ir(data: dict[str, Any]) -> MFAIR:
 
 
 __all__ = [
-    "MFARule",
     "MFAIR",
+    "MFARule",
     "parse_mfa_rules",
     "parse_mfa_config",
     "parse_methods_config",
+    "parse_enabled_methods",
     "parse_to_ir",
 ]

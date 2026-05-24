@@ -16,50 +16,117 @@ class TestPackManifest:
         assert (PACK_DIR / "pack.yml").exists()
 
     def test_pack_yml_valid_yaml(self):
-        with open(PACK_DIR / "pack.yml") as f:
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         assert data is not None
+        assert "pack" in data
 
     def test_pack_id(self):
-        with open(PACK_DIR / "pack.yml") as f:
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        assert data["pack_id"] == "CP46"
+        assert data["pack"]["id"] == "CP46"
 
     def test_pack_internal_id(self):
-        with open(PACK_DIR / "pack.yml") as f:
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        assert data["internal_id"] == "cp46_mfa"
+        assert data["pack"]["internal_id"] == "cp46_mfa"
 
-    def test_pack_capabilities(self):
-        with open(PACK_DIR / "pack.yml") as f:
+    def test_pack_version(self):
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        assert "totp_auth" in data["capabilities"]
-        assert "sms_otp" in data["capabilities"]
-        assert "webauthn_fido2" in data["capabilities"]
-        assert "biometric_auth" in data["capabilities"]
+        assert data["pack"]["version"] == "1.0.0"
+
+    def test_pack_status(self):
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        assert data["pack"]["status"] == "stable"
+
+    def test_pack_category(self):
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        assert data["pack"]["category"] == "security"
+
+    def test_pack_definitions_count(self):
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        assert data["pack"]["definitions_count"] == 4
+
+    def test_pack_obligations_count(self):
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        assert data["pack"]["obligations_count"] == 2
+
+    def test_pack_capabilities_provided(self):
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        caps = data["pack"]["capabilities_provided"]
+        assert "totp_auth" in caps
+        assert "sms_otp" in caps
+        assert "webauthn_fido2" in caps
+        assert "biometric_auth" in caps
 
     def test_pack_obligations(self):
-        with open(PACK_DIR / "pack.yml") as f:
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        assert "mfa_enrollment_flow" in data["obligations"]
-        assert "mfa_challenge_verification" in data["obligations"]
+        obligations = data["pack"]["obligations"]
+        obligation_names = [o["name"] for o in obligations]
+        assert "MfaEnrollmentFlow" in obligation_names
+        assert "MfaChallengeVerification" in obligation_names
 
     def test_pack_depends_on(self):
-        with open(PACK_DIR / "pack.yml") as f:
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        assert "CP03" in data["depends_on"]
-        assert "CP12" in data["depends_on"]
+        assert "CP03" in data["pack"]["depends_on"]
+        assert "CP12" in data["pack"]["depends_on"]
+
+    def test_pack_error_codes_prefix(self):
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        assert data["pack"]["error_codes"]["prefix"] == "MDC-CP46"
+
+    def test_pack_definitions(self):
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        defs = data["pack"]["definitions"]
+        def_names = [d["name"] for d in defs]
+        assert "MFACredential" in def_names
+        assert "MFAChallengeSession" in def_names
+        assert "MFAEnrollment" in def_names
+        assert "MFASession" in def_names
 
     def test_pack_file_contributions_count(self):
-        with open(PACK_DIR / "pack.yml") as f:
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        assert len(data["file_contributions"]) >= 5
+        contributions = data["pack"]["file_contributions"]["infrastructure"]
+        assert len(contributions) >= 20  # 24 templates across 4 stacks
+
+    def test_pack_file_contributions_by_stack(self):
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        contributions = data["pack"]["file_contributions"]["infrastructure"]
+        stacks_found = set()
+        for contrib in contributions:
+            stacks_found.update(contrib["stacks"])
+        assert "fastapi" in stacks_found
+        assert "nestjs" in stacks_found
+        assert "angular" in stacks_found
+        assert "react" in stacks_found
+
+    def test_pack_frontend_integration(self):
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        fe = data["pack"]["frontend_integration"]
+        assert "react" in fe
+        assert "angular" in fe
+        assert "MFASetup" in fe["react"]
+        assert "MfaSetupComponent" in fe["angular"]
 
     def test_pack_recipes(self):
-        with open(PACK_DIR / "pack.yml") as f:
+        with open(PACK_DIR / "pack.yml", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        assert "basic_mfa" in str(data["recipes"])
-        assert "full_mfa" in str(data["recipes"])
+        recipes = data["pack"]["recipes"]
+        assert "basic_mfa_recipe" in recipes
+        assert "full_mfa_recipe" in recipes
 
 
 class TestFastAPITemplates:

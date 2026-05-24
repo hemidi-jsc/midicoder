@@ -10,6 +10,7 @@ from midicoder.emitters.core.cp46_mfa.parser import (
     parse_mfa_rules,
     parse_mfa_config,
     parse_methods_config,
+    parse_enabled_methods,
     parse_to_ir,
 )
 from midicoder.emitters.core.cp46_mfa.models import (
@@ -131,6 +132,28 @@ class TestParseMethodsConfig:
         data = {"methods": {"totp": False, "sms_otp": False, "webauthn_fido2": False, "biometric": False}}
         methods = parse_methods_config(data)
         assert all(v is False for v in methods.values())
+
+
+class TestParseEnabledMethods:
+    def test_default_from_methods_config(self):
+        """Default: enabled_methods derived from methods config."""
+        data = {"methods": {"totp": True, "sms_otp": False, "webauthn": True, "biometric": False}}
+        enabled = parse_enabled_methods(data)
+        assert MFAMethod.TOTP in enabled
+        assert MFAMethod.SMS_OTP not in enabled
+        assert MFAMethod.WEBAUTHN_FIDO2 in enabled
+        assert MFAMethod.BIOMETRIC not in enabled
+
+    def test_explicit_list(self):
+        """Explicit enabled_methods list overrides methods config."""
+        data = {"enabled_methods": ["totp", "sms_otp"]}
+        enabled = parse_enabled_methods(data)
+        assert enabled == [MFAMethod.TOTP, MFAMethod.SMS_OTP]
+
+    def test_empty_data_returns_all(self):
+        data = {}
+        enabled = parse_enabled_methods(data)
+        assert len(enabled) == 4  # All methods enabled by default
 
 
 class TestParseToIR:

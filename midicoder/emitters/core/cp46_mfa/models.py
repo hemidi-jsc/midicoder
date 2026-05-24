@@ -448,6 +448,69 @@ class MFASession:
 
 
 # ===========================================================================
+# MFARule
+# ===========================================================================
+
+
+@dataclass
+class MFARule:
+    """Quy tắc MFA cho user/role.
+
+    Đại diện cho một quy tắc xác thực MFA được áp dụng cho user cụ thể
+    hoặc role, bao gồm loại phương thức, mức ưu tiên, và trạng thái.
+
+    Attributes:
+        rule_id: ID duy nhất của quy tắc
+        user_id: ID của user (nếu áp dụng cho user cụ thể)
+        role_id: ID của role (nếu áp dụng cho role)
+        method: Loại phương thức MFA
+        priority: Mức ưu tiên xác thực
+        enabled: Có bật quy tắc không
+        metadata: Dữ liệu bổ sung
+    """
+    rule_id: str
+    user_id: str = ""
+    role_id: str = ""
+    method: MFAMethod = MFAMethod.TOTP
+    priority: MFAPriority = MFAPriority.REQUIRED
+    enabled: bool = True
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate rule sau khi khởi tạo."""
+        if not self.rule_id or not self.rule_id.strip():
+            raise EM.raise_error(
+                ErrorCode.CP46_MFA_FACTOR_NOT_FOUND,
+                reason="rule_id bắt buộc và không được để trống",
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển MFARule sang dict."""
+        return {
+            "rule_id": self.rule_id,
+            "user_id": self.user_id,
+            "role_id": self.role_id,
+            "method": self.method.value,
+            "priority": self.priority.value,
+            "enabled": self.enabled,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MFARule":
+        """Tạo MFARule từ dict."""
+        return cls(
+            rule_id=data["rule_id"],
+            user_id=data.get("user_id", ""),
+            role_id=data.get("role_id", ""),
+            method=MFAMethod(data.get("method", "totp")),
+            priority=MFAPriority(data.get("priority", "required")),
+            enabled=data.get("enabled", True),
+            metadata=data.get("metadata", {}),
+        )
+
+
+# ===========================================================================
 # MFAEngine
 # ===========================================================================
 
@@ -876,6 +939,7 @@ __all__ = [
     "MFAPriority",
     "MFAChallenge",
     # Dataclasses
+    "MFARule",
     "MFACredential",
     "MFAChallengeSession",
     "MFAEnrollment",
