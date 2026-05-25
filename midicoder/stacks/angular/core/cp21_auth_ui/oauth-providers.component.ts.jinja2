@@ -1,0 +1,116 @@
+/** OAuth Providers Component - CP21.
+ *
+ * Thành phần hiển thị các nút đăng nhập bằng nhà cung cấp OAuth
+ * (Google, Facebook, GitHub, Azure AD).
+ *
+ * UI Framework: [{ui_framework}]
+ */
+
+import { Component, Input, Output, EventEmitter } from "@angular/core";
+import { CommonModule } from "@angular/common";
+{% if ui_framework == 'material' %}
+import { MatButtonModule } from "@angular/material/button";
+import { MatCardModule } from "@angular/material/card";
+{% elif ui_framework == 'bootstrap' %}
+import { NgBootstrapModule } from "ng-bootstrap";
+{% elif ui_framework == 'antd' %}
+import { NzButtonModule } from "ng-zorro-antd/button";
+{% elif ui_framework == 'carbon' %}
+import { CarbonComponentsAngularModule } from "@carbon/angular";
+{% endif %}
+
+/** Giao diện nhà cung cấp OAuth. */
+export interface OAuthProvider {
+  id: string;
+  name: string;
+  icon: string;
+  authorizationUrl: string;
+}
+
+/** Danh sách nhà cung cấp OAuth mặc định. */
+export const DEFAULT_PROVIDERS: OAuthProvider[] = [
+  { id: "google", name: "Google", icon: "🔍", authorizationUrl: "/auth/google" },
+  { id: "facebook", name: "Facebook", icon: "📘", authorizationUrl: "/auth/facebook" },
+  { id: "github", name: "GitHub", icon: "🐙", authorizationUrl: "/auth/github" },
+  { id: "azure-ad", name: "Azure AD", icon: "☁️", authorizationUrl: "/auth/azure-ad" },
+];
+
+@Component({
+  selector: "app-oauth-providers",
+  standalone: true,
+  imports: [
+    CommonModule,
+{% if ui_framework == 'material' %}
+    MatButtonModule,
+    MatCardModule,
+{% elif ui_framework == 'bootstrap' %}
+    NgBootstrapModule,
+{% elif ui_framework == 'antd' %}
+    NzButtonModule,
+{% elif ui_framework == 'carbon' %}
+    CarbonComponentsAngularModule,
+{% elif ui_framework == 'tailwind' %}
+    // Tailwind — không cần thêm imports, chỉ dùng utility classes
+{% endif %}
+  ],
+  template: `
+    <div class="oauth-providers">
+      <ng-container *ngFor="let provider of providers">
+        {% if ui_framework == 'material' %}
+        <button
+          mat-stroked-button
+          fullWidth
+          (click)="onProviderClick.emit(provider)"
+          style="justify-content: flex-start; text-transform: none; margin-bottom: 8px;"
+        >
+          <span [attr.aria-label]="provider.name">{{ provider.icon }}</span>
+          Đăng nhập với {{ provider.name }}
+        </button>
+        {% elif ui_framework == 'bootstrap' %}
+        <button
+          class="btn btn-outline-primary btn-lg w-100 mb-2"
+          (click)="onProviderClick.emit(provider)"
+        >
+          <span [attr.aria-label]="provider.name">{{ provider.icon }}</span>
+          Đăng nhập với {{ provider.name }}
+        </button>
+        {% elif ui_framework == 'antd' %}
+        <button
+          nz-button
+          [nzSize]="'large'"
+          (click)="onProviderClick.emit(provider)"
+          style="width: 100%; margin-bottom: 8px;"
+        >
+          <span [attr.aria-label]="provider.name">{{ provider.icon }}</span>
+          Đăng nhập với {{ provider.name }}
+        </button>
+        {% elif ui_framework == 'carbon' %}
+        <button
+          class="cds--btn cds--btn--secondary cds--btn--lg"
+          style="width: 100%; margin-bottom: 1rem;"
+          (click)="onProviderClick.emit(provider)"
+        >
+          <span [attr.aria-label]="provider.name">{{ provider.icon }}</span>
+          Đăng nhập với {{ provider.name }}
+        </button>
+        {% else %}
+        <!-- Tailwind: dùng utility classes trực tiếp -->
+        <button
+          class="w-full flex items-center px-4 py-3 border border-gray-300 rounded-md bg-white hover:bg-gray-50 cursor-pointer text-sm mb-3"
+          (click)="onProviderClick.emit(provider)"
+        >
+          <span [attr.aria-label]="provider.name" class="mr-2">{{ provider.icon }}</span>
+          Đăng nhập với {{ provider.name }}
+        </button>
+        {% endif %}
+      </ng-container>
+    </div>
+  `,
+})
+export class OAuthProvidersComponent {
+  /** Danh sách nhà cung cấp OAuth. */
+  @Input() providers: OAuthProvider[] = DEFAULT_PROVIDERS;
+
+  /** Sự kiện khi người dùng nhấn nút đăng nhập OAuth. */
+  @Output() onProviderClick = new EventEmitter<OAuthProvider>();
+}

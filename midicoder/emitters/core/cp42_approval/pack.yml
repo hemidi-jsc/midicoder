@@ -166,6 +166,12 @@ pack:
         stacks: ["angular"]
         pack_emitter: null
         context_keys: []
+      - path: "src/app/approval/components/approval-timeline.component.ts"
+        file_type: "approval_timeline"
+        template: "cp42_approval/approval-timeline.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
       - path: "src/app/core/approval/approval.service.ts"
         file_type: "approval_service"
         template: "cp42_approval/approval.service.ts.jinja2"
@@ -202,6 +208,12 @@ pack:
       - path: "src/approval/components/ApprovalHistory.tsx"
         file_type: "approval_history"
         template: "cp42_approval/ApprovalHistory.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/approval/components/ApprovalTimeline.tsx"
+        file_type: "approval_timeline"
+        template: "cp42_approval/approval-timeline.tsx.jinja2"
         stacks: ["react"]
         pack_emitter: null
         context_keys: []

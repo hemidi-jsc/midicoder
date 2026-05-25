@@ -1,0 +1,393 @@
+{% raw %}/**
+* UI Framework: {{{ ui_framework }}}
+* PreferenceCenter — Bảng dasborđ tự quản lý tùy chọn của người dùng.
+* Sinh bởi CP49 ConsentEmitter.
+*
+* Hiển thị các mục tùy chọn theo từng phần: bật/tắt, chọn danh sách, nhập văn bản.
+* Sử dụng hook useConsent để đồng bộ với hệ thống đồng ý.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { Button, Card, Chip, Switch, FormControl, FormControlLabel, Select, MenuItem, TextField, InputLabel,
+FormHelperText } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng Tailwind CSS utility classes inline — không cần import thành phần UI
+{% elif ui_framework == "bootstrap" %}
+import { Button, Card, Form, Badge } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Card, Switch, Select, Input, Tag, Space } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, Toggle, Select, SelectItem, TextInput } from '@carbon/react';
+{% endif %}
+{% raw %}
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { useConsent } from './useConsent';
+
+/* ---- Giao diện phần tùy chọn ---- */
+export interface PreferenceSection {
+id: string;
+title: string;
+items: PreferenceItem[];
+}
+
+/* ---- Giao diện mục tùy chọn ---- */
+export interface PreferenceItem {
+key: string;
+label: string;
+type: 'toggle' | 'select' | 'input';
+value: string | boolean;
+options?: Array<{ value: string; label: string }>;
+    }
+
+    /* ---- Giao diện props chính ---- */
+    export interface PreferenceCenterProps {
+    sections: PreferenceSection[];
+    onSave: (updates: Record<string, Record<string, string | boolean>>) => void;
+        userId?: string;
+        tenantId?: string;
+        apiBaseUrl?: string;
+        }
+
+        /* ---- Style objects — để tránh conflict với double-brace trong JSX ---- */
+        const sWrap: React.CSSProperties = {
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: '16px',
+        padding: '24px',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        backgroundColor: '#f9fafb',
+        minHeight: '100vh',
+        };
+        const sHeader: React.CSSProperties = {
+        padding: '0 0 16px',
+        borderBottom: '1px solid #e5e7eb',
+        };
+        const sHeaderTitle: React.CSSProperties = {
+        fontSize: '22px',
+        fontWeight: 700,
+        margin: 0,
+        color: '#111827',
+        };
+        const sHeaderSub: React.CSSProperties = {
+        fontSize: '13px',
+        color: '#6b7280',
+        marginTop: '4px',
+        };
+
+        /* Thẻ phần */
+        const sSectionCard: React.CSSProperties = {
+        padding: '20px',
+        backgroundColor: '#fff',
+        borderRadius: '10px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        border: '1px solid #f3f4f6',
+        };
+        const sSectionTitle: React.CSSProperties = {
+        fontSize: '16px',
+        fontWeight: 600,
+        margin: '0 0 16px',
+        color: '#374151',
+        };
+
+        /* Hàng mục tùy chọn */
+        const sItemRow: React.CSSProperties = {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 0',
+        borderBottom: '1px solid #f3f4f6',
+        };
+        const sItemLabel: React.CSSProperties = {
+        fontSize: '14px',
+        color: '#374151',
+        fontWeight: 500,
+        };
+        const sItemKey: React.CSSProperties = {
+        fontSize: '11px',
+        color: '#9ca3af',
+        marginTop: '2px',
+        };
+
+        /* Nút bật/tắt tùy chọn */
+        const sToggleTrack: React.CSSProperties = {
+        width: '44px',
+        height: '24px',
+        borderRadius: '12px',
+        border: 'none',
+        cursor: 'pointer',
+        transition: 'background-color 0.2s',
+        position: 'relative' as const,
+        padding: 0,
+        };
+        const sToggleKnob: React.CSSProperties = {
+        width: '18px',
+        height: '18px',
+        borderRadius: '50%',
+        backgroundColor: '#fff',
+        position: 'absolute' as const,
+        top: '3px',
+        transition: 'left 0.2s',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+        };
+
+        /* Dropdown tùy chọn */
+        const sSelect: React.CSSProperties = {
+        padding: '6px 12px',
+        borderRadius: '6px',
+        border: '1px solid #d1d5db',
+        fontSize: '13px',
+        color: '#374151',
+        backgroundColor: '#fff',
+        minWidth: '160px',
+        };
+
+        /* Ô nhập văn bản */
+        const sInput: React.CSSProperties = {
+        padding: '6px 12px',
+        borderRadius: '6px',
+        border: '1px solid #d1d5db',
+        fontSize: '13px',
+        color: '#374151',
+        minWidth: '200px',
+        };
+
+        /* Footer hành động */
+        const sFooter: React.CSSProperties = {
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: '10px',
+        padding: '20px 0 0',
+        borderTop: '1px solid #e5e7eb',
+        };
+        const sPrimaryBtn: React.CSSProperties = {
+        padding: '8px 20px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        border: 'none',
+        backgroundColor: '#6366f1',
+        color: '#fff',
+        };
+        const sSecondaryBtn: React.CSSProperties = {
+        padding: '8px 20px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        fontWeight: 500,
+        cursor: 'pointer',
+        border: '1px solid #d1d5db',
+        backgroundColor: '#fff',
+        color: '#374151',
+        };
+
+        /* Thông báo thành công */
+        const sSuccessBanner: React.CSSProperties = {
+        padding: '10px 16px',
+        borderRadius: '8px',
+        backgroundColor: '#d1fae5',
+        color: '#065f46',
+        fontSize: '13px',
+        fontWeight: 500,
+        border: '1px solid #a7f3d0',
+        };
+
+        /* ======================================================================
+        * COMPONENT CON: ToggleControl — Nút bật/tắt tùy chọn
+        * ====================================================================== */
+        const ToggleControl: React.FC<{ checked: boolean; onChange: (v: boolean)=> void }> = ({ checked, onChange }) =>
+            (
+            <button style={{ ...sToggleTrack, backgroundColor: checked ? '#6366f1' : '#d1d5db' , }} onClick={()=>
+                onChange(!checked)}
+                role="switch"
+                aria-checked={checked}
+                >
+                <span style={{ ...sToggleKnob, left: checked ? '23px' : '3px' }} />
+            </button>
+            );
+
+            /* ======================================================================
+            * COMPONENT CON: SelectControl — Dropdown chọn tùy chọn
+            * ====================================================================== */
+            const SelectControl: React.FC<{ value: string; options: Array<{ value: string; label: string }>;
+                onChange: (v: string) => void;
+                }> = ({ value, options, onChange }) => (
+                <select style={sSelect} value={value} onChange={(e)=> onChange(e.target.value)}>
+                    {options.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                </select>
+                );
+
+                /* ======================================================================
+                * COMPONENT CON: InputControl — Ô nhập văn bản
+                * ====================================================================== */
+                const InputControl: React.FC<{ value: string; onChange: (v: string)=> void }> = ({ value, onChange }) =>
+                    (
+                    <input style={sInput} type="text" value={value} onChange={(e)=> onChange(e.target.value)}
+                    />
+                    );
+
+                    /* ======================================================================
+                    * COMPONENT CON: PreferenceItemRow — Một hàng mục tùy chọn
+                    * ====================================================================== */
+                    const PreferenceItemRow: React.FC<{ item: PreferenceItem; onChange: (key: string, value: string |
+                        boolean)=> void;
+                        }> = ({ item, onChange }) => {
+                        const renderControl = () => {
+                        switch (item.type) {
+                        case 'toggle':
+                        return (
+                        <ToggleControl checked={item.value as boolean} onChange={(v)=> onChange(item.key, v)}
+                            />
+                            );
+                            case 'select':
+                            return item.options ? (
+                            <SelectControl value={item.value as string} options={item.options} onChange={(v)=>
+                                onChange(item.key, v)}
+                                />
+                                ) : null;
+                                case 'input':
+                                return (
+                                <InputControl value={item.value as string} onChange={(v)=> onChange(item.key, v)}
+                                    />
+                                    );
+                                    default:
+                                    return null;
+                                    }
+                                    };
+
+                                    return (
+                                    <div style={sItemRow}>
+                                        <div>
+                                            <div style={sItemLabel}>{item.label}</div>
+                                            <div style={sItemKey}>{item.key}</div>
+                                        </div>
+                                        {renderControl()}
+                                    </div>
+                                    );
+                                    };
+
+                                    /* ======================================================================
+                                    * COMPONENT CHÍNH: PreferenceCenter
+                                    * ====================================================================== */
+                                    export function PreferenceCenter({
+                                    sections,
+                                    onSave,
+                                    userId = 'user_1',
+                                    tenantId = 'tenant_1',
+                                    apiBaseUrl = '/api',
+                                    }: PreferenceCenterProps) {
+                                    /* Trạng thái bản đồ các mục tùy chọn hiện tại */
+                                    const [currentValues, setCurrentValues] = useState<Record<string, Record<string,
+                                        string | boolean>>>({});
+                                        /* Đang hiển thị thông báo thành công */
+                                        const [saved, setSaved] = useState(false);
+
+                                        /* Hook useConsent — đồng bộ với hệ thống đồng ý */
+                                        const { consentLoading, consentError } = useConsent({ userId, tenantId,
+                                        apiBaseUrl });
+
+                                        /* Khởi tạo bản đồ giá trị từ sections */
+                                        const initialValues = useMemo(() => {
+                                        const map: Record<string, Record<string, string | boolean>> = {};
+                                            sections.forEach((section) => {
+                                            map[section.id] = {};
+                                            section.items.forEach((item) => {
+                                            map[section.id][item.key] = item.value;
+                                            });
+                                            });
+                                            return map;
+                                            }, [sections]);
+
+                                            /* Đồng bộ giá trị hiện tại với giá trị ban đầu khi sections thay đổi */
+                                            useEffect(() => {
+                                            setCurrentValues(initialValues);
+                                            }, [initialValues]);
+
+                                            /* Xử lý thay đổi giá trị mục tùy chọn */
+                                            const handleItemChange = useCallback(
+                                            (sectionId: string, key: string, value: string | boolean) => {
+                                            setCurrentValues((prev) => ({
+                                            ...prev,
+                                            [sectionId]: {
+                                            ...(prev[sectionId] || {}),
+                                            [key]: value,
+                                            },
+                                            }));
+                                            },
+                                            [],
+                                            );
+
+                                            /* Xử lý lưu tất cả thay đổi */
+                                            const handleSave = useCallback(() => {
+                                            onSave(currentValues);
+                                            setSaved(true);
+                                            /* Tự động ẩn thông báo sau 3 giây */
+                                            setTimeout(() => setSaved(false), 3000);
+                                            }, [currentValues, onSave]);
+
+                                            /* Xử lý hủy bỏ thay đổi */
+                                            const handleCancel = useCallback(() => {
+                                            setCurrentValues(initialValues);
+                                            }, [initialValues]);
+
+                                            return (
+                                            <div style={sWrap}>
+                                                {/* Header */}
+                                                <div style={sHeader}>
+                                                    <h1 style={sHeaderTitle}>Tùy chọn người dùng</h1>
+                                                    <div style={sHeaderSub}>
+                                                        Quản lý các tùy chọn cá nhân: thông báo, ngôn ngữ, giao diện, và
+                                                        hơn nữa
+                                                    </div>
+                                                </div>
+
+                                                {/* Thông báo thành công */}
+                                                {saved && (
+                                                <div style={sSuccessBanner}>
+                                                    Đã lưu tất cả thay đổi thành công.
+                                                </div>
+                                                )}
+
+                                                {/* Thông báo lỗi từ useConsent */}
+                                                {consentError && (
+                                                <div style={{ padding: '10px 16px' , borderRadius: '8px' ,
+                                                    backgroundColor: '#fef2f2' , color: '#991b1b' , fontSize: '13px' ,
+                                                    border: '1px solid #fecaca' , }}>
+                                                    Lỗi: {consentError}
+                                                </div>
+                                                )}
+
+                                                {/* Đang tải */}
+                                                {consentLoading && (
+                                                <div style={{ textAlign: 'center' , padding: '20px' , color: '#6b7280'
+                                                    }}>
+                                                    Đang tải tùy chọn...
+                                                </div>
+                                                )}
+
+                                                {/* Danh sách các phần tùy chọn */}
+                                                {sections.map((section) => (
+                                                <div key={section.id} style={sSectionCard}>
+                                                    <h2 style={sSectionTitle}>{section.title}</h2>
+                                                    {section.items.map((item) => (
+                                                    <PreferenceItemRow key={item.key} item={item} onChange={(key,
+                                                        value)=> handleItemChange(section.id, key, value)}
+                                                        />
+                                                        ))}
+                                                </div>
+                                                ))}
+
+                                                {/* Footer hành động */}
+                                                <div style={sFooter}>
+                                                    <button style={sSecondaryBtn} onClick={handleCancel}>
+                                                        Hủy bỏ
+                                                    </button>
+                                                    <button style={sPrimaryBtn} onClick={handleSave}>
+                                                        Lưu thay đổi
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            );
+                                            }
+                                            {% endraw %}

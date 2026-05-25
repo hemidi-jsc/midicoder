@@ -33,6 +33,7 @@ pack:
     - data_consent
     - comm_preference
     - privacy_center
+    - preference_center
     - marketing_opt_out
   capabilities:
     - id: "cookie_consent"
@@ -42,6 +43,8 @@ pack:
     - id: "comm_preference"
       emitter: "fastapi, nestjs, angular, react"
     - id: "privacy_center"
+      emitter: "angular, react"
+    - id: "preference_center"
       emitter: "angular, react"
     - id: "marketing_opt_out"
       emitter: "fastapi, nestjs, angular, react"
@@ -160,6 +163,12 @@ pack:
         stacks: ["angular"]
         pack_emitter: null
         context_keys: ["consent_records"]
+      - path: "src/app/consent/components/preference-center.component.ts"
+        file_type: "preference_center"
+        template: "cp49_consent/preference-center.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["consent_policies", "consent_records"]
       - path: "src/app/core/consent/consent.service.ts"
         file_type: "consent_service"
         template: "cp49_consent/consent.service.ts.jinja2"
@@ -199,6 +208,12 @@ pack:
         stacks: ["react"]
         pack_emitter: null
         context_keys: ["comm_channels"]
+      - path: "src/consent/components/PreferenceCenter.tsx"
+        file_type: "preference_center"
+        template: "cp49_consent/preference-center.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["consent_policies", "consent_records"]
       - path: "src/consent/hooks/useConsent.ts"
         file_type: "consent_hook"
         template: "cp49_consent/useConsent.ts.jinja2"
@@ -211,10 +226,12 @@ pack:
       - CookieBanner
       - ConsentManager
       - CommunicationPreferences
+      - PreferenceCenter
     angular:
       - PrivacyCenterComponent
       - CookieBannerComponent
       - ConsentManagerComponent
+      - PreferenceCenterComponent
   recipes:
     - basic_consent_recipe
     - full_consent_recipe

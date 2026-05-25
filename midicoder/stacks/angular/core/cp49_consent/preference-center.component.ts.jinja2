@@ -1,0 +1,475 @@
+{% raw %}/**
+* UI Framework: {{{ ui_framework }}}
+* PreferenceCenterComponent — Bảng dashboard tự quản lý tùy chọn của người dùng.
+* Sinh bởi CP49 ConsentEmitter.
+*
+* Hiển thị các mục tùy chọn theo từng phần: bật/tắt (toggle), chọn danh sách (select), nhập văn bản (input).
+* Sử dụng Signal-based state management và reactive patterns của Angular.
+*
+* Tạo tự động bởi CP49 — không sửa thủ công.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatIconModule } from '@angular/material/icon';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatSelectModule } from '@angular/material/select';
+import { MatInputModule } from '@angular/material/input';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatChipsModule } from '@angular/material/chips';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+// Ant Design không áp dụng cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon không áp dụng cho Angular
+{% endif %}
+{% raw %}
+import { Component, Input, Output, EventEmitter, OnInit, signal, computed, effect } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+
+{% if ui_framework == "material" %}
+const UI_MODULES = [
+MatButtonModule,
+MatCardModule,
+MatIconModule,
+MatCheckboxModule,
+MatSelectModule,
+MatInputModule,
+MatFormFieldModule,
+MatChipsModule,
+];
+{% elif ui_framework == "tailwind" %}
+const UI_MODULES = [];
+{% elif ui_framework == "bootstrap" %}
+const UI_MODULES = [];
+{% elif ui_framework == "antd" %}
+const UI_MODULES = [];
+{% elif ui_framework == "carbon" %}
+const UI_MODULES = [];
+{% endif %}
+
+/**
+* Giao diện phần tùy chọn.
+*
+* Mỗi phần chứa một nhóm các mục tùy chọn liên quan.
+*/
+export interface PreferenceSection {
+id: string;
+title: string;
+items: PreferenceItem[];
+}
+
+/**
+* Giao diện mục tùy chọn.
+*
+* Hỗ trợ ba loại điều khiển: toggle (bật/tắt), select (chọn danh sách), input (nhập văn bản).
+*/
+export interface PreferenceItem {
+key: string;
+label: string;
+type: 'toggle' | 'select' | 'input';
+value: string | boolean;
+options?: Array<{ value: string; label: string }>;
+}
+
+/**
+* PreferenceCenterComponent — Thành phần quản lý tùy chọn người dùng.
+*
+* Cung cấp giao diện thống nhất để người dùng điều chỉnh:
+* - Tùy chọn thông báo (bật/tắt theo kênh)
+* - Tùy chọn giao diện (ngôn ngữ, chủ đề)
+* - Tùy chọn riêng tư (chia sẻ dữ liệu, theo dõi)
+*
+* Dữ liệu được truyền qua @Input() sections và sự kiện lưu được phát qua @Output() saved.
+*/
+@Component({
+selector: 'app-preference-center',
+standalone: true,
+imports: [CommonModule, FormsModule, ...UI_MODULES],
+template: `
+<div class="preference-center">
+    <!-- Header -->
+    <div class="header">
+        <h1>Tùy chọn người dùng</h1>
+        <p class="subtitle">
+            Quản lý các tùy chọn cá nhân: thông báo, ngôn ngữ, giao diện, và hơn nữa
+        </p>
+    </div>
+
+    <!-- Thông báo thành công -->
+    <div *ngIf="saved() === true" class="success-banner">
+        Đã lưu tất cả thay đổi thành công.
+    </div>
+
+    <!-- Danh sách các phần tùy chọn -->
+    <div *ngFor="let section of sections()" class="section-card">
+        <h2 class="section-title">{{ section.title }}</h2>
+
+        <!-- Duyệt từng mục trong phần -->
+        <div *ngFor="let item of section.items" class="item-row">
+            <div class="item-info">
+                <span class="item-label">{{ item.label }}</span>
+                <span class="item-key">{{ item.key }}</span>
+            </div>
+
+            <!-- Điều khiển tùy chọn theo loại -->
+            <ng-container [ngSwitch]="item.type">
+                <!-- Toggle: nút bật/tắt -->
+                <input
+                    *ngSwitchCase="'toggle'"
+                    type="checkbox"
+                    [checked]="getValue(section.id, item.key) as boolean"
+                    (change)="onToggleChange(section.id, item.key, ($event.target as HTMLInputElement).checked)"
+                    class="toggle-input"
+                />
+
+                <!-- Select: dropdown chọn -->
+                <select
+                    *ngSwitchCase="'select'"
+                    [value]="getValue(section.id, item.key) as string"
+                    (change)="onSelectChange(section.id, item.key, ($event.target as HTMLSelectElement).value)"
+                    class="select-input"
+                >
+                    <option *ngFor="let opt of item.options" [value]="opt.value">
+                        {{ opt.label }}
+                    </option>
+                </select>
+
+                <!-- Input: ô nhập văn bản -->
+                <input
+                    *ngSwitchCase="'input'"
+                    type="text"
+                    [value]="getValue(section.id, item.key) as string"
+                    (input)="onInputChange(section.id, item.key, ($event.target as HTMLInputElement).value)"
+                    class="text-input"
+                />
+            </ng-container>
+        </div>
+    </div>
+
+    <!-- Footer hành động -->
+    <div class="footer">
+        <button class="btn-secondary" (click)="cancelChanges()">Hủy bỏ</button>
+        <button class="btn-primary" (click)="saveChanges()">Lưu thay đổi</button>
+    </div>
+</div>
+`,
+styles: [`
+:host {
+    display: block;
+    font-family: system-ui, -apple-system, sans-serif;
+    background-color: #f9fafb;
+    min-height: 100vh;
+}
+
+.preference-center {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px;
+}
+
+/* Header */
+.header {
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e5e7eb;
+}
+.header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0;
+    color: #111827;
+}
+.subtitle {
+    font-size: 13px;
+    color: #6b7280;
+    margin-top: 4px;
+}
+
+/* Thông báo thành công */
+.success-banner {
+    padding: 10px 16px;
+    border-radius: 8px;
+    background-color: #d1fae5;
+    color: #065f46;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid #a7f3d0;
+}
+
+/* Thẻ phần tùy chọn */
+.section-card {
+    padding: 20px;
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    border: 1px solid #f3f4f6;
+}
+.section-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 16px;
+    color: #374151;
+}
+
+/* Hàng mục tùy chọn */
+.item-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid #f3f4f6;
+}
+.item-row:last-child {
+    border-bottom: none;
+}
+.item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.item-label {
+    font-size: 14px;
+    color: #374151;
+    font-weight: 500;
+}
+.item-key {
+    font-size: 11px;
+    color: #9ca3af;
+}
+
+/* Điều khiển */
+.toggle-input {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #6366f1;
+}
+.select-input {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    font-size: 13px;
+    color: #374151;
+    background-color: #fff;
+    min-width: 160px;
+}
+.text-input {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    font-size: 13px;
+    color: #374151;
+    min-width: 200px;
+}
+
+/* Footer */
+.footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+}
+.btn-primary {
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    background-color: #6366f1;
+    color: #fff;
+}
+.btn-primary:hover {
+    background-color: #4f46e5;
+}
+.btn-secondary {
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid #d1d5db;
+    background-color: #fff;
+    color: #374151;
+}
+.btn-secondary:hover {
+    background-color: #f3f4f6;
+}
+`]
+})
+export class PreferenceCenterComponent implements OnInit {
+// ===========================================================================
+// Inputs / Outputs
+// ===========================================================================
+
+/**
+* Danh sách các phần tùy chọn.
+*
+* Mỗi phần chứa nhóm các mục liên quan (thông báo, giao diện, riêng tư...).
+*/
+@Input() sections = signal<PreferenceSection[]>([]);
+
+/**
+* Sự kiện phát ra khi người dùng lưu thay đổi.
+*
+* Payload là bản đồ { sectionId: { itemKey: value } } cho tất cả các phần.
+*/
+@Output() saved = new EventEmitter<Record<string, Record<string, string | boolean>>>();
+
+// ===========================================================================
+// Signals
+// ===========================================================================
+
+/**
+* Bản đồ giá trị hiện tại của tất cả mục tùy chọn.
+*
+* Cấu trúc: { sectionId: { itemKey: value } }
+*/
+readonly currentValues = signal<Record<string, Record<string, string | boolean>>>({});
+
+/**
+* Giá trị ban đầu — dùng để hủy bỏ thay đổi.
+*/
+readonly initialValues = signal<Record<string, Record<string, string | boolean>>>({});
+
+/**
+* Đang hiển thị thông báo lưu thành công.
+*/
+readonly saved = signal<boolean>(false);
+
+// ===========================================================================
+// Lifecycle
+// ===========================================================================
+
+/**
+* Khởi tạo component — xây dựng bản đồ giá trị ban đầu từ sections.
+*/
+ngOnInit(): void {
+this.buildInitialMap();
+
+// Tự động cập nhật bản đồ khi sections thay đổi
+effect(() => {
+this.buildInitialMap();
+});
+}
+
+/**
+* Xây dựng bản đồ giá trị ban đầu từ danh sách sections.
+*/
+private buildInitialMap(): void {
+const map: Record<string, Record<string, string | boolean>> = {};
+const secs = this.sections();
+secs.forEach((section) => {
+map[section.id] = {};
+section.items.forEach((item) => {
+map[section.id][item.key] = item.value;
+});
+});
+this.currentValues.set({ ...map });
+this.initialValues.set({ ...map });
+}
+
+// ===========================================================================
+// Data access
+// ===========================================================================
+
+/**
+* Lấy giá trị hiện tại của mục tùy chọn.
+*
+* @param sectionId - ID phần chứa mục.
+* @param itemKey - Khóa của mục.
+* @returns Giá trị hiện tại (string | boolean).
+*/
+getValue(sectionId: string, itemKey: string): string | boolean {
+return this.currentValues()[sectionId]?.[itemKey] ?? false;
+}
+
+/**
+* Cập nhật giá trị của mục tùy chọn trong bản đồ.
+*
+* @param sectionId - ID phần chứa mục.
+* @param itemKey - Khóa của mục.
+* @param value - Giá trị mới.
+*/
+private updateValue(sectionId: string, itemKey: string, value: string | boolean): void {
+this.currentValues.update((prev) => ({
+...prev,
+[sectionId]: {
+...(prev[sectionId] || {}),
+[itemKey]: value,
+},
+}));
+}
+
+// ===========================================================================
+// Event handlers — Điều khiển
+// ===========================================================================
+
+/**
+* Xử lý thay đổi từ nút bật/tắt (toggle).
+*
+* @param sectionId - ID phần.
+* @param itemKey - Khóa mục.
+* @param checked - Trạng thái bật/tắt mới.
+*/
+onToggleChange(sectionId: string, itemKey: string, checked: boolean): void {
+this.updateValue(sectionId, itemKey, checked);
+}
+
+/**
+* Xử lý thay đổi từ dropdown chọn (select).
+*
+* @param sectionId - ID phần.
+* @param itemKey - Khóa mục.
+* @param value - Giá trị được chọn.
+*/
+onSelectChange(sectionId: string, itemKey: string, value: string): void {
+this.updateValue(sectionId, itemKey, value);
+}
+
+/**
+* Xử lý thay đổi từ ô nhập văn bản (input).
+*
+* @param sectionId - ID phần.
+* @param itemKey - Khóa mục.
+* @param value - Văn bản nhập mới.
+*/
+onInputChange(sectionId: string, itemKey: string, value: string): void {
+this.updateValue(sectionId, itemKey, value);
+}
+
+// ===========================================================================
+// Actions — Lưu / Hủy
+// ===========================================================================
+
+/**
+* Lưu tất cả thay đổi và phát sự kiện saved.
+*
+* Tự động ẩn thông báo thành công sau 3 giây.
+*/
+saveChanges(): void {
+const values = this.currentValues();
+this.saved.emit(values);
+this.saved.set(true);
+
+// Tự động ẩn thông báo sau 3 giây
+setTimeout(() => {
+this.saved.set(false);
+}, 3000);
+}
+
+/**
+* Hủy bỏ tất cả thay đổi — khôi phục về giá trị ban đầu.
+*/
+cancelChanges(): void {
+this.currentValues.set(this.initialValues());
+}
+}
+{% endraw %}

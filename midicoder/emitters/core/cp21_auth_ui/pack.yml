@@ -17,6 +17,8 @@ pack:
     - password_reset
     - mfa_verify
     - oauth_callback
+    - oauth_providers
+    - captcha
     - role_guard
     - permission_guard
     - session_monitor
@@ -30,6 +32,10 @@ pack:
     - id: "mfa_verify"
       emitter: "angular, react"
     - id: "oauth_callback"
+      emitter: "angular, react"
+    - id: "oauth_providers"
+      emitter: "angular, react"
+    - id: "captcha"
       emitter: "angular, react"
     - id: "role_guard"
       emitter: "angular, react"
@@ -76,6 +82,16 @@ pack:
       - path: "src/app/auth-ui/oauth-callback.component.ts"
         file_type: "auth_page"
         template: "cp21_auth_ui/oauth-callback.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/auth-ui/oauth-providers.component.ts"
+        file_type: "auth_component"
+        template: "cp21_auth_ui/oauth-providers.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/auth-ui/captcha.component.ts"
+        file_type: "auth_component"
+        template: "cp21_auth_ui/captcha.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: null
       - path: "src/app/auth-ui/role.guard.ts"
@@ -137,6 +153,16 @@ pack:
       - path: "src/auth-ui/oauth-callback.tsx"
         file_type: "auth_page"
         template: "cp21_auth_ui/oauth-callback.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/auth-ui/oauth-providers.tsx"
+        file_type: "auth_component"
+        template: "cp21_auth_ui/oauth-providers.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/auth-ui/captcha.tsx"
+        file_type: "auth_component"
+        template: "cp21_auth_ui/captcha.tsx.jinja2"
         stacks: ["react"]
         pack_emitter: null
       - path: "src/auth-ui/RoleRoute.tsx"

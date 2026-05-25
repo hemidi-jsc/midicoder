@@ -35,12 +35,14 @@ export const Login: React.FC<LoginPageProps> = ({
     const { login } = useAuthContext();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+        // Trạng thái nhớ đăng nhập
+        const [rememberMe, setRememberMe] = useState(false);
 
         // Lấy return URL từ query param
         const from = (location.state as any)?.from?.pathname || redirectPath;
 
         /** Handle form submit. */
-        const handleSubmit = async (values: { email: string; password: string }) => {
+        const handleSubmit = async (values: { email: string; password: string; rememberMe?: boolean }) => {
         setLoading(true);
         setError(null);
         try {
@@ -70,6 +72,14 @@ export const Login: React.FC<LoginPageProps> = ({
                     </Form.Item>
                     <Form.Item name="password" rules={[passRule]}>
                         <Input.Password size="large" placeholder="Mật khẩu" prefix="🔒" />
+                    </Form.Item>
+                    {/* Ô checkbox ghi nhớ đăng nhập */}
+                    <Form.Item name="rememberMe" valuePropName="checked">
+                        <label style={{ display: "flex" , alignItems: "center" , gap: 8 }}>
+                            <input type="checkbox" checked={rememberMe} onChange={(e)=> setRememberMe(e.target.checked)}
+                            />
+                            Ghi nhớ đăng nhập
+                        </label>
                     </Form.Item>
                     <Form.Item>
                         <Button type="primary" htmlType="submit" size="large" block loading={loading}>
@@ -103,6 +113,14 @@ export const Login: React.FC<LoginPageProps> = ({
                 <Box component="form" onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
                     <TextField fullWidth label="Email" type="email" margin="normal" required />
                     <TextField fullWidth label="Mật khẩu" type="password" margin="normal" required />
+                    {/* Ô checkbox ghi nhớ đăng nhập */}
+                    <Box sx={{ display: "flex" , alignItems: "center" , my: 1 }}>
+                        <input type="checkbox" id="rememberMe" checked={rememberMe} onChange={(e)=>
+                        setRememberMe(e.target.checked)}
+                        style={{ marginRight: 8 }}
+                        />
+                        <label htmlFor="rememberMe">Ghi nhớ đăng nhập</label>
+                    </Box>
                     <Button fullWidth variant="contained" type="submit" sx={btnStyle} disabled={loading}>
                         {loading ? "Đang đăng nhập..." : "Đăng nhập"}
                     </Button>
@@ -128,6 +146,16 @@ export const Login: React.FC<LoginPageProps> = ({
                 <form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }} className="space-y-4">
                     <input type="email" placeholder="Email" required className="w-full p-3 border rounded" />
                     <input type="password" placeholder="Mật khẩu" required className="w-full p-3 border rounded" />
+                    {/* Ô checkbox ghi nhớ đăng nhập */}
+                    <div className="flex items-center">
+                        <input type="checkbox" id="rememberMe" checked={rememberMe} onChange={(e)=>
+                        setRememberMe(e.target.checked)}
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                        />
+                        <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-700">
+                            Ghi nhớ đăng nhập
+                        </label>
+                    </div>
                     <button type="submit" disabled={loading}
                         className="w-full p-3 bg-blue-600 text-white rounded hover:bg-blue-700">
                         {loading ? "Đang đăng nhập..." : "Đăng nhập"}
@@ -158,6 +186,14 @@ export const Login: React.FC<LoginPageProps> = ({
                 <form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
                     <input type="email" placeholder="Email" required style={inputStyle} />
                     <input type="password" placeholder="Mật khẩu" required style={inputStyle} />
+                    {/* Ô checkbox ghi nhớ đăng nhập */}
+                    <div style={{ display: "flex" , alignItems: "center" , marginBottom: 12 }}>
+                        <input type="checkbox" id="rememberMe" checked={rememberMe} onChange={(e)=>
+                        setRememberMe(e.target.checked)}
+                        style={{ marginRight: 8 }}
+                        />
+                        <label htmlFor="rememberMe">Ghi nhớ đăng nhập</label>
+                    </div>
                     <button type="submit" disabled={loading} style={btnStyle}>
                         {loading ? "Đang đăng nhập..." : "Đăng nhập"}
                     </button>

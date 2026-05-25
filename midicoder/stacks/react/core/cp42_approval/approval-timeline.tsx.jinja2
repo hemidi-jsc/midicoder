@@ -1,0 +1,339 @@
+/**
+* ApprovalTimeline — thanh thoi hanh phe duyet: hien thi lich su cac buoc phe duyet.
+* Sinh boi CP42 ApprovalEmitter.
+*
+* So luong requests: {{ num_requests }}
+* So luong steps: {{ num_steps }}
+* Su dung events: {{ use_events }}
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
+*/
+{% if ui_framework == "material" %}
+import React, { useMemo, useCallback } from 'react';
+import { Step, StepLabel, StepContent, Stepper, LinearProgress, Chip, Box, Paper, Avatar } from
+'@mui/material';
+{% elif ui_framework == "tailwind" %}
+import React, { useMemo, useCallback } from 'react';
+// Su dung Tailwind utility classes trong JSX
+{% elif ui_framework == "bootstrap" %}
+import React, { useMemo, useCallback } from 'react';
+import { Card, Badge as BsBadge, ProgressBar } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import React, { useMemo, useCallback } from 'react';
+import { Steps, Tag, Space, Card, Avatar } from 'antd';
+{% elif ui_framework == "carbon" %}
+import React, { useMemo, useCallback } from 'react';
+import { Tag, Tile, ProgressIndicator, ProgressStep, Layer } from '@carbon/react';
+{% endif %}
+
+/* ---- Loai trang thai buoc thoi hanh ---- */
+export type TimelineStepStatus = 'pending' | 'approved' | 'rejected' | 'delegated';
+
+/* ---- Interface du lieu buoc thoi hanh ---- */
+export interface TimelineStep {
+id: string;
+action: string;
+actor: string;
+timestamp: string | null;
+status: TimelineStepStatus;
+}
+
+/* ---- Interface props cho component thoi hanh ---- */
+export interface ApprovalTimelineProps {
+requestId: string;
+steps: TimelineStep[];
+onStepClick?: (stepId: string) => void;
+}
+
+/* ---- Style objects — de tranh double-brace trong JSX ---- */
+const sWrap: React.CSSProperties = {
+display: 'flex',
+flexDirection: 'column' as const,
+padding: '20px',
+fontFamily: 'system-ui, sans-serif',
+backgroundColor: '#f9fafb',
+borderRadius: '10px',
+border: '1px solid #e5e7eb',
+};
+const sHeader: React.CSSProperties = {
+display: 'flex',
+alignItems: 'center',
+justifyContent: 'space-between',
+marginBottom: '20px',
+paddingBottom: '12px',
+borderBottom: '1px solid #e5e7eb',
+};
+const sHeaderTitle: React.CSSProperties = {
+fontSize: '16px',
+fontWeight: 700,
+color: '#111827',
+margin: 0,
+};
+const sHeaderMeta: React.CSSProperties = {
+fontSize: '12px',
+color: '#6b7280',
+fontFamily: 'monospace',
+};
+
+/* Timeline container */
+const sTimeline: React.CSSProperties = {
+display: 'flex',
+flexDirection: 'column' as const,
+gap: '0px',
+position: 'relative' as const,
+};
+const sStepRow: React.CSSProperties = {
+display: 'flex',
+gap: '16px',
+position: 'relative' as const,
+};
+const sStepIndicator: React.CSSProperties = {
+display: 'flex',
+flexDirection: 'column' as const,
+alignItems: 'center',
+width: '28px',
+flexShrink: 0,
+};
+const sStepDot: React.CSSProperties = {
+width: '28px',
+height: '28px',
+borderRadius: '50%',
+display: 'flex',
+alignItems: 'center',
+justifyContent: 'center',
+fontSize: '12px',
+fontWeight: 700,
+flexShrink: 0,
+};
+const sStepLine: React.CSSProperties = {
+width: '2px',
+flex: 1,
+minHeight: '24px',
+marginTop: '4px',
+marginBottom: '4px',
+};
+
+/* Step content card */
+const sStepContent: React.CSSProperties = {
+flex: 1,
+padding: '12px 16px',
+backgroundColor: '#fff',
+borderRadius: '8px',
+border: '1px solid #e5e7eb',
+cursor: 'pointer',
+transition: 'box-shadow 0.15s, border-color 0.15s',
+};
+const sStepContentHover: React.CSSProperties = {
+boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+borderColor: '#3b82f6',
+};
+const sStepAction: React.CSSProperties = {
+fontSize: '14px',
+fontWeight: 600,
+color: '#111827',
+marginBottom: '4px',
+};
+const sStepActor: React.CSSProperties = {
+fontSize: '13px',
+color: '#374151',
+marginBottom: '4px',
+};
+const sStepTime: React.CSSProperties = {
+fontSize: '11px',
+color: '#9ca3af',
+};
+const sStepBadgeWrap: React.CSSProperties = {
+display: 'inline-block',
+marginTop: '6px',
+};
+
+/* Empty state */
+const sEmptyCell: React.CSSProperties = {
+padding: '40px 20px',
+textAlign: 'center' as const,
+color: '#9ca3af',
+fontSize: '14px',
+};
+
+/* Progress bar */
+const sProgressWrap: React.CSSProperties = {
+marginBottom: '16px',
+};
+const sProgressTrack: React.CSSProperties = {
+height: '6px',
+backgroundColor: '#e5e7eb',
+borderRadius: '3px',
+overflow: 'hidden',
+};
+const sProgressFill: React.CSSProperties = {
+height: '100%',
+borderRadius: '3px',
+transition: 'width 0.3s ease',
+};
+const sProgressText: React.CSSProperties = {
+fontSize: '11px',
+color: '#6b7280',
+marginTop: '4px',
+textAlign: 'right' as const,
+};
+
+/* Badge style — helper function theo status */
+function badgeStyle(status: TimelineStepStatus): React.CSSProperties {
+const base: React.CSSProperties = {
+display: 'inline-block',
+padding: '2px 10px',
+borderRadius: '12px',
+fontSize: '11px',
+fontWeight: 600,
+textTransform: 'capitalize' as const,
+};
+const map: Record<TimelineStepStatus, { bg: string; color: string }> = {
+pending: { bg: '#fef3c7', color: '#92400e' },
+approved: { bg: '#d1fae5', color: '#065f46' },
+rejected: { bg: '#fee2e2', color: '#991b1b' },
+delegated: { bg: '#e0e7ff', color: '#3730a3' },
+};
+const c = map[status];
+return { ...base, backgroundColor: c.bg, color: c.color };
+}
+
+/* Dot style — helper function theo status */
+function dotStyle(status: TimelineStepStatus): React.CSSProperties {
+const map: Record<TimelineStepStatus, { bg: string; color: string; border: string }> = {
+pending: { bg: '#fef3c7', color: '#92400e', border: '2px solid #f59e0b' },
+approved: { bg: '#d1fae5', color: '#065f46', border: '2px solid #22c55e' },
+rejected: { bg: '#fee2e2', color: '#991b1b', border: '2px solid #ef4444' },
+delegated: { bg: '#e0e7ff', color: '#3730a3', border: '2px solid #6366f1' },
+};
+const c = map[status];
+return { ...sStepDot, backgroundColor: c.bg, color: c.color, border: c.border };
+}
+
+/* Line style — helper function theo status */
+function lineStyle(status: TimelineStepStatus): React.CSSProperties {
+const colorMap: Record<TimelineStepStatus, string> = {
+pending: '#f59e0b',
+approved: '#22c55e',
+rejected: '#ef4444',
+delegated: '#6366f1',
+};
+return { ...sStepLine, backgroundColor: colorMap[status] };
+}
+
+/* Icon cho moi trang thai */
+function statusIcon(status: TimelineStepStatus): string {
+const iconMap: Record<TimelineStepStatus, string> = {
+pending: '...',
+approved: '✓',
+rejected: '✕',
+delegated: '↗',
+};
+return iconMap[status];
+}
+
+/* ---- Utility ---- */
+function formatDate(iso: string | null): string {
+if (!iso) return 'Chua co';
+const d = new Date(iso);
+return d.toLocaleDateString('vi-VN', {
+day: '2-digit',
+month: '2-digit',
+year: 'numeric',
+hour: '2-digit',
+minute: '2-digit',
+});
+}
+
+/* Tinh ti le hoan thanh cua thoi hanh */
+function calcProgress(steps: TimelineStep[]): number {
+if (!steps.length) return 0;
+const completed = steps.filter(s => s.status === 'approved' || s.status === 'delegated').length;
+return Math.round((completed / steps.length) * 100);
+}
+
+/* ---- Component: ApprovalTimeline ---- */
+export function ApprovalTimeline({
+requestId,
+steps,
+onStepClick,
+}: ApprovalTimelineProps) {
+/* Ti le hoan thanh */
+const progress = useMemo(() => calcProgress(steps), [steps]);
+
+/* Xy ly click vao buoc */
+const handleStepClick = useCallback(
+(stepId: string) => {
+onStepClick?.(stepId);
+},
+[onStepClick],
+);
+
+/* Ke hoach hover state */
+const [hoveredStep, setHoveredStep] = React.useState<string | null>(null);
+
+return (
+<div style={sWrap}>
+{/* Header */}
+<div style={sHeader}>
+<h3 style={sHeaderTitle}>Thoi Hanh Phê Duyệt</h3>
+<span style={sHeaderMeta}>{requestId}</span>
+</div>
+
+{/* Thanh tiep tuc */}
+<div style={sProgressWrap}>
+<div style={sProgressTrack}>
+<div style={{ ...sProgressFill, width: `${progress}%`, backgroundColor: progress === 100 ? '#22c55e' : '#3b82f6' }} />
+</div>
+<div style={sProgressText}>{progress}% — {steps.filter(s => s.status === 'approved' || s.status === 'delegated').length}/{steps.length} buoc da hoan thanh</div>
+</div>
+
+{/* Danh sach thoi hanh */}
+{steps.length === 0 ? (
+<div style={sEmptyCell}>Khong co buoc phe duyet nao.</div>
+) : (
+<div style={sTimeline}>
+{steps.map((step, index) => {
+const isLast = index === steps.length - 1;
+const isHovered = hoveredStep === step.id;
+return (
+<div key={step.id} style={sStepRow}>
+{/* Cot chi so ben trai */}
+<div style={sStepIndicator}>
+<div style={dotStyle(step.status)}>{statusIcon(step.status)}</div>
+{!isLast && <div style={lineStyle(step.status)} />}
+</div>
+
+{/* Noi dung buoc */}
+<div
+style={{
+...sStepContent,
+...(isHovered ? sStepContentHover : {}),
+}}
+onClick={() => handleStepClick(step.id)}
+onMouseEnter={() => setHoveredStep(step.id)}
+onMouseLeave={() => setHoveredStep(null)}
+>
+<div style={sStepAction}>{step.action}</div>
+<div style={sStepActor}>Nguoi thuc hien: {step.actor}</div>
+<div style={sStepTime}>
+{step.timestamp ? `Thoi gian: ${formatDate(step.timestamp)}` : 'Chua duoc thuc hien'}
+</div>
+<div style={sStepBadgeWrap}>
+<span style={badgeStyle(step.status)}>
+{step.status === 'pending' ? 'Dang cho' :
+step.status === 'approved' ? 'Da phe duyet' :
+step.status === 'rejected' ? 'Da tu choi' :
+'Da chuyen giao'}
+</span>
+</div>
+</div>
+</div>
+);
+})}
+</div>
+)}
+</div>
+);
+}
+
+export default ApprovalTimeline;

@@ -1,0 +1,133 @@
+/** CAPTCHA Wrapper - CP21.
+*
+* Thành phần bao bọc reCAPTCHA/hCaptcha để xác thực người dùng,
+* chống spam và tấn công tự động.
+*
+* UI Framework: {{{ ui_framework }}}
+*/
+
+import React, { useEffect, useRef } from "react";
+{% if ui_framework == 'material' %}
+import { Box, Typography } from "@mui/material";
+{% elif ui_framework == 'bootstrap' %}
+import { Card } from "react-bootstrap";
+{% elif ui_framework == 'antd' %}
+import { Card, Typography } from "antd";
+{% elif ui_framework == 'carbon' %}
+import { Grid, Column } from "@carbon/react";
+{% endif %}
+
+const { Text } = Typography;
+
+/** CAPTCHA Wrapper Props. */
+export interface CaptchaWrapperProps {
+  /** Khóa site từ nhà cung cấp CAPTCHA. */
+  siteKey: string;
+  /** Loại CAPTCHA: reCAPTCHA hoặc hCaptcha. */
+  type: "recaptcha" | "hcaptcha";
+  /** Hàm callback khi xác thực thành công. */
+  onVerify: (token: string) => void;
+}
+
+/** Thành phần bao bọc CAPTCHA.
+ * Tự động tải script và khởi tạo widget từ nhà cung cấp tương ứng. */
+export const CaptchaWrapper: React.FC<CaptchaWrapperProps> = ({ siteKey, type, onVerify }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const widgetId = useRef<number | null>(null);
+
+  useEffect(() => {
+    // Tránh tải script nhiều lần
+    if ((type === "recaptcha" && (window as any).recaptcha) || (type === "hcaptcha" && (window as any).hcaptcha)) {
+      initWidget();
+      return;
+    }
+
+    const scriptId = type === "recaptcha" ? "recaptcha-script" : "hcaptcha-script";
+    if (document.getElementById(scriptId)) {
+      initWidget();
+      return;
+    }
+
+    // Tải script CAPTCHA từ nhà cung cấp
+    const script = document.createElement("script");
+    script.id = scriptId;
+    script.async = true;
+    script.defer = true;
+    script.src = type === "recaptcha"
+      ? "https://www.google.com/recaptcha/api.js"
+      : "https://js.hcaptcha.com/1/api.js";
+    script.onload = initWidget;
+    document.head.appendChild(script);
+
+    /** Khởi tạo widget CAPTCHA sau khi script tải xong. */
+    function initWidget() {
+      if (!containerRef.current) return;
+      if (type === "recaptcha") {
+        widgetId.current = (window as any).recaptcha.render(containerRef.current, {
+          sitekey: siteKey,
+          callback: onVerify,
+        });
+      } else {
+        widgetId.current = (window as any).hcaptcha.render(containerRef.current, {
+          sitekey: siteKey,
+          callback: onVerify,
+        });
+      }
+    }
+
+    // Dọn dẹp widget khi component unmount
+    return () => {
+      if (widgetId.current != null) {
+        if (type === "recaptcha") {
+          (window as any).recaptcha.remove(widgetId.current);
+        } else {
+          (window as any).hcaptcha.remove(widgetId.current);
+        }
+      }
+    };
+  }, [siteKey, type, onVerify]);
+
+{% if ui_framework == 'material' %}
+  return (
+    <Box sx={{ my: 2 }}>
+      <Typography variant="body2" color="text.secondary" gutterBottom>
+        Xác thực CAPTCHA
+      </Typography>
+      <div ref={containerRef} />
+    </Box>
+  );
+{% elif ui_framework == 'bootstrap' %}
+  return (
+    <Card.Body style={{ marginTop: 16 }}>
+      <div className="mb-2 text-muted">Xác thực CAPTCHA</div>
+      <div ref={containerRef} />
+    </Card.Body>
+  );
+{% elif ui_framework == 'antd' %}
+  return (
+    <Card size="small" style={{ marginTop: 16 }}>
+      <Text type="secondary">Xác thực CAPTCHA</Text>
+      <div ref={containerRef} style={{ marginTop: 8 }} />
+    </Card>
+  );
+{% elif ui_framework == 'carbon' %}
+  return (
+    <Grid style={{ marginTop: 16 }}>
+      <Column>
+        <div className="cds--label">Xác thực CAPTCHA</div>
+        <div ref={containerRef} />
+      </Column>
+    </Grid>
+  );
+{% else %}
+  // Tailwind: dùng utility classes cho container
+  return (
+    <div className="mt-4">
+      <p className="text-sm text-gray-500 mb-2">Xác thực CAPTCHA</p>
+      <div ref={containerRef} />
+    </div>
+  );
+{% endif %}
+};
+
+export default CaptchaWrapper;

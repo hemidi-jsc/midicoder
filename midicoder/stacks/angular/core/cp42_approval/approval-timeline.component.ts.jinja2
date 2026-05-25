@@ -1,0 +1,503 @@
+/**
+* ApprovalTimelineComponent — Thanh thoi hanh phe duyet: hien thi lich su cac buoc.
+*
+* Hien thi cac buoc phe duyet theo thoi hanh doc voi chi so trang thai (dot mau,
+* tuyet noi keet noi, badge trang thai). Cho phep click vao moi buoc de xem chi tiet.
+*
+* Tao tu dong boi CP42 — khong sua thu cong.
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
+*/
+{% if ui_framework == "material" %}
+import {
+Component,
+Input,
+Output,
+OnInit,
+OnDestroy,
+EventEmitter,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+{% elif ui_framework == "tailwind" %}
+import {
+Component,
+Input,
+Output,
+OnInit,
+OnDestroy,
+EventEmitter,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+// Su dung Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+import {
+Component,
+Input,
+Output,
+OnInit,
+OnDestroy,
+EventEmitter,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+// Su dung Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+import {
+Component,
+Input,
+Output,
+OnInit,
+OnDestroy,
+EventEmitter,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+// Ant Design khong dung cho Angular
+{% elif ui_framework == "carbon" %}
+import {
+Component,
+Input,
+Output,
+OnInit,
+OnDestroy,
+EventEmitter,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+// Carbon khong dung cho Angular
+{% endif %}
+
+// ===========================================================================
+// Interface / kiểu dữ liệu cục bộ cho Timeline
+// ===========================================================================
+
+/** Kiểu trạng thái của bước thời hạn. */
+export type TimelineStepStatus = 'pending' | 'approved' | 'rejected' | 'delegated';
+
+/** Interface cho một bước trong thời hạn phê duyệt. */
+export interface TimelineStep {
+/** ID duy nhất của bước */
+id: string;
+/** Hành động cần thực hiện */
+action: string;
+/** Người thực hiện bước */
+actor: string;
+/** Thời điểm thực hiện (ISO 8601) */
+timestamp: string | null;
+/** Trạng thái của bước */
+status: TimelineStepStatus;
+}
+
+// ===========================================================================
+// ApprovalTimelineComponent — Thành phần hiển thị thời hạn phê duyệt
+// ===========================================================================
+
+/**
+* ApprovalTimelineComponent — Hiển thị lịch sử các bước phê duyệt.
+*
+* Sử dụng:
+* <app-approval-timeline * [requestId]="'req_001'" * [steps]="timelineSteps" * (stepClick)="onStepSelected($event)">
+    * </app-approval-timeline>
+*/
+@Component({
+selector: 'app-approval-timeline',
+standalone: true,
+imports: [CommonModule],
+changeDetection: ChangeDetectionStrategy.OnPush,
+
+template:
+{% raw %}
+`
+<div class="approval-timeline">
+    <!-- Tiêu đề -->
+    <header class="timeline-header">
+        <h2>Thời Hạn Phê Duyệt</h2>
+        <span class="request-id">{{ requestId }}</span>
+    </header>
+
+    <!-- Thanh tiến trình -->
+    <section class="progress-section">
+        <div class="progress-track">
+            <div class="progress-fill" [style.width.%]="progressPercent"></div>
+        </div>
+        <div class="progress-text">
+            {{ progressPercent }}% — {{ completedCount() }}/{{ steps.length }} bước đã hoàn thành
+        </div>
+    </section>
+
+    <!-- Danh sách thời hạn -->
+    <section class="timeline-list" *ngIf="steps.length; else emptyState">
+        <div class="timeline-step" *ngFor="let step of steps; let i = index; let last = last"
+            [class.hovered]="hoveredStepId() === step.id" (click)="onStepClick(step.id)"
+            (mouseenter)="onHoverStep(step.id)" (mouseleave)="onHoverStep(null)">
+            <!-- Cột chỉ số bên trái -->
+            <div class="step-indicator">
+                <div class="step-dot" [class]="getDotClass(step.status)">
+                    {{ getStepIcon(step.status) }}
+                </div>
+                <div class="step-line" *ngIf="!last" [class]="getLineClass(step.status)"></div>
+            </div>
+
+            <!-- Nội dung bước -->
+            <div class="step-content">
+                <div class="step-action">{{ step.action }}</div>
+                <div class="step-actor">Người thực hiện: {{ step.actor }}</div>
+                <div class="step-time">
+                    {{ step.timestamp ? (step.timestamp | date:'dd/MM/yyyy HH:mm') : 'Chưa được thực hiện' }}
+                </div>
+                <div class="step-badge">
+                    <span class="badge" [class]="getBadgeClass(step.status)">
+                        {{ getStatusLabel(step.status) }}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Trạng thái trống -->
+    <ng-template #emptyState>
+        <div class="empty-state">
+            <p>Không có bước phê duyệt nào.</p>
+        </div>
+    </ng-template>
+</div>
+`,
+{% endraw %}
+styles: [`
+.approval-timeline {
+padding: 20px;
+font-family: system-ui, -apple-system, sans-serif;
+background-color: #f9fafb;
+border-radius: 10px;
+border: 1px solid #e5e7eb;
+}
+
+.timeline-header {
+display: flex;
+align-items: center;
+justify-content: space-between;
+margin-bottom: 20px;
+padding-bottom: 12px;
+border-bottom: 1px solid #e5e7eb;
+}
+
+.timeline-header h2 {
+font-size: 16px;
+font-weight: 700;
+color: #111827;
+margin: 0;
+}
+
+.request-id {
+font-size: 12px;
+color: #6b7280;
+font-family: monospace;
+}
+
+/* Thanh tiến trình */
+.progress-section {
+margin-bottom: 16px;
+}
+
+.progress-track {
+height: 6px;
+background-color: #e5e7eb;
+border-radius: 3px;
+overflow: hidden;
+}
+
+.progress-fill {
+height: 100%;
+border-radius: 3px;
+background-color: #3b82f6;
+transition: width 0.3s ease;
+}
+
+.progress-fill.complete {
+background-color: #22c55e;
+}
+
+.progress-text {
+font-size: 11px;
+color: #6b7280;
+margin-top: 4px;
+text-align: right;
+}
+
+/* Danh sách thời hạn */
+.timeline-list {
+display: flex;
+flex-direction: column;
+}
+
+.timeline-step {
+display: flex;
+gap: 16px;
+position: relative;
+}
+
+.step-indicator {
+display: flex;
+flex-direction: column;
+align-items: center;
+width: 28px;
+flex-shrink: 0;
+}
+
+.step-dot {
+width: 28px;
+height: 28px;
+border-radius: 50%;
+display: flex;
+align-items: center;
+justify-content: center;
+font-size: 12px;
+font-weight: 700;
+flex-shrink: 0;
+}
+
+/* Dot màu theo trạng thái */
+.step-dot.dot-pending {
+background-color: #fef3c7;
+color: #92400e;
+border: 2px solid #f59e0b;
+}
+.step-dot.dot-approved {
+background-color: #d1fae5;
+color: #065f46;
+border: 2px solid #22c55e;
+}
+.step-dot.dot-rejected {
+background-color: #fee2e2;
+color: #991b1b;
+border: 2px solid #ef4444;
+}
+.step-dot.dot-delegated {
+background-color: #e0e7ff;
+color: #3730a3;
+border: 2px solid #6366f1;
+}
+
+.step-line {
+width: 2px;
+flex: 1;
+min-height: 24px;
+margin-top: 4px;
+margin-bottom: 4px;
+}
+
+/* Line màu theo trạng thái */
+.step-line.line-pending { background-color: #f59e0b; }
+.step-line.line-approved { background-color: #22c55e; }
+.step-line.line-rejected { background-color: #ef4444; }
+.step-line.line-delegated { background-color: #6366f1; }
+
+/* Nội dung bước */
+.step-content {
+flex: 1;
+padding: 12px 16px;
+background-color: #fff;
+border-radius: 8px;
+border: 1px solid #e5e7eb;
+cursor: pointer;
+transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.step-content:hover,
+.timeline-step.hovered .step-content {
+box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+border-color: #3b82f6;
+}
+
+.step-action {
+font-size: 14px;
+font-weight: 600;
+color: #111827;
+margin-bottom: 4px;
+}
+
+.step-actor {
+font-size: 13px;
+color: #374151;
+margin-bottom: 4px;
+}
+
+.step-time {
+font-size: 11px;
+color: #9ca3af;
+margin-bottom: 6px;
+}
+
+.step-badge {
+display: inline-block;
+}
+
+.badge {
+display: inline-block;
+padding: 2px 10px;
+border-radius: 12px;
+font-size: 11px;
+font-weight: 600;
+text-transform: capitalize;
+}
+
+/* Badge màu theo trạng thái */
+.badge.badge-pending { background-color: #fef3c7; color: #92400e; }
+.badge.badge-approved { background-color: #d1fae5; color: #065f46; }
+.badge.badge-rejected { background-color: #fee2e2; color: #991b1b; }
+.badge.badge-delegated { background-color: #e0e7ff; color: #3730a3; }
+
+/* Trạng thái trống */
+.empty-state {
+padding: 40px 20px;
+text-align: center;
+color: #9ca3af;
+font-size: 14px;
+}
+`]
+})
+export class ApprovalTimelineComponent implements OnInit, OnDestroy {
+// ===========================================================================
+// @Input() — Dữ liệu đầu vào
+// ===========================================================================
+
+/** ID yêu cầu phê duyệt. */
+@Input() public requestId: string = '';
+
+/** Danh sách các bước trong thời hạn. */
+@Input() public steps: TimelineStep[] = [];
+
+// ===========================================================================
+// @Output() — Sự kiện đầu ra
+// ===========================================================================
+
+/** Sự kiện khi người dùng click vào một bước. */
+@Output() public readonly stepClick = new EventEmitter<string>();
+
+    // ===========================================================================
+    // Local state
+    // ===========================================================================
+
+    /** ID của bước đang hover. */
+    public readonly hoveredStepId = signal<string | null>(null);
+
+        // ===========================================================================
+        // Computed từ đầu vào
+        // ===========================================================================
+
+        /** Số bước đã hoàn thành. */
+        public readonly completedCount = computed<number>(() => {
+            return this.steps.filter(s =>
+            s.status === 'approved' || s.status === 'delegated'
+            ).length;
+            });
+
+            /** Tỷ lệ phần trăm hoàn thành. */
+            public readonly progressPercent = computed<number>(() => {
+                if (!this.steps.length) return 0;
+                return Math.round((this.completedCount() / this.steps.length) * 100);
+                });
+
+                // ===========================================================================
+                // Lifecycle
+                // ===========================================================================
+
+                ngOnInit(): void {
+                console.info('[ApprovalTimeline] Khởi tạo cho yêu cầu:', this.requestId);
+                }
+
+                ngOnDestroy(): void {
+                // Dọn dẹp nếu cần
+                }
+
+                // ===========================================================================
+                // Xử lý sự kiện
+                // ===========================================================================
+
+                /**
+                * Xử lý khi click vào một bước trong thời hạn.
+                */
+                onStepClick(stepId: string): void {
+                this.stepClick.emit(stepId);
+                console.info('[ApprovalTimeline] Chọn bước:', stepId);
+                }
+
+                /**
+                * Xử lý khi hover vào một bước.
+                */
+                onHoverStep(stepId: string | null): void {
+                this.hoveredStepId.set(stepId);
+                }
+
+                // ===========================================================================
+                // Helper methods — Lấy class CSS theo trạng thái
+                // ===========================================================================
+
+                /**
+                * Lấy class CSS cho chấm trạng thái.
+                */
+                getDotClass(status: TimelineStepStatus): string {
+                return `step-dot dot-${status}`;
+                }
+
+                /**
+                * Lấy class CSS cho đường nối.
+                */
+                getLineClass(status: TimelineStepStatus): string {
+                return `step-line line-${status}`;
+                }
+
+                /**
+                * Lấy class CSS cho badge trạng thái.
+                */
+                getBadgeClass(status: TimelineStepStatus): string {
+                return `badge badge-${status}`;
+                }
+
+                /**
+                * Lấy icon cho trạng thái.
+                */
+                getStepIcon(status: TimelineStepStatus): string {
+                const iconMap: Record<TimelineStepStatus, string> = {
+                    pending: '...',
+                    approved: '✓',
+                    rejected: '✕',
+                    delegated: '↗'
+                    };
+                    return iconMap[status] || '?';
+                    }
+
+                    /**
+                    * Lấy nhãn tiếng Việt cho trạng thái.
+                    */
+                    getStatusLabel(status: TimelineStepStatus): string {
+                    const labelMap: Record<TimelineStepStatus, string> = {
+                        pending: 'Đang chờ',
+                        approved: 'Đã phê duyệt',
+                        rejected: 'Đã từ chối',
+                        delegated: 'Đã chuyển giao'
+                        };
+                        return labelMap[status] || status;
+                        }
+                        }
