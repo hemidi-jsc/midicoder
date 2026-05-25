@@ -55,12 +55,12 @@ def _make_widget_configs() -> list[WidgetConfig]:
             widget_type=WidgetType.PRESENCE,
             channel_id="user.presence.changed",
             tenant_id="tenant-1",
-            ui_framework="angular-material",
+            ui_framework="material",
         ),
         WidgetConfig(
             widget_type=WidgetType.LIVE_FEED,
             channel_id="order.created",
-            ui_framework="angular-material",
+            ui_framework="material",
             max_items=50,
             auto_scroll=True,
         ),
@@ -77,7 +77,7 @@ class TestAngularRealtimeEmitter:
     def test_init_default_ui_framework(self):
         """Init với UI framework mặc định."""
         emitter = AngularRealtimeEmitter()
-        assert emitter.ui_framework == "angular-material"
+        assert emitter.ui_framework == "material"
 
     def test_init_custom_ui_framework(self):
         """Init với UI framework tuỳ chọn."""
@@ -266,7 +266,7 @@ class TestAngularRealtimeEmitter:
             WidgetConfig(
                 widget_type=WidgetType.LIVE_FEED,
                 channel_id="order.created",
-                ui_framework="angular-material",
+                ui_framework="material",
                 max_items=100,
             )
         ]
@@ -286,7 +286,7 @@ class TestAngularRealtimeEmitter:
         """Các UI framework khác nhau sinh content khác nhau."""
         channels = _make_sample_channels()
 
-        emitter_material = AngularRealtimeEmitter(ui_framework="angular-material")
+        emitter_material = AngularRealtimeEmitter(ui_framework="material")
         files_m = emitter_material.generate(channels, output_dir=tmp_path / "m")
 
         emitter_tw = AngularRealtimeEmitter(ui_framework="tailwind")
@@ -315,7 +315,7 @@ class TestAngularRealtimeEmitter:
             WidgetConfig(
                 widget_type=wt,
                 channel_id="order.created",
-                ui_framework="angular-material",
+                ui_framework="material",
             )
             for wt in WidgetType
         ]
@@ -376,7 +376,7 @@ class TestAngularInlineFallback:
     def _make_fallback_emitter(self):
         """Tạo emitter dùng BaseLoader (không template) để trigger fallback."""
         from jinja2 import BaseLoader, Environment
-        emitter = AngularRealtimeEmitter(ui_framework="angular-material")
+        emitter = AngularRealtimeEmitter(ui_framework="material")
         emitter._template_env = Environment(
             loader=BaseLoader(),
             autoescape=True,
@@ -421,7 +421,7 @@ class TestAngularInlineFallback:
         emitter = self._make_fallback_emitter()
         channels = _make_sample_channels()
         configs = [
-            WidgetConfig(widget_type=wt, channel_id="order.created", ui_framework="angular-material")
+            WidgetConfig(widget_type=wt, channel_id="order.created", ui_framework="material")
             for wt in WidgetType
         ]
         files = emitter.generate(channels, configs, output_dir=tmp_path)

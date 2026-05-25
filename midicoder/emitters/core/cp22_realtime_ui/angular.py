@@ -20,6 +20,7 @@ from jinja2 import BaseLoader, Environment, FileSystemLoader, TemplateNotFound
 
 from .models import (
     ChannelSpec,
+    SUPPORTED_UI_FRAMEWORKS,
     WidgetConfig,
     WidgetType,
 )
@@ -74,14 +75,14 @@ class AngularRealtimeEmitter:
     Sinh ra các components và services TypeScript từ ChannelSpec và WidgetConfig.
     """
 
-    SUPPORTED_UI_FRAMEWORKS = ["angular-material", "tailwind", "ng-bootstrap", "primeng", "clarity"]
+    SUPPORTED_UI_FRAMEWORKS = SUPPORTED_UI_FRAMEWORKS
 
-    def __init__(self, ui_framework: str = "angular-material") -> None:
+    def __init__(self, ui_framework: str = "material") -> None:
         """
         Khởi tạo emitter cho Angular.
 
         Args:
-            ui_framework: UI framework để render (angular-material, tailwind, ng-bootstrap, primeng, clarity).
+            ui_framework: UI framework để render (material, tailwind, bootstrap, antd, carbon).
         """
         if ui_framework not in self.SUPPORTED_UI_FRAMEWORKS:
             raise ValueError(
