@@ -39,9 +39,7 @@ from app.schemas.bulk_schemas import (
     DLQEntryRead,
 )
 {% if use_events or use_audit %}
-from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
-{% else %}
-from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+from app.errors import ErrorCode, MidicoderErrorManager as EM
 {% endif %}
 
 logger = logging.getLogger(__name__)

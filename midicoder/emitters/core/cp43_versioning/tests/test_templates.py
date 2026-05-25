@@ -11,6 +11,34 @@ from jinja2 import Environment, FileSystemLoader, TemplateSyntaxError
 # Đường dẫn đến stacks directory
 STACKS_DIR = Path(__file__).parent.parent.parent.parent.parent / "stacks"
 
+CP43_STACK_NAMES = ["fastapi", "nestjs", "angular", "react"]
+
+
+def _get_template_dir(stack: str) -> Path:
+    """Trả về đường dẫn thư mục template cho một stack."""
+    return STACKS_DIR / stack / "core" / "cp43_versioning"
+
+
+def _gather_templates(stack: str) -> list[str]:
+    """Thu thập danh sách template files cho một stack bằng glob."""
+    template_dir = _get_template_dir(stack)
+    if not template_dir.exists():
+        return []
+    return [f.name for f in template_dir.glob("*.jinja2")]
+
+
+def _render_template(stack: str, template_name: str) -> str:
+    """Render template với context cơ bản để kiểm tra Rule V1/V2."""
+    env = Environment(loader=FileSystemLoader(str(_get_template_dir(stack))))
+    ctx = {
+        "project_name": "test_project",
+        "module_name": "test_module",
+        "entity_name": "Entity",
+        "service_name": "HistoryService",
+    }
+    template = env.get_template(template_name)
+    return template.render(**ctx)
+
 
 class TestFastAPITemplates:
     """Test cho FastAPI Jinja2 templates."""
@@ -183,4 +211,40 @@ class TestTemplateContent:
             # Kiểm tra có ít nhất 1 comment/docstring tiếng Việt
             assert any(char in content for char in ["ă", "â", "ê", "ô", "ơ", "ư", "đ", "à", "á", "ạ", "ả", "ã", "ầ", "ấ", "ậ", "ẩ", "ẫ", "ẫ", "ằ", "ắ", "ặ", "ẳ", "ẵ", "è", "é", "ẹ", "ẻ", "ẽ", "ề", "ế", "ệ", "ể", "ễ", "ì", "í", "ị", "ỉ", "ĩ", "ò", "ó", "ọ", "ỏ", "õ", "ồ", "ố", "ộ", "ổ", "ỗ", "ờ", "ớ", "ợ", "ở", "ỡ", "ù", "ú", "ụ", "ủ", "ũ", "ừ", "ứ", "ự", "ử", "ữ", "ỳ", "ý", "ỵ", "ỷ", "ỹ"]), (
                 f"Template {template_file.name} thiếu comments tiếng Việt"
+            )
+
+
+# ============================================================================
+# TestRuleV1NoMidicoderImport — kiểm tra rendered output không có `from midicoder`
+# ============================================================================
+
+
+class TestRuleV1NoMidicoderImport:
+    """Rule V1: rendered output của template không được chứa 'from midicoder'."""
+
+    @pytest.mark.parametrize("stack", CP43_STACK_NAMES)
+    def test_rendered_no_midicoder_import(self, stack: str) -> None:
+        """Mỗi template render ra không chứa 'from midicoder'."""
+        for template_name in _gather_templates(stack):
+            output = _render_template(stack, template_name)
+            assert "from midicoder" not in output, (
+                f"Rule V1 vi phạm: {stack}/{template_name} chứa 'from midicoder' trong rendered output"
+            )
+
+
+# ============================================================================
+# TestRuleV2NoPostInit — kiểm tra rendered output không có `__post_init__`
+# ============================================================================
+
+
+class TestRuleV2NoPostInit:
+    """Rule V2: rendered output của template không được chứa '__post_init__'."""
+
+    @pytest.mark.parametrize("stack", CP43_STACK_NAMES)
+    def test_rendered_no_post_init(self, stack: str) -> None:
+        """Mỗi template render ra không chứa '__post_init__'."""
+        for template_name in _gather_templates(stack):
+            output = _render_template(stack, template_name)
+            assert "__post_init__" not in output, (
+                f"Rule V2 vi phạm: {stack}/{template_name} chứa '__post_init__' trong rendered output"
             )

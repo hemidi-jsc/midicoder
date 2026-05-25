@@ -12,6 +12,7 @@ Test:
 import pytest
 from pathlib import Path
 import yaml
+import jinja2
 
 
 # Đường dẫn project root
@@ -254,3 +255,118 @@ class TestInitModule:
         )
         assert basic_bulk_recipe is not None
         assert full_bulk_recipe is not None
+
+
+# ============================================================================
+# Helper — render template với context cơ bản
+# ============================================================================
+
+CP44_STACK_NAMES = ["fastapi", "nestjs", "angular", "react"]
+
+ALL_TEMPLATES = {
+    "fastapi": [
+        "bulk_models.py.jinja2",
+        "bulk_schemas.py.jinja2",
+        "bulk_service.py.jinja2",
+        "bulk_router.py.jinja2",
+        "bulk_worker.py.jinja2",
+        "bulk_dlq_worker.py.jinja2",
+        "bulk_sse.py.jinja2",
+    ],
+    "nestjs": [
+        "bulk.entity.ts.jinja2",
+        "bulk.dto.ts.jinja2",
+        "bulk.service.ts.jinja2",
+        "bulk.controller.ts.jinja2",
+        "bulk.module.ts.jinja2",
+        "bulk.scheduler.ts.jinja2",
+        "bulk.gateway.ts.jinja2",
+    ],
+    "angular": [
+        "bulk-dashboard.component.ts.jinja2",
+        "bulk-jobs.component.ts.jinja2",
+        "bulk-job-details.component.ts.jinja2",
+        "bulk.service.ts.jinja2",
+        "bulk.store.ts.jinja2",
+        "bulk-types.ts.jinja2",
+    ],
+    "react": [
+        "BulkDashboard.tsx.jinja2",
+        "BulkJobs.tsx.jinja2",
+        "BulkJobDetails.tsx.jinja2",
+        "BulkProgress.tsx.jinja2",
+        "useBulkOps.ts.jinja2",
+    ],
+}
+
+
+def _render_template(stack: str, template_name: str) -> str:
+    """Render template với context cơ bản để kiểm tra Rule V1/V2.
+
+    Nếu render thất bại (thiếu biến context hoặc lỗi cú pháp), trả về nội dung
+    thô của template để vẫn có thể kiểm tra Rule V1/V2.
+    """
+    template_dir = STACKS_DIR / stack / "core" / "cp44_bulk_ops"
+    template_path = template_dir / template_name
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(str(template_dir)),
+        undefined=jinja2.ChainableUndefined,
+    )
+    ctx = {
+        "project_name": "test_project",
+        "module_name": "test_module",
+        "entity_name": "Bulk",
+        "model_name": "BulkJob",
+        "service_name": "BulkService",
+        "use_events": True,
+        "use_audit": True,
+        "job_count": 100,
+        "default_chunk_size": 100,
+        "default_concurrency": 5,
+        "default_max_retries": 3,
+        "default_retry_strategy": "exponential_backoff",
+        "default_timeout": 3600,
+        "dlq_enabled": True,
+    }
+    try:
+        template = env.get_template(template_name)
+        return template.render(**ctx)
+    except Exception:
+        # Render thất bại: trả về nội dung thô để kiểm tra Rule V1/V2
+        return template_path.read_text(encoding="utf-8")
+
+
+# ============================================================================
+# TestRuleV1NoMidicoderImport — kiểm tra rendered output không có `from midicoder`
+# ============================================================================
+
+
+class TestRuleV1NoMidicoderImport:
+    """Rule V1: rendered output của template không được chứa 'from midicoder'."""
+
+    @pytest.mark.parametrize("stack", CP44_STACK_NAMES)
+    def test_rendered_no_midicoder_import(self, stack: str):
+        """Mỗi template render ra không chứa 'from midicoder'."""
+        for template_name in ALL_TEMPLATES[stack]:
+            output = _render_template(stack, template_name)
+            assert "from midicoder" not in output, (
+                f"Rule V1 vi phạm: {stack}/{template_name} chứa 'from midicoder' trong rendered output"
+            )
+
+
+# ============================================================================
+# TestRuleV2NoPostInit — kiểm tra rendered output không có `__post_init__`
+# ============================================================================
+
+
+class TestRuleV2NoPostInit:
+    """Rule V2: rendered output của template không được chứa '__post_init__'."""
+
+    @pytest.mark.parametrize("stack", CP44_STACK_NAMES)
+    def test_rendered_no_post_init(self, stack: str):
+        """Mỗi template render ra không chứa '__post_init__'."""
+        for template_name in ALL_TEMPLATES[stack]:
+            output = _render_template(stack, template_name)
+            assert "__post_init__" not in output, (
+                f"Rule V2 vi phạm: {stack}/{template_name} chứa '__post_init__' trong rendered output"
+            )

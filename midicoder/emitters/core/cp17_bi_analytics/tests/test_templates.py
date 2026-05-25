@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import jinja2
 
 # Paths relative to this file (tests/ dir):
 # test_templates.py → tests/ → cp17_bi_analytics/ → core/ → emitters/ → midicoder/ → midicoder-ce/
@@ -242,3 +243,113 @@ class TestEmitterContentQuality:
             for k, v in result.items():
                 assert isinstance(k, str), f"Key phải là string: {k}"
                 assert isinstance(v, str), f"Value phải là string: {k}"
+
+# ===========================================================================
+# Dữ liệu và helper cho Rule V1/V2 (P2-17)
+# ===========================================================================
+
+_STACKS_DIR = Path(__file__).resolve().parents[4] / "stacks"
+
+FASTAPI_TEMPLATES = [
+    "analytics_service.py.jinja2",
+    "analytics_router.py.jinja2",
+]
+
+NESTJS_TEMPLATES = [
+    "analytics.module.ts.jinja2",
+    "analytics.service.ts.jinja2",
+    "analytics.controller.ts.jinja2",
+]
+
+ANGULAR_TEMPLATES = [
+    "analytics_widget.component.ts.jinja2",
+    "report_viewer.component.ts.jinja2",
+]
+
+REACT_TEMPLATES = [
+    "types.ts.jinja2",
+    "AnalyticsChart.tsx.jinja2",
+    "ReportTable.tsx.jinja2",
+]
+
+
+def _render_template(stack: str, template_name: str) -> str:
+    """Render template với context cơ bản; fallback đọc raw nếu render lỗi."""
+    template_path = _STACKS_DIR / stack / "core" / "cp17_bi_analytics"
+    try:
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(template_path)),
+            undefined=jinja2.ChainableUndefined,
+        )
+        template = env.get_template(template_name)
+        return template.render()
+    except Exception:
+        # Fallback: đọc nội dung raw nếu Jinja2 parse lỗi (JS/Angular syntax conflict)
+        raw_file = template_path / template_name
+        if raw_file.exists():
+            return raw_file.read_text(encoding="utf-8")
+        raise
+
+
+# ===========================================================================
+# Test Rule V1 & V2 (P2-17)
+# ===========================================================================
+
+class TestRuleV1NoMidicoderImport:
+    """Rule V1: Output của template KHÔNG chứa 'from midicoder'."""
+
+    def test_fastapi_no_midicoder_import(self):
+        """FastAPI templates không chứa 'from midicoder' trong output."""
+        for template in FASTAPI_TEMPLATES:
+            result = _render_template("fastapi", template)
+            assert "from midicoder" not in result, f"Rule V1 vi phạm: {template}"
+            assert "import midicoder" not in result, f"Rule V1 vi phạm: {template}"
+
+    def test_nestjs_no_midicoder_import(self):
+        """NestJS templates không chứa 'from midicoder' trong output."""
+        for template in NESTJS_TEMPLATES:
+            result = _render_template("nestjs", template)
+            assert "from midicoder" not in result, f"Rule V1 vi phạm: {template}"
+            assert "import midicoder" not in result, f"Rule V1 vi phạm: {template}"
+
+    def test_angular_no_midicoder_import(self):
+        """Angular templates không chứa 'from midicoder' trong output."""
+        for template in ANGULAR_TEMPLATES:
+            result = _render_template("angular", template)
+            assert "from midicoder" not in result, f"Rule V1 vi phạm: {template}"
+            assert "import midicoder" not in result, f"Rule V1 vi phạm: {template}"
+
+    def test_react_no_midicoder_import(self):
+        """React templates không chứa 'from midicoder' trong output."""
+        for template in REACT_TEMPLATES:
+            result = _render_template("react", template)
+            assert "from midicoder" not in result, f"Rule V1 vi phạm: {template}"
+            assert "import midicoder" not in result, f"Rule V1 vi phạm: {template}"
+
+
+class TestRuleV2NoPostInit:
+    """Rule V2: Output của template KHÔNG chứa '__post_init__'."""
+
+    def test_fastapi_no_post_init(self):
+        """FastAPI templates không chứa __post_init__ trong output."""
+        for template in FASTAPI_TEMPLATES:
+            result = _render_template("fastapi", template)
+            assert "__post_init__" not in result, f"Rule V2 vi phạm: {template}"
+
+    def test_nestjs_no_post_init(self):
+        """NestJS templates không chứa __post_init__ trong output."""
+        for template in NESTJS_TEMPLATES:
+            result = _render_template("nestjs", template)
+            assert "__post_init__" not in result, f"Rule V2 vi phạm: {template}"
+
+    def test_angular_no_post_init(self):
+        """Angular templates không chứa __post_init__ trong output."""
+        for template in ANGULAR_TEMPLATES:
+            result = _render_template("angular", template)
+            assert "__post_init__" not in result, f"Rule V2 vi phạm: {template}"
+
+    def test_react_no_post_init(self):
+        """React templates không chứa __post_init__ trong output."""
+        for template in REACT_TEMPLATES:
+            result = _render_template("react", template)
+            assert "__post_init__" not in result, f"Rule V2 vi phạm: {template}"

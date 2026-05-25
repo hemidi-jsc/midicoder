@@ -13,6 +13,7 @@ Bao gồm:
 
 import pytest
 from pathlib import Path
+import jinja2
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "stacks"
@@ -236,3 +237,88 @@ class TestTemplateStructure:
                 continue
             content = tpl.read_text(encoding="utf-8")
             assert "tenant" in content.lower(), f"Template {tpl.name} missing tenant reference"
+
+# ===========================================================================
+# Dữ liệu và helper cho Rule V1/V2 (P2-17)
+# ===========================================================================
+
+FASTAPI_TEMPLATES = [
+    "base_model.py.jinja2",
+    "database.py.jinja2",
+    "base_repository.py.jinja2",
+    "audit_mixin.py.jinja2",
+    "tenant_mixin.py.jinja2",
+    "repository.py.jinja2",
+    "migrations/env.py.jinja2",
+]
+
+NESTJS_TEMPLATES = [
+    "base.entity.ts.jinja2",
+    "database.module.ts.jinja2",
+    "base.repository.ts.jinja2",
+    "audit.decorator.ts.jinja2",
+    "tenant.decorators.ts.jinja2",
+    "repository.ts.jinja2",
+]
+
+
+def _render_template(stack: str, template_name: str) -> str:
+    """Render template với context cơ bản."""
+    template_path = BASE_DIR / stack / "core" / "cp08_database"
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(str(template_path)),
+        undefined=jinja2.ChainableUndefined,
+    )
+    ctx = {
+        "entity": {
+            "id": "User",
+            "table_name": "users",
+            "tenant_scope": "tenant_isolated",
+            "description": "User entity",
+        },
+        "config": {
+            "database_url": "postgresql://user:pass@localhost:5432/dbname",
+            "pool_size": 10,
+            "max_overflow": 20,
+        },
+    }
+    template = env.get_template(template_name)
+    return template.render(**ctx)
+
+
+# ===========================================================================
+# Test Rule V1 & V2 (P2-17)
+# ===========================================================================
+
+class TestRuleV1NoMidicoderImport:
+    """Rule V1: Output của template KHÔNG chứa 'from midicoder'."""
+
+    def test_fastapi_no_midicoder_import(self):
+        """FastAPI templates không chứa 'from midicoder' trong output."""
+        for template in FASTAPI_TEMPLATES:
+            result = _render_template("fastapi", template)
+            assert "from midicoder" not in result, f"Rule V1 vi phạm: {template}"
+            assert "import midicoder" not in result, f"Rule V1 vi phạm: {template}"
+
+    def test_nestjs_no_midicoder_import(self):
+        """NestJS templates không chứa 'from midicoder' trong output."""
+        for template in NESTJS_TEMPLATES:
+            result = _render_template("nestjs", template)
+            assert "from midicoder" not in result, f"Rule V1 vi phạm: {template}"
+            assert "import midicoder" not in result, f"Rule V1 vi phạm: {template}"
+
+
+class TestRuleV2NoPostInit:
+    """Rule V2: Output của template KHÔNG chứa '__post_init__'."""
+
+    def test_fastapi_no_post_init(self):
+        """FastAPI templates không chứa __post_init__ trong output."""
+        for template in FASTAPI_TEMPLATES:
+            result = _render_template("fastapi", template)
+            assert "__post_init__" not in result, f"Rule V2 vi phạm: {template}"
+
+    def test_nestjs_no_post_init(self):
+        """NestJS templates không chứa __post_init__ trong output."""
+        for template in NESTJS_TEMPLATES:
+            result = _render_template("nestjs", template)
+            assert "__post_init__" not in result, f"Rule V2 vi phạm: {template}"

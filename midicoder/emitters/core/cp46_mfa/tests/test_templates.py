@@ -6,9 +6,11 @@ Tests for CP46 templates — MFA & Advanced Authentication.
 import pytest
 from pathlib import Path
 import yaml
+import jinja2
 
 
 PACK_DIR = Path(__file__).resolve().parent.parent
+STACKS_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "stacks"
 
 
 class TestPackManifest:
@@ -267,3 +269,113 @@ class TestInitModule:
             basic_mfa_recipe,
             full_mfa_recipe,
         )
+
+
+# ============================================================================
+# Helper — render template với context cơ bản
+# ============================================================================
+
+CP46_STACK_NAMES = ["fastapi", "nestjs", "angular", "react"]
+
+ALL_TEMPLATES = {
+    "fastapi": [
+        "mfa_models.py.jinja2",
+        "mfa_schemas.py.jinja2",
+        "mfa_service.py.jinja2",
+        "mfa_router.py.jinja2",
+        "mfa_totp.py.jinja2",
+        "mfa_webauthn.py.jinja2",
+    ],
+    "nestjs": [
+        "mfa.controller.ts.jinja2",
+        "mfa.service.ts.jinja2",
+        "mfa.module.ts.jinja2",
+        "mfa.dto.ts.jinja2",
+        "mfa.entity.ts.jinja2",
+        "mfa.guard.ts.jinja2",
+    ],
+    "angular": [
+        "mfa-setup.component.ts.jinja2",
+        "mfa-verify.component.ts.jinja2",
+        "mfa-methods.component.ts.jinja2",
+        "mfa.service.ts.jinja2",
+        "mfa-types.ts.jinja2",
+        "mfa-forms.ts.jinja2",
+    ],
+    "react": [
+        "MFASetup.tsx.jinja2",
+        "MFAVerify.tsx.jinja2",
+        "MFAMethods.tsx.jinja2",
+        "useMFA.ts.jinja2",
+        "mfa-types.ts.jinja2",
+        "mfa-api.ts.jinja2",
+    ],
+}
+
+
+def _render_template(stack: str, template_name: str) -> str:
+    """Render template với context cơ bản để kiểm tra Rule V1/V2.
+
+    Nếu render thất bại (thiếu biến context hoặc lỗi cú pháp), trả về nội dung
+    thô của template để vẫn có thể kiểm tra Rule V1/V2.
+    """
+    template_dir = STACKS_DIR / stack / "core" / "cp46_mfa"
+    template_path = template_dir / template_name
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(str(template_dir)),
+        undefined=jinja2.ChainableUndefined,
+    )
+    ctx = {
+        "project_name": "test_project",
+        "module_name": "test_module",
+        "entity_name": "MFA",
+        "model_name": "MFACredential",
+        "service_name": "MFAService",
+        "rule_count": 1,
+        "use_totp": True,
+        "use_sms": True,
+        "use_webauthn": True,
+        "use_biometric": True,
+    }
+    try:
+        template = env.get_template(template_name)
+        return template.render(**ctx)
+    except Exception:
+        # Render thất bại: trả về nội dung thô để kiểm tra Rule V1/V2
+        return template_path.read_text(encoding="utf-8")
+
+
+# ============================================================================
+# TestRuleV1NoMidicoderImport — kiểm tra rendered output không có `from midicoder`
+# ============================================================================
+
+
+class TestRuleV1NoMidicoderImport:
+    """Rule V1: rendered output của template không được chứa 'from midicoder'."""
+
+    @pytest.mark.parametrize("stack", CP46_STACK_NAMES)
+    def test_rendered_no_midicoder_import(self, stack: str):
+        """Mỗi template render ra không chứa 'from midicoder'."""
+        for template_name in ALL_TEMPLATES[stack]:
+            output = _render_template(stack, template_name)
+            assert "from midicoder" not in output, (
+                f"Rule V1 vi phạm: {stack}/{template_name} chứa 'from midicoder' trong rendered output"
+            )
+
+
+# ============================================================================
+# TestRuleV2NoPostInit — kiểm tra rendered output không có `__post_init__`
+# ============================================================================
+
+
+class TestRuleV2NoPostInit:
+    """Rule V2: rendered output của template không được chứa '__post_init__'."""
+
+    @pytest.mark.parametrize("stack", CP46_STACK_NAMES)
+    def test_rendered_no_post_init(self, stack: str):
+        """Mỗi template render ra không chứa '__post_init__'."""
+        for template_name in ALL_TEMPLATES[stack]:
+            output = _render_template(stack, template_name)
+            assert "__post_init__" not in output, (
+                f"Rule V2 vi phạm: {stack}/{template_name} chứa '__post_init__' trong rendered output"
+            )

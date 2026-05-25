@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import jinja2
+import pytest
+
 # Project root = 6 bậc parent lên từ tests/ → d:\hemidi-labs\midicoder-ce
 MIDICODER_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent
 
@@ -300,3 +303,117 @@ class TestRegistry:
 
         assert "CP42" in CP_ID_TO_INTERNAL
         assert CP_ID_TO_INTERNAL["CP42"] == "cp42_approval"
+
+
+# ============================================================================
+# Helper — render template với context cơ bản
+# ============================================================================
+
+STACK_DIRS = {
+    "fastapi": FASTAPI_DIR,
+    "nestjs": NESTJS_DIR,
+    "angular": ANGULAR_DIR,
+    "react": REACT_DIR,
+}
+
+ALL_TEMPLATES = {
+    "fastapi": [
+        "approval_models.py.jinja2",
+        "approval_schemas.py.jinja2",
+        "approval_service.py.jinja2",
+        "approval_router.py.jinja2",
+        "approval_event_handler.py.jinja2",
+        "approval_escalation_worker.py.jinja2",
+        "approval_delegation_service.py.jinja2",
+    ],
+    "nestjs": [
+        "approval.entity.ts.jinja2",
+        "approval.dto.ts.jinja2",
+        "approval.service.ts.jinja2",
+        "approval.controller.ts.jinja2",
+        "approval.module.ts.jinja2",
+        "approval.scheduler.ts.jinja2",
+        "approval.gateway.ts.jinja2",
+    ],
+    "angular": [
+        "approval-dashboard.component.ts.jinja2",
+        "approval-details.component.ts.jinja2",
+        "approval-history.component.ts.jinja2",
+        "approval.service.ts.jinja2",
+        "approval.store.ts.jinja2",
+        "approval-types.ts.jinja2",
+    ],
+    "react": [
+        "ApprovalDashboard.tsx.jinja2",
+        "ApprovalDetails.tsx.jinja2",
+        "ApprovalHistory.tsx.jinja2",
+        "NotificationBadge.tsx.jinja2",
+        "DelegationSettings.tsx.jinja2",
+        "useApprovals.ts.jinja2",
+    ],
+}
+
+
+def _render_template(stack: str, template_name: str) -> str:
+    """Render template với context cơ bản để kiểm tra Rule V1/V2.
+
+    Nếu render thất bại (thiếu biến context hoặc lỗi cú pháp), trả về nội dung
+    thô của template để vẫn có thể kiểm tra Rule V1/V2.
+    """
+    template_path = STACK_DIRS[stack] / template_name
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(str(STACK_DIRS[stack])),
+        undefined=jinja2.ChainableUndefined,
+    )
+    ctx = {
+        "project_name": "test_project",
+        "module_name": "test_module",
+        "entity_name": "Approval",
+        "model_name": "ApprovalModel",
+        "service_name": "ApprovalService",
+        "use_events": True,
+        "num_requests": 10,
+        "notification_config": {"emailEnabled": True, "smsEnabled": False},
+    }
+    try:
+        template = env.get_template(template_name)
+        return template.render(**ctx)
+    except Exception:
+        # Render thất bại: trả về nội dung thô để kiểm tra Rule V1/V2
+        return template_path.read_text(encoding="utf-8")
+
+
+# ============================================================================
+# TestRuleV1NoMidicoderImport — kiểm tra rendered output không có `from midicoder`
+# ============================================================================
+
+
+class TestRuleV1NoMidicoderImport:
+    """Rule V1: rendered output của template không được chứa 'from midicoder'."""
+
+    @pytest.mark.parametrize("stack", list(ALL_TEMPLATES.keys()))
+    def test_rendered_no_midicoder_import(self, stack: str):
+        """Mỗi template render ra không chứa 'from midicoder'."""
+        for template_name in ALL_TEMPLATES[stack]:
+            output = _render_template(stack, template_name)
+            assert "from midicoder" not in output, (
+                f"Rule V1 vi phạm: {stack}/{template_name} chứa 'from midicoder' trong rendered output"
+            )
+
+
+# ============================================================================
+# TestRuleV2NoPostInit — kiểm tra rendered output không có `__post_init__`
+# ============================================================================
+
+
+class TestRuleV2NoPostInit:
+    """Rule V2: rendered output của template không được chứa '__post_init__'."""
+
+    @pytest.mark.parametrize("stack", list(ALL_TEMPLATES.keys()))
+    def test_rendered_no_post_init(self, stack: str):
+        """Mỗi template render ra không chứa '__post_init__'."""
+        for template_name in ALL_TEMPLATES[stack]:
+            output = _render_template(stack, template_name)
+            assert "__post_init__" not in output, (
+                f"Rule V2 vi phạm: {stack}/{template_name} chứa '__post_init__' trong rendered output"
+            )

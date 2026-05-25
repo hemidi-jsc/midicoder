@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+import jinja2
 
 # midicoder/emitters/core/cp38_data_etl/tests/
 # parent.parent = cp38_data_etl/
@@ -210,3 +211,145 @@ class TestReactTemplates:
     def test_exactly_7_templates(self):
         templates = list(self._get_template_dir().glob("*.jinja2"))
         assert len(templates) == 7
+
+
+# ============================================================================
+# Rule V1 & V2 (P2-17) — template render tests
+# ============================================================================
+
+# Đường dẫn stack directories
+MIDICODER_ROOT_38 = Path(__file__).parent.parent.parent.parent.parent
+
+STACK_DIRS_38 = {
+    "fastapi": MIDICODER_ROOT_38 / "stacks" / "fastapi" / "core" / "cp38_data_etl",
+    "nestjs": MIDICODER_ROOT_38 / "stacks" / "nestjs" / "core" / "cp38_data_etl",
+    "angular": MIDICODER_ROOT_38 / "stacks" / "angular" / "core" / "cp38_data_etl",
+    "react": MIDICODER_ROOT_38 / "stacks" / "react" / "core" / "cp38_data_etl",
+}
+
+FASTAPI_TEMPLATES_38 = [
+    "__init__.py.jinja2",
+    "import_models.py.jinja2",
+    "import_schemas.py.jinja2",
+    "import_service.py.jinja2",
+    "export_service.py.jinja2",
+    "etl_service.py.jinja2",
+    "import_router.py.jinja2",
+    "export_router.py.jinja2",
+    "bulk_worker.py.jinja2",
+    "csv_parser.py.jinja2",
+    "json_parser.py.jinja2",
+]
+
+NESTJS_TEMPLATES_38 = [
+    "import.entity.ts.jinja2",
+    "import.dto.ts.jinja2",
+    "import.service.ts.jinja2",
+    "export.service.ts.jinja2",
+    "etl.service.ts.jinja2",
+    "import.controller.ts.jinja2",
+    "export.controller.ts.jinja2",
+    "bulk-processor.service.ts.jinja2",
+    "etl.module.ts.jinja2",
+]
+
+ANGULAR_TEMPLATES_38 = [
+    "import-wizard.component.ts.jinja2",
+    "export-dialog.component.ts.jinja2",
+    "import.service.ts.jinja2",
+    "export.service.ts.jinja2",
+    "job-status.component.ts.jinja2",
+]
+
+REACT_TEMPLATES_38 = [
+    "ImportWizard.tsx.jinja2",
+    "ExportDialog.tsx.jinja2",
+    "useImportJob.ts.jinja2",
+    "useExportJob.ts.jinja2",
+    "JobStatusPanel.tsx.jinja2",
+    "import.service.ts.jinja2",
+    "export.service.ts.jinja2",
+]
+
+ALL_TEMPLATES_38 = {
+    "fastapi": FASTAPI_TEMPLATES_38,
+    "nestjs": NESTJS_TEMPLATES_38,
+    "angular": ANGULAR_TEMPLATES_38,
+    "react": REACT_TEMPLATES_38,
+}
+
+
+def _render_template_38(stack: str, template_name: str) -> str:
+    """Render template với context cơ bản; fallback sang đọc source thô nếu render lỗi."""
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(str(STACK_DIRS_38[stack])),
+        undefined=jinja2.ChainableUndefined,
+    )
+    ctx: dict = {}
+    try:
+        template = env.get_template(template_name)
+        return template.render(**ctx)
+    except Exception:
+        # Template chứa JSX/TSX không bọc {% raw %} — đọc source thô
+        source_path = STACK_DIRS_38[stack] / template_name
+        return source_path.read_text(encoding="utf-8")
+
+
+class TestRuleV1NoMidicoderImport:
+    """Rule V1: Output của template KHÔNG chứa 'from midicoder'."""
+
+    def test_fastapi_no_midicoder_import(self):
+        """FastAPI templates không chứa 'from midicoder' trong output."""
+        for template in FASTAPI_TEMPLATES_38:
+            result = _render_template_38("fastapi", template)
+            assert "from midicoder" not in result, f"Rule V1 vi phạm: {template}"
+            assert "import midicoder" not in result, f"Rule V1 vi phạm: {template}"
+
+    def test_nestjs_no_midicoder_import(self):
+        """NestJS templates không chứa 'from midicoder' trong output."""
+        for template in NESTJS_TEMPLATES_38:
+            result = _render_template_38("nestjs", template)
+            assert "from midicoder" not in result, f"Rule V1 vi phạm: {template}"
+            assert "import midicoder" not in result, f"Rule V1 vi phạm: {template}"
+
+    def test_angular_no_midicoder_import(self):
+        """Angular templates không chứa 'from midicoder' trong output."""
+        for template in ANGULAR_TEMPLATES_38:
+            result = _render_template_38("angular", template)
+            assert "from midicoder" not in result, f"Rule V1 vi phạm: {template}"
+            assert "import midicoder" not in result, f"Rule V1 vi phạm: {template}"
+
+    def test_react_no_midicoder_import(self):
+        """React templates không chứa 'from midicoder' trong output."""
+        for template in REACT_TEMPLATES_38:
+            result = _render_template_38("react", template)
+            assert "from midicoder" not in result, f"Rule V1 vi phạm: {template}"
+            assert "import midicoder" not in result, f"Rule V1 vi phạm: {template}"
+
+
+class TestRuleV2NoPostInit:
+    """Rule V2: Output của template KHÔNG chứa '__post_init__'."""
+
+    def test_fastapi_no_post_init(self):
+        """FastAPI templates không chứa __post_init__ trong output."""
+        for template in FASTAPI_TEMPLATES_38:
+            result = _render_template_38("fastapi", template)
+            assert "__post_init__" not in result, f"Rule V2 vi phạm: {template}"
+
+    def test_nestjs_no_post_init(self):
+        """NestJS templates không chứa __post_init__ trong output."""
+        for template in NESTJS_TEMPLATES_38:
+            result = _render_template_38("nestjs", template)
+            assert "__post_init__" not in result, f"Rule V2 vi phạm: {template}"
+
+    def test_angular_no_post_init(self):
+        """Angular templates không chứa __post_init__ trong output."""
+        for template in ANGULAR_TEMPLATES_38:
+            result = _render_template_38("angular", template)
+            assert "__post_init__" not in result, f"Rule V2 vi phạm: {template}"
+
+    def test_react_no_post_init(self):
+        """React templates không chứa __post_init__ trong output."""
+        for template in REACT_TEMPLATES_38:
+            result = _render_template_38("react", template)
+            assert "__post_init__" not in result, f"Rule V2 vi phạm: {template}"
