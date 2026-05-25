@@ -563,6 +563,43 @@ def load_projection_tree(dsl_path: Path) -> ProjectionTree:
     if ui_components_file.exists():
         add_nodes(_load_ui_components(ui_components_file))
 
+    # P2-16: Load domain-specific DSL files
+    plugins_file = dsl_path / "plugins.yaml"
+    if plugins_file.exists():
+        add_nodes(_load_plugins(plugins_file))
+
+    schedules_file = dsl_path / "schedules.yaml"
+    if schedules_file.exists():
+        add_nodes(_load_schedules(schedules_file))
+
+    financial_file = dsl_path / "financial.yaml"
+    if financial_file.exists():
+        add_nodes(_load_financial(financial_file))
+
+    reports_file = dsl_path / "reports.yaml"
+    if reports_file.exists():
+        add_nodes(_load_reports(reports_file))
+
+    etl_file = dsl_path / "etl.yaml"
+    if etl_file.exists():
+        add_nodes(_load_etl(etl_file))
+
+    localization_file = dsl_path / "localization.yaml"
+    if localization_file.exists():
+        add_nodes(_load_localization(localization_file))
+
+    versioning_file = dsl_path / "versioning.yaml"
+    if versioning_file.exists():
+        add_nodes(_load_versioning(versioning_file))
+
+    payment_file = dsl_path / "payment.yaml"
+    if payment_file.exists():
+        add_nodes(_load_payment(payment_file))
+
+    catalog_file = dsl_path / "catalog.yaml"
+    if catalog_file.exists():
+        add_nodes(_load_catalog(catalog_file))
+
     return tree
 
 # ============================================================================
@@ -1354,6 +1391,589 @@ def _load_frontends(path: Path) -> list[ProjectionNode]:
                     "persistence": store.get("persistence", "none"),
                     "tags": store.get("tags", []),
                     "source": "frontends.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# ============================================================================
+# P2-16: Domain-Specific DSL Loaders
+# ============================================================================
+
+def _load_plugins(path: Path) -> list[ProjectionNode]:
+    """Load plugins.yaml vào ProjectionNodes (CP27 — Plugin System).
+
+    Parse plugin slots, contracts, và policies từ YAML.
+
+    Args:
+        path: Đường dẫn đến plugins.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho plugin nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Plugin slots
+    if "slots" in data:
+        for slot in data["slots"]:
+            node = ProjectionNode(
+                id=slot.get("id", ""),
+                kind=NodeKind.PLUGIN_SLOT,
+                params={
+                    "id": slot.get("id"),
+                    "name": slot.get("name", ""),
+                    "entity_id": slot.get("entity_id"),
+                    "events": slot.get("events", []),
+                    "priority_range": slot.get("priority_range", (0, 100)),
+                    "is_tenant_aware": slot.get("is_tenant_aware", True),
+                    "entities": slot.get("entities", []),
+                    "tags": slot.get("tags", []),
+                    "source": "plugins.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Plugin contracts
+    if "contracts" in data:
+        for contract in data["contracts"]:
+            node = ProjectionNode(
+                id=contract.get("id", ""),
+                kind=NodeKind.PLUGIN_CONTRACT,
+                params={
+                    "id": contract.get("id"),
+                    "slots": contract.get("slots", []),
+                    "config_schema": contract.get("config_schema", {}),
+                    "dependencies": contract.get("dependencies", []),
+                    "tags": contract.get("tags", []),
+                    "source": "plugins.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Plugin policies
+    if "policies" in data:
+        for policy in data["policies"]:
+            node = ProjectionNode(
+                id=policy.get("id", ""),
+                kind=NodeKind.PLUGIN_POLICY,
+                params={
+                    "id": policy.get("id"),
+                    "policy_type": policy.get("policy_type", "security"),
+                    "rule": policy.get("rule", ""),
+                    "enforced": policy.get("enforced", True),
+                    "config": policy.get("config", {}),
+                    "tags": policy.get("tags", []),
+                    "source": "plugins.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+def _load_schedules(path: Path) -> list[ProjectionNode]:
+    """Load schedules.yaml vào ProjectionNodes (CP31 — Calendar & Scheduling).
+
+    Parse calendar schedules từ YAML.
+
+    Args:
+        path: Đường dẫn đến schedules.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho calendar schedule nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "schedules" in data:
+        for schedule in data["schedules"]:
+            node = ProjectionNode(
+                id=schedule.get("id", ""),
+                kind=NodeKind.CALENDAR_SCHEDULE,
+                params={
+                    "id": schedule.get("id"),
+                    "description": schedule.get("description"),
+                    "name": schedule.get("name", ""),
+                    "calendar_type": schedule.get("calendar_type", "academic"),
+                    "workflow_id": schedule.get("workflow_id"),
+                    "workflow": schedule.get("workflow"),
+                    "periods": schedule.get("periods", []),
+                    "holidays": schedule.get("holidays", []),
+                    "recurrence_rule": schedule.get("recurrence_rule"),
+                    "timezone": schedule.get("timezone"),
+                    "tags": schedule.get("tags", []),
+                    "source": "schedules.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+def _load_financial(path: Path) -> list[ProjectionNode]:
+    """Load financial.yaml vào ProjectionNodes (CP33 — Financial Engine).
+
+    Parse general ledger, financial instruments, currency exchange, tax rules,
+    và subledgers từ YAML.
+
+    Args:
+        path: Đường dẫn đến financial.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho finance nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # General ledgers
+    if "ledgers" in data:
+        for ledger in data["ledgers"]:
+            node = ProjectionNode(
+                id=ledger.get("id", ""),
+                kind=NodeKind.GENERAL_LEDGER,
+                params={
+                    "id": ledger.get("id"),
+                    "description": ledger.get("description"),
+                    "chart_of_accounts": ledger.get("chart_of_accounts", []),
+                    "fiscal_year_start": ledger.get("fiscal_year_start"),
+                    "currency": ledger.get("currency"),
+                    "accounting_standard": ledger.get("accounting_standard"),
+                    "entity_id": ledger.get("entity_id"),
+                    "entities": ledger.get("entities", []),
+                    "entries": ledger.get("entries", []),
+                    "tags": ledger.get("tags", []),
+                    "source": "financial.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Financial instruments
+    if "instruments" in data:
+        for instrument in data["instruments"]:
+            node = ProjectionNode(
+                id=instrument.get("id", ""),
+                kind=NodeKind.FINANCIAL_INSTRUMENT,
+                params={
+                    "id": instrument.get("id"),
+                    "symbol": instrument.get("symbol"),
+                    "type": instrument.get("type"),
+                    "entity_id": instrument.get("entity_id"),
+                    "entities": instrument.get("entities", []),
+                    "tags": instrument.get("tags", []),
+                    "source": "financial.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Currency exchange
+    if "currency_exchanges" in data:
+        for exchange in data["currency_exchanges"]:
+            node = ProjectionNode(
+                id=exchange.get("id", ""),
+                kind=NodeKind.CURRENCY_EXCHANGE,
+                params={
+                    "id": exchange.get("id"),
+                    "base_currency": exchange.get("base_currency"),
+                    "quote_currency": exchange.get("quote_currency"),
+                    "exchange_rate": exchange.get("exchange_rate"),
+                    "entity_id": exchange.get("entity_id"),
+                    "tags": exchange.get("tags", []),
+                    "source": "financial.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Tax rules
+    if "tax_rules" in data:
+        for rule in data["tax_rules"]:
+            node = ProjectionNode(
+                id=rule.get("id", ""),
+                kind=NodeKind.TAX_RULE,
+                params={
+                    "id": rule.get("id"),
+                    "tax_type": rule.get("tax_type"),
+                    "rate": rule.get("rate"),
+                    "jurisdiction": rule.get("jurisdiction"),
+                    "applicable_items": rule.get("applicable_items", []),
+                    "tags": rule.get("tags", []),
+                    "source": "financial.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Subledgers
+    if "subledgers" in data:
+        for subledger in data["subledgers"]:
+            node = ProjectionNode(
+                id=subledger.get("id", ""),
+                kind=NodeKind.SUBLEDGER,
+                params={
+                    "id": subledger.get("id"),
+                    "ledger_type": subledger.get("ledger_type"),
+                    "parent_ledger_id": subledger.get("parent_ledger_id"),
+                    "entries": subledger.get("entries", []),
+                    "tags": subledger.get("tags", []),
+                    "source": "financial.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+def _load_reports(path: Path) -> list[ProjectionNode]:
+    """Load reports.yaml vào ProjectionNodes (CP34 — Reporting & Analytics).
+
+    Parse reports, dashboards, exports, và scheduled reports từ YAML.
+
+    Args:
+        path: Đường dẫn đến reports.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho reporting nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Reports
+    if "reports" in data:
+        for report in data["reports"]:
+            node = ProjectionNode(
+                id=report.get("id", ""),
+                kind=NodeKind.REPORT,
+                params={
+                    "id": report.get("id"),
+                    "description": report.get("description"),
+                    "name": report.get("name", ""),
+                    "data_sources": report.get("data_sources", []),
+                    "fields": report.get("fields", []),
+                    "filters": report.get("filters", []),
+                    "groupings": report.get("groupings", []),
+                    "aggregations": report.get("aggregations", []),
+                    "tags": report.get("tags", []),
+                    "source": "reports.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Dashboards
+    if "dashboards" in data:
+        for dashboard in data["dashboards"]:
+            node = ProjectionNode(
+                id=dashboard.get("id", ""),
+                kind=NodeKind.DASHBOARD,
+                params={
+                    "id": dashboard.get("id"),
+                    "description": dashboard.get("description"),
+                    "name": dashboard.get("name", ""),
+                    "widgets": dashboard.get("widgets", []),
+                    "data_sources": dashboard.get("data_sources", []),
+                    "refresh_interval": dashboard.get("refresh_interval"),
+                    "tags": dashboard.get("tags", []),
+                    "source": "reports.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Exports
+    if "exports" in data:
+        for export in data["exports"]:
+            node = ProjectionNode(
+                id=export.get("id", ""),
+                kind=NodeKind.EXPORT,
+                params={
+                    "id": export.get("id"),
+                    "description": export.get("description"),
+                    "name": export.get("name", ""),
+                    "source_id": export.get("source_id"),
+                    "format": export.get("format"),
+                    "tags": export.get("tags", []),
+                    "source": "reports.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Scheduled reports
+    if "scheduled_reports" in data:
+        for scheduled in data["scheduled_reports"]:
+            node = ProjectionNode(
+                id=scheduled.get("id", ""),
+                kind=NodeKind.SCHEDULED_REPORT,
+                params={
+                    "id": scheduled.get("id"),
+                    "report_id": scheduled.get("report_id"),
+                    "frequency": scheduled.get("frequency"),
+                    "time": scheduled.get("time"),
+                    "recipients": scheduled.get("recipients", []),
+                    "tags": scheduled.get("tags", []),
+                    "source": "reports.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+def _load_etl(path: Path) -> list[ProjectionNode]:
+    """Load etl.yaml vào ProjectionNodes (CP38 — Data Migration & Batch).
+
+    Parse data migrations và batch jobs từ YAML.
+
+    Args:
+        path: Đường dẫn đến etl.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho ETL nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Data migrations
+    if "migrations" in data:
+        for migration in data["migrations"]:
+            node = ProjectionNode(
+                id=migration.get("id", ""),
+                kind=NodeKind.DATA_MIGRATION,
+                params={
+                    "id": migration.get("id"),
+                    "description": migration.get("description"),
+                    "source_schema": migration.get("source_schema"),
+                    "target_schema": migration.get("target_schema"),
+                    "mapping_rules": migration.get("mapping_rules", []),
+                    "steps": migration.get("steps", []),
+                    "input_sources": migration.get("input_sources", []),
+                    "output_destinations": migration.get("output_destinations", []),
+                    "tags": migration.get("tags", []),
+                    "source": "etl.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Batch jobs
+    if "batch_jobs" in data:
+        for job in data["batch_jobs"]:
+            node = ProjectionNode(
+                id=job.get("id", ""),
+                kind=NodeKind.BATCH_JOB,
+                params={
+                    "id": job.get("id"),
+                    "description": job.get("description"),
+                    "job_type": job.get("job_type"),
+                    "schedule": job.get("schedule"),
+                    "steps": job.get("steps", []),
+                    "input_sources": job.get("input_sources", []),
+                    "output_destinations": job.get("output_destinations", []),
+                    "tags": job.get("tags", []),
+                    "source": "etl.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+def _load_localization(path: Path) -> list[ProjectionNode]:
+    """Load localization.yaml vào ProjectionNodes (CP39 — Multi-language).
+
+    Parse localization specs từ YAML.
+
+    Args:
+        path: Đường dẫn đến localization.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho localization nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "localizations" in data:
+        for loc in data["localizations"]:
+            node = ProjectionNode(
+                id=loc.get("id", ""),
+                kind=NodeKind.LOCALIZATION,
+                params={
+                    "id": loc.get("id"),
+                    "description": loc.get("description"),
+                    "entity_id": loc.get("entity_id"),
+                    "locales": loc.get("locales", []),
+                    "default_locale": loc.get("default_locale"),
+                    "field_mappings": loc.get("field_mappings", []),
+                    "fallback_strategy": loc.get("fallback_strategy"),
+                    "tags": loc.get("tags", []),
+                    "source": "localization.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+def _load_versioning(path: Path) -> list[ProjectionNode]:
+    """Load versioning.yaml vào ProjectionNodes (CP43 — API Versioning).
+
+    Parse API versions, deprecation notices, và pagination specs từ YAML.
+
+    Args:
+        path: Đường dẫn đến versioning.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho versioning nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # API versions
+    if "api_versions" in data:
+        for version in data["api_versions"]:
+            node = ProjectionNode(
+                id=version.get("id", ""),
+                kind=NodeKind.API_VERSION,
+                params={
+                    "id": version.get("id"),
+                    "description": version.get("description"),
+                    "name": version.get("name", ""),
+                    "version": version.get("version"),
+                    "api_id": version.get("api_id"),
+                    "status": version.get("status"),
+                    "release_date": version.get("release_date"),
+                    "deprecation_date": version.get("deprecation_date"),
+                    "entities": version.get("entities", []),
+                    "tags": version.get("tags", []),
+                    "source": "versioning.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Deprecation notices
+    if "deprecation_notices" in data:
+        for notice in data["deprecation_notices"]:
+            node = ProjectionNode(
+                id=notice.get("id", ""),
+                kind=NodeKind.DEPRECATION_NOTICE,
+                params={
+                    "id": notice.get("id"),
+                    "description": notice.get("description"),
+                    "name": notice.get("name", ""),
+                    "api_version_id": notice.get("api_version_id"),
+                    "reason": notice.get("reason"),
+                    "migration_guide": notice.get("migration_guide"),
+                    "tags": notice.get("tags", []),
+                    "source": "versioning.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Pagination specs
+    if "pagination_specs" in data:
+        for spec in data["pagination_specs"]:
+            node = ProjectionNode(
+                id=spec.get("id", ""),
+                kind=NodeKind.PAGINATION_SPEC,
+                params={
+                    "id": spec.get("id"),
+                    "description": spec.get("description"),
+                    "name": spec.get("name", ""),
+                    "page_size": spec.get("page_size"),
+                    "max_page_size": spec.get("max_page_size"),
+                    "cursor_enabled": spec.get("cursor_enabled", False),
+                    "sort_fields": spec.get("sort_fields", []),
+                    "tags": spec.get("tags", []),
+                    "source": "versioning.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+def _load_payment(path: Path) -> list[ProjectionNode]:
+    """Load payment.yaml vào ProjectionNodes (CP45 — Payment Processing).
+
+    Parse payment gateways từ YAML.
+
+    Args:
+        path: Đường dẫn đến payment.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho payment nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "payment_gateways" in data:
+        for gateway in data["payment_gateways"]:
+            node = ProjectionNode(
+                id=gateway.get("id", ""),
+                kind=NodeKind.PAYMENT_GATEWAY,
+                params={
+                    "id": gateway.get("id"),
+                    "description": gateway.get("description"),
+                    "provider": gateway.get("provider"),
+                    "supported_methods": gateway.get("supported_methods", []),
+                    "currencies": gateway.get("currencies", []),
+                    "webhook_url": gateway.get("webhook_url"),
+                    "webhook_id": gateway.get("webhook_id"),
+                    "sandbox_mode": gateway.get("sandbox_mode", False),
+                    "tags": gateway.get("tags", []),
+                    "source": "payment.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+def _load_catalog(path: Path) -> list[ProjectionNode]:
+    """Load catalog.yaml vào ProjectionNodes (CP50 — Product Catalog & Taxonomy).
+
+    Parse product catalogs và faceted search indexes từ YAML.
+
+    Args:
+        path: Đường dẫn đến catalog.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho catalog nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Product catalogs
+    if "catalogs" in data:
+        for catalog in data["catalogs"]:
+            node = ProjectionNode(
+                id=catalog.get("id", ""),
+                kind=NodeKind.PRODUCT_CATALOG,
+                params={
+                    "id": catalog.get("id"),
+                    "description": catalog.get("description"),
+                    "categories": catalog.get("categories", []),
+                    "products": catalog.get("products", []),
+                    "inventory_tracking": catalog.get("inventory_tracking", False),
+                    "entity_id": catalog.get("entity_id"),
+                    "search_index_id": catalog.get("search_index_id"),
+                    "tags": catalog.get("tags", []),
+                    "source": "catalog.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Faceted search indexes
+    if "faceted_search" in data:
+        for search in data["faceted_search"]:
+            node = ProjectionNode(
+                id=search.get("id", ""),
+                kind=NodeKind.FACETED_SEARCH_INDEX,
+                params={
+                    "id": search.get("id"),
+                    "description": search.get("description"),
+                    "entity_id": search.get("entity_id"),
+                    "columns": search.get("columns", []),
+                    "facets": search.get("facets", []),
+                    "tags": search.get("tags", []),
+                    "source": "catalog.yaml",
                 },
             )
             nodes.append(node)
