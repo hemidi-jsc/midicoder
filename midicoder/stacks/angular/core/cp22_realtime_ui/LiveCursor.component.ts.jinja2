@@ -1,71 +1,81 @@
 /**
- * LiveCursorComponent — hiển thị con trỏ multi-user collaborative editing
- *
- * Sinh bởi CP22 AngularRealtimeEmitter
- * UI Framework: {[{ ui_framework }]}
- * Widget Type: {[{ widget_type }]}
- */
+* LiveCursorComponent — hiển thị con trỏ multi-user collaborative editing
+* Sinh bởi CP22 AngularRealtimeEmitter
+*/
 
 import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChannelSubscriptionService } from './channel-subscription.service';
 
 export interface CursorData {
-  userId: string;
-  x: number;
-  y: number;
-  color?: string;
-  label?: string;
+userId: string;
+x: number;
+y: number;
+color?: string;
+label?: string;
 }
 
 @Component({
-  selector: 'midicoder-live-cursor',
-  standalone: true,
-  imports: [CommonModule],
-  template: `
-    <div class="midicoder-live-cursor" style="position: relative; width: 100%; height: 100%;">
-      <ng-container *ngFor="let cursor of cursors | keyvalue">
-        <div
-          [style.left.px]="cursor.value.x"
-          [style.top.px]="cursor.value.y"
-          [style.backgroundColor]="cursor.value.color || '#1976d2'"
-          style="position: absolute; width: 2px; height: 20px; transition: left 0.1s, top 0.1s; pointer-events: none; z-index: 1000;"
-          [title]="cursor.value.label + ': (' + (cursor.value.x | number:'1.0-0') + ', ' + (cursor.value.y | number:'1.0-0') + ')'"
-        >
-          <div
-            *ngIf="showLabels"
-            [style.backgroundColor]="cursor.value.color || '#1976d2'"
-            style="position: absolute; top: -20px; left: 0; padding: 2px 6px; color: white; font-size: 10px; border-radius: 2px; white-space: nowrap;"
-          >
-            {{ cursor.value.label }}
-          </div>
+selector: 'midicoder-live-cursor',
+standalone: true,
+imports: [CommonModule],
+template: `
+{% if ui_framework == "tailwind" %}
+<div class="midicoder-live-cursor relative w-full h-full">
+    <ng-container *ngFor="let cursor of cursors | keyvalue">
+        <div class="absolute w-0.5 h-5 transition-all duration-100 ease-linear pointer-events-none"
+            [style.left.px]="cursor.value.x" [style.top.px]="cursor.value.y"
+            [style.backgroundColor]="cursor.value.color || '#1976d2'" [style.zIndex]="1000"
+            [title]="cursor.value.label + ': (' + (cursor.value.x | number:'1.0-0') + ', ' + (cursor.value.y | number:'1.0-0') + ')'">
+            <div *ngIf="showLabels"
+                class="absolute -top-5 left-0 px-1.5 py-0.5 text-[10px] text-white rounded truncate pointer-events-none"
+                [style.backgroundColor]="cursor.value.color || '#1976d2'">
+                {{ cursor.value.label }}
+            </div>
         </div>
-      </ng-container>
-    </div>
-  `,
+    </ng-container>
+</div>
+{% else %}
+<div class="midicoder-live-cursor" style="position: relative; width: 100%; height: 100%;">
+    <ng-container *ngFor="let cursor of cursors | keyvalue">
+        <div [style.left.px]="cursor.value.x" [style.top.px]="cursor.value.y"
+            [style.backgroundColor]="cursor.value.color || '#1976d2'"
+            style="position: absolute; width: 2px; height: 20px; transition: left 0.1s, top 0.1s; pointer-events: none; z-index: 1000;"
+            [title]="cursor.value.label + ': (' + (cursor.value.x | number:'1.0-0') + ', ' + (cursor.value.y | number:'1.0-0') + ')'">
+            <div *ngIf="showLabels" [style.backgroundColor]="cursor.value.color || '#1976d2'"
+                style="position: absolute; top: -20px; left: 0; padding: 2px 6px; color: white; font-size: 10px; border-radius: 2px; white-space: nowrap;">
+                {{ cursor.value.label }}
+            </div>
+        </div>
+    </ng-container>
+</div>
+{% endif %}
+`,
 })
 export class LiveCursorComponent implements OnInit {
-  @Input() channel = 'cursor.sync';
-  @Input() showLabels = true;
-{% if has_tenant_scope %}  @Input() tenantId?: string;
+@Input() channel = 'cursor.sync';
+@Input() showLabels = true;
+{% if has_tenant_scope %}
+@Input() tenantId?: string;
 {% endif %}
 
-  cursors: { [key: string]: CursorData } = {};
+cursors: { [key: string]: CursorData } = {};
 
-  constructor(private channelService: ChannelSubscriptionService) {}
+constructor(private channelService: ChannelSubscriptionService) {}
 
-  ngOnInit() {
-    this.channelService.subscribe(this.channel{% if has_tenant_scope %}, { tenantId: this.tenantId }{% endif %}).subscribe((msg) => {
-      const data = msg.data as CursorData;
-      if (data && data.userId) {
-        this.cursors[data.userId] = {
-          userId: data.userId,
-          x: data.x || 0,
-          y: data.y || 0,
-          color: data.color || '#1976d2',
-          label: data.label || data.userId,
-        };
-      }
-    });
-  }
+ngOnInit() {
+this.channelService.subscribe(this.channel{% if has_tenant_scope %}, { tenantId: this.tenantId }{% endif
+%}).subscribe((msg) => {
+const data = msg.data as CursorData;
+if (data && data.userId) {
+this.cursors[data.userId] = {
+userId: data.userId,
+x: data.x || 0,
+y: data.y || 0,
+color: data.color || '#1976d2',
+label: data.label || data.userId,
+};
+}
+});
+}
 }

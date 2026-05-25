@@ -1,13 +1,10 @@
-/**
-* NotificationToast component — hiển thị realtime toast notifications
-*
-* Sinh bởi CP22 RealtimeComponentEmitter
-* UI Framework: {[{ ui_framework }]}
-* Widget Type: {[{ widget_type }]}
-*/
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useChannelSubscription } from './useChannelSubscription';
+
+/**
+* NotificationToast component — hiển thị realtime toast notifications
+* Sinh bởi CP22 RealtimeComponentEmitter
+*/
 
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
 
@@ -31,6 +28,31 @@ tenantId?: string;
 onDismiss?: (id: string) => void;
 }
 
+{% if ui_framework == "material" %}
+import { Alert, Snackbar } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+const toastClasses = {
+container: 'fixed z-[9999] flex flex-col gap-2 max-w-[360px]',
+item: 'p-3 rounded shadow-lg cursor-pointer border-l-4',
+message: 'text-sm font-medium',
+time: 'text-[10px] text-gray-400 mt-1',
+action: 'mt-2 px-3 py-1 text-white border-0 rounded text-sm cursor-pointer',
+clearAll: 'self-end bg-transparent border-0 text-gray-500 cursor-pointer text-xs',
+};
+const typeClasses = {
+info: { bg: 'bg-blue-50', border: 'border-blue-500' },
+success: { bg: 'bg-green-50', border: 'border-green-500' },
+warning: { bg: 'bg-orange-50', border: 'border-orange-500' },
+error: { bg: 'bg-red-50', border: 'border-red-500' },
+};
+{% elif ui_framework == "bootstrap" %}
+import { Alert } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Alert } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { ToastNotification } from '@carbon/react';
+{% endif %}
+
 const typeStyles: Record<NotificationType, { bg: string; border: string }> = {
     info: { bg: '#e3f2fd', border: '#2196f3' },
     success: { bg: '#e8f5e9', border: '#4caf50' },
@@ -40,9 +62,6 @@ const typeStyles: Record<NotificationType, { bg: string; border: string }> = {
 
     /**
     * Hiển thị realtime toast notifications queue
-    *
-    * @param props - Props của component
-    * @returns - JSX element
     */
     export const NotificationToast: React.FC<NotificationToastProps> = ({
         channel = 'notification.toast',
@@ -95,7 +114,6 @@ const typeStyles: Record<NotificationType, { bg: string; border: string }> = {
                     timersRef.current.clear();
                     }, [notifications, dismiss]);
 
-                    // Cleanup timers on unmount
                     useEffect(() => {
                     return () => timersRef.current.forEach((t) => clearTimeout(t));
                     }, []);
@@ -107,28 +125,58 @@ const typeStyles: Record<NotificationType, { bg: string; border: string }> = {
                         'bottom-left': { bottom: 16, left: 16 },
                         };
 
+                        {% if ui_framework == "material" %}
                         return (
                         <div className={`midicoder-notification-toast ${className}`} style={{ position: 'fixed' ,
                             ...positionStyle[position], zIndex: 9999, display: 'flex' , flexDirection: 'column' , gap:
-                            8, maxWidth: 360, }}>
-                            {notifications.slice(0, maxVisible).map((notif) => {
-                            const style = typeStyles[notif.type || 'info'];
-                            return (
-                            <div key={notif.id} className="toast-item" style={{ backgroundColor: style.bg, borderLeft:
-                                `4px solid ${style.border}`, padding: '12px 16px' , borderRadius: 4,
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.15)' , cursor: 'pointer' , }} onClick={()=>
-                                dismiss(notif.id)}
+                            8, maxWidth: 360 }}>
+                            {notifications.slice(0, maxVisible).map((notif) => (
+                            <Alert key={notif.id} severity={notif.type || 'info' } action={ notif.actionLabel ? (
+                                <button color="inherit" size="small" onClick={(e)=> {
+                                e.stopPropagation();
+                                notif.actionCallback?.();
+                                dismiss(notif.id);
+                                }}
                                 >
-                                <div className="toast-message" style={{ fontSize: 14, fontWeight: 500 }}>
-                                    {notif.message}
-                                </div>
-                                <div className="toast-time" style={{ fontSize: 10, color: '#999' , marginTop: 4 }}>
+                                {notif.actionLabel}
+                                </button>
+                                ) : null
+                                }
+                                onClick={() => dismiss(notif.id)}
+                                sx={{ cursor: 'pointer' }}
+                                >
+                                {notif.message}
+                                <br />
+                                <span style={{ fontSize: 10, opacity: 0.7 }}>
+                                    {new Date(notif.timestamp).toLocaleTimeString()}
+                                </span>
+                            </Alert>
+                            ))}
+                            {notifications.length > 0 && (
+                            <button style={{ alignSelf: 'flex-end' , background: 'none' , border: 'none' , color: '#666'
+                                , cursor: 'pointer' , fontSize: 12 }} onClick={clearAll}>
+                                Clear all ({notifications.length})
+                            </button>
+                            )}
+                        </div>
+                        );
+                        {% elif ui_framework == "tailwind" %}
+                        return (
+                        <div className={`midicoder-notification-toast ${toastClasses.container} ${className}`} style={{
+                            position: 'fixed' , ...positionStyle[position] }}>
+                            {notifications.slice(0, maxVisible).map((notif) => {
+                            const style = typeClasses[notif.type || 'info'];
+                            return (
+                            <div key={notif.id} className={` ${toastClasses.item} ${style.bg} border-l-4
+                                ${style.border}`} onClick={()=> dismiss(notif.id)}
+                                >
+                                <div className={toastClasses.message}>{notif.message}</div>
+                                <div className={toastClasses.time}>
                                     {new Date(notif.timestamp).toLocaleTimeString()}
                                 </div>
                                 {notif.actionLabel && (
-                                <button className="toast-action" style={{ marginTop: 8, padding: '4px 12px' ,
-                                    backgroundColor: style.border, color: 'white' , border: 'none' , borderRadius: 4,
-                                    cursor: 'pointer' , }} onClick={(e)=> {
+                                <button className={toastClasses.action} style={{ backgroundColor: typeStyles[notif.type
+                                    || 'info' ].border }} onClick={(e)=> {
                                     e.stopPropagation();
                                     notif.actionCallback?.();
                                     dismiss(notif.id);
@@ -141,14 +189,108 @@ const typeStyles: Record<NotificationType, { bg: string; border: string }> = {
                             );
                             })}
                             {notifications.length > 0 && (
-                            <button className="clear-all" style={{ alignSelf: 'flex-end' , background: 'none' ,
-                                border: 'none' , color: '#666' , cursor: 'pointer' , fontSize: 12, }}
-                                onClick={clearAll}>
+                            <button className={toastClasses.clearAll} onClick={clearAll}>
                                 Clear all ({notifications.length})
                             </button>
                             )}
                         </div>
                         );
+                        {% elif ui_framework == "bootstrap" %}
+                        return (
+                        <div className={`midicoder-notification-toast ${className}`} style={{ position: 'fixed' ,
+                            ...positionStyle[position], zIndex: 9999, display: 'flex' , flexDirection: 'column' , gap:
+                            8, maxWidth: 360 }}>
+                            {notifications.slice(0, maxVisible).map((notif) => (
+                            <Alert key={notif.id} variant="filled" bg={notif.type || 'info' } onClick={()=>
+                                dismiss(notif.id)}
+                                style={{ cursor: 'pointer' }}
+                                >
+                                <div style={{ fontSize: 14, fontWeight: 500 }}>{notif.message}</div>
+                                <div style={{ fontSize: 10, color: '#999' , marginTop: 4 }}>
+                                    {new Date(notif.timestamp).toLocaleTimeString()}
+                                </div>
+                                {notif.actionLabel && (
+                                <button className="btn btn-sm btn-light mt-2" onClick={(e)=> {
+                                    e.stopPropagation();
+                                    notif.actionCallback?.();
+                                    dismiss(notif.id);
+                                    }}
+                                    >
+                                    {notif.actionLabel}
+                                </button>
+                                )}
+                            </Alert>
+                            ))}
+                            {notifications.length > 0 && (
+                            <button className="btn btn-sm btn-link text-end" onClick={clearAll}>
+                                Clear all ({notifications.length})
+                            </button>
+                            )}
+                        </div>
+                        );
+                        {% elif ui_framework == "antd" %}
+                        return (
+                        <div className={`midicoder-notification-toast ${className}`} style={{ position: 'fixed' ,
+                            ...positionStyle[position], zIndex: 9999, display: 'flex' , flexDirection: 'column' , gap:
+                            8, maxWidth: 360 }}>
+                            {notifications.slice(0, maxVisible).map((notif) => (
+                            <Alert key={notif.id} type={notif.type || 'info' } closable onClose={()=> dismiss(notif.id)}
+                                description={
+                                <span style={{ fontSize: 10, color: '#999' }}>
+                                    {new Date(notif.timestamp).toLocaleTimeString()}
+                                </span>
+                                }
+                                action={
+                                notif.actionLabel ? (
+                                <button onClick={(e)=> {
+                                    e.stopPropagation();
+                                    notif.actionCallback?.();
+                                    dismiss(notif.id);
+                                    }}
+                                    >
+                                    {notif.actionLabel}
+                                </button>
+                                ) : null
+                                }
+                                >
+                                {notif.message}
+                            </Alert>
+                            ))}
+                            {notifications.length > 0 && (
+                            <button style={{ alignSelf: 'flex-end' , background: 'none' , border: 'none' , color: '#666'
+                                , cursor: 'pointer' , fontSize: 12 }} onClick={clearAll}>
+                                Clear all ({notifications.length})
+                            </button>
+                            )}
+                        </div>
+                        );
+                        {% elif ui_framework == "carbon" %}
+                        return (
+                        <div className={`midicoder-notification-toast ${className}`} style={{ position: 'fixed' ,
+                            ...positionStyle[position], zIndex: 9999, display: 'flex' , flexDirection: 'column' , gap:
+                            8, maxWidth: 360 }}>
+                            {notifications.slice(0, maxVisible).map((notif) => (
+                            <ToastNotification key={notif.id} kind={notif.type || 'information' } title={notif.message}
+                                onCloseButton={()=> dismiss(notif.id)}
+                                tabIndex={0}
+                                caption={new Date(notif.timestamp).toLocaleTimeString()}
+                                actionButtonText={notif.actionLabel}
+                                onActionButtonClick={(e) => {
+                                e.stopPropagation();
+                                notif.actionCallback?.();
+                                dismiss(notif.id);
+                                }}
+                                />
+                                ))}
+                                {notifications.length > 0 && (
+                                <button style={{ alignSelf: 'flex-end' , background: 'none' , border: 'none' ,
+                                    color: '#666' , cursor: 'pointer' , fontSize: 12 }} onClick={clearAll}>
+                                    Clear all ({notifications.length})
+                                </button>
+                                )}
+                        </div>
+                        );
+                        {% endif %}
                         };
 
                         export default NotificationToast;

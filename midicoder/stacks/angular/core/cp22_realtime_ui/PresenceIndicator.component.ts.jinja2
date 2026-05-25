@@ -1,75 +1,134 @@
 /**
- * PresenceIndicatorComponent — hiển thị trạng thái presence realtime
- *
- * Sinh bởi CP22 AngularRealtimeEmitter
- * UI Framework: {[{ ui_framework }]}
- * Widget Type: {[{ widget_type }]}
- */
+* PresenceIndicatorComponent — hiển thị trạng thái presence realtime
+* Sinh bởi CP22 AngularRealtimeEmitter
+*/
 
 import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { PresenceService } from './presence.service';
 
-@Component({
-  selector: 'midicoder-presence-indicator',
-  standalone: true,
-  imports: [CommonModule],
-  template: `
-    <div class="presence-indicator" style="display: inline-flex; align-items: center; gap: 8px;">
-      <div
-        [style.width.px]="size"
-        [style.height.px]="size"
-        [style.backgroundColor]="color"
-        class="status-dot"
-        style="border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; color: white;"
-        [title]="label"
-      >
-        {{ userId?.charAt(0)?.toUpperCase() }}
-      </div>
-      <span *ngIf="showLabel" style="padding: 2px 8px; border-radius: 12px; background-color: {{ color }}; color: white; font-size: 12px;">
-        {{ label }}
-      </span>
-    </div>
-  `,
-})
-export class PresenceIndicatorComponent implements OnInit {
-  @Input() userId?: string;
-  @Input() showLabel = true;
-  @Input() size: 'sm' | 'md' | 'lg' = 'md';
-{% if has_tenant_scope %}  @Input() tenantId?: string;
+{% if ui_framework == "material" %}
+import { MatAvatarModule } from '@angular/material/avatar';
+{% elif ui_framework == "bootstrap" %}
+import { NgbdModule } from 'ng-bootstrap';
+{% elif ui_framework == "antd" %}
+import { NzAvatarModule } from 'ng-zorro-antd/avatar';
+{% elif ui_framework == "carbon" %}
+import { AvatarModule } from '@carbon/angular';
 {% endif %}
 
-  status = 'offline';
-  label = 'Offline';
-  color = '#9e9e9e';
+@Component({
+selector: 'midicoder-presence-indicator',
+standalone: true,
+imports: [
+CommonModule,
+{% if ui_framework == "material" %}
+MatAvatarModule,
+{% elif ui_framework == "bootstrap" %}
+NgbdModule,
+{% elif ui_framework == "antd" %}
+NzAvatarModule,
+{% elif ui_framework == "carbon" %}
+AvatarModule,
+{% endif %}
+],
+template: `
+{% if ui_framework == "material" %}
+<div class="presence-indicator" style="display: inline-flex; align-items: center; gap: 8px;">
+    <mat-avatar [diameter]="size + 'px'" [style.backgroundColor]="color" [style.border]="'2px solid white'"
+        [title]="label">
+        {{ userId?.charAt(0)?.toUpperCase() }}
+    </mat-avatar>
+    <span *ngIf="showLabel"
+        style="padding: 2px 8px; border-radius: 12px; background-color: {{ color }}; color: white; font-size: 12px;">
+        {{ label }}
+    </span>
+</div>
+{% elif ui_framework == "tailwind" %}
+<div class="presence-indicator inline-flex items-center gap-2">
+    <div class="rounded-full border-2 border-white flex items-center justify-center text-white" [style.width.px]="size"
+        [style.height.px]="size" [style.backgroundColor]="color" [title]="label">
+        {{ userId?.charAt(0)?.toUpperCase() }}
+    </div>
+    <span *ngIf="showLabel" class="px-2 py-1 rounded text-xs text-white" [style.backgroundColor]="color">
+        {{ label }}
+    </span>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div class="presence-indicator d-inline-flex align-items-center gap-2">
+    <div [style.width.px]="size" [style.height.px]="size" [style.backgroundColor]="color"
+        class="rounded-circle border border-white d-flex align-items-center justify-content-center text-white"
+        [title]="label">
+        {{ userId?.charAt(0)?.toUpperCase() }}
+    </div>
+    <span *ngIf="showLabel" class="badge text-bg-light"
+        style="background-color: {{ color }}; color: white; font-size: 12px;">
+        {{ label }}
+    </span>
+</div>
+{% elif ui_framework == "antd" %}
+<div class="presence-indicator" style="display: inline-flex; align-items: center; gap: 8px;">
+    <nz-avatar [nzSize]="size" [style.backgroundColor]="color" [style.border]="'2px solid white'" [title]="label">
+        {{ userId?.charAt(0)?.toUpperCase() }}
+    </nz-avatar>
+    <span *ngIf="showLabel"
+        style="padding: 2px 8px; border-radius: 12px; background-color: {{ color }}; color: white; font-size: 12px;">
+        {{ label }}
+    </span>
+</div>
+{% elif ui_framework == "carbon" %}
+<div class="presence-indicator" style="display: inline-flex; align-items: center; gap: 8px;">
+    <cds-avatar [size]="size === 'lg' ? 'lg' : 'sm'" [style.backgroundColor]="color" [style.border]="'2px solid white'"
+        [alt]="label">
+        {{ userId?.charAt(0)?.toUpperCase() }}
+    </cds-avatar>
+    <span *ngIf="showLabel"
+        style="padding: 2px 8px; border-radius: 12px; background-color: {{ color }}; color: white; font-size: 12px;">
+        {{ label }}
+    </span>
+</div>
+{% endif %}
+`,
+})
+export class PresenceIndicatorComponent implements OnInit {
+@Input() userId?: string;
+@Input() showLabel = true;
+@Input() size: 'sm' | 'md' | 'lg' = 'md';
+{% if has_tenant_scope %}
+@Input() tenantId?: string;
+{% endif %}
 
-  private sizeMap: Record<string, number> = { sm: 24, md: 32, lg: 40 };
+status = 'offline';
+label = 'Offline';
+color = '#9e9e9e';
 
-  constructor(private presenceService: PresenceService) {}
+private sizeMap: Record<string, number> = { sm: 24, md: 32, lg: 40 };
 
-  ngOnInit() {
+    constructor(private presenceService: PresenceService) {}
+
+    ngOnInit() {
     this.presenceService.users$.subscribe((users) => {
-      if (this.userId) {
-        const user = users.get(this.userId);
-        this.status = user?.status || 'offline';
-        this.updateStatus();
-      }
+    if (this.userId) {
+    const user = users.get(this.userId);
+    this.status = user?.status || 'offline';
+    this.updateStatus();
+    }
     });
-  }
+    }
 
-  private updateStatus() {
+    private updateStatus() {
     const colors: Record<string, string> = {
-      online: '#4caf50',
-      typing: '#2196f3',
-      away: '#ff9800',
-      offline: '#9e9e9e',
-    };
-    this.color = colors[this.status] || colors.offline;
-    this.label = {
-      online: 'Online',
-      typing: 'Đang soạn...',
-      away: 'Away',
-      offline: 'Offline',
-    }[this.status] || 'Offline';
-  }
-}
+        online: '#4caf50',
+        typing: '#2196f3',
+        away: '#ff9800',
+        offline: '#9e9e9e',
+        };
+        this.color = colors[this.status] || colors.offline;
+        this.label = {
+        online: 'Online',
+        typing: 'Đang soạn...',
+        away: 'Away',
+        offline: 'Offline',
+        }[this.status] || 'Offline';
+        }
+        }

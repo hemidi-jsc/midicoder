@@ -1,77 +1,122 @@
 /**
- * LiveCounterComponent — hiển thị số realtime với animated transitions
- *
- * Sinh bởi CP22 AngularRealtimeEmitter
- * UI Framework: {[{ ui_framework }]}
- * Widget Type: {[{ widget_type }]}
- */
+* LiveCounterComponent — hiển thị số realtime với animated transitions
+* Sinh bởi CP22 AngularRealtimeEmitter
+*/
 
 import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChannelSubscriptionService } from './channel-subscription.service';
 
-@Component({
-  selector: 'midicoder-live-counter',
-  standalone: true,
-  imports: [CommonModule],
-  template: `
-    <div class="midicoder-live-counter" style="text-align: center; padding: 16px;">
-      <div [style.color]="color" style="font-size: 48px; font-weight: bold; transition: color 0.3s ease;">
-        {{ formattedValue }}
-      </div>
-      <div style="font-size: 14px; color: #666;">
-        {{ trendIcon }} {{ isConnected ? 'live' : 'offline' }}
-      </div>
-    </div>
-  `,
-})
-export class LiveCounterComponent implements OnInit {
-  @Input() channel = 'default';
-  @Input() initialValue = 0;
-  @Input() format: 'number' | 'currency' | 'percentage' = 'number';
-  @Input() locale = 'vi-VN';
-{% if has_tenant_scope %}  @Input() tenantId?: string;
+{% if ui_framework == "material" %}
+import { MatTypographyModule } from '@angular/material/core';
+{% elif ui_framework == "antd" %}
+import { NzTypographyModule } from 'ng-zorro-antd/typography';
+{% elif ui_framework == "carbon" %}
+import { TypographyModule } from '@carbon/angular';
 {% endif %}
 
-  value = 0;
-  prevValue = 0;
-  formattedValue = '0';
-  color = '#1976d2';
-  trendIcon = '—';
-  isConnected = false;
+@Component({
+selector: 'midicoder-live-counter',
+standalone: true,
+imports: [
+CommonModule,
+{% if ui_framework == "material" %}
+MatTypographyModule,
+{% elif ui_framework == "antd" %}
+NzTypographyModule,
+{% elif ui_framework == "carbon" %}
+TypographyModule,
+{% endif %}
+],
+template: `
+{% if ui_framework == "material" %}
+<div class="midicoder-live-counter" style="text-align: center; padding: 16px;">
+    <h1 mat-typography [style.color]="color" style="transition: color 0.3s ease;">
+        {{ formattedValue }}
+    </h1>
+    <p mat-typography style="color: #666;">
+        {{ trendIcon }} {{ isConnected ? 'live' : 'offline' }}
+    </p>
+</div>
+{% elif ui_framework == "tailwind" %}
+<div class="midicoder-live-counter text-center p-4">
+    <div class="text-5xl font-bold transition-colors duration-300" [style.color]="color">
+        {{ formattedValue }}
+    </div>
+    <div class="text-sm text-gray-500 mt-1">
+        {{ trendIcon }} {{ isConnected ? 'live' : 'offline' }}
+    </div>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div class="midicoder-live-counter text-center p-3">
+    <div class="display-4 fw-bold" [style.color]="color" style="transition: color 0.3s ease;">
+        {{ formattedValue }}
+    </div>
+    <div class="text-muted small">
+        {{ trendIcon }} {{ isConnected ? 'live' : 'offline' }}
+    </div>
+</div>
+{% elif ui_framework == "antd" %}
+<div class="midicoder-live-counter" style="text-align: center; padding: 16px;">
+    <nz-typography-title [nzLevel]="2" [style.color]="color" style="transition: color 0.3s ease;">
+        {{ formattedValue }}
+    </nz-typography-title>
+    <nz-typography-text nzType="secondary">
+        {{ trendIcon }} {{ isConnected ? 'live' : 'offline' }}
+    </nz-typography-text>
+</div>
+{% elif ui_framework == "carbon" %}
+<div class="midicoder-live-counter" style="text-align: center; padding: 16px;">
+    <cds-typography-heading heading="lg" [style.color]="color" style="transition: color 0.3s ease;">
+        {{ formattedValue }}
+    </cds-typography-heading>
+    <cds-typography-caption style="color: #666;">
+        {{ trendIcon }} {{ isConnected ? 'live' : 'offline' }}
+    </cds-typography-caption>
+</div>
+{% endif %}
+`,
+})
+export class LiveCounterComponent implements OnInit {
+@Input() channel = 'default';
+@Input() initialValue = 0;
+@Input() format: 'number' | 'currency' | 'percentage' = 'number';
+@Input() locale = 'vi-VN';
+{% if has_tenant_scope %}
+@Input() tenantId?: string;
+{% endif %}
 
-  constructor(private channelService: ChannelSubscriptionService) {
-    this.value = this.initialValue;
-    this.prevValue = this.initialValue;
-  }
+value = 0;
+prevValue = 0;
+formattedValue = '0';
+color = '#1976d2';
+trendIcon = '—';
+isConnected = false;
 
-  ngOnInit() {
-    this.channelService.subscribe(this.channel{% if has_tenant_scope %}, { tenantId: this.tenantId }{% endif %}).subscribe((msg) => {
-      this.isConnected = true;
-      const data = msg.data as Record<string, unknown>;
-      const num = typeof data === 'number' ? data : (data && 'value' in data ? Number(data.value) : undefined);
-      if (num !== undefined) {
-        this.prevValue = this.value;
-        this.value = num;
-        this.updateDisplay();
-      }
+constructor(private channelService: ChannelSubscriptionService) {
+this.value = this.initialValue;
+this.prevValue = this.initialValue;
+}
+
+ngOnInit() {
+this.channelService.subscribe(this.channel{% if has_tenant_scope %}, { tenantId: this.tenantId }{% endif
+%}).subscribe((msg) => {
+this.isConnected = true;
+const data = msg.data as Record<string, unknown>;
+    const num = typeof data === 'number' ? data : (data && 'value' in data ? Number(data.value) : undefined);
+    if (num !== undefined) {
+    this.prevValue = this.value;
+    this.value = num;
+    this.updateDisplay();
+    }
     });
     this.updateDisplay();
-  }
-
-  private updateDisplay() {
-    this.trendIcon = this.value > this.prevValue ? '↑' : this.value < this.prevValue ? '↓' : '—';
-    try {
-      if (this.format === 'currency') {
-        this.formattedValue = new Intl.NumberFormat(this.locale, { style: 'currency', currency: 'VND' }).format(this.value);
-      } else if (this.format === 'percentage') {
-        this.formattedValue = new Intl.NumberFormat(this.locale, { style: 'percent', maximumFractionDigits: 1 }).format(this.value / 100);
-      } else {
-        this.formattedValue = new Intl.NumberFormat(this.locale).format(this.value);
-      }
-    } catch {
-      this.formattedValue = String(this.value);
     }
-    this.color = '#1976d2';
-  }
-}
+
+    private updateDisplay() {
+    this.trendIcon = this.value > this.prevValue ? '↑' : this.value < this.prevValue ? '↓' : '—' ; try { if
+        (this.format==='currency' ) { this.formattedValue=new Intl.NumberFormat(this.locale, { style: 'currency' ,
+        currency: 'VND' }).format(this.value); } else if (this.format==='percentage' ) { this.formattedValue=new
+        Intl.NumberFormat(this.locale, { style: 'percent' , maximumFractionDigits: 1 }).format(this.value / 100); } else
+        { this.formattedValue=new Intl.NumberFormat(this.locale).format(this.value); } } catch {
+        this.formattedValue=String(this.value); } this.color='#1976d2' ; } }

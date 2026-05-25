@@ -1,13 +1,10 @@
-/**
-* LiveFeed component — hiển thị realtime event feed (activity stream)
-*
-* Sinh bởi CP22 RealtimeComponentEmitter
-* UI Framework: {[{ ui_framework }]}
-* Widget Type: {[{ widget_type }]}
-*/
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useChannelSubscription } from './useChannelSubscription';
+
+/**
+* LiveFeed component — hiển thị realtime event feed (activity stream)
+* Sinh bởi CP22 RealtimeComponentEmitter
+*/
 
 interface FeedItem {
 id: string;
@@ -21,23 +18,47 @@ channel?: string;
 maxItems?: number;
 autoScroll?: boolean;
 className?: string;
-{% if has_tenant_scope %} tenantId?: string;
-{% endif %} renderItem?: (item: FeedItem) => React.ReactNode;
+{% if has_tenant_scope %}
+tenantId?: string;
+{% endif %}
+renderItem?: (item: FeedItem) => React.ReactNode;
 }
+
+{% if ui_framework == "material" %}
+import { List, ListItem, ListItemText, Paper, Chip, Typography } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+const feedClasses = {
+container: 'relative border border-gray-200 rounded',
+header: 'flex justify-between items-center mb-2 p-2',
+body: 'max-h-[400px] overflow-y-auto border border-gray-200 rounded p-2',
+item: 'py-1 border-b border-gray-100',
+empty: 'text-center text-gray-400 py-5',
+};
+{% elif ui_framework == "bootstrap" %}
+import { ListGroup, ListGroupItem, Badge } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { List, Tag, Typography } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { DataTable, DataTableRow, Tag } from '@carbon/react';
+{% endif %}
 
 export const LiveFeed: React.FC<LiveFeedProps> = ({
     channel = 'default',
     maxItems = {[{ max_items or 50 }]},
     autoScroll = true,
     className = '',
-    {% if has_tenant_scope %} tenantId,
-    {% endif %} renderItem,
+    {% if has_tenant_scope %}
+    tenantId,
+    {% endif %}
+    renderItem,
     }) => {
     const [items, setItems] = useState<FeedItem[]>([]);
         const scrollRef = useRef<HTMLDivElement>(null);
             const { isConnected } = useChannelSubscription(channel, {
-            {% if has_tenant_scope %} tenantId,
-            {% endif %} onMessage: (payload) => {
+            {% if has_tenant_scope %}
+            tenantId,
+            {% endif %}
+            onMessage: (payload) => {
             const newItem: FeedItem = {
             id: payload.data && typeof payload.data === 'object' && 'id' in payload.data
             ? String((payload.data as any).id)
@@ -58,39 +79,68 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({
 
             const clearFeed = useCallback(() => setItems([]), []);
 
+            {% if ui_framework == "material" %}
             return (
-            <div className={`midicoder-live-feed ${className}`} style={{ position: 'relative' }}>
-                <div className="header" style={{ display: 'flex' , justifyContent: 'space-between' , marginBottom: 8 }}>
-                    <span>
+            <Paper className={`midicoder-live-feed ${className}`} elevation={1}>
+                <div style={{ display: 'flex' , justifyContent: 'space-between' , marginBottom: 8, padding: '0 8px' }}>
+                    <Typography variant="subtitle1">
                         Live Feed
-                        <span style={{ marginLeft: 8, width: 8, height: 8, borderRadius: '50%' , backgroundColor:
-                            isConnected ? '#4caf50' : '#f44336' , display: 'inline-block' , }} title={isConnected
-                            ? 'Connected' : 'Disconnected' } />
-                    </span>
-                    <span className="count">{items.length} items</span>
-                    <button onClick={clearFeed} className="clear-btn" style={{ cursor: 'pointer' }}>
-                        Clear
-                    </button>
+                        <Chip size="small" color={isConnected ? 'success' : 'error' } variant="filled" style={{
+                            marginLeft: 8, height: 16, width: 16, minWidth: 16 }} title={isConnected ? 'Connected'
+                            : 'Disconnected' } />
+                    </Typography>
+                    <Typography variant="caption">{items.length} items</Typography>
+                    <button onClick={clearFeed} style={{ cursor: 'pointer' }}>Clear</button>
                 </div>
-                <div ref={scrollRef} className="feed-body" style={{ maxHeight: 400, overflowY: 'auto' ,
-                    border: '1px solid #e0e0e0' , borderRadius: 4, padding: 8, }}>
+                <div ref={scrollRef} style={{ maxHeight: 400, overflowY: 'auto' }}>
                     {items.length === 0 && (
-                    <div className="empty" style={{ textAlign: 'center' , color: '#999' , padding: 20 }}>
+                    <Typography align="center" color="textSecondary" style={{ padding: 20 }}>
+                        Chờ event...
+                    </Typography>
+                    )}
+                    <List dense>
+                        {items.map((item) => (
+                        <ListItem key={item.id} divider>
+                            <ListItemText primary={ <span>
+                                <Chip label={item.channel} size="small" variant="outlined" />{' '}
+                                {typeof item.data === 'string' ? item.data : JSON.stringify(item.data)}
+                                </span>
+                                }
+                                secondary={new Date(item.timestamp).toLocaleTimeString()}
+                                />
+                        </ListItem>
+                        ))}
+                    </List>
+                </div>
+            </Paper>
+            );
+            {% elif ui_framework == "tailwind" %}
+            return (
+            <div className={`midicoder-live-feed ${className}`}>
+                <div className={feedClasses.header}>
+                    <span className="font-medium">
+                        Live Feed
+                        <span className={`ml-2 inline-block w-2 h-2 rounded-full ${isConnected ? 'bg-green-500'
+                            : 'bg-red-500' }`} title={isConnected ? 'Connected' : 'Disconnected' } />
+                    </span>
+                    <span className="text-gray-500 text-sm">{items.length} items</span>
+                    <button onClick={clearFeed} className="text-blue-500 hover:text-blue-700">Clear</button>
+                </div>
+                <div ref={scrollRef} className={feedClasses.body}>
+                    {items.length === 0 && (
+                    <div className={feedClasses.empty}>
                         Chờ event...
                     </div>
                     )}
                     {items.map((item) => (
-                    <div key={item.id} className="feed-item" style={{ padding: '4px 0' ,
-                        borderBottom: '1px solid #f0f0f0' }}>
+                    <div key={item.id} className={feedClasses.item}>
                         {renderItem ? renderItem(item) : (
                         <div>
-                            <span className="channel" style={{ fontWeight: 'bold' , fontSize: 12 }}>
-                                [{item.channel}]
-                            </span>{' '}
-                            <span className="data" style={{ fontSize: 13 }}>
+                            <span className="font-bold text-xs bg-blue-100 px-1 rounded">{item.channel}</span>{' '}
+                            <span className="text-sm">
                                 {typeof item.data === 'string' ? item.data : JSON.stringify(item.data)}
                             </span>
-                            <span className="time" style={{ fontSize: 10, color: '#999' , marginLeft: 8 }}>
+                            <span className="text-xs text-gray-400 ml-2">
                                 {new Date(item.timestamp).toLocaleTimeString()}
                             </span>
                         </div>
@@ -100,6 +150,106 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({
                 </div>
             </div>
             );
+            {% elif ui_framework == "bootstrap" %}
+            return (
+            <div className={`midicoder-live-feed ${className}`}>
+                <div className="d-flex justify-content-between mb-2">
+                    <span>
+                        Live Feed
+                        <Badge pill bg={isConnected ? 'success' : 'danger' } className="ms-2">
+                        </Badge>
+                    </span>
+                    <small className="text-muted">{items.length} items</small>
+                    <button onClick={clearFeed} className="btn btn-sm btn-link">Clear</button>
+                </div>
+                <div ref={scrollRef} style={{ maxHeight: 400, overflowY: 'auto' }}>
+                    {items.length === 0 && (
+                    <div className="text-center text-muted py-4">
+                        Chờ event...
+                    </div>
+                    )}
+                    <ListGroup>
+                        {items.map((item) => (
+                        <ListGroupItem key={item.id}>
+                            <Badge bg="info" className="me-1">{item.channel}</Badge>{' '}
+                            {typeof item.data === 'string' ? item.data : JSON.stringify(item.data)}
+                            <small className="float-end text-muted">
+                                {new Date(item.timestamp).toLocaleTimeString()}
+                            </small>
+                        </ListGroupItem>
+                        ))}
+                    </ListGroup>
+                </div>
+            </div>
+            );
+            {% elif ui_framework == "antd" %}
+            return (
+            <div className={`midicoder-live-feed ${className}`}>
+                <div style={{ display: 'flex' , justifyContent: 'space-between' , marginBottom: 8 }}>
+                    <Typography.Text strong>
+                        Live Feed
+                        <Tag color={isConnected ? 'green' : 'red' } style={{ marginLeft: 8 }}>
+                            {isConnected ? 'Connected' : 'Disconnected'}
+                        </Tag>
+                    </Typography.Text>
+                    <span className="text-muted">{items.length} items</span>
+                    <button onClick={clearFeed} className="btn-link">Clear</button>
+                </div>
+                <div ref={scrollRef} style={{ maxHeight: 400, overflowY: 'auto' }}>
+                    {items.length === 0 && (
+                    <div style={{ textAlign: 'center' , color: '#999' , padding: 20 }}>
+                        Chờ event...
+                    </div>
+                    )}
+                    <List dataSource={items} renderItem={ renderItem ? renderItem : (item)=> (
+                        <List.Item>
+                            <Tag>{item.channel}</Tag>{' '}
+                            {typeof item.data === 'string' ? item.data : JSON.stringify(item.data)}
+                            <span style={{ fontSize: 10, color: '#999' , marginLeft: 8 }}>
+                                {new Date(item.timestamp).toLocaleTimeString()}
+                            </span>
+                        </List.Item>
+                        )
+                        }
+                        />
+                </div>
+            </div>
+            );
+            {% elif ui_framework == "carbon" %}
+            return (
+            <div className={`midicoder-live-feed ${className}`}>
+                <div style={{ display: 'flex' , justifyContent: 'space-between' , marginBottom: 8 }}>
+                    <span>
+                        Live Feed
+                        <Tag type={isConnected ? 'green' : 'red' } style={{ marginLeft: 8 }}>
+                            {isConnected ? 'Connected' : 'Disconnected'}
+                        </Tag>
+                    </span>
+                    <span style={{ fontSize: 12, color: '#666' }}>{items.length} items</span>
+                    <button onClick={clearFeed}>Clear</button>
+                </div>
+                <div ref={scrollRef} style={{ maxHeight: 400, overflowY: 'auto' }}>
+                    {items.length === 0 && (
+                    <div style={{ textAlign: 'center' , color: '#999' , padding: 20 }}>
+                        Chờ event...
+                    </div>
+                    )}
+                    <div role="list">
+                        {items.map((item) => (
+                        <div key={item.id} role="listitem" style={{ padding: '4px 0' , borderBottom: '1px solid #e0e0e0'
+                            }}>
+                            <Tag>{item.channel}</Tag>{' '}
+                            {typeof item.data === 'string' ? item.data : JSON.stringify(item.data)}
+                            <span style={{ fontSize: 10, color: '#999' , marginLeft: 8 }}>
+                                {new Date(item.timestamp).toLocaleTimeString()}
+                            </span>
+                        </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+            );
+            {% endif %}
             };
 
             export default LiveFeed;

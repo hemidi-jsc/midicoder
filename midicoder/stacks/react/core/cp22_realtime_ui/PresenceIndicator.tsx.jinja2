@@ -1,20 +1,18 @@
-/**
-* PresenceIndicator component — hiển thị trạng thái presence
-*
-* Sinh bởi CP22 RealtimeComponentEmitter
-* UI Framework: {[{ ui_framework }]}
-* Widget Type: {[{ widget_type }]}
-*/
-
 import React, { useMemo } from 'react';
 import { usePresence } from './usePresence';
+
+/**
+* PresenceIndicator component — hiển thị trạng thái presence
+* Sinh bởi CP22 RealtimeComponentEmitter
+*/
 
 interface PresenceIndicatorProps {
 userId?: string;
 showLabel?: boolean;
 size?: 'sm' | 'md' | 'lg';
 className?: string;
-{% if has_tenant_scope %} tenantId?: string;
+{% if has_tenant_scope %}
+tenantId?: string;
 {% endif %}
 }
 
@@ -25,12 +23,29 @@ const statusColors: Record<string, string> = {
     offline: '#9e9e9e',
     };
 
+    {% if ui_framework == "material" %}
+    import { Avatar } from '@mui/material';
+    {% elif ui_framework == "tailwind" %}
+    const presenceClasses = {
+    container: 'inline-flex items-center gap-2',
+    dot: 'rounded-full border-2 border-white flex items-center justify-center text-white',
+    label: 'px-2 py-1 rounded text-xs text-white',
+    };
+    {% elif ui_framework == "bootstrap" %}
+    import { Badge } from 'react-bootstrap';
+    {% elif ui_framework == "antd" %}
+    import { Avatar } from 'antd';
+    {% elif ui_framework == "carbon" %}
+    import { Avatar } from '@carbon/react';
+    {% endif %}
+
     export const PresenceIndicator: React.FC<PresenceIndicatorProps> = ({
         userId,
         showLabel = true,
         size = 'md',
         className = '',
-        {% if has_tenant_scope %} tenantId,
+        {% if has_tenant_scope %}
+        tenantId,
         {% endif %}
         }) => {
         const { users, onlineCount } = usePresence({{% if has_tenant_scope %} tenantId{% endif %}});
@@ -51,22 +66,86 @@ const statusColors: Record<string, string> = {
         const sizeMap = { sm: 24, md: 32, lg: 40 };
         const diameter = sizeMap[size] || sizeMap.md;
 
+        {% if ui_framework == "material" %}
         return (
         <div className={`midicoder-presence ${className}`} style={{ display: 'inline-flex' , alignItems: 'center' , gap:
             8 }}>
-            <div className="status-dot" style={{ width: diameter, height: diameter, borderRadius: '50%' ,
-                backgroundColor: color, border: '2px solid white' , display: 'flex' , alignItems: 'center' ,
-                justifyContent: 'center' , color: 'white' , fontSize: `${diameter * 0.5}px`, }} title={label}>
+            <Avatar sx={{ width: diameter, height: diameter, backgroundColor: color, border: '2px solid white' ,
+                fontSize: `${diameter * 0.5}px`, }} title={label}>
                 {userId?.charAt(0)?.toUpperCase()}
-            </div>
+            </Avatar>
             {showLabel && (
-            <span className="label" style={{ padding: '2px 8px' , borderRadius: 12, backgroundColor: color,
-                color: 'white' , fontSize: 12, }}>
+            <span style={{ padding: '2px 8px' , borderRadius: 12, backgroundColor: color, color: 'white' , fontSize: 12
+                }}>
                 {label}
             </span>
             )}
         </div>
         );
+        {% elif ui_framework == "tailwind" %}
+        return (
+        <div className={`midicoder-presence ${presenceClasses.container} ${className}`}>
+            <div className={presenceClasses.dot} style={{ width: diameter, height: diameter, backgroundColor: color,
+                fontSize: `${diameter * 0.5}px` }} title={label}>
+                {userId?.charAt(0)?.toUpperCase()}
+            </div>
+            {showLabel && (
+            <span className={presenceClasses.label} style={{ backgroundColor: color }}>
+                {label}
+            </span>
+            )}
+        </div>
+        );
+        {% elif ui_framework == "bootstrap" %}
+        return (
+        <div className={`midicoder-presence ${className}`} style={{ display: 'inline-flex' , alignItems: 'center' , gap:
+            8 }}>
+            <div style={{ width: diameter, height: diameter, borderRadius: '50%' , backgroundColor: color,
+                border: '2px solid white' , display: 'flex' , alignItems: 'center' , justifyContent: 'center' ,
+                color: 'white' , fontSize: `${diameter * 0.5}px` }} title={label}>
+                {userId?.charAt(0)?.toUpperCase()}
+            </div>
+            {showLabel && (
+            <Badge bg="light" text="dark" style={{ backgroundColor: color, color: 'white' , fontSize: 12 }}>
+                {label}
+            </Badge>
+            )}
+        </div>
+        );
+        {% elif ui_framework == "antd" %}
+        return (
+        <div className={`midicoder-presence ${className}`} style={{ display: 'inline-flex' , alignItems: 'center' , gap:
+            8 }}>
+            <Avatar size={diameter} style={{ backgroundColor: color, border: '2px solid white' }} title={label}>
+                {userId?.charAt(0)?.toUpperCase()}
+            </Avatar>
+            {showLabel && (
+            <span style={{ padding: '2px 8px' , borderRadius: 12, backgroundColor: color, color: 'white' , fontSize: 12
+                }}>
+                {label}
+            </span>
+            )}
+        </div>
+        );
+        {% elif ui_framework == "carbon" %}
+        return (
+        <div className={`midicoder-presence ${className}`} style={{ display: 'inline-flex' , alignItems: 'center' , gap:
+            8 }}>
+            <Avatar size={diameter> 32 ? 'lg' : 'sm'}
+                style={{ backgroundColor: color, border: '2px solid white' }}
+                alt={label}
+                >
+                {userId?.charAt(0)?.toUpperCase()}
+            </Avatar>
+            {showLabel && (
+            <span style={{ padding: '2px 8px' , borderRadius: 12, backgroundColor: color, color: 'white' , fontSize: 12
+                }}>
+                {label}
+            </span>
+            )}
+        </div>
+        );
+        {% endif %}
         };
 
         export default PresenceIndicator;

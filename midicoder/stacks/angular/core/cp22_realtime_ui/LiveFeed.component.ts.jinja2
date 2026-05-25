@@ -1,14 +1,24 @@
 ﻿/**
 * LiveFeedComponent — hiển thị realtime event feed (activity stream)
-*
 * Sinh bởi CP22 AngularRealtimeEmitter
-* UI Framework: {[{ ui_framework }]}
-* Widget Type: {[{ widget_type }]}
 */
 
 import { Component, Input, OnInit, AfterViewChecked, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChannelSubscriptionService, MessagePayload } from './channel-subscription.service';
+
+{% if ui_framework == "material" %}
+import { MatListModule } from '@angular/material/list';
+import { MatCardModule } from '@angular/material/card';
+import { MatChipsModule } from '@angular/material/chips';
+{% elif ui_framework == "bootstrap" %}
+import { NgbdModule } from 'ng-bootstrap';
+{% elif ui_framework == "antd" %}
+import { NzListModule } from 'ng-zorro-antd/list';
+import { NzTagModule } from 'ng-zorro-antd/tag';
+{% elif ui_framework == "carbon" %}
+import { DataTableModule } from '@carbon/angular';
+{% endif %}
 
 export interface FeedItem {
 id: string;
@@ -20,33 +30,144 @@ timestamp: string;
 @Component({
 selector: 'midicoder-live-feed',
 standalone: true,
-imports: [CommonModule],
+imports: [
+CommonModule,
+{% if ui_framework == "material" %}
+MatListModule,
+MatCardModule,
+MatChipsModule,
+{% elif ui_framework == "bootstrap" %}
+NgbdModule,
+{% elif ui_framework == "antd" %}
+NzListModule,
+NzTagModule,
+{% elif ui_framework == "carbon" %}
+DataTableModule,
+{% endif %}
+],
 template: `
-<div class="midicoder-live-feed">
+{% if ui_framework == "material" %}
+<mat-card class="midicoder-live-feed">
     <div class="header" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
         <span>
             Live Feed
-            <span [style.backgroundColor]="isConnected ? '#4caf50' : '#f44336'"
-                style="margin-left: 8px; width: 8px; height: 8px; border-radius: 50%; display: inline-block;"
-                [title]="isConnected ? 'Connected' : 'Disconnected'"></span>
+            <mat-chip [color]="isConnected ? 'primary' : 'warn'" style="margin-left: 8px;"></mat-chip>
         </span>
         <span>{{ items.length }} items</span>
-        <button (click)="clearFeed()">Clear</button>
+        <button mat-button (click)="clearFeed()">Clear</button>
     </div>
-    <div #scrollRef
-        style="max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px; padding: 8px;">
+    <div #scrollRef style="max-height: 400px; overflow-y: auto;">
         <div *ngIf="items.length === 0" style="text-align: center; color: #999; padding: 20px;">
             Chờ event...
         </div>
-        <div *ngFor="let item of items" style="padding: 4px 0; border-bottom: 1px solid #f0f0f0;">
-            <span style="font-weight: bold; font-size: 12px;">[{{ item.channel }}]</span>&nbsp;
-            <span style="font-size: 13px;">{{ item.data | json }}</span>
+        <mat-list>
+            <mat-list-item *ngFor="let item of items">
+                <div matListItemTitle>
+                    <mat-chip>{{ item.channel }}</mat-chip>
+                    {{ item.data | json }}
+                </div>
+                <div matListItemLine>
+                    {{ item.timestamp | date:'HH:mm:ss' }}
+                </div>
+            </mat-list-item>
+        </mat-list>
+    </div>
+</mat-card>
+{% elif ui_framework == "tailwind" %}
+<div class="midicoder-live-feed">
+    <div class="flex justify-between items-center mb-2 p-2">
+        <span class="font-medium">
+            Live Feed
+            <span
+                [class]="isConnected ? 'ml-2 inline-block w-2 h-2 rounded-full bg-green-500' : 'ml-2 inline-block w-2 h-2 rounded-full bg-red-500'"
+                [title]="isConnected ? 'Connected' : 'Disconnected'"></span>
+        </span>
+        <span class="text-gray-500 text-sm">{{ items.length }} items</span>
+        <button class="text-blue-500 hover:text-blue-700" (click)="clearFeed()">Clear</button>
+    </div>
+    <div #scrollRef class="max-h-[400px] overflow-y-auto border border-gray-200 rounded p-2">
+        <div *ngIf="items.length === 0" class="text-center text-gray-400 py-5">
+            Chờ event...
+        </div>
+        <div *ngFor="let item of items" class="py-1 border-b border-gray-100">
+            <span class="font-bold text-xs bg-blue-100 px-1 rounded">{{ item.channel }}</span>&nbsp;
+            <span class="text-sm">{{ item.data | json }}</span>
+            <span class="text-xs text-gray-400 ml-2">{{ item.timestamp | date:'HH:mm:ss' }}</span>
+        </div>
+    </div>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div class="midicoder-live-feed">
+    <div class="d-flex justify-content-between mb-2">
+        <span>
+            Live Feed
+            <span class="badge rounded-pill ms-2" [class]="isConnected ? 'bg-success' : 'bg-danger'"></span>
+        </span>
+        <small class="text-muted">{{ items.length }} items</small>
+        <button class="btn btn-sm btn-link" (click)="clearFeed()">Clear</button>
+    </div>
+    <div #scrollRef style="max-height: 400px; overflow-y: auto;">
+        <div *ngIf="items.length === 0" class="text-center text-muted py-4">
+            Chờ event...
+        </div>
+        <div class="list-group">
+            <div *ngFor="let item of items" class="list-group-item list-group-item-action">
+                <span class="badge bg-info me-1">{{ item.channel }}</span>
+                {{ item.data | json }}
+                <small class="float-end text-muted">{{ item.timestamp | date:'HH:mm:ss' }}</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% elif ui_framework == "antd" %}
+<div class="midicoder-live-feed">
+    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+        <span>
+            Live Feed
+            <nz-tag [nzColor]="isConnected ? 'green' : 'red'" style="margin-left: 8px;"></nz-tag>
+        </span>
+        <span class="text-muted">{{ items.length }} items</span>
+        <button (click)="clearFeed()">Clear</button>
+    </div>
+    <div #scrollRef style="max-height: 400px; overflow-y: auto;">
+        <div *ngIf="items.length === 0" style="text-align: center; color: #999; padding: 20px;">
+            Chờ event...
+        </div>
+        <nz-list [nzDataSource]="items" nzBordered>
+            <ng-template nz-list-item *ngFor="let item of items">
+                <nz-tag>{{ item.channel }}</nz-tag>
+                {{ item.data | json }}
+                <span style="font-size: 10px; color: #999; margin-left: 8px;">
+                    {{ item.timestamp | date:'HH:mm:ss' }}
+                </span>
+            </ng-template>
+        </nz-list>
+    </div>
+</div>
+{% elif ui_framework == "carbon" %}
+<div class="midicoder-live-feed">
+    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+        <span>
+            Live Feed
+            <cds-tag [type]="isConnected ? 'green' : 'red'" style="margin-left: 8px;"></cds-tag>
+        </span>
+        <span style="font-size: 12px; color: #666;">{{ items.length }} items</span>
+        <button (click)="clearFeed()">Clear</button>
+    </div>
+    <div #scrollRef style="max-height: 400px; overflow-y: auto;">
+        <div *ngIf="items.length === 0" style="text-align: center; color: #999; padding: 20px;">
+            Chờ event...
+        </div>
+        <div *ngFor="let item of items" style="padding: 4px 0; border-bottom: 1px solid #e0e0e0;">
+            <cds-tag>{{ item.channel }}</cds-tag>
+            {{ item.data | json }}
             <span style="font-size: 10px; color: #999; margin-left: 8px;">
                 {{ item.timestamp | date:'HH:mm:ss' }}
             </span>
         </div>
     </div>
 </div>
+{% endif %}
 `,
 })
 export class LiveFeedComponent implements OnInit, AfterViewChecked {
@@ -55,7 +176,8 @@ export class LiveFeedComponent implements OnInit, AfterViewChecked {
 @Input() channel = 'default';
 @Input() maxItems = {[{ max_items or 50 }]};
 @Input() autoScroll = {[{ auto_scroll | default(true) | lower }]};
-{% if has_tenant_scope %} @Input() tenantId?: string;
+{% if has_tenant_scope %}
+@Input() tenantId?: string;
 {% endif %}
 
 items: FeedItem[] = [];

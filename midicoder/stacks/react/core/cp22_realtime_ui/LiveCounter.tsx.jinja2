@@ -1,13 +1,10 @@
-/**
-* LiveCounter component — hiển thị số realtime với animated transitions
-*
-* Sinh bởi CP22 RealtimeComponentEmitter
-* UI Framework: {[{ ui_framework }]}
-* Widget Type: {[{ widget_type }]}
-*/
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useChannelSubscription } from './useChannelSubscription';
+
+/**
+* LiveCounter component — hiển thị số realtime với animated transitions
+* Sinh bởi CP22 RealtimeComponentEmitter
+*/
 
 interface LiveCounterProps {
 channel?: string;
@@ -16,9 +13,27 @@ format?: 'number' | 'currency' | 'percentage';
 locale?: string;
 thresholdColors?: Record<string, string>;
     className?: string;
-    {% if has_tenant_scope %} tenantId?: string;
-    {% endif %} onValueChange?: (value: number) => void;
+    {% if has_tenant_scope %}
+    tenantId?: string;
+    {% endif %}
+    onValueChange?: (value: number) => void;
     }
+
+    {% if ui_framework == "material" %}
+    import { Typography } from '@mui/material';
+    {% elif ui_framework == "tailwind" %}
+    const counterClasses = {
+    container: 'text-center p-4',
+    value: 'text-5xl font-bold transition-colors duration-300',
+    trend: 'text-sm text-gray-500 mt-1',
+    };
+    {% elif ui_framework == "bootstrap" %}
+    /* Bootstrap — dùng display utility classes */
+    {% elif ui_framework == "antd" %}
+    import { Typography } from 'antd';
+    {% elif ui_framework == "carbon" %}
+    import { Typography } from '@carbon/react';
+    {% endif %}
 
     export const LiveCounter: React.FC<LiveCounterProps> = ({
         channel = 'default',
@@ -27,14 +42,18 @@ thresholdColors?: Record<string, string>;
         locale = 'vi-VN',
         thresholdColors,
         className = '',
-        {% if has_tenant_scope %} tenantId,
-        {% endif %} onValueChange,
+        {% if has_tenant_scope %}
+        tenantId,
+        {% endif %}
+        onValueChange,
         }) => {
         const [value, setValue] = useState<number>(initialValue);
             const [prevValue, setPrevValue] = useState<number>(initialValue);
                 const { isConnected } = useChannelSubscription(channel, {
-                {% if has_tenant_scope %} tenantId,
-                {% endif %} onMessage: (payload) => {
+                {% if has_tenant_scope %}
+                tenantId,
+                {% endif %}
+                onMessage: (payload) => {
                 const data = payload.data as Record<string, unknown>;
                     const num = typeof data === 'number' ? data : (data && 'value' in data ? Number(data.value) :
                     undefined);
@@ -74,17 +93,67 @@ thresholdColors?: Record<string, string>;
                     }
                     }, [value, format, locale]);
 
-                    const trend = value > prevValue ? '↑' : value < prevValue ? '↓' : '—' ; return ( <div
-                        className={`midicoder-live-counter ${className}`} style={{ textAlign: 'center' , padding: 16 }}>
-                        <div className="value" style={{ fontSize: 48, fontWeight: 'bold' , color,
-                            transition: 'color 0.3s ease' , }}>
+                    const trend = value > prevValue ? '↑' : value < prevValue ? '↓' : '—' ; {% if
+                        ui_framework=="material" %} return ( <div className={`midicoder-live-counter ${className}`}
+                        style={{ textAlign: 'center' , padding: 16 }}>
+                        <Typography variant="h3" component="div" style={{ fontWeight: 'bold' , color,
+                            transition: 'color 0.3s ease' }}>
                             {formattedValue}
-                        </div>
-                        <div className="trend" style={{ fontSize: 14, color: '#666' }}>
+                        </Typography>
+                        <Typography variant="body2" color="textSecondary">
                             {trend} {isConnected ? 'live' : 'offline'}
-                        </div>
+                        </Typography>
                         </div>
                         );
+                        {% elif ui_framework == "tailwind" %}
+                        return (
+                        <div className={`midicoder-live-counter ${counterClasses.container} ${className}`}>
+                            <div className={counterClasses.value} style={{ color, transition: 'color 0.3s ease' }}>
+                                {formattedValue}
+                            </div>
+                            <div className={counterClasses.trend}>
+                                {trend} {isConnected ? 'live' : 'offline'}
+                            </div>
+                        </div>
+                        );
+                        {% elif ui_framework == "bootstrap" %}
+                        return (
+                        <div className={`midicoder-live-counter ${className} text-center p-3`}>
+                            <div className="display-4 fw-bold" style={{ color, transition: 'color 0.3s ease' }}>
+                                {formattedValue}
+                            </div>
+                            <div className="text-muted small">
+                                {trend} {isConnected ? 'live' : 'offline'}
+                            </div>
+                        </div>
+                        );
+                        {% elif ui_framework == "antd" %}
+                        return (
+                        <div className={`midicoder-live-counter ${className}`} style={{ textAlign: 'center' , padding:
+                            16 }}>
+                            <Typography.Title level={2} style={{ fontWeight: 'bold' , color,
+                                transition: 'color 0.3s ease' , margin: 0 }}>
+                                {formattedValue}
+                            </Typography.Title>
+                            <Typography.Text type="secondary">
+                                {trend} {isConnected ? 'live' : 'offline'}
+                            </Typography.Text>
+                        </div>
+                        );
+                        {% elif ui_framework == "carbon" %}
+                        return (
+                        <div className={`midicoder-live-counter ${className}`} style={{ textAlign: 'center' , padding:
+                            16 }}>
+                            <Typography heading="lg" style={{ fontWeight: 'bold' , color, transition: 'color 0.3s ease'
+                                }}>
+                                {formattedValue}
+                            </Typography>
+                            <Typography caption style={{ color: '#666' }}>
+                                {trend} {isConnected ? 'live' : 'offline'}
+                            </Typography>
+                        </div>
+                        );
+                        {% endif %}
                         };
 
                         export default LiveCounter;
