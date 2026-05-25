@@ -252,3 +252,133 @@ class TestInitModule:
         )
         assert basic_consent_recipe is not None
         assert full_consent_recipe is not None
+
+
+# ===========================================================================
+# Test Template Render (P2-17)
+# ===========================================================================
+
+class TestTemplateRender:
+    """Test render templates với context thật và verify Rule V1."""
+
+    def _render_all_fastapi(self):
+        """Render tất cả FastAPI templates và trả về danh sách (name, content)."""
+        from midicoder.emitters.core.cp49_consent.fastapi import FastAPIConsentEmitter
+        from midicoder.emitters.core.cp49_consent.recipes import basic_consent_recipe
+        emitter = FastAPIConsentEmitter(stack_dir=str(STACKS_DIR / "fastapi" / "core" / "cp49_consent"))
+        ir = basic_consent_recipe().ir
+        files = emitter.emit(ir, "/tmp")
+        return [(f.path, f.content) for f in files]
+
+    def _render_all_nestjs(self):
+        """Render tất cả NestJS templates và trả về danh sách (name, content)."""
+        from midicoder.emitters.core.cp49_consent.nestjs import NestJSConsentEmitter
+        from midicoder.emitters.core.cp49_consent.recipes import basic_consent_recipe
+        emitter = NestJSConsentEmitter(stack_dir=str(STACKS_DIR / "nestjs" / "core" / "cp49_consent"))
+        ir = basic_consent_recipe().ir
+        files = emitter.emit(ir, "/tmp")
+        return [(f.path, f.content) for f in files]
+
+    def _render_all_angular(self):
+        """Render tất cả Angular templates và trả về danh sách (name, content)."""
+        from midicoder.emitters.core.cp49_consent.angular import AngularConsentEmitter
+        from midicoder.emitters.core.cp49_consent.recipes import basic_consent_recipe
+        emitter = AngularConsentEmitter(stack_dir=str(STACKS_DIR / "angular" / "core" / "cp49_consent"))
+        ir = basic_consent_recipe().ir
+        files = emitter.emit(ir, "/tmp")
+        return [(f.path, f.content) for f in files]
+
+    def _render_all_react(self):
+        """Render tất cả React templates và trả về danh sách (name, content)."""
+        from midicoder.emitters.core.cp49_consent.react import ReactConsentEmitter
+        from midicoder.emitters.core.cp49_consent.recipes import basic_consent_recipe
+        emitter = ReactConsentEmitter(stack_dir=str(STACKS_DIR / "react" / "core" / "cp49_consent"))
+        ir = basic_consent_recipe().ir
+        files = emitter.emit(ir)
+        return [(f["path"], f["content"]) for f in files]
+
+    # --- FastAPI render tests ---
+
+    def test_fastapi_templates_render_success(self):
+        """Tất cả FastAPI templates render thành công không throw exception."""
+        files = self._render_all_fastapi()
+        assert len(files) > 0
+
+    def test_fastapi_templates_no_midicoder_import(self):
+        """Rule V1: FastAPI templates không chứa 'from midicoder' trong output."""
+        for path, content in self._render_all_fastapi():
+            assert "from midicoder" not in content, f"Rule V1 vi phạm trong {path}"
+            assert "import midicoder" not in content, f"Rule V1 vi phạm trong {path}"
+
+    def test_fastapi_templates_have_keywords(self):
+        """FastAPI templates chứa keywords Python quan trọng."""
+        files = self._render_all_fastapi()
+        # Ít nhất 1 file phải chứa import statement
+        all_content = "\n".join(c for _, c in files)
+        assert "import" in all_content, "FastAPI output không chứa import statement"
+
+    # --- NestJS render tests ---
+
+    def test_nestjs_templates_render_success(self):
+        """Tất cả NestJS templates render thành công không throw exception."""
+        files = self._render_all_nestjs()
+        assert len(files) > 0
+
+    def test_nestjs_templates_no_midicoder_import(self):
+        """Rule V1: NestJS templates không chứa 'from midicoder' trong output."""
+        for path, content in self._render_all_nestjs():
+            assert "from midicoder" not in content, f"Rule V1 vi phạm trong {path}"
+            assert "import midicoder" not in content, f"Rule V1 vi phạm trong {path}"
+
+    def test_nestjs_templates_have_keywords(self):
+        """NestJS templates chứa keywords TypeScript quan trọng."""
+        files = self._render_all_nestjs()
+        all_content = "\n".join(c for _, c in files)
+        assert "export" in all_content, "NestJS output không chứa export statement"
+
+    # --- Angular render tests ---
+
+    def test_angular_templates_render_success(self):
+        """Tất cả Angular templates render thành công không throw exception."""
+        files = self._render_all_angular()
+        assert len(files) > 0
+
+    def test_angular_templates_no_midicoder_import(self):
+        """Rule V1: Angular templates không chứa 'from midicoder' trong output."""
+        for path, content in self._render_all_angular():
+            assert "from midicoder" not in content, f"Rule V1 vi phạm trong {path}"
+            assert "import midicoder" not in content, f"Rule V1 vi phạm trong {path}"
+
+    def test_angular_templates_have_keywords(self):
+        """Angular templates chứa keywords TypeScript quan trọng."""
+        files = self._render_all_angular()
+        all_content = "\n".join(c for _, c in files)
+        assert "import" in all_content, "Angular output không chứa import statement"
+
+    # --- React render tests ---
+
+    def test_react_templates_render_success(self):
+        """Tất cả React templates render thành công không throw exception."""
+        files = self._render_all_react()
+        assert len(files) > 0
+
+    def test_react_templates_no_midicoder_import(self):
+        """Rule V1: React templates không chứa 'from midicoder' trong output."""
+        for path, content in self._render_all_react():
+            assert "from midicoder" not in content, f"Rule V1 vi phạm trong {path}"
+            assert "import midicoder" not in content, f"Rule V1 vi phạm trong {path}"
+
+    def test_react_templates_have_keywords(self):
+        """React templates chứa keywords JSX quan trọng."""
+        files = self._render_all_react()
+        all_content = "\n".join(c for _, c in files)
+        assert "import" in all_content, "React output không chứa import statement"
+
+    # --- Rule V2: No __post_init__ in templates ---
+
+    def test_no_post_init_in_any_template(self):
+        """Rule V2: Không có __post_init__ trong output của bất kỳ template nào."""
+        for renderer in [self._render_all_fastapi, self._render_all_nestjs,
+                         self._render_all_angular, self._render_all_react]:
+            for path, content in renderer():
+                assert "__post_init__" not in content, f"Rule V2 vi phạm trong {path}"
