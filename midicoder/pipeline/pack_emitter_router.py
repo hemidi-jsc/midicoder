@@ -364,6 +364,222 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "ReactVersioningEmitter",
         None,
     ),
+    # CP33 – Financial Engine (FastAPI)
+    "cp33.financial.fastapi": (
+        "midicoder.emitters.core.cp33_financial.fastapi",
+        "FinancialFastAPIEmitter",
+        "cp33_financial",
+    ),
+    # CP33 – Financial Engine (NestJS)
+    "cp33.financial.nestjs": (
+        "midicoder.emitters.core.cp33_financial.nestjs",
+        "FinancialNestJSEmitter",
+        "cp33_financial",
+    ),
+    # CP33 – Financial Engine (Angular)
+    "cp33.financial.angular": (
+        "midicoder.emitters.core.cp33_financial.angular",
+        "FinancialAngularEmitter",
+        "cp33_financial",
+    ),
+    # CP33 – Financial Engine (React)
+    "cp33.financial.react": (
+        "midicoder.emitters.core.cp33_financial.react",
+        "FinancialReactEmitter",
+        "cp33_financial",
+    ),
+    # CP36 – Tenant Onboarding (FastAPI)
+    "cp36.onboarding.fastapi": (
+        "midicoder.emitters.core.cp36_tenant_onboarding.fastapi",
+        "TenantOnboardingFastAPIEmitter",
+        "cp36_onboarding",
+    ),
+    # CP36 – Tenant Onboarding (NestJS)
+    "cp36.onboarding.nestjs": (
+        "midicoder.emitters.core.cp36_tenant_onboarding.nestjs",
+        "TenantOnboardingNestJSEmitter",
+        "cp36_onboarding",
+    ),
+    # CP36 – Tenant Onboarding (Angular)
+    "cp36.onboarding.angular": (
+        "midicoder.emitters.core.cp36_tenant_onboarding.angular",
+        "TenantOnboardingAngularEmitter",
+        "cp36_onboarding",
+    ),
+    # CP36 – Tenant Onboarding (React)
+    "cp36.onboarding.react": (
+        "midicoder.emitters.core.cp36_tenant_onboarding.react",
+        "TenantOnboardingReactEmitter",
+        "cp36_onboarding",
+    ),
+    # CP37 – Feature Flags (FastAPI)
+    "cp37.feature_flags.fastapi": (
+        "midicoder.emitters.core.cp37_feature_flags.fastapi",
+        "FastAPIFeatureFlagEmitter",
+        "cp37_feature_flags",
+    ),
+    # CP37 – Feature Flags (NestJS)
+    "cp37.feature_flags.nestjs": (
+        "midicoder.emitters.core.cp37_feature_flags.nestjs",
+        "NestJSFeatureFlagEmitter",
+        "cp37_feature_flags",
+    ),
+    # CP37 – Feature Flags (Angular)
+    "cp37.feature_flags.angular": (
+        "midicoder.emitters.core.cp37_feature_flags.angular",
+        "AngularFeatureFlagEmitter",
+        "cp37_feature_flags",
+    ),
+    # CP37 – Feature Flags (React)
+    "cp37.feature_flags.react": (
+        "midicoder.emitters.core.cp37_feature_flags.react",
+        "ReactFeatureFlagEmitter",
+        "cp37_feature_flags",
+    ),
+    # CP44 – Bulk Operations (FastAPI)
+    "cp44.bulk_ops.fastapi": (
+        "midicoder.emitters.core.cp44_bulk_ops.fastapi",
+        "FastAPIBulkOpsEmitter",
+        "cp44_bulk_ops",
+    ),
+    # CP44 – Bulk Operations (NestJS)
+    "cp44.bulk_ops.nestjs": (
+        "midicoder.emitters.core.cp44_bulk_ops.nestjs",
+        "NestJSBulkOpsEmitter",
+        "cp44_bulk_ops",
+    ),
+    # CP44 – Bulk Operations (Angular)
+    "cp44.bulk_ops.angular": (
+        "midicoder.emitters.core.cp44_bulk_ops.angular",
+        "AngularBulkOpsEmitter",
+        "cp44_bulk_ops",
+    ),
+    # CP44 – Bulk Operations (React)
+    "cp44.bulk_ops.react": (
+        "midicoder.emitters.core.cp44_bulk_ops.react",
+        "ReactBulkOpsEmitter",
+        "cp44_bulk_ops",
+    ),
+    # CP45 – Payment (FastAPI)
+    "cp45.payment.fastapi": (
+        "midicoder.emitters.core.cp45_payment.fastapi",
+        "FastAPIPaymentEmitter",
+        "cp45_payment",
+    ),
+    # CP45 – Payment (NestJS)
+    "cp45.payment.nestjs": (
+        "midicoder.emitters.core.cp45_payment.nestjs",
+        "NestJSPaymentEmitter",
+        "cp45_payment",
+    ),
+    # CP45 – Payment (Angular)
+    "cp45.payment.angular": (
+        "midicoder.emitters.core.cp45_payment.angular",
+        "AngularPaymentEmitter",
+        "cp45_payment",
+    ),
+    # CP45 – Payment (React)
+    "cp45.payment.react": (
+        "midicoder.emitters.core.cp45_payment.react",
+        "ReactPaymentEmitter",
+        "cp45_payment",
+    ),
+    # CP46 – MFA (FastAPI)
+    "cp46.mfa.fastapi": (
+        "midicoder.emitters.core.cp46_mfa.fastapi",
+        "FastAPIMFAEmitter",
+        "cp46_mfa",
+    ),
+    # CP46 – MFA (NestJS)
+    "cp46.mfa.nestjs": (
+        "midicoder.emitters.core.cp46_mfa.nestjs",
+        "NestJSMFAEmitter",
+        "cp46_mfa",
+    ),
+    # CP46 – MFA (Angular)
+    "cp46.mfa.angular": (
+        "midicoder.emitters.core.cp46_mfa.angular",
+        "AngularMFAEmitter",
+        "cp46_mfa",
+    ),
+    # CP46 – MFA (React)
+    "cp46.mfa.react": (
+        "midicoder.emitters.core.cp46_mfa.react",
+        "ReactMFAEmitter",
+        "cp46_mfa",
+    ),
+    # CP48 – Rate Limit (FastAPI)
+    "cp48.rate_limit.fastapi": (
+        "midicoder.emitters.core.cp48_rate_limit.fastapi",
+        "FastAPIRateLimitEmitter",
+        "cp48_rate_limit",
+    ),
+    # CP48 – Rate Limit (NestJS)
+    "cp48.rate_limit.nestjs": (
+        "midicoder.emitters.core.cp48_rate_limit.nestjs",
+        "NestJSRateLimitEmitter",
+        "cp48_rate_limit",
+    ),
+    # CP48 – Rate Limit (Angular)
+    "cp48.rate_limit.angular": (
+        "midicoder.emitters.core.cp48_rate_limit.angular",
+        "AngularRateLimitEmitter",
+        "cp48_rate_limit",
+    ),
+    # CP48 – Rate Limit (React)
+    "cp48.rate_limit.react": (
+        "midicoder.emitters.core.cp48_rate_limit.react",
+        "ReactRateLimitEmitter",
+        "cp48_rate_limit",
+    ),
+    # CP49 – Consent (FastAPI)
+    "cp49.consent.fastapi": (
+        "midicoder.emitters.core.cp49_consent.fastapi",
+        "FastAPIConsentEmitter",
+        "cp49_consent",
+    ),
+    # CP49 – Consent (NestJS)
+    "cp49.consent.nestjs": (
+        "midicoder.emitters.core.cp49_consent.nestjs",
+        "NestJSConsentEmitter",
+        "cp49_consent",
+    ),
+    # CP49 – Consent (Angular)
+    "cp49.consent.angular": (
+        "midicoder.emitters.core.cp49_consent.angular",
+        "AngularConsentEmitter",
+        "cp49_consent",
+    ),
+    # CP49 – Consent (React)
+    "cp49.consent.react": (
+        "midicoder.emitters.core.cp49_consent.react",
+        "ReactConsentEmitter",
+        "cp49_consent",
+    ),
+    # CP50 – Catalog (FastAPI)
+    "cp50.catalog.fastapi": (
+        "midicoder.emitters.core.cp50_catalog.fastapi",
+        "FastAPICatalogEmitter",
+        "cp50_catalog",
+    ),
+    # CP50 – Catalog (NestJS)
+    "cp50.catalog.nestjs": (
+        "midicoder.emitters.core.cp50_catalog.nestjs",
+        "NestJSCatalogEmitter",
+        "cp50_catalog",
+    ),
+    # CP50 – Catalog (Angular)
+    "cp50.catalog.angular": (
+        "midicoder.emitters.core.cp50_catalog.angular",
+        "AngularCatalogEmitter",
+        "cp50_catalog",
+    ),
+    # CP50 – Catalog (React)
+    "cp50.catalog.react": (
+        "midicoder.emitters.core.cp50_catalog.react",
+        "ReactCatalogEmitter",
+        "cp50_catalog",
+    ),
 }
 
 
@@ -516,6 +732,63 @@ def _parse_geospatial_dict(raw: dict[str, Any]) -> Any:
     return parser.parse_from_metadata(raw)
 
 
+def _parse_financial_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw financial dict from DSL/MIR into CP33 financial models.
+
+    FinancialParser has per-model static methods (parse_transaction, parse_currency, etc.)
+    but no unified parse_from_metadata. Return raw dict for the emitter to dispatch.
+    """
+    return raw
+
+
+def _parse_onboarding_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw onboarding dict from DSL/MIR into CP36 OnboardingIR."""
+    from midicoder.emitters.core.cp36_tenant_onboarding.parser import parse_onboarding_dsl
+    return parse_onboarding_dsl(raw)
+
+
+def _parse_feature_flag_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw feature flag dict from DSL/MIR into CP37 FeatureFlagIR."""
+    from midicoder.emitters.core.cp37_feature_flags.parser import FeatureFlagIR
+    return FeatureFlagIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_bulk_ops_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw bulk ops dict from DSL/MIR into CP44 BulkIR."""
+    from midicoder.emitters.core.cp44_bulk_ops.parser import BulkIR
+    return BulkIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_payment_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw payment dict from DSL/MIR into CP45 PaymentIR."""
+    from midicoder.emitters.core.cp45_payment.parser import PaymentIR
+    return PaymentIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_mfa_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw mfa dict from DSL/MIR into CP46 MFAIR."""
+    from midicoder.emitters.core.cp46_mfa.parser import MFAIR
+    return MFAIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_rate_limit_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw rate limit dict from DSL/MIR into CP48 RateLimitIR."""
+    from midicoder.emitters.core.cp48_rate_limit.parser import RateLimitIR
+    return RateLimitIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_consent_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw consent dict from DSL/MIR into CP49 ConsentIR."""
+    from midicoder.emitters.core.cp49_consent.parser import ConsentIR
+    return ConsentIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_catalog_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw catalog dict from DSL/MIR into CP50 CatalogIR."""
+    from midicoder.emitters.core.cp50_catalog.parser import CatalogIR
+    return CatalogIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
@@ -530,6 +803,15 @@ PARSER_REGISTRY: dict[str, Any] = {
     "cp24_quality": _parse_quality_dict,
     "cp34_report": _parse_report_dict,
     "cp35_geospatial": _parse_geospatial_dict,
+    "cp33_financial": _parse_financial_dict,
+    "cp36_onboarding": _parse_onboarding_dict,
+    "cp37_feature_flags": _parse_feature_flag_dict,
+    "cp44_bulk_ops": _parse_bulk_ops_dict,
+    "cp45_payment": _parse_payment_dict,
+    "cp46_mfa": _parse_mfa_dict,
+    "cp48_rate_limit": _parse_rate_limit_dict,
+    "cp49_consent": _parse_consent_dict,
+    "cp50_catalog": _parse_catalog_dict,
 }
 
 
