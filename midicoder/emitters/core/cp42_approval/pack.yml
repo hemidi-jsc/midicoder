@@ -19,7 +19,7 @@ pack:
   version: "1.0.0"
   status: "stable"
   category: "runtime"
-  depends_on: ["CP01", "CP04", "CP05", "CP12"]
+  depends_on: ["CP01", "CP04", "CP05", "CP12", "CP13"]
   definitions_count: 4
   obligations_count: 2
   error_codes:
