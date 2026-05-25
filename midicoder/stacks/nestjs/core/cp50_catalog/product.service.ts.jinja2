@@ -1,0 +1,477 @@
+/**
+ * ProductService — dịch vụ quản lý sản phẩm trong Catalog & Taxonomy Engine.
+ *
+ * Cung cấp các phương thức chính:
+ * - createProduct: tạo sản phẩm mới
+ * - findOne: tìm sản phẩm theo ID
+ * - findAll: tìm danh sách sản phẩm với bộ lọc
+ * - update: cập nhật sản phẩm
+ * - softDelete: xóa mềm sản phẩm
+ * - restore: khôi phục sản phẩm đã xóa mềm
+ * - getVariantsByProductId: lấy biến thể theo sản phẩm
+ * - createVariant: tạo biến thể mới
+ * - findBySku: tìm sản phẩm theo SKU (duy nhất trong tenant)
+ *
+ * CP50: Catalog & Taxonomy Engine
+ * Tổng số sản phẩm mẫu: {{ product_count }}
+ * Tổng số biến thể mẫu: {{ variant_count }}
+ */
+
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository, In, Like } from "typeorm";
+import { v4 as uuidv4 } from "uuid";
+import {
+  ProductEntity,
+  ProductVariantEntity,
+  ProductStatus,
+  Visibility,
+} from "./catalog.entity";
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  CreateVariantDto,
+} from "./catalog.dto";
+
+const logger = new Logger("ProductService");
+
+// ===========================================================================
+// ProductService
+// ===========================================================================
+
+/**
+ * ProductService — quản lý sản phẩm và biến thể sản phẩm.
+ *
+ * Phương thức chính:
+ * - createProduct: tạo sản phẩm mới, tự động sinh productId (UUID)
+ * - findOne: tìm theo productId, hỗ trợ khôi phục bản ghi đã xóa mềm
+ * - findAll: tìm với bộ lọc (status, categoryId, visibility, tenantId)
+ * - update: cập nhật từng trường theo DTO
+ * - softDelete: đánh dấu is_deleted = true, lưu deleted_at
+ * - restore: khôi phục sản phẩm đã xóa (is_deleted = false)
+ * - findBySku: tìm theo SKU + tenantId để đảm bảo unique SKU
+ * - getVariantsByProductId: lấy danh sách biến thể của sản phẩm
+ * - createVariant: tạo biến thể mới cho sản phẩm
+ */
+@Injectable()
+export class ProductService {
+  /**
+   * Constructor.
+   *
+   * @param productRepository - Repository cho ProductEntity
+   * @param variantRepository - Repository cho ProductVariantEntity
+   */
+  constructor(
+    @InjectRepository(ProductEntity)
+    private readonly productRepository: Repository<ProductEntity>,
+    @InjectRepository(ProductVariantEntity)
+    private readonly variantRepository: Repository<ProductVariantEntity>,
+  ) {}
+
+  // ========================================================================
+  // Sản phẩm — Tạo (Create)
+  // ========================================================================
+
+  /**
+   * Tạo sản phẩm mới.
+   *
+   * Tự động sinh productId dạng UUID, xác thực SKU duy nhất
+   * trong phạm vi tenant.
+   *
+   * Xác thực:
+   * - SKU phải duy nhất trong tenant
+   * - tenantId không để trống
+   *
+   * @param dto - CreateProductDto
+   * @returns ProductEntity vừa tạo
+   */
+  async createProduct(dto: CreateProductDto): Promise<ProductEntity> {
+    // Xác thực SKU duy nhất trong tenant
+    const existingBySku = await this.productRepository.findOne({
+      where: {
+        sku: dto.sku,
+        tenantId: dto.tenantId,
+      },
+    });
+
+    if (existingBySku) {
+      throw new BadRequestException(
+        "SKU đã tồn tại trong tenant: " + dto.sku,
+      );
+    }
+
+    const productId = uuidv4();
+
+    const product = this.productRepository.create({
+      productId,
+      name: dto.name,
+      slug: dto.slug,
+      sku: dto.sku,
+      description: dto.description || "",
+      categoryId: dto.categoryId,
+      brandId: dto.brandId || null,
+      price: dto.price,
+      costPrice: dto.costPrice ?? 0,
+      compareAtPrice: dto.compareAtPrice ?? null,
+      currency: dto.currency || "VND",
+      weight: dto.weight ?? null,
+      dimensions: dto.dimensions || null,
+      status: dto.status || "draft",
+      visibility: dto.visibility || "public",
+      tags: dto.tags || [],
+      seoMetadata: dto.seoMetadata || null,
+      images: dto.images || [],
+      metadata: dto.metadata || {},
+      tenantId: dto.tenantId,
+      isDeleted: false,
+    });
+
+    const saved = await this.productRepository.save(product);
+
+    logger.log(
+      "Tạo sản phẩm mới: productId=" + productId + ", name=" + dto.name
+      + ", sku=" + dto.sku + ", tenantId=" + dto.tenantId,
+    );
+
+    return saved;
+  }
+
+  // ========================================================================
+  // Sản phẩm — Tìm (Read)
+  // ========================================================================
+
+  /**
+   * Tìm sản phẩm theo ID.
+   *
+   * @param productId - ID sản phẩm
+   * @param withDeleted - Có bao gồm bản ghi đã xóa mềm không (mặc định false)
+   * @returns ProductEntity hoặc null
+   */
+  async findOne(productId: string, withDeleted = false): Promise<ProductEntity | null> {
+    if (withDeleted) {
+      return this.productRepository.findOne({
+        where: { productId },
+        withDeleted: true,
+      });
+    }
+
+    return this.productRepository.findOne({
+      where: { productId },
+    });
+  }
+
+  /**
+   * Tìm danh sách sản phẩm với bộ lọc.
+   *
+   * Hỗ trợ lọc theo:
+   * - status: trạng thái sản phẩm
+   * - categoryId: ID danh mục
+   * - visibility: mức độ hiển thị
+   * - tenantId: ID tenant
+   * - search: từ khóa tìm kiếm (tên, mô tả)
+   *
+   * @param filters - Object chứa các bộ lọc
+   * @returns List ProductEntity
+   */
+  async findAll(filters: {
+    status?: string;
+    categoryId?: string;
+    visibility?: string;
+    tenantId?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ProductEntity[]> {
+    const where: any = {};
+
+    if (filters.status) {
+      where.status = filters.status;
+    }
+    if (filters.categoryId) {
+      where.categoryId = filters.categoryId;
+    }
+    if (filters.visibility) {
+      where.visibility = filters.visibility;
+    }
+    if (filters.tenantId) {
+      where.tenantId = filters.tenantId;
+    }
+
+    // Tìm kiếm theo từ khóa (tên hoặc mô tả)
+    if (filters.search) {
+      where.name = Like("%" + filters.search + "%");
+    }
+
+    const queryBuilder = this.productRepository.createQueryBuilder("product").where(where);
+
+    if (filters.limit) {
+      queryBuilder.limit(filters.limit);
+    }
+    if (filters.offset) {
+      queryBuilder.offset(filters.offset);
+    }
+
+    return queryBuilder.orderBy("product.createdAt", "DESC").getMany();
+  }
+
+  /**
+   * Tìm sản phẩm theo SKU.
+   *
+   * Xác thực SKU duy nhất trong phạm vi tenant.
+   *
+   * @param sku - Mã SKU
+   * @param tenantId - ID tenant
+   * @returns ProductEntity hoặc null
+   */
+  async findBySku(sku: string, tenantId: string): Promise<ProductEntity | null> {
+    return this.productRepository.findOne({
+      where: { sku, tenantId },
+    });
+  }
+
+  // ========================================================================
+  // Sản phẩm — Cập nhật (Update)
+  // ========================================================================
+
+  /**
+   * Cập nhật sản phẩm.
+   *
+   * Chỉ cập nhật những trường có giá trị trong DTO.
+   *
+   * Xác thực:
+   * - productId phải tồn tại
+   * - nếu thay đổi SKU, phải duy nhất trong tenant
+   *
+   * @param productId - ID sản phẩm
+   * @param dto - UpdateProductDto
+   * @returns ProductEntity đã cập nhật
+   */
+  async update(productId: string, dto: UpdateProductDto): Promise<ProductEntity> {
+    const product = await this.findOne(productId);
+
+    if (!product) {
+      throw new NotFoundException("Không tìm thấy sản phẩm: " + productId);
+    }
+
+    // Nếu thay đổi SKU, kiểm tra uniqueness
+    if (dto.sku && dto.sku !== product.sku) {
+      const existingBySku = await this.productRepository.findOne({
+        where: { sku: dto.sku, tenantId: product.tenantId },
+      });
+      if (existingBySku) {
+        throw new BadRequestException("SKU đã tồn tại trong tenant: " + dto.sku);
+      }
+    }
+
+    // Cập nhật từng trường
+    if (dto.name !== undefined) product.name = dto.name;
+    if (dto.slug !== undefined) product.slug = dto.slug;
+    if (dto.sku !== undefined) product.sku = dto.sku;
+    if (dto.description !== undefined) product.description = dto.description;
+    if (dto.categoryId !== undefined) product.categoryId = dto.categoryId;
+    if (dto.brandId !== undefined) product.brandId = dto.brandId;
+    if (dto.price !== undefined) product.price = dto.price;
+    if (dto.costPrice !== undefined) product.costPrice = dto.costPrice;
+    if (dto.compareAtPrice !== undefined) product.compareAtPrice = dto.compareAtPrice;
+    if (dto.currency !== undefined) product.currency = dto.currency;
+    if (dto.weight !== undefined) product.weight = dto.weight;
+    if (dto.dimensions !== undefined) product.dimensions = dto.dimensions;
+    if (dto.status !== undefined) product.status = dto.status;
+    if (dto.visibility !== undefined) product.visibility = dto.visibility;
+    if (dto.tags !== undefined) product.tags = dto.tags;
+    if (dto.seoMetadata !== undefined) product.seoMetadata = dto.seoMetadata;
+    if (dto.images !== undefined) product.images = dto.images;
+    if (dto.metadata !== undefined) product.metadata = dto.metadata;
+
+    const saved = await this.productRepository.save(product);
+
+    logger.log("Cập nhật sản phẩm: productId=" + productId);
+
+    return saved;
+  }
+
+  // ========================================================================
+  // Sản phẩm — Xóa mềm (Soft Delete)
+  // ========================================================================
+
+  /**
+   * Xóa mềm sản phẩm.
+   *
+   * Đánh dấu is_deleted = true và lưu deleted_at,
+   * không xóa vật lý khỏi cơ sở dữ liệu.
+   *
+   * @param productId - ID sản phẩm
+   * @returns Kết quả xóa
+   */
+  async softDelete(productId: string): Promise<any> {
+    const product = await this.findOne(productId);
+
+    if (!product) {
+      throw new NotFoundException("Không tìm thấy sản phẩm: " + productId);
+    }
+
+    const result = await this.productRepository.softDelete({ productId });
+
+    logger.log("Xóa mềm sản phẩm: productId=" + productId);
+
+    return result;
+  }
+
+  /**
+   * Khôi phục sản phẩm đã xóa mềm.
+   *
+   * Đặt is_deleted = false và clear deleted_at.
+   *
+   * @param productId - ID sản phẩm
+   * @returns ProductEntity đã khôi phục
+   */
+  async restore(productId: string): Promise<ProductEntity> {
+    const product = await this.findOne(productId, true);
+
+    if (!product) {
+      throw new NotFoundException("Không tìm thấy sản phẩm: " + productId);
+    }
+
+    const restored = await this.productRepository.restore({ productId });
+
+    logger.log("Khôi phục sản phẩm: productId=" + productId);
+
+    return restored[0];
+  }
+
+  // ========================================================================
+  // Biến thể (Variant)
+  // ========================================================================
+
+  /**
+   * Lấy danh sách biến thể của sản phẩm.
+   *
+   * Sắp xếp theo sort_order tăng dần.
+   *
+   * @param productId - ID sản phẩm
+   * @returns List ProductVariantEntity
+   */
+  async getVariantsByProductId(productId: string): Promise<ProductVariantEntity[]> {
+    return this.variantRepository.find({
+      where: { productId },
+      order: { sortOrder: "ASC" },
+    });
+  }
+
+  /**
+   * Tạo biến thể mới cho sản phẩm.
+   *
+   * Xác thực:
+   * - productId phải tồn tại
+   * - SKU biến thể phải duy nhất
+   *
+   * @param productId - ID sản phẩm
+   * @param dto - CreateVariantDto
+   * @returns ProductVariantEntity vừa tạo
+   */
+  async createVariant(productId: string, dto: CreateVariantDto): Promise<ProductVariantEntity> {
+    // Xác thực sản phẩm tồn tại
+    const product = await this.findOne(productId);
+    if (!product) {
+      throw new NotFoundException("Không tìm thấy sản phẩm: " + productId);
+    }
+
+    // Xác thực SKU biến thể duy nhất
+    const existingVariant = await this.variantRepository.findOne({
+      where: { sku: dto.sku },
+    });
+    if (existingVariant) {
+      throw new BadRequestException("SKU biến thể đã tồn tại: " + dto.sku);
+    }
+
+    const variantId = uuidv4();
+
+    const variant = this.variantRepository.create({
+      variantId,
+      productId,
+      sku: dto.sku,
+      name: dto.name,
+      attributeValues: dto.attributeValues || {},
+      price: dto.price,
+      costPrice: dto.costPrice ?? 0,
+      weight: dto.weight ?? null,
+      barcode: dto.barcode || null,
+      images: dto.images || [],
+      isActive: true,
+      sortOrder: dto.sortOrder ?? 0,
+      metadata: dto.metadata || {},
+    });
+
+    const saved = await this.variantRepository.save(variant);
+
+    logger.log(
+      "Tạo biến thể mới: variantId=" + variantId + ", productId=" + productId
+      + ", sku=" + dto.sku,
+    );
+
+    return saved;
+  }
+
+{% if use_search %}
+  // ========================================================================
+  // Tích hợp tìm kiếm
+  // ========================================================================
+
+  /**
+   * Tìm kiếm sản phẩm nâng cao (tích hợp với hệ thống search).
+   *
+   * Hỗ trợ:
+   * - Tìm kiếm văn bản toàn cục
+   * - Lọc theo danh mục, khoảng giá, thuộc tính
+   * - Tổng hợp (aggregation) theo danh mục, thẻ
+   * - Phân trang
+   *
+   * @param query - Từ khóa tìm kiếm
+   * @param filters - Bộ lọc
+   * @param page - Số trang
+   * @param limit - Số lượng mỗi trang
+   * @returns Object chứa kết quả tìm kiếm
+   */
+  async searchProducts(
+    query: string,
+    filters: {
+      categoryId?: string;
+      minPrice?: number;
+      maxPrice?: number;
+      status?: string;
+      tags?: string[];
+    } = {},
+    page = 1,
+    limit = 20,
+  ): Promise<any> {
+    const where: any = { name: Like("%" + query + "%") };
+
+    if (filters.categoryId) {
+      where.categoryId = filters.categoryId;
+    }
+    if (filters.status) {
+      where.status = filters.status;
+    }
+
+    const [results, total] = await this.productRepository.findAndCount({
+      where,
+      skip: (page - 1) * limit,
+      take: limit,
+      order: { createdAt: "DESC" },
+    });
+
+    return {
+      products: results,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+{% endif %}
+}

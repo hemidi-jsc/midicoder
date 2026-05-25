@@ -1014,7 +1014,7 @@ core_packs:
     phase: P2
     description: Product/service catalog, hierarchical taxonomy, faceted search,
       attribute management
-    definitions_count: 4
+    definitions_count: 5
     obligations_count: 2
     depends_on:
       - CP01
@@ -1025,8 +1025,9 @@ core_packs:
       - taxonomy_hierarchy
       - faceted_search
       - attribute_manage
+      - variant_manage
     category: commerce
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP51
     name: Blueprint Composition Engine

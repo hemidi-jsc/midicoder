@@ -1,0 +1,467 @@
+# ----------------------------------------------------------
+# CP50 Catalog & Taxonomy Engine — Dich vu tim kiem voi bo loc
+# ----------------------------------------------------------
+# Sinh bởi CP50CatalogEmitter
+# Class: FacetedSearchService voi full-text search, bo loc,
+#        aggregations (category, brand, price_range, attributes),
+#        va tu hop CP10 search index
+# ----------------------------------------------------------
+
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+
+class FacetedSearchService:
+    """
+    Dich vu tim kiem voi bo loc (faceted search) — thuc hien tim kiem
+    san pham voi toan bo cac bo loc (status, category, brand, gia, tags,
+    visibility, attributes) va tra ve cac tong hop (aggregations) de
+    xay dung giao dien loc.
+
+    Cach layer: (1) Full-text search tren name, description,
+    (2) Bo loc so sanh (price_min, price_max),
+    (3) Aggregations dem so luong theo category, brand, price_range, attributes,
+    (4) Tu hop CP10 search index neu use_search=True de tim kiem nhanh hon.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        tenant_id: str,
+{% if use_search %}
+        _search_index=None,
+{% endif %}
+    ) -> None:
+        """
+        Khoi tao dich vu tim kiem voi phien lam viec SQLAlchemy async
+        va tenant_id de khoi tao cac truy van co pham vi tenant.
+
+        Tham so:
+            session: Phien lam viec async de truy cap co so du lieu.
+            tenant_id: ID tenant de loc toan bo ket qua theo pham vi.
+{% if use_search %}
+            _search_index: Search index CP10 de tim kiem nhanh (tuy chon).
+{% endif %}
+        """
+        self._session = session
+        self._tenant_id = tenant_id
+{% if use_search %}
+        self._search_index = _search_index
+{% else %}
+        self._search_index = None
+{% endif %}
+
+    # --------------------------------------------------------------
+    # Tìm kiếm với bộ lọc
+    # --------------------------------------------------------------
+
+    async def search_products(
+        self,
+        query: Optional[str] = None,
+        status: Optional[str] = None,
+        category_id: Optional[str] = None,
+        brand_id: Optional[str] = None,
+        price_min: Optional[float] = None,
+        price_max: Optional[float] = None,
+        tags: Optional[List[str]] = None,
+        visibility: Optional[str] = None,
+        attributes: Optional[Dict[str, Any]] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
+        """
+        Tim kiem san pham voi toan bo cac bo loc va tra ve aggregations.
+
+        Thuc hien:
+        1. Day cac dieu kien bo loc vao truy van SQLAlchemy
+        2. Full-text search tren name va description neu co query
+        3. Tinh toan cac aggregations (count theo category, brand, price_range, attributes)
+        4. Phan trang ket qua
+
+        Neu co search index (CP10), su dung de tim kiem nhanh hon
+        cho phan full-text search.
+
+        Tham so:
+            query: Tu khoa tim kiem (name, description).
+            status: Loc theo trang thai (draft, active, inactive, archived).
+            category_id: Loc theo danh muc.
+            brand_id: Loc theo thuong hieu.
+            price_min: Gia toi thieu.
+            price_max: Gia toi da.
+            tags: Danh sach tags de loc (phai co it nhat 1 tag trong danh sach).
+            visibility: Loc theo che do hien thi.
+            attributes: Loc theo gia tri thuoc tinh (dict key -> value).
+            page: So trang (bat dau tu 1).
+            page_size: So phan tu tren trang (1-100).
+
+        Tra ve:
+            Dict voi:
+            - total: Tong so ket qua
+            - page: So trang hien tai
+            - page_size: So phan tu tren trang
+            - products: Danh sach ProductModel trong trang hien tai
+            - aggregations: Danh sach Aggregation (category, brand, price_range, attributes)
+        """
+        model = self._product_model()
+        conditions = []
+
+        # Pham vi tenant va loai tru da xoa
+        conditions.append(model.tenant_id == self._tenant_id)
+        conditions.append(model.is_deleted == False)
+
+        # Bo loc theo status
+        if status:
+            conditions.append(model.status == status)
+
+        # Bo loc theo category_id
+        if category_id:
+            conditions.append(model.category_id == category_id)
+
+        # Bo loc theo brand_id
+        if brand_id:
+            conditions.append(model.brand_id == brand_id)
+
+        # Bo loc theo gia
+        if price_min is not None:
+            conditions.append(model.price >= price_min)
+        if price_max is not None:
+            conditions.append(model.price <= price_max)
+
+        # Bo loc theo tags (phai co it nhat 1 tag trong danh sach)
+        if tags:
+            # Su dung JSON_CONTAINS hoac overlap
+            # PostgreSQL: model.tags && tags
+            # MySQL: JSON_OVERLAPS
+            # SQLite: su dung ORM filter
+            tag_condition = or_(*[model.tags.contains(tag) for tag in tags])
+            conditions.append(tag_condition)
+
+        # Bo loc theo visibility
+        if visibility:
+            conditions.append(model.visibility == visibility)
+
+        # Full-text search tren name va description
+        if query:
+            search_pattern = f"%{query}%"
+            conditions.append(
+                or_(
+                    model.name.ilike(search_pattern),
+                    model.description.ilike(search_pattern),
+                )
+            )
+
+        # Bo loc theo attributes (gia tri thuoc tinh)
+        # (Xu ly rieng o phan sau vi can JOIN voi bang attribute_values)
+
+        # Xay dung query co ban
+        base_query = select(model).where(and_(*conditions))
+
+        # Tim kiem qua search index (neu co) de lay danh sach product_ids
+        product_id_filter = None
+{% if use_search %}
+        if query and self._search_index:
+            product_id_filter = await self._search_by_index(query)
+{% endif %}
+
+        if product_id_filter:
+            base_query = base_query.where(model.product_id.in_(product_id_filter))
+
+        # Dem tong so ket qua
+        count_query = select(func.count(model.id)).where(and_(*conditions))
+        if product_id_filter:
+            count_query = count_query.where(model.product_id.in_(product_id_filter))
+
+        count_result = await self._session.execute(count_query)
+        total = count_result.scalar_one()
+
+        # Phan trang va lay ket qua
+        offset = (page - 1) * page_size
+        items_query = base_query.order_by(
+            model.created_at.desc()
+        ).offset(offset).limit(page_size)
+
+        result = await self._session.execute(items_query)
+        products = list(result.scalars().all())
+
+        # Tinh toan aggregations
+        aggregations = await self._compute_aggregations(conditions)
+
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "products": products,
+            "aggregations": aggregations,
+        }
+
+    # --------------------------------------------------------------
+    # Tính toán aggregations
+    # --------------------------------------------------------------
+
+    async def _compute_aggregations(
+        self,
+        base_conditions: List[Any],
+    ) -> List[Dict[str, Any]]:
+        """
+        Tinh toan cac tong hop (aggregations) tu cac ket qua tim kiem.
+
+        Bao gom:
+        - Count theo category (category_id -> so luong)
+        - Count theo brand (brand_id -> so luong)
+        - Phan bo gia (price_range buckets: 0-100k, 100k-500k, 500k-1M, 1M+)
+        - Count theo attributes (key -> gia tri -> so luong)
+
+        Tham so:
+            base_conditions: Danh sach dieu kien bo loc da xay dung.
+
+        Tra ve:
+            Danh sach dict moi dict la mot aggregation voi label, type, buckets.
+        """
+        model = self._product_model()
+        aggregations = []
+
+        # --- Aggregation theo category ---
+        cat_query = select(
+            model.category_id,
+            func.count(model.id).label("count"),
+        ).where(
+            and_(*base_conditions),
+            model.category_id.isnot(None),
+        ).group_by(model.category_id)
+
+        cat_result = await self._session.execute(cat_query)
+        cat_rows = cat_result.all()
+
+        if cat_rows:
+            cat_buckets = []
+            for row in cat_rows:
+                cat_buckets.append({
+                    "key": row[0],
+                    "count": row[1],
+                })
+            # Sap xep theo count giam dan
+            cat_buckets.sort(key=lambda x: x["count"], reverse=True)
+
+            aggregations.append({
+                "label": "Danh muc",
+                "type": "count",
+                "field": "category_id",
+                "buckets": cat_buckets,
+            })
+
+        # --- Aggregation theo brand ---
+        brand_query = select(
+            model.brand_id,
+            func.count(model.id).label("count"),
+        ).where(
+            and_(*base_conditions),
+            model.brand_id.isnot(None),
+        ).group_by(model.brand_id)
+
+        brand_result = await self._session.execute(brand_query)
+        brand_rows = brand_result.all()
+
+        if brand_rows:
+            brand_buckets = []
+            for row in brand_rows:
+                brand_buckets.append({
+                    "key": row[0],
+                    "count": row[1],
+                })
+            brand_buckets.sort(key=lambda x: x["count"], reverse=True)
+
+            aggregations.append({
+                "label": "Thuong hieu",
+                "type": "count",
+                "field": "brand_id",
+                "buckets": brand_buckets,
+            })
+
+        # --- Aggregation theo price range ---
+        price_query = select(model.id, model.price).where(
+            and_(*base_conditions)
+        )
+        price_result = await self._session.execute(price_query)
+        price_rows = price_result.all()
+
+        if price_rows:
+            # Xay cac bucket gia
+            ranges = [
+                (0, 100000, "0 - 100.000"),
+                (100000, 500000, "100.000 - 500.000"),
+                (500000, 1000000, "500.000 - 1.000.000"),
+                (1000000, float("inf"), "1.000.000+"),
+            ]
+
+            price_buckets = []
+            for low, high, label in ranges:
+                count = sum(1 for _, p in price_rows if low <= float(p) < high)
+                if count > 0:
+                    price_buckets.append({
+                        "key": label,
+                        "min": low,
+                        "max": high if high != float("inf") else None,
+                        "count": count,
+                    })
+
+            if price_buckets:
+                aggregations.append({
+                    "label": "Muc gia",
+                    "type": "range",
+                    "field": "price",
+                    "buckets": price_buckets,
+                })
+
+        # --- Aggregation theo attributes ---
+        attr_aggs = await self._compute_attribute_aggregations(base_conditions)
+        aggregations.extend(attr_aggs)
+
+        return aggregations
+
+    # --------------------------------------------------------------
+    # Tính aggregation theo thuộc tính
+    # --------------------------------------------------------------
+
+    async def _compute_attribute_aggregations(
+        self,
+        base_conditions: List[Any],
+    ) -> List[Dict[str, Any]]:
+        """
+        Tinh aggregation cho cac thuoc tinh co is_filterable=True.
+
+        Duot qua tat ca AttributeDefinition co is_filterable=True,
+        dem so luong san pham moi gia tri thuoc tinh.
+
+        Tham so:
+            base_conditions: Danh sach dieu kien bo loc.
+
+        Tra ve:
+            Danh sach aggregation dict cho moi thuoc tinh filterable.
+        """
+        aggregations = []
+
+        # Lay cac thuoc tinh co is_filterable=True
+        attr_model = self._attribute_model()
+        attr_query = select(attr_model).where(
+            attr_model.is_filterable == True
+        )
+        attr_result = await self._session.execute(attr_query)
+        filterable_attrs = list(attr_result.scalars().all())
+
+        if not filterable_attrs:
+            return aggregations
+
+        # Lay danh sach product IDs tu base conditions
+        product_model = self._product_model()
+        id_query = select(product_model.product_id).where(and_(*base_conditions))
+        id_result = await self._session.execute(id_query)
+        product_ids = [row[0] for row in id_result.all()]
+
+        if not product_ids:
+            return aggregations
+
+        # Voi moi thuoc tinh filterable, dem gia tri
+        av_model = self._attr_value_model()
+        for attr in filterable_attrs:
+            # Lay cac attribute values cho product IDs va attribute nay
+            av_query = select(
+                av_model.value,
+                func.count(av_model.id).label("count"),
+            ).where(
+                and_(
+                    av_model.attribute_id == attr.attribute_id,
+                    av_model.product_id.in_(product_ids),
+                    av_model.variant_id.is_(None),
+                    av_model.value.isnot(None),
+                )
+            ).group_by(av_model.value)
+
+            av_result = await self._session.execute(av_query)
+            av_rows = av_result.all()
+
+            if av_rows:
+                buckets = []
+                for row in av_rows:
+                    buckets.append({
+                        "key": str(row[0]),
+                        "count": row[1],
+                    })
+                buckets.sort(key=lambda x: x["count"], reverse=True)
+
+                aggregations.append({
+                    "label": attr.name,
+                    "type": "count",
+                    "field": f"attribute.{attr.key}",
+                    "buckets": buckets,
+                })
+
+        return aggregations
+
+    # --------------------------------------------------------------
+    # Tim kiem qua search index (CP10)
+    # --------------------------------------------------------------
+
+{% if use_search %}
+    async def _search_by_index(
+        self,
+        query: str,
+    ) -> Optional[List[str]]:
+        """
+        Tim kiem qua CP10 search index de tra ve danh sach product_ids.
+
+        Su dung search index de tim kiem nhanh tren name va description,
+        sau do lay danh sach product_ids de loc trong truy van SQLAlchemy.
+
+        Tham so:
+            query: Tu khoa tim kiem.
+
+        Tra ve:
+            Danh sach product_ids hoac None neu khong co search index.
+        """
+        if self._search_index is None:
+            return None
+
+        try:
+            results = await self._search_index.search(
+                query=query,
+                filters={"tenant_id": self._tenant_id},
+                limit=1000,  # Lay du product IDs de loc
+            )
+            return [r["product_id"] for r in results.get("hits", [])]
+        except Exception as e:
+            logger.warning(
+                "Loi tim kiem qua search index: query=%s, error=%s",
+                query,
+                str(e),
+            )
+            return None
+{% endif %}
+
+    # --------------------------------------------------------------
+    # Nội bộ — Lấy model class
+    # --------------------------------------------------------------
+
+    @staticmethod
+    def _product_model():
+        """Lay ProductModel class."""
+        from catalog_models import ProductModel
+        return ProductModel
+
+    @staticmethod
+    def _attribute_model():
+        """Lay AttributeDefinitionModel class."""
+        from catalog_models import AttributeDefinitionModel
+        return AttributeDefinitionModel
+
+    @staticmethod
+    def _attr_value_model():
+        """Lay AttributeValueModel class."""
+        from catalog_models import AttributeValueModel
+        return AttributeValueModel

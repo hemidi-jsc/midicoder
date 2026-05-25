@@ -1,0 +1,513 @@
+# ----------------------------------------------------------
+# CP50 Catalog & Taxonomy Engine — Dich vu quan ly thuoc tinh
+# ----------------------------------------------------------
+# Sinh bởi CP50CatalogEmitter
+# Class: AttributeService voi CRUD thuoc tinh, gan gia tri
+#        cho san pham va bien the
+# ----------------------------------------------------------
+
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+
+class AttributeService:
+    """
+    Dich vu quan ly thuoc tinh — thuc hien CRUD dinh nghia thuoc tinh,
+    gan gia tri cho san pham (product-level) va bien the (variant-level).
+
+    Cach layer: (1) AttributeDefinition mo ta loai va quy tac thuoc tinh,
+    (2) AttributeValue gan gia tri cụ the cho san pham/bien the,
+    (3) get_product_attributes tra ve dict[key, value] de truy cap nhanh.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+{% if use_audit %}
+        _audit_logger=None,
+{% endif %}
+    ) -> None:
+        """
+        Khoi tao dich vu thuoc tinh voi phien lam viec SQLAlchemy async
+        va cac thanh phan tuy chon (audit logger).
+
+        Tham so:
+            session: Phien lam viec async de truy cap co so du lieu.
+{% if use_audit %}
+            _audit_logger: Audit logger de ghi nhat ky kiem toan (tuy chon).
+{% endif %}
+        """
+        self._session = session
+{% if use_audit %}
+        self._audit_logger = _audit_logger
+{% else %}
+        self._audit_logger = None
+{% endif %}
+
+    # --------------------------------------------------------------
+    # Tạo định nghĩa thuộc tính
+    # --------------------------------------------------------------
+
+    async def create_attribute(
+        self,
+        data: "AttributeDefinitionCreate",
+    ) -> Any:
+        """
+        Tao dinh nghia thuoc tinh moi cho catalog.
+
+        Xu ly loai du lieu, quy tac kiem tra, va danh sach tu chon (cho ENUM).
+        Tu dong tao key tu name neu chua duoc cung cap.
+
+        Tham so:
+            data: Schema AttributeDefinitionCreate chua thong tin thuoc tinh.
+
+        Tra ve:
+            doi tuong AttributeDefinitionModel moi duoc tao.
+        """
+        now = datetime.now(timezone.utc)
+
+        attribute = self._attribute_model()(
+            attribute_id=data.attribute_id,
+            name=data.name,
+            key=data.key or self._slugify(data.name),
+            attribute_type=data.attribute_type.value if hasattr(data.attribute_type, "value") else data.attribute_type,
+            is_required=data.is_required,
+            validation_rules=data.validation_rules,
+            options=data.options,
+            unit=data.unit,
+            is_searchable=data.is_searchable,
+            is_filterable=data.is_filterable,
+            is_visible=data.is_visible,
+            sort_order=data.sort_order,
+            metadata_json=data.metadata,
+            created_at=now,
+            updated_at=now,
+        )
+
+        self._session.add(attribute)
+        await self._session.commit()
+        await self._session.refresh(attribute)
+
+        # Phat audit event
+{% if use_audit %}
+        await self._audit_log(
+            action="attribute.created",
+            resource_id=data.attribute_id,
+            details={"name": data.name, "key": attribute.key, "type": attribute.attribute_type},
+        )
+{% endif %}
+
+        logger.info(
+            "Da tao thuoc tinh: attribute_id=%s, name=%s, key=%s, type=%s",
+            data.attribute_id,
+            data.name,
+            attribute.key,
+            attribute.attribute_type,
+        )
+
+        return attribute
+
+    # --------------------------------------------------------------
+    # Lấy thuộc tính theo ID
+    # --------------------------------------------------------------
+
+    async def get_attribute(
+        self,
+        attribute_id: str,
+    ) -> Optional[Any]:
+        """
+        Lay dinh nghia thuoc tinh theo attribute_id.
+
+        Tham so:
+            attribute_id: ID duy nhat cua thuoc tinh.
+
+        Tra ve:
+            doi tuong AttributeDefinitionModel hoac None neu khong tim thay.
+        """
+        query = select(self._attribute_model()).where(
+            self._attribute_model().attribute_id == attribute_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    # --------------------------------------------------------------
+    # Liệt kê thuộc tính
+    # --------------------------------------------------------------
+
+    async def list_attributes(
+        self,
+        attribute_type: Optional[str] = None,
+        is_filterable: Optional[bool] = None,
+        is_searchable: Optional[bool] = None,
+    ) -> List[Any]:
+        """
+        Lay danh sach tat ca dinh nghia thuoc tinh voi bo loc.
+
+        Bo loc: attribute_type (STRING, NUMBER, ...), is_filterable, is_searchable.
+        Sap xep theo sort_order va ten.
+
+        Tham so:
+            attribute_type: Loc theo loai thuoc tinh.
+            is_filterable: Loc theo co the loc duoc khong.
+            is_searchable: Loc theo co the tim kiem duoc khong.
+
+        Tra ve:
+            Danh sach AttributeDefinitionModel da duoc loc va sap xep.
+        """
+        conditions = []
+
+        if attribute_type:
+            conditions.append(
+                self._attribute_model().attribute_type == attribute_type
+            )
+
+        if is_filterable is not None:
+            conditions.append(
+                self._attribute_model().is_filterable == is_filterable
+            )
+
+        if is_searchable is not None:
+            conditions.append(
+                self._attribute_model().is_searchable == is_searchable
+            )
+
+        model = self._attribute_model()
+        query = select(model).order_by(
+            model.sort_order.asc(),
+            model.name.asc(),
+        )
+
+        if conditions:
+            query = query.where(and_(*conditions))
+
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    # --------------------------------------------------------------
+    # Đặt thuộc tính cho sản phẩm
+    # --------------------------------------------------------------
+
+    async def set_product_attribute(
+        self,
+        product_id: str,
+        attribute_id: str,
+        value: Any,
+    ) -> Any:
+        """
+        Gan cap nhat gia tri thuoc tinh cho mot san pham.
+
+        Neu da ton tai gia tri thuoc tinh cho product_id + attribute_id,
+        thi cap nhat gia tri moi. Neu chua ton tai, thi tao moi.
+
+        Tham so:
+            product_id: ID san pham can gan thuoc tinh.
+            attribute_id: ID thuoc tinh dinh nghia.
+            value: Gia tri thuc te (str/int/float/bool/list).
+
+        Tra ve:
+            doi tuong AttributeValueModel da duoc tao hoac cap nhat.
+
+        Nem ra:
+            ValueError: Neu thuoc tinh khong ton tai.
+        """
+        # Kiem tra thuoc tinh ton tai
+        attribute = await self.get_attribute(attribute_id)
+        if attribute is None:
+            raise ValueError(
+                "Khong tim thay thuoc tinh voi ID: {}".format(attribute_id)
+            )
+
+        # Kiem tra da co gia tri chua
+        existing = await self._get_attribute_value(product_id, attribute_id, variant_id=None)
+
+        if existing:
+            # Cap nhat gia tri hien co
+            existing.value = value
+            await self._session.commit()
+            await self._session.refresh(existing)
+
+            logger.info(
+                "Da cap nhat thuoc tinh san pham: product_id=%s, attribute_id=%s",
+                product_id,
+                attribute_id,
+            )
+        else:
+            # Tao moi
+            import uuid
+
+            av = self._attr_value_model()(
+                attribute_value_id=str(uuid.uuid4()),
+                attribute_id=attribute_id,
+                product_id=product_id,
+                variant_id=None,
+                value=value,
+            )
+
+            self._session.add(av)
+            await self._session.commit()
+            await self._session.refresh(av)
+
+            logger.info(
+                "Da tao thuoc tinh san pham: product_id=%s, attribute_id=%s",
+                product_id,
+                attribute_id,
+            )
+
+            return av
+
+        return existing
+
+    # --------------------------------------------------------------
+    # Đặt thuộc tính cho biến thể
+    # --------------------------------------------------------------
+
+    async def set_variant_attribute(
+        self,
+        product_id: str,
+        variant_id: str,
+        attribute_id: str,
+        value: Any,
+    ) -> Any:
+        """
+        Gan cap nhat gia tri thuoc tinh cho mot bien the cua san pham.
+
+        Ngoai su gan thuoc tinh o cap san pham, mot so gia tri
+        (mau sac, kich thuoc) can gan o cap bien the cu the.
+
+        Tham so:
+            product_id: ID san pham me.
+            variant_id: ID bien the can gan thuoc tinh.
+            attribute_id: ID thuoc tinh dinh nghia.
+            value: Gia tri thuc te (str/int/float/bool/list).
+
+        Tra ve:
+            doi tuong AttributeValueModel da duoc tao hoac cap nhat.
+
+        Nem ra:
+            ValueError: Neu thuoc tinh khong ton tai.
+        """
+        # Kiem tra thuoc tinh ton tai
+        attribute = await self.get_attribute(attribute_id)
+        if attribute is None:
+            raise ValueError(
+                "Khong tim thay thuoc tinh voi ID: {}".format(attribute_id)
+            )
+
+        # Kiem tra da co gia tri chua
+        existing = await self._get_attribute_value(product_id, attribute_id, variant_id=variant_id)
+
+        if existing:
+            # Cap nhat gia tri hien co
+            existing.value = value
+            await self._session.commit()
+            await self._session.refresh(existing)
+
+            logger.info(
+                "Da cap nhat thuoc tinh bien the: variant_id=%s, attribute_id=%s",
+                variant_id,
+                attribute_id,
+            )
+        else:
+            # Tao moi
+            import uuid
+
+            av = self._attr_value_model()(
+                attribute_value_id=str(uuid.uuid4()),
+                attribute_id=attribute_id,
+                product_id=product_id,
+                variant_id=variant_id,
+                value=value,
+            )
+
+            self._session.add(av)
+            await self._session.commit()
+            await self._session.refresh(av)
+
+            logger.info(
+                "Da tao thuoc tinh bien the: variant_id=%s, attribute_id=%s",
+                variant_id,
+                attribute_id,
+            )
+
+            return av
+
+        return existing
+
+    # --------------------------------------------------------------
+    # Lấy tất cả thuộc tính của sản phẩm
+    # --------------------------------------------------------------
+
+    async def get_product_attributes(
+        self,
+        product_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Lay toan bo thuoc tinh cua mot san pham duoi dang dict[key, value].
+
+        Ket hop thuoc tinh o cap product va cap variant (neu co multiple variants).
+        Mac dinh chi tra ve thuoc tinh o cap product (variant_id=None).
+
+        Tham so:
+            product_id: ID san pham can lay thuoc tinh.
+
+        Tra ve:
+            Dict voi khoa la 'key' cua AttributeDefinition va gia tri la value thuc te.
+        """
+        # Lay tat ca attribute values o cap product
+        query = select(self._attr_value_model()).where(
+            and_(
+                self._attr_value_model().product_id == product_id,
+                self._attr_value_model().variant_id.is_(None),
+            )
+        )
+        result = await self._session.execute(query)
+        values = list(result.scalars().all())
+
+        # Xay dung anh xa attribute_id -> AttributeDefinition de lay key
+        attr_ids = [v.attribute_id for v in values]
+        attr_map: Dict[str, str] = {}
+
+        if attr_ids:
+            attr_query = select(self._attribute_model()).where(
+                self._attribute_model().attribute_id.in_(attr_ids)
+            )
+            attr_result = await self._session.execute(attr_query)
+            attrs = list(attr_result.scalars().all())
+            for attr in attrs:
+                attr_map[attr.attribute_id] = attr.key
+
+        # Xay dung dict[key, value]
+        attributes_dict: Dict[str, Any] = {}
+        for v in values:
+            key = attr_map.get(v.attribute_id, v.attribute_id)
+            attributes_dict[key] = v.value
+
+        return attributes_dict
+
+    # --------------------------------------------------------------
+    # Nội bộ — Lấy giá trị thuộc tính
+    # --------------------------------------------------------------
+
+    async def _get_attribute_value(
+        self,
+        product_id: str,
+        attribute_id: str,
+        variant_id: Optional[str] = None,
+    ) -> Optional[Any]:
+        """
+        Lay gia tri thuoc tinh theo product_id, attribute_id, va variant_id.
+
+        Tham so:
+            product_id: ID san pham.
+            attribute_id: ID thuoc tinh.
+            variant_id: ID bien the (None neu o cap product).
+
+        Tra ve:
+            doi tuong AttributeValueModel hoac None.
+        """
+        conditions = [
+            self._attr_value_model().product_id == product_id,
+            self._attr_value_model().attribute_id == attribute_id,
+        ]
+
+        if variant_id:
+            conditions.append(
+                self._attr_value_model().variant_id == variant_id
+            )
+        else:
+            conditions.append(
+                self._attr_value_model().variant_id.is_(None)
+            )
+
+        query = select(self._attr_value_model()).where(and_(*conditions))
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    # --------------------------------------------------------------
+    # Nội bộ — Tự động tạo slug
+    # --------------------------------------------------------------
+
+    @staticmethod
+    def _slugify(text: str) -> str:
+        """
+        Chuyen chuoi thanh slug than thien voi URL.
+
+        Tham so:
+            text: Chuoi dau vao.
+
+        Tra ve:
+            Chuoi slug da xu ly.
+        """
+        import re
+        import unicodedata
+
+        text = text.lower().strip()
+        text = unicodedata.normalize("NFKD", text)
+        text = text.encode("ascii", "ignore").decode("ascii")
+        text = re.sub(r"[^\w\s-]", "", text)
+        text = re.sub(r"[\s_]+", "-", text)
+        text = re.sub(r"-+", "-", text)
+        return text.strip("-")
+
+    # --------------------------------------------------------------
+    # Nội bộ — Lấy model class
+    # --------------------------------------------------------------
+
+    @staticmethod
+    def _attribute_model():
+        """Lay AttributeDefinitionModel class."""
+        from catalog_models import AttributeDefinitionModel
+        return AttributeDefinitionModel
+
+    @staticmethod
+    def _attr_value_model():
+        """Lay AttributeValueModel class."""
+        from catalog_models import AttributeValueModel
+        return AttributeValueModel
+
+    # --------------------------------------------------------------
+    # Nội bộ — Audit log
+    # --------------------------------------------------------------
+
+{% if use_audit %}
+    async def _audit_log(
+        self,
+        action: str,
+        resource_id: str,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Phat audit event neu co audit logger.
+
+        Ghi nhan cac thao tac tren thuoc tinh de danh sach kiem toan.
+
+        Tham so:
+            action: Thao tac (attribute.created, ...).
+            resource_id: ID tai nguyen lien quan.
+            details: Chi tiet bo sung.
+        """
+        if self._audit_logger is None:
+            return
+
+        try:
+            event_data = {
+                "action": action,
+                "resource_id": resource_id,
+                "details": details or {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            await self._audit_logger.log_event(event_data)
+        except Exception as e:
+            logger.warning(
+                "Loi ghi audit log: action=%s, error=%s",
+                action,
+                str(e),
+            )
+{% endif %}

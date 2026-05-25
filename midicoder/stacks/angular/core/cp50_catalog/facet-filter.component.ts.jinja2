@@ -1,0 +1,532 @@
+{% raw %}/**
+ * CP50 Catalog & Taxonomy Engine — Facet Filter Component.
+ *
+ * Component cung cấp các bộ lọc đa chiều (facet filters) để lọc sản phẩm
+ * theo nhiều tiêu chí: khoảng giá, danh mục, thương hiệu, thẻ tag, thuộc tính.
+ *
+ * Sử dụng Signal-based state management và reactive patterns của Angular.
+ *
+ * Tạo tự động bởi CP50 — không sửa thủ công.
+ */
+
+import {
+  Component,
+  Input,
+  Output,
+  EventEmitter,
+  OnInit,
+  signal,
+  computed,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import {
+  AttributeDefinition,
+  AttributeType,
+  Category,
+} from './catalog-types';
+
+/**
+ * Bộ lọc đơn lẻ trong hệ thống facet.
+ */
+interface FacetFilterItem {
+  /** Tên bộ lọc (facet key). */
+  facet: string;
+  /** Giá trị đã chọn. */
+  value: string;
+  /** Nhãn hiển thị. */
+  label: string;
+}
+
+/**
+ * Khoảng giá.
+ */
+interface PriceRange {
+  /** Giá tối thiểu. */
+  min: number | null;
+  /** Giá tối đa. */
+  max: number | null;
+  /** Giá tối thiểu hiện tại của bộ dữ liệu. */
+  dataMin: number;
+  /** Giá tối đa hiện tại của bộ dữ liệu. */
+  dataMax: number;
+}
+
+/**
+ * Trạng thái bộ lọc.
+ */
+interface FilterState {
+  /** Khoảng giá. */
+  priceRange: PriceRange;
+  /** Các danh mục đã chọn. */
+  categories: string[];
+  /** Các thương hiệu đã chọn. */
+  brands: string[];
+  /** Các thẻ tag đã chọn. */
+  tags: string[];
+  /** Các thuộc tính đã chọn (key: attribute_id, value: mảng giá trị). */
+  attributes: Map<string, string[]>;
+}
+
+/**
+ * FacetFilterComponent — Bộ lọc đa chiều cho danh sách sản phẩm.
+ *
+ * Cung cấp giao diện để người dùng:
+ * - Lọc theo khoảng giá (min/max slider)
+ * - Lọc theo danh mục
+ * - Lọc theo thương hiệu
+ * - Lọc theo thẻ tag
+ * - Lọc theo các thuộc tính tùy chỉnh
+ * - Xem số lượng bộ lọc đang hoạt động
+ * - Xóa tất cả bộ lọc
+ */
+@Component({
+  selector: 'app-facet-filter',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './facet-filter.component.html',
+  styleUrl: './facet-filter.component.css',
+})
+export class FacetFilterComponent implements OnInit {
+  // ===========================================================================
+  // Inject dependencies
+  // ===========================================================================
+
+  // ===========================================================================
+  // Inputs
+  // ===========================================================================
+
+  /** Danh sách định nghĩa thuộc tính để hiển thị các bộ lọc thuộc tính. */
+  @Input() attributeDefinitions: AttributeDefinition[] = [];
+
+  /** Danh sách danh mục để lọc. */
+  @Input() categories: Category[] = [];
+
+  /** Danh sách thương hiệu. */
+  @Input() brands: string[] = [];
+
+  /** Danh sách thẻ tag. */
+  @Input() tags: string[] = [];
+
+  /** Dữ liệu tổng hợp (số lượng sản phẩm theo từng giá trị). */
+  @Input() aggregations: Record<string, Record<string, number>> = {};
+
+  // ===========================================================================
+  // Outputs
+  // ===========================================================================
+
+  /** Sự kiện khi bộ lọc thay đổi. */
+  @Output() readonly filtersChanged = new EventEmitter<FilterState>();
+
+  // ===========================================================================
+  // Signals
+  // ===========================================================================
+
+  /** Các facet có sẵn. */
+  readonly facets = signal<AttributeDefinition[]>([]);
+
+  /** Bộ lọc đang chọn. */
+  readonly selectedFilters = signal<FacetFilterItem[]>([]);
+
+  /** Trạng thái bộ lọc chi tiết. */
+  readonly filterState = signal<FilterState>({
+    priceRange: { min: null, max: null, dataMin: 0, dataMax: 10000000 },
+    categories: [],
+    brands: [],
+    tags: [],
+    attributes: new Map(),
+  });
+
+  /** Khoảng giá đang nhập. */
+  readonly priceInput = signal<{ min: string; max: string }>({
+    min: '',
+    max: '',
+  });
+
+  /** Đang hiển thị phần lọc nào. */
+  readonly expandedSections = signal<Set<string>>(
+    new Set(['price', 'category', 'brand', 'attributes'])
+  );
+
+  // ===========================================================================
+  // Computed signals
+  // ===========================================================================
+
+  /** Số lượng bộ lọc đang hoạt động. */
+  readonly activeFilterCount = computed(() => {
+    return this.getActiveFilterCount();
+  });
+
+  /** Các bộ lọc theo loại thuộc tính. */
+  readonly filterableAttributes = computed(() => {
+    return this.facets().filter((a) => a.is_filterable);
+  });
+
+  /** Các bộ lọc theo loại chọn lựa. */
+  readonly selectAttributes = computed(() => {
+    return this.facets().filter((a) => a.attribute_type === 'select');
+  });
+
+  // ===========================================================================
+  // Lifecycle
+  // ===========================================================================
+
+  /**
+   * Khởi tạo component — thiết lập các facet từ input.
+   */
+  ngOnInit(): void {
+    this.facets.set(this.attributeDefinitions);
+  }
+
+  // ===========================================================================
+  // Filter management
+  // ===========================================================================
+
+  /**
+   * Áp dụng bộ lọc (thêm giá trị vào bộ lọc).
+   *
+   * @param facet - Tên của facet (giá, danh mục, thương hiệu, tag, thuộc tính).
+   * @param value - Giá trị cần thêm vào bộ lọc.
+   * @param label - Nhãn hiển thị (tùy chọn).
+   */
+  applyFilter(facet: string, value: string, label?: string): void {
+    const currentFilters = [...this.selectedFilters()];
+
+    // Kiểm tra xem đã tồn tại chưa
+    const exists = currentFilters.some(
+      (f) => f.facet === facet && f.value === value
+    );
+    if (exists) {
+      return;
+    }
+
+    // Thêm vào selectedFilters
+    currentFilters.push({
+      facet,
+      value,
+      label: label || value,
+    });
+    this.selectedFilters.set(currentFilters);
+
+    // Cập nhật filterState chi tiết
+    this.updateFilterState(facet, value, true);
+
+    // Emit sự kiện
+    this.filtersChanged.emit(this.filterState());
+  }
+
+  /**
+   * Loại bỏ bộ lọc (xóa giá trị khỏi bộ lọc).
+   *
+   * @param facet - Tên của facet.
+   * @param value - Giá trị cần xóa.
+   */
+  removeFilter(facet: string, value: string): void {
+    // Xóa khỏi selectedFilters
+    const currentFilters = this.selectedFilters().filter(
+      (f) => !(f.facet === facet && f.value === value)
+    );
+    this.selectedFilters.set(currentFilters);
+
+    // Cập nhật filterState chi tiết
+    this.updateFilterState(facet, value, false);
+
+    // Emit sự kiện
+    this.filtersChanged.emit(this.filterState());
+  }
+
+  /**
+   * Xóa tất cả bộ lọc.
+   */
+  clearAll(): void {
+    this.selectedFilters.set([]);
+    this.filterState.set({
+      priceRange: { min: null, max: null, dataMin: 0, dataMax: 10000000 },
+      categories: [],
+      brands: [],
+      tags: [],
+      attributes: new Map(),
+    });
+    this.priceInput.set({ min: '', max: '' });
+    this.filtersChanged.emit(this.filterState());
+  }
+
+  /**
+   * Cập nhật filterState dựa trên facet đã chọn.
+   *
+   * @param facet - Tên facet.
+   * @param value - Giá trị.
+   * @param add - True để thêm, false để xóa.
+   */
+  private updateFilterState(facet: string, value: string, add: boolean): void {
+    const state = this.filterState();
+
+    switch (facet) {
+      case 'category':
+        if (add) {
+          if (!state.categories.includes(value)) {
+            this.filterState.update((s) => ({
+              ...s,
+              categories: [...s.categories, value],
+            }));
+          }
+        } else {
+          this.filterState.update((s) => ({
+            ...s,
+            categories: s.categories.filter((c) => c !== value),
+          }));
+        }
+        break;
+
+      case 'brand':
+        if (add) {
+          if (!state.brands.includes(value)) {
+            this.filterState.update((s) => ({
+              ...s,
+              brands: [...s.brands, value],
+            }));
+          }
+        } else {
+          this.filterState.update((s) => ({
+            ...s,
+            brands: s.brands.filter((b) => b !== value),
+          }));
+        }
+        break;
+
+      case 'tag':
+        if (add) {
+          if (!state.tags.includes(value)) {
+            this.filterState.update((s) => ({
+              ...s,
+              tags: [...s.tags, value],
+            }));
+          }
+        } else {
+          this.filterState.update((s) => ({
+            ...s,
+            tags: s.tags.filter((t) => t !== value),
+          }));
+        }
+        break;
+
+      case 'price_min':
+        this.filterState.update((s) => ({
+          ...s,
+          priceRange: { ...s.priceRange, min: parseFloat(value) || null },
+        }));
+        break;
+
+      case 'price_max':
+        this.filterState.update((s) => ({
+          ...s,
+          priceRange: { ...s.priceRange, max: parseFloat(value) || null },
+        }));
+        break;
+
+      default:
+        // Xử lý thuộc tính
+        if (add) {
+          const attrMap = new Map(state.attributes);
+          const currentValues = attrMap.get(facet) || [];
+          if (!currentValues.includes(value)) {
+            attrMap.set(facet, [...currentValues, value]);
+          }
+          this.filterState.update((s) => ({ ...s, attributes: attrMap }));
+        } else {
+          const attrMap = new Map(state.attributes);
+          const currentValues = attrMap.get(facet) || [];
+          attrMap.set(
+            facet,
+            currentValues.filter((v) => v !== value)
+          );
+          this.filterState.update((s) => ({ ...s, attributes: attrMap }));
+        }
+        break;
+    }
+  }
+
+  // ===========================================================================
+  // Price range
+  // ===========================================================================
+
+  /**
+   * Áp dụng khoảng giá từ input.
+   */
+  applyPriceRange(): void {
+    const input = this.priceInput();
+    const state = this.filterState();
+
+    const min = input.min ? parseFloat(input.min) : null;
+    const max = input.max ? parseFloat(input.max) : null;
+
+    this.filterState.update((s) => ({
+      ...s,
+      priceRange: { ...s.priceRange, min, max },
+    }));
+
+    // Cập nhật selectedFilters
+    const filters = this.selectedFilters()
+      .filter((f) => f.facet !== 'price_min' && f.facet !== 'price_max');
+
+    if (min !== null) {
+      filters.push({
+        facet: 'price_min',
+        value: String(min),
+        label: `Từ ${this.formatPrice(min)}`,
+      });
+    }
+    if (max !== null) {
+      filters.push({
+        facet: 'price_max',
+        value: String(max),
+        label: `Đến ${this.formatPrice(max)}`,
+      });
+    }
+
+    this.selectedFilters.set(filters);
+    this.filtersChanged.emit(this.filterState());
+  }
+
+  /**
+   * Reset khoảng giá.
+   */
+  resetPriceRange(): void {
+    this.priceInput.set({ min: '', max: '' });
+    this.filterState.update((s) => ({
+      ...s,
+      priceRange: { ...s.priceRange, min: null, max: null },
+    }));
+
+    const filters = this.selectedFilters().filter(
+      (f) => f.facet !== 'price_min' && f.facet !== 'price_max'
+    );
+    this.selectedFilters.set(filters);
+    this.filtersChanged.emit(this.filterState());
+  }
+
+  // ===========================================================================
+  // Section toggle
+  // ===========================================================================
+
+  /**
+   * Chuyển đổi trạng thái mở/đóng của phần lọc.
+   *
+   * @param section - Tên phần lọc.
+   */
+  toggleSection(section: string): void {
+    this.expandedSections.update((sections) => {
+      const newSet = new Set(sections);
+      if (newSet.has(section)) {
+        newSet.delete(section);
+      } else {
+        newSet.add(section);
+      }
+      return newSet;
+    });
+  }
+
+  /**
+   * Kiểm tra phần lọc có đang mở không.
+   *
+   * @param section - Tên phần lọc.
+   * @returns True nếu đang mở.
+   */
+  isSectionExpanded(section: string): boolean {
+    return this.expandedSections().has(section);
+  }
+
+  // ===========================================================================
+  // Utility
+  // ===========================================================================
+
+  /**
+   * Tính số lượng bộ lọc đang hoạt động.
+   *
+   * @returns Số lượng.
+   */
+  getActiveFilterCount(): number {
+    return this.selectedFilters().length;
+  }
+
+  /**
+   * Kiểm tra giá trị có đang được chọn trong bộ lọc không.
+   *
+   * @param facet - Tên facet.
+   * @param value - Giá trị cần kiểm tra.
+   * @returns True nếu đang được chọn.
+   */
+  isFilterSelected(facet: string, value: string): boolean {
+    return this.selectedFilters().some(
+      (f) => f.facet === facet && f.value === value
+    );
+  }
+
+  /**
+   * Lấy số lượng sản phẩm cho giá trị bộ lọc (từ aggregations).
+   *
+   * @param facet - Tên facet.
+   * @param value - Giá trị.
+   * @returns Số lượng hoặc undefined.
+   */
+  getFacetCount(facet: string, value: string): number | undefined {
+    const facetData = this.aggregations[facet];
+    if (!facetData) return undefined;
+    return facetData[value];
+  }
+
+  /**
+   * Lấy nhãn hiển thị cho định nghĩa thuộc tính.
+   *
+   * @param attr - Định nghĩa thuộc tính.
+   * @returns Nhãn hiển thị.
+   */
+  getAttributeName(attr: AttributeDefinition): string {
+    return attr.name || attr.key;
+  }
+
+  /**
+   * Định dạng giá tiền.
+   *
+   * @param price - Giá tiền.
+   * @returns Chuỗi giá đã định dạng.
+   */
+  formatPrice(price: number): string {
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: 'VND',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(price);
+  }
+
+  /**
+   * Lấy tên danh mục từ ID.
+   *
+   * @param categoryId - ID danh mục.
+   * @returns Tên danh mục.
+   */
+  getCategoryName(categoryId: string): string {
+    const cat = this.categories.find((c) => c.category_id === categoryId);
+    return cat?.name || categoryId;
+  }
+
+  /**
+   * Lấy nhãn loại thuộc tính.
+   *
+   * @param type - Loại thuộc tính.
+   * @returns Nhãn loại.
+   */
+  getAttributeTypeLabel(type: AttributeType): string {
+    const labels: Record<string, string> = {
+      text: 'Văn bản',
+      number: 'Số',
+      select: 'Chọn',
+      multiselect: 'Chọn nhiều',
+      date: 'Ngày',
+      boolean: 'Đúng/Sai',
+    };
+    return labels[type] || type;
+  }
+}
+{% endraw %}

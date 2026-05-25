@@ -1,0 +1,777 @@
+{% raw %}/**
+ * CP50 Catalog & Taxonomy Engine — Signal Store cho trạng thái danh mục sản phẩm và phân loại.
+ *
+ * Sử dụng pattern: BehaviorSubject source + toSignal computed. Quản lý trạng thái
+ * gồm sản phẩm, danh mục, cây danh mục, biến thể, thuộc tính, bộ lọc,
+ * trạng thái đang tải / lỗi.
+ *
+ * Tạo tự động bởi CP50 — không sửa thủ công.
+ */
+
+import { Injectable, inject } from '@angular/core';
+import { BehaviorSubject, Subject } from 'rxjs';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { computed } from '@angular/core';
+
+import { CatalogService } from './catalog.service';
+import {
+  Product,
+  ProductStatus,
+  Category,
+  ProductVariant,
+  AttributeDefinition,
+  AttributeValue,
+  ProductFilters,
+  ProductSearchFilters,
+  Visibility,
+} from './catalog-types';
+
+// ===========================================================================
+// Interface nội bộ — trạng thái store
+// ===========================================================================
+
+/**
+ * Toàn bộ trạng thái của CatalogStore.
+ * Không export ra ngoài — chỉ dùng nội bộ để đảm bảo immutability.
+ */
+interface CatalogStoreState {
+  /** Danh sách tất cả sản phẩm. */
+  products: Product[];
+  /** Sản phẩm đang được chọn. */
+  selectedProductId: string | null;
+  /** Danh sách tất cả danh mục. */
+  categories: Category[];
+  /** Cây danh mục đã xây dựng. */
+  categoryTree: Category[];
+  /** Danh sách định nghĩa thuộc tính. */
+  attributes: AttributeDefinition[];
+  /** Danh sách giá trị thuộc tính. */
+  attributeValues: AttributeValue[];
+  /** Danh sách biến thể của sản phẩm được chọn. */
+  variants: ProductVariant[];
+  /** Bộ lọc hiện tại. */
+  filters: CatalogFilterState;
+  /** Cờ đang tải dữ liệu. */
+  loading: boolean;
+  /** Thông báo lỗi cuối cùng (null nếu không có lỗi). */
+  error: string | null;
+}
+
+/**
+ * Trạng thái bộ lọc catalog.
+ */
+interface CatalogFilterState {
+  /** Lọc theo trạng thái sản phẩm. */
+  status: ProductStatus | null;
+  /** Lọc theo danh mục. */
+  categoryId: string | null;
+  /** Lọc theo thương hiệu. */
+  brandId: string | null;
+  /** Giá tối thiểu. */
+  priceMin: number | null;
+  /** Giá tối đa. */
+  priceMax: number | null;
+  /** Lọc theo khả năng hiển thị. */
+  visibility: Visibility | null;
+  /** Từ khóa tìm kiếm. */
+  searchQuery: string;
+  /** Các thẻ tag. */
+  tags: string[];
+}
+
+// ===========================================================================
+// Giá trị mặc định
+// ===========================================================================
+
+/** Trạng thái bộ lọc ban đầu. */
+const INITIAL_FILTERS: CatalogFilterState = {
+  status: null,
+  categoryId: null,
+  brandId: null,
+  priceMin: null,
+  priceMax: null,
+  visibility: null,
+  searchQuery: '',
+  tags: [],
+};
+
+/** Trạng thái ban đầu của store. */
+const INITIAL_STATE: CatalogStoreState = {
+  products: [],
+  selectedProductId: null,
+  categories: [],
+  categoryTree: [],
+  attributes: [],
+  attributeValues: [],
+  variants: [],
+  filters: { ...INITIAL_FILTERS },
+  loading: false,
+  error: null,
+};
+
+/**
+ * CatalogStore — Store quản lý trạng thái danh mục sản phẩm và phân loại.
+ *
+ * Pattern: BehaviorSubject -> toSignal -> computed signals.
+ *
+ * Sử dụng:
+ *   const store = inject(CatalogStore);
+ *   const products = store.products();
+ *   const filtered = store.filteredProducts();
+ *   store.loadProducts();
+ *   store.setFilter('status', 'active');
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class CatalogStore {
+  // ===========================================================================
+  // Inject dependencies
+  // ===========================================================================
+
+  /** Dịch vụ HTTP cho các thao tác catalog. */
+  private readonly catalogService = inject(CatalogService);
+
+  // ===========================================================================
+  // BehaviorSubject source
+  // ===========================================================================
+
+  /** Nguồn dữ liệu chính — BehaviorSubject giữ toàn bộ state. */
+  private readonly stateSubject = new BehaviorSubject<CatalogStoreState>(INITIAL_STATE);
+
+  /** Subject thông báo khi có bất kỳ action nào (cho debug/logging). */
+  private readonly actionSubject = new Subject<string>();
+
+  // ===========================================================================
+  // Subjects riêng cho từng loại dữ liệu (để toSignal hoạt động đúng)
+  // ===========================================================================
+
+  private readonly productsSubject = new BehaviorSubject<Product[]>(INITIAL_STATE.products);
+  private readonly selectedProductSubject = new BehaviorSubject<string | null>(INITIAL_STATE.selectedProductId);
+  private readonly categoriesSubject = new BehaviorSubject<Category[]>(INITIAL_STATE.categories);
+  private readonly categoryTreeSubject = new BehaviorSubject<Category[]>(INITIAL_STATE.categoryTree);
+  private readonly attributesSubject = new BehaviorSubject<AttributeDefinition[]>(INITIAL_STATE.attributes);
+  private readonly attributeValuesSubject = new BehaviorSubject<AttributeValue[]>(INITIAL_STATE.attributeValues);
+  private readonly variantsSubject = new BehaviorSubject<ProductVariant[]>(INITIAL_STATE.variants);
+  private readonly filtersSubject = new BehaviorSubject<CatalogFilterState>(INITIAL_STATE.filters);
+  private readonly loadingSubject = new BehaviorSubject<boolean>(INITIAL_STATE.loading);
+  private readonly errorSubject = new BehaviorSubject<string | null>(INITIAL_STATE.error);
+
+  // ===========================================================================
+  // Signals public
+  // ===========================================================================
+
+  /** Danh sách tất cả sản phẩm (signal). */
+  public readonly products = toSignal(this.productsSubject, { requireSync: true });
+
+  /** ID sản phẩm đang được chọn (signal). */
+  public readonly selectedProduct = toSignal(this.selectedProductSubject, { requireSync: true });
+
+  /** Danh sách tất cả danh mục (signal). */
+  public readonly categories = toSignal(this.categoriesSubject, { requireSync: true });
+
+  /** Cây danh mục đã xây dựng (signal). */
+  public readonly categoryTree = toSignal(this.categoryTreeSubject, { requireSync: true });
+
+  /** Danh sách định nghĩa thuộc tính (signal). */
+  public readonly attributes = toSignal(this.attributesSubject, { requireSync: true });
+
+  /** Danh sách giá trị thuộc tính (signal). */
+  public readonly attributeValues = toSignal(this.attributeValuesSubject, { requireSync: true });
+
+  /** Danh sách biến thể của sản phẩm được chọn (signal). */
+  public readonly variants = toSignal(this.variantsSubject, { requireSync: true });
+
+  /** Bộ lọc hiện tại (signal). */
+  public readonly filters = toSignal(this.filtersSubject, { requireSync: true });
+
+  /** Cờ đang tải dữ liệu (signal). */
+  public readonly isLoading = toSignal(this.loadingSubject, { requireSync: true });
+
+  /** Thông báo lỗi cuối cùng (signal). */
+  public readonly error = toSignal(this.errorSubject, { requireSync: true });
+
+  // ===========================================================================
+  // Computed signals — derived state
+  // ===========================================================================
+
+  /**
+   * Danh sách sản phẩm đã lọc dựa trên bộ lọc hiện tại.
+   * Sử dụng computed() để tự động cập nhật khi products hoặc filters thay đổi.
+   */
+  public readonly filteredProducts = computed(() => {
+    const allProducts = this.productsSubject.value;
+    const filters = this.filtersSubject.value;
+    let filtered = [...allProducts];
+
+    // Lọc theo trạng thái
+    if (filters.status) {
+      filtered = filtered.filter((p) => p.status === filters.status);
+    }
+
+    // Lọc theo danh mục
+    if (filters.categoryId) {
+      filtered = filtered.filter((p) => p.category_id === filters.categoryId);
+    }
+
+    // Lọc theo thương hiệu
+    if (filters.brandId) {
+      filtered = filtered.filter((p) => p.brand_id === filters.brandId);
+    }
+
+    // Lọc theo khoảng giá
+    if (filters.priceMin !== null) {
+      filtered = filtered.filter((p) => p.price >= (filters.priceMin ?? 0));
+    }
+    if (filters.priceMax !== null) {
+      filtered = filtered.filter((p) => p.price <= (filters.priceMax ?? Infinity));
+    }
+
+    // Lọc theo khả năng hiển thị
+    if (filters.visibility) {
+      filtered = filtered.filter((p) => p.visibility === filters.visibility);
+    }
+
+    // Lọc theo từ khóa tìm kiếm
+    if (filters.searchQuery) {
+      const query = filters.searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (p) =>
+          p.name.toLowerCase().includes(query) ||
+          p.sku.toLowerCase().includes(query) ||
+          (p.description && p.description.toLowerCase().includes(query))
+      );
+    }
+
+    // Lọc theo thẻ tag
+    if (filters.tags.length > 0) {
+      filtered = filtered.filter((p) =>
+        filters.tags.some((tag) => p.tags?.includes(tag))
+      );
+    }
+
+    // Loại bỏ sản phẩm đã bị xóa
+    filtered = filtered.filter((p) => !p.is_deleted);
+
+    return filtered;
+  });
+
+  /**
+   * Tổng số sản phẩm (không bao gồm sản phẩm đã xóa).
+   */
+  public readonly productCount = computed(() => {
+    return this.productsSubject.value.filter((p) => !p.is_deleted).length;
+  });
+
+  /**
+   * Số lượng bộ lọc đang hoạt động.
+   */
+  public readonly activeFiltersCount = computed(() => {
+    const f = this.filtersSubject.value;
+    let count = 0;
+    if (f.status) count++;
+    if (f.categoryId) count++;
+    if (f.brandId) count++;
+    if (f.priceMin !== null) count++;
+    if (f.priceMax !== null) count++;
+    if (f.visibility) count++;
+    if (f.searchQuery) count++;
+    if (f.tags.length > 0) count++;
+    return count;
+  });
+
+  /**
+   * Sản phẩm đang được chọn (dữ liệu đầy đủ).
+   */
+  public readonly selectedProductData = computed(() => {
+    const id = this.selectedProductSubject.value;
+    if (!id) return null;
+    return (
+      this.productsSubject.value.find((p) => p.product_id === id) ?? null
+    );
+  });
+
+  /**
+   * Các danh mục đang hoạt động.
+   */
+  public readonly activeCategories = computed(() => {
+    return this.categoriesSubject.value.filter((c) => c.is_active);
+  });
+
+  /**
+   * Các danh mục cấp gốc (không có parent_id).
+   */
+  public readonly rootCategories = computed(() => {
+    return this.categoriesSubject.value.filter((c) => !c.parent_id);
+  });
+
+  /**
+   * Các thuộc tính có thể dùng để lọc.
+   */
+  public readonly filterableAttributes = computed(() => {
+    return this.attributesSubject.value.filter((a) => a.is_filterable);
+  });
+
+  // ===========================================================================
+  // Actions — tải dữ liệu từ server
+  // ===========================================================================
+
+  /**
+   * Tải tất cả sản phẩm từ server.
+   *
+   * @param filters - Tiêu chí lọc (tùy chọn).
+   */
+  loadProducts(filters?: ProductFilters): void {
+    this.setLoading(true);
+    this.setError(null);
+
+    this.catalogService.getProducts(filters).subscribe({
+      next: (products) => {
+        this.productsSubject.next([...products]);
+        this.stateSubject.next({ ...this.stateSubject.value, products: [...products] });
+        this.setLoading(false);
+        this.actionSubject.next('loadProducts');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tải danh sách sản phẩm');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  /**
+   * Tải chi tiết một sản phẩm từ server.
+   *
+   * @param id - ID sản phẩm.
+   */
+  loadProduct(id: string): void {
+    this.setLoading(true);
+    this.setError(null);
+
+    this.catalogService.getProduct(id).subscribe({
+      next: (product) => {
+        // Thêm hoặc cập nhật sản phẩm trong danh sách
+        const current = this.productsSubject.value;
+        const exists = current.find((p) => p.product_id === product.product_id);
+        if (exists) {
+          this.productsSubject.next(
+            current.map((p) => (p.product_id === id ? product : p))
+          );
+        } else {
+          this.productsSubject.next([...current, product]);
+        }
+        this.stateSubject.next({ ...this.stateSubject.value, products: this.productsSubject.value });
+        this.selectProduct(id);
+        this.setLoading(false);
+        this.actionSubject.next(`loadProduct:${id}`);
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tải chi tiết sản phẩm');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  /**
+   * Tải tất cả danh mục sản phẩm.
+   */
+  loadCategories(): void {
+    this.setLoading(true);
+    this.setError(null);
+
+    this.catalogService.getCategories().subscribe({
+      next: (categories) => {
+        this.categoriesSubject.next([...categories]);
+        this.stateSubject.next({
+          ...this.stateSubject.value,
+          categories: [...categories],
+        });
+        this.setLoading(false);
+        this.actionSubject.next('loadCategories');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tải danh sách danh mục');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  /**
+   * Tải cây danh mục phân cấp.
+   */
+  loadCategoryTree(): void {
+    this.setLoading(true);
+    this.setError(null);
+
+    this.catalogService.getCategoryTree().subscribe({
+      next: (tree) => {
+        this.categoryTreeSubject.next([...tree]);
+        this.stateSubject.next({
+          ...this.stateSubject.value,
+          categoryTree: [...tree],
+        });
+        this.setLoading(false);
+        this.actionSubject.next('loadCategoryTree');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tải cây danh mục');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  /**
+   * Tải tất cả định nghĩa thuộc tính.
+   */
+  loadAttributes(): void {
+    this.setLoading(true);
+    this.setError(null);
+
+    this.catalogService.getAttributes().subscribe({
+      next: (attributes) => {
+        this.attributesSubject.next([...attributes]);
+        this.stateSubject.next({
+          ...this.stateSubject.value,
+          attributes: [...attributes],
+        });
+        this.setLoading(false);
+        this.actionSubject.next('loadAttributes');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tải danh sách thuộc tính');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  /**
+   * Tải biến thể của sản phẩm.
+   *
+   * @param productId - ID sản phẩm.
+   */
+  loadVariants(productId: string): void {
+    this.setLoading(true);
+    this.setError(null);
+
+    this.catalogService.getVariants(productId).subscribe({
+      next: (variants) => {
+        this.variantsSubject.next([...variants]);
+        this.stateSubject.next({
+          ...this.stateSubject.value,
+          variants: [...variants],
+        });
+        this.setLoading(false);
+        this.actionSubject.next(`loadVariants:${productId}`);
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tải danh sách biến thể');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  /**
+   * Tải tất cả dữ liệu ban đầu (dùng trong ngOnInit của ứng dụng).
+   */
+  loadAll(): void {
+    this.loadProducts();
+    this.loadCategories();
+    this.loadAttributes();
+  }
+
+  // ===========================================================================
+  // Actions — bộ lọc
+  // ===========================================================================
+
+  /**
+   * Đặt giá trị bộ lọc.
+   *
+   * @param key - Khóa bộ lọc.
+   * @param value - Giá trị mới.
+   */
+  setFilter<K extends keyof CatalogFilterState>(
+    key: K,
+    value: CatalogFilterState[K]
+  ): void {
+    this.filtersSubject.update((f) => ({ ...f, [key]: value }));
+    this.stateSubject.next({
+      ...this.stateSubject.value,
+      filters: this.filtersSubject.value,
+    });
+    this.actionSubject.next(`setFilter:${key}`);
+  }
+
+  /**
+   * Xóa tất cả bộ lọc.
+   */
+  clearFilters(): void {
+    this.filtersSubject.next({ ...INITIAL_FILTERS });
+    this.stateSubject.next({
+      ...this.stateSubject.value,
+      filters: { ...INITIAL_FILTERS },
+    });
+    this.actionSubject.next('clearFilters');
+  }
+
+  // ===========================================================================
+  // Actions — chọn sản phẩm
+  // ===========================================================================
+
+  /**
+   * Chọn một sản phẩm và tải biến thể của nó.
+   *
+   * @param productId - ID sản phẩm cần chọn.
+   */
+  selectProduct(productId: string): void {
+    this.selectedProductSubject.next(productId);
+    this.stateSubject.next({
+      ...this.stateSubject.value,
+      selectedProductId: productId,
+    });
+    this.actionSubject.next(`selectProduct:${productId}`);
+
+    // Tự động tải biến thể
+    this.loadVariants(productId);
+  }
+
+  /**
+   * Bỏ chọn sản phẩm hiện tại.
+   */
+  deselectProduct(): void {
+    this.selectedProductSubject.next(null);
+    this.variantsSubject.next([]);
+    this.stateSubject.next({
+      ...this.stateSubject.value,
+      selectedProductId: null,
+      variants: [],
+    });
+    this.actionSubject.next('deselectProduct');
+  }
+
+  // ===========================================================================
+  // Actions — tìm kiếm
+  // ===========================================================================
+
+  /**
+   * Tìm kiếm sản phẩm theo từ khóa.
+   *
+   * @param query - Từ khóa tìm kiếm.
+   * @param filters - Bộ lọc bổ sung (tùy chọn).
+   */
+  search(query: string, filters?: ProductSearchFilters): void {
+    this.setLoading(true);
+    this.setError(null);
+    this.setFilter('searchQuery', query);
+
+    this.catalogService.searchProducts(query, filters).subscribe({
+      next: (results) => {
+        this.productsSubject.next([...results]);
+        this.stateSubject.next({
+          ...this.stateSubject.value,
+          products: [...results],
+        });
+        this.setLoading(false);
+        this.actionSubject.next(`search:${query}`);
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tìm kiếm sản phẩm');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  // ===========================================================================
+  // Actions — trạng thái tải và lỗi
+  // ===========================================================================
+
+  /**
+   * Đặt cờ đang tải.
+   *
+   * @param loading - Trạng thái đang tải.
+   */
+  setLoading(loading: boolean): void {
+    this.loadingSubject.next(loading);
+    this.stateSubject.next({ ...this.stateSubject.value, loading });
+  }
+
+  /**
+   * Đặt thông báo lỗi.
+   *
+   * @param error - Thông báo lỗi (null để xóa lỗi).
+   */
+  setError(error: string | null): void {
+    this.errorSubject.next(error);
+    this.stateSubject.next({ ...this.stateSubject.value, error });
+  }
+
+  /**
+   * Xóa thông báo lỗi hiện tại.
+   */
+  clearError(): void {
+    this.setError(null);
+  }
+
+  // ===========================================================================
+  // Tiện ích truy xuất dữ liệu
+  // ===========================================================================
+
+  /**
+   * Lấy sản phẩm theo ID.
+   *
+   * @param productId - ID sản phẩm cần tìm.
+   * @returns Sản phẩm tìm thấy hoặc undefined.
+   */
+  getProductById(productId: string): Product | undefined {
+    return this.productsSubject.value.find(
+      (p) => p.product_id === productId
+    );
+  }
+
+  /**
+   * Lấy danh sách biến thể theo sản phẩm.
+   *
+   * @param productId - ID sản phẩm.
+   * @returns Danh sách biến thể.
+   */
+  getVariantsForProduct(productId: string): ProductVariant[] {
+    return this.variantsSubject.value.filter(
+      (v) => v.product_id === productId
+    );
+  }
+
+  /**
+   * Lấy danh sách giá trị thuộc tính theo sản phẩm.
+   *
+   * @param productId - ID sản phẩm.
+   * @returns Danh sách giá trị thuộc tính.
+   */
+  getAttributesForProduct(productId: string): AttributeValue[] {
+    return this.attributeValuesSubject.value.filter(
+      (av) => av.product_id === productId
+    );
+  }
+
+  /**
+   * Lấy danh mục theo ID.
+   *
+   * @param categoryId - ID danh mục.
+   * @returns Danh mục tìm thấy hoặc undefined.
+   */
+  getCategoryById(categoryId: string): Category | undefined {
+    return this.categoriesSubject.value.find(
+      (c) => c.category_id === categoryId
+    );
+  }
+
+  /**
+   * Lấy danh sách con của danh mục.
+   *
+   * @param parentId - ID danh mục cha.
+   * @returns Danh sách danh mục con.
+   */
+  getSubCategories(parentId: string): Category[] {
+    return this.categoriesSubject.value.filter(
+      (c) => c.parent_id === parentId
+    );
+  }
+
+  /**
+   * Lấy định nghĩa thuộc tính theo ID.
+   *
+   * @param attributeId - ID thuộc tính.
+   * @returns Định nghĩa thuộc tính hoặc undefined.
+   */
+  getAttributeDefinition(attributeId: string): AttributeDefinition | undefined {
+    return this.attributesSubject.value.find(
+      (a) => a.attribute_id === attributeId
+    );
+  }
+
+  /**
+   * Đếm số sản phẩm theo danh mục.
+   *
+   * @param categoryId - ID danh mục.
+   * @returns Số lượng sản phẩm.
+   */
+  countProductsByCategory(categoryId: string): number {
+    return this.productsSubject.value.filter(
+      (p) => p.category_id === categoryId && !p.is_deleted
+    ).length;
+  }
+
+  /**
+   * Đếm số sản phẩm theo trạng thái.
+   *
+   * @param status - Trạng thái sản phẩm.
+   * @returns Số lượng sản phẩm.
+   */
+  countProductsByStatus(status: ProductStatus): number {
+    return this.productsSubject.value.filter(
+      (p) => p.status === status && !p.is_deleted
+    ).length;
+  }
+
+  /**
+   * Lấy khoảng giá tối thiểu và tối đa từ danh sách sản phẩm.
+   *
+   * @returns Đối tượng chứa min và max.
+   */
+  getPriceRange(): { min: number; max: number } {
+    const activeProducts = this.productsSubject.value.filter(
+      (p) => !p.is_deleted && p.status === 'active'
+    );
+    if (activeProducts.length === 0) {
+      return { min: 0, max: 0 };
+    }
+    const prices = activeProducts.map((p) => p.price);
+    return {
+      min: Math.min(...prices),
+      max: Math.max(...prices),
+    };
+  }
+
+  /**
+   * Lấy danh sách tất cả thẻ tag duy nhất từ các sản phẩm.
+   *
+   * @returns Mảng thẻ tag.
+   */
+  getAllTags(): string[] {
+    const tagSet = new Set<string>();
+    for (const product of this.productsSubject.value) {
+      if (product.tags) {
+        for (const tag of product.tags) {
+          tagSet.add(tag);
+        }
+      }
+    }
+    return Array.from(tagSet).sort();
+  }
+
+  /**
+   * Reset toàn bộ store về trạng thái ban đầu.
+   */
+  reset(): void {
+    this.productsSubject.next([]);
+    this.selectedProductSubject.next(null);
+    this.categoriesSubject.next([]);
+    this.categoryTreeSubject.next([]);
+    this.attributesSubject.next([]);
+    this.attributeValuesSubject.next([]);
+    this.variantsSubject.next([]);
+    this.filtersSubject.next({ ...INITIAL_FILTERS });
+    this.loadingSubject.next(false);
+    this.errorSubject.next(null);
+    this.stateSubject.next({ ...INITIAL_STATE });
+    this.actionSubject.next('reset');
+  }
+
+  /**
+   * Lấy trạng thái hiện tại của toàn bộ store (cho debug/testing).
+   *
+   * @returns Snapshot trạng thái hiện tại.
+   */
+  getState(): CatalogStoreState {
+    return { ...this.stateSubject.value };
+  }
+}
+{% endraw %}

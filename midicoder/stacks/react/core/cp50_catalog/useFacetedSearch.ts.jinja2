@@ -1,0 +1,469 @@
+{% raw %}
+/**
+ * CP50 Catalog & Taxonomy Engine — Custom hook tìm kiếm có phân loại (Faceted Search)
+ *
+ * Cung cấp khả năng tìm kiếm sản phẩm kèm theo các tổng hợp (aggregations)
+ * tự động từ API. Người dùng có thể lọc theo danh mục, thương hiệu,
+ * khoảng giá, và các thuộc tính tùy chỉnh — kết quả aggregations sẽ
+ * cập nhật động theo bộ lọc hiện tại.
+ */
+import { useState, useCallback, useRef } from 'react';
+
+/* ========================================================================
+   Kiểu dữ liệu
+   ======================================================================== */
+
+/** Ảnh sản phẩm */
+export interface ProductImage {
+  url: string;
+  alt_text: string;
+  is_primary: boolean;
+  sort_order: number;
+}
+
+/** Trạng thái sản phẩm */
+export enum ProductStatus {
+  DRAFT = 'DRAFT',
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+  ARCHIVED = 'ARCHIVED',
+}
+
+/** Sản phẩm (dạng gọn dùng trong kết quả tìm kiếm) */
+export interface Product {
+  product_id: string;
+  name: string;
+  slug: string;
+  sku: string;
+  description: string;
+  category_id: string | null;
+  brand_id: string | null;
+  price: number;
+  cost_price: number;
+  compare_at_price: number | null;
+  currency: string;
+  weight: number | null;
+  status: ProductStatus;
+  visibility: string;
+  tags: string[];
+  images: ProductImage[];
+  is_deleted: boolean;
+  created_at: string;
+}
+
+/* ========================================================================
+   Tổng hợp (Aggregations)
+   ======================================================================== */
+
+/** Tổng hợp theo danh mục */
+export interface CategoryAggregation {
+  category_id: string;
+  name: string;
+  count: number;
+}
+
+/** Tổng hợp theo thương hiệu */
+export interface BrandAggregation {
+  brand_id: string;
+  name: string;
+  count: number;
+}
+
+/** Tổng hợp theo khoảng giá */
+export interface PriceRangeAggregation {
+  min: number;
+  max: number;
+  label: string;
+  count: number;
+}
+
+/** Tổng hợp theo thuộc tính tùy chỉnh */
+export interface AttributeAggregation {
+  attribute_id: string;
+  name: string;
+  key: string;
+  options: Array<{
+    value: string;
+    count: number;
+  }>;
+}
+
+/** Tập hợp tất cả các tổng hợp */
+export interface Aggregations {
+  category: CategoryAggregation[];
+  brand: BrandAggregation[];
+  priceRange: PriceRangeAggregation[];
+  attributes: AttributeAggregation[];
+}
+
+/* ========================================================================
+   Bộ lọc tìm kiếm
+   ======================================================================== */
+
+export interface SearchFilters {
+  /** Từ khóa tìm kiếm */
+  query?: string;
+  /** Lọc theo danh mục (nhiều giá trị) */
+  categories?: string[];
+  /** Lọc theo thương hiệu (nhiều giá trị) */
+  brands?: string[];
+  /** Giá tối thiểu */
+  priceMin?: number;
+  /** Giá tối đa */
+  priceMax?: number;
+  /** Lọc theo thẻ (nhiều giá trị) */
+  tags?: string[];
+  /** Lọc theo thuộc tính tùy chỉnh: key -> [values] */
+  attributes?: Record<string, string[]>;
+  /** Trạng thái sản phẩm */
+  status?: ProductStatus | string;
+  /** Số kết quả mỗi trang */
+  pageSize?: number;
+  /** Trang hiện tại */
+  page?: number;
+}
+
+/* ========================================================================
+   Kết quả tìm kiếm
+   ======================================================================== */
+
+export interface SearchResult {
+  product: Product;
+  /** Điểm tương đồng (càng cao càng khớp) */
+  score: number;
+  /** Các trường có nội dung khớp với từ khóa */
+  matched_fields: string[];
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  aggregations: Aggregations;
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+/* ========================================================================
+   Tùy chọn hook
+   ======================================================================== */
+
+export interface UseFacetedSearchOptions {
+  /** URL cơ sở của API (mặc định '/api/v1') */
+  apiBaseUrl?: string;
+  /** Số kết quả mỗi trang (mặc định: 20) */
+  defaultPageSize?: number;
+  /** Độ trễ debouncing khi gõ tìm kiếm (ms, mặc định: 300) */
+  debounceMs?: number;
+}
+
+/* ========================================================================
+   Giá trị trả về
+   ======================================================================== */
+
+interface UseFacetedSearchReturn {
+  /** Mảng kết quả tìm kiếm hiện tại */
+  results: SearchResult[];
+  /** Các tổng hợp từ kết quả tìm kiếm */
+  aggregations: Aggregations;
+  /** Đang tải */
+  isLoading: boolean;
+  /** Thông báo lỗi */
+  error: string | null;
+  /** Thực hiện tìm kiếm (có thể gọi với từ khóa hoặc không) */
+  search: (query?: string) => Promise<void>;
+  /** Bộ lọc hiện tại */
+  filters: SearchFilters;
+  /** Cập nhật bộ lọc */
+  setFilters: (filters: SearchFilters | ((prev: SearchFilters) => SearchFilters)) => void;
+  /** Tổng số kết quả */
+  totalResults: number;
+  /** Tổng số trang */
+  totalPages: number;
+  /** Trang hiện tại */
+  currentPage: number;
+  /** Chuyển trang */
+  goToPage: (page: number) => void;
+}
+
+/* ========================================================================
+   Hook chính
+   ======================================================================== */
+
+/**
+ * Hook tìm kiếm có phân loại (faceted search).
+ *
+ * Quản lý bộ lọc, gọi API tìm kiếm, và trả về kết quả kèm
+ * các tổng hợp để hiển thị thanh bộ lọc hai bên.
+ *
+ * @example
+ * ```tsx
+ * const { results, aggregations, search, filters, setFilters } =
+ *   useFacetedSearch({ apiBaseUrl: '/api/v1' });
+ *
+ * // Tìm kiếm theo từ khóa
+ * await search('iPhone 15');
+ *
+ * // Thay đổi bộ lọc
+ * setFilters({ ...filters, categories: ['electronics'] });
+ * ```
+ */
+export function useFacetedSearch(
+  options: UseFacetedSearchOptions = {}
+): UseFacetedSearchReturn {
+  /* --- Phân tích tham số --- */
+  const apiBaseUrl = options.apiBaseUrl ?? '/api/v1';
+  const defaultPageSize = options.defaultPageSize ?? 20;
+  const debounceMs = options.debounceMs ?? 300;
+
+  /* --- Trạng thái --- */
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [aggregations, setAggregations] = useState<Aggregations>({
+    category: [],
+    brand: [],
+    priceRange: [],
+    attributes: [],
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [totalResults, setTotalResults] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(0);
+
+  const [filters, setFiltersState] = useState<SearchFilters>({
+    pageSize: defaultPageSize,
+    page: 1,
+  });
+
+  /* --- Debounce ref --- */
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  /* --- Hàm setFilters (hỗ trợ function updater) --- */
+  const setFilters = useCallback(
+    (updater: SearchFilters | ((prev: SearchFilters) => SearchFilters)) => {
+      setFiltersState((prev) => {
+        const newFilters =
+          typeof updater === 'function' ? updater(prev) : updater;
+
+        /* Khi bộ lọc thay đổi, tự động reset về trang 1 */
+        if (newFilters.page !== prev.page && newFilters.page !== 1) {
+          /* Giữ nguyên page nếu người dùng chủ đích thay đổi */
+        } else if (
+          newFilters.query !== prev.query ||
+          JSON.stringify(newFilters.categories) !==
+            JSON.stringify(prev.categories) ||
+          JSON.stringify(newFilters.brands) !== JSON.stringify(prev.brands) ||
+          newFilters.priceMin !== prev.priceMin ||
+          newFilters.priceMax !== prev.priceMax ||
+          JSON.stringify(newFilters.tags) !== JSON.stringify(prev.tags) ||
+          JSON.stringify(newFilters.attributes) !==
+            JSON.stringify(prev.attributes) ||
+          newFilters.status !== prev.status
+        ) {
+          return { ...newFilters, page: 1 };
+        }
+
+        return newFilters;
+      });
+    },
+    []
+  );
+
+  /* ====================================================================
+     Hàm thực hiện tìm kiếm
+     ==================================================================== */
+
+  /**
+   * Gọi API tìm kiếm với bộ lọc hiện tại (hoặc từ khóa mới).
+   *
+   * Hỗ trợ AbortController để huỷ yêu cầu cũ khi có yêu cầu mới.
+   */
+  const search = useCallback(
+    async (query?: string): Promise<void> => {
+      /* Huỷ yêu cầu đang thực hiện */
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      /* Nếu có từ khóa mới, cập nhật filters và debounce */
+      if (query !== undefined) {
+        setFiltersState((prev) => ({ ...prev, query: query?.trim() ?? '', page: 1 }));
+
+        /* Debounce: chỉ thực hiện API call sau khi người dùng ngừng gõ */
+        if (debounceTimer.current) {
+          clearTimeout(debounceTimer.current);
+        }
+
+        debounceTimer.current = setTimeout(() => {
+          executeSearch(controller);
+        }, debounceMs);
+
+        return;
+      }
+
+      /* Nếu không có query — thực hiện ngay (ví dụ: người dùng thay đổi bộ lọc) */
+      executeSearch(controller);
+    },
+    [debounceMs, setFiltersState]
+  );
+
+  /**
+   * Thực thi cuộc gọi API tìm kiếm.
+   */
+  async function executeSearch(controller: AbortController): Promise<void> {
+    const currentFilters = filters;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const queryParts: string[] = [];
+
+      /* Từ khóa */
+      if (currentFilters.query) {
+        queryParts.push(`q=${encodeURIComponent(currentFilters.query)}`);
+      }
+
+      /* Phân trang */
+      queryParts.push(`page=${currentFilters.page ?? 1}`);
+      queryParts.push(`page_size=${currentFilters.pageSize ?? defaultPageSize}`);
+
+      /* Danh mục */
+      if (currentFilters.categories?.length) {
+        currentFilters.categories.forEach((catId) => {
+          queryParts.push(`category_id=${encodeURIComponent(catId)}`);
+        });
+      }
+
+      /* Thương hiệu */
+      if (currentFilters.brands?.length) {
+        currentFilters.brands.forEach((brandId) => {
+          queryParts.push(`brand_id=${encodeURIComponent(brandId)}`);
+        });
+      }
+
+      /* Khoảng giá */
+      if (currentFilters.priceMin !== undefined) {
+        queryParts.push(`price_min=${currentFilters.priceMin}`);
+      }
+      if (currentFilters.priceMax !== undefined) {
+        queryParts.push(`price_max=${currentFilters.priceMax}`);
+      }
+
+      /* Thẻ */
+      if (currentFilters.tags?.length) {
+        currentFilters.tags.forEach((tag) => {
+          queryParts.push(`tag=${encodeURIComponent(tag)}`);
+        });
+      }
+
+      /* Trạng thái */
+      if (currentFilters.status) {
+        queryParts.push(`status=${currentFilters.status}`);
+      }
+
+      /* Thuộc tính tùy chỉnh */
+      if (currentFilters.attributes) {
+        Object.entries(currentFilters.attributes).forEach(([key, values]) => {
+          values.forEach((val) => {
+            queryParts.push(`attr.${key}=${encodeURIComponent(val)}`);
+          });
+        });
+      }
+
+      /* Yêu cầu trả về aggregations */
+      queryParts.push('aggregations=true');
+
+      const queryString = queryParts.join('&');
+      const res = await fetch(`${apiBaseUrl}/search?${queryString}`, {
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Tìm kiếm thất bại (HTTP ${res.status})`);
+      }
+
+      const body: SearchResponse = await res.json();
+
+      /* Kiểm tra xem yêu cầu có bị huỷ không */
+      if (controller.signal.aborted) return;
+
+      setResults(body.results ?? []);
+      setAggregations(body.aggregations ?? {
+        category: [],
+        brand: [],
+        priceRange: [],
+        attributes: [],
+      });
+      setTotalResults(body.total ?? 0);
+      setTotalPages(body.total_pages ?? 0);
+    } catch (err: any) {
+      /* Bỏ qua lỗi AbortError */
+      if (err.name === 'AbortError') return;
+      setError(err.message ?? 'Lỗi không xác định khi tìm kiếm');
+      setResults([]);
+      setAggregations({
+        category: [],
+        brand: [],
+        priceRange: [],
+        attributes: [],
+      });
+      setTotalResults(0);
+      setTotalPages(0);
+    } finally {
+      if (!controller.signal.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }
+
+  /* ====================================================================
+     Chuyển trang
+     ==================================================================== */
+
+  /**
+   * Chuyển đến trang kết quả cụ thể.
+   */
+  const goToPage = useCallback(
+    (page: number) => {
+      if (page < 1 || page > totalPages) return;
+      setFiltersState((prev) => ({ ...prev, page }));
+
+      /* Tự động tìm kiếm lại với trang mới */
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      executeSearch(controller);
+    },
+    [totalPages]
+  );
+
+  /* ====================================================================
+     Cleanup
+     ==================================================================== */
+
+  /* Dọn dẹp debounce timer và abort controller khi unmount */
+  /* (Trong thực tế, dùng useEffect cleanup; ở đây để đơn giản) */
+
+  return {
+    results,
+    aggregations,
+    isLoading,
+    error,
+    search,
+    filters,
+    setFilters,
+    totalResults,
+    totalPages,
+    currentPage: filters.page ?? 1,
+    goToPage,
+  };
+}
+
+export default useFacetedSearch;
+{% endraw %}

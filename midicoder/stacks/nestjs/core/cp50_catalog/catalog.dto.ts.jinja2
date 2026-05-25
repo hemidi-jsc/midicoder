@@ -1,0 +1,1425 @@
+/**
+ * Catalog DTO — Data Transfer Objects cho Catalog & Taxonomy Engine.
+ *
+ * Định nghĩa các DTO với class-validator decorators:
+ * - CreateProductDto, UpdateProductDto, ProductResponseDto
+ * - CreateCategoryDto, UpdateCategoryDto, CategoryResponseDto, CategoryTreeDto
+ * - CreateVariantDto, VariantResponseDto
+ * - CreateAttributeDto, AttributeResponseDto
+ * - SetAttributeValueDto, AttributeValueResponseDto
+ * - FacetedSearchDto, FacetedSearchResponseDto, AggregationDto
+ *
+ * CP50: Catalog & Taxonomy Engine
+ * Tổng số sản phẩm mẫu: {{ product_count }}
+ * Tổng số danh mục mẫu: {{ category_count }}
+ */
+
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  IsEnum,
+  IsBoolean,
+  IsObject,
+  IsArray,
+  IsNotEmpty,
+  IsUUID,
+  MaxLength,
+  Min,
+  ValidateNested,
+  IsDateString,
+  IsIn,
+} from "class-validator";
+import { Type } from "class-transformer";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+/**
+ * Các trạng thái của sản phẩm.
+ */
+export const PRODUCT_STATUSES = [
+  "draft",
+  "active",
+  "inactive",
+  "archived",
+];
+
+/**
+ * Mức độ hiển thị của sản phẩm.
+ */
+export const VISIBILITY_OPTIONS = [
+  "public",
+  "internal",
+  "restricted",
+];
+
+/**
+ * Loại thuộc tính.
+ */
+export const ATTRIBUTE_TYPES = [
+  "string",
+  "integer",
+  "decimal",
+  "boolean",
+  "date",
+  "select",
+  "multi_select",
+  "json",
+];
+
+/**
+ * Đơn vị tiền tệ hỗ trợ.
+ */
+export const CURRENCIES = ["VND", "USD", "EUR", "JPY", "GBP", "CNY"];
+
+// ===========================================================================
+// Product DTOs
+// ===========================================================================
+
+/**
+ * DTO cho việc tạo sản phẩm mới.
+ *
+ * Trường bắt buộc:
+ * - name: tên sản phẩm
+ * - slug: slug URL
+ * - sku: mã SKU
+ * - categoryId: ID danh mục
+ * - price: giá bán
+ * - tenantId: ID tenant
+ *
+ * Trường tùy chọn:
+ * - description: mô tả
+ * - brandId: ID thương hiệu
+ * - costPrice: giá vốn
+ * - compareAtPrice: giá so sánh
+ * - currency: đơn vị tiền tệ
+ * - weight: khối lượng
+ * - dimensions: kích thước
+ * - status: trạng thái
+ * - visibility: mức độ hiển thị
+ * - tags: thẻ phân loại
+ * - seoMetadata: metadata SEO
+ * - images: hình ảnh
+ * - metadata: dữ liệu bổ sung
+ */
+export class CreateProductDto {
+  /**
+   * Tên sản phẩm.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  @ApiProperty({
+    description: "Tên sản phẩm",
+    example: "Áo thun nam Basic",
+  })
+  name: string;
+
+  /**
+   * Slug URL thân thiện.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  @ApiProperty({
+    description: "Slug URL thân thiện",
+    example: "ao-thun-nam-basic",
+  })
+  slug: string;
+
+  /**
+   * Mã SKU.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  @ApiProperty({
+    description: "Mã SKU — định danh sản phẩm trong kho",
+    example: "ATB-001",
+  })
+  sku: string;
+
+  /**
+   * Mô tả sản phẩm.
+   */
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Mô tả chi tiết sản phẩm",
+    example: "Áo thun nam chất liệu cotton 100%",
+  })
+  description?: string;
+
+  /**
+   * ID danh mục.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(36)
+  @ApiProperty({
+    description: "ID danh mục phân loại",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  categoryId: string;
+
+  /**
+   * ID thương hiệu.
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(36)
+  @ApiPropertyOptional({
+    description: "ID thương hiệu (tùy chọn)",
+    example: "brand-123",
+  })
+  brandId?: string;
+
+  /**
+   * Giá bán lẻ.
+   */
+  @IsNumber()
+  @Min(0)
+  @ApiProperty({
+    description: "Giá bán lẻ",
+    example: 250000,
+  })
+  price: number;
+
+  /**
+   * Giá vốn.
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({
+    description: "Giá vốn",
+    example: 150000,
+  })
+  costPrice?: number;
+
+  /**
+   * Giá so sánh (giá gốc).
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({
+    description: "Giá so sánh — giá gốc trước khi giảm",
+    example: 350000,
+  })
+  compareAtPrice?: number;
+
+  /**
+   * Đơn vị tiền tệ.
+   */
+  @IsString()
+  @IsOptional()
+  @IsIn(CURRENCIES)
+  @ApiPropertyOptional({
+    description: "Đơn vị tiền tệ",
+    enum: CURRENCIES,
+    example: "VND",
+  })
+  currency?: string;
+
+  /**
+   * Khối lượng (gram).
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({
+    description: "Khối lượng sản phẩm (gram)",
+    example: 200,
+  })
+  weight?: number;
+
+  /**
+   * Kích thước sản phẩm.
+   */
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Kích thước sản phẩm",
+    example: { length: 70, width: 50, height: 5 },
+  })
+  dimensions?: Record<string, any>;
+
+  /**
+   * Trạng thái sản phẩm.
+   */
+  @IsEnum(PRODUCT_STATUSES)
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Trạng thái sản phẩm",
+    enum: PRODUCT_STATUSES,
+    example: "active",
+  })
+  status?: string;
+
+  /**
+   * Mức độ hiển thị.
+   */
+  @IsEnum(VISIBILITY_OPTIONS)
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Mức độ hiển thị",
+    enum: VISIBILITY_OPTIONS,
+    example: "public",
+  })
+  visibility?: string;
+
+  /**
+   * Danh sách thẻ.
+   */
+  @IsArray()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Danh sách thẻ phân loại",
+    example: ["nam", "cotton", "basic"],
+  })
+  tags?: string[];
+
+  /**
+   * Metadata SEO.
+   */
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Metadata SEO",
+    example: { title: "Áo thun nam", description: "Áo thun cotton" },
+  })
+  seoMetadata?: Record<string, any>;
+
+  /**
+   * Danh sách hình ảnh.
+   */
+  @IsArray()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Danh sách URL hình ảnh",
+    example: ["https://example.com/image1.jpg"],
+  })
+  images?: string[];
+
+  /**
+   * Dữ liệu bổ sung.
+   */
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Dữ liệu bổ sung dạng JSON",
+    example: { supplier: "ABC Corp" },
+  })
+  metadata?: Record<string, any>;
+
+  /**
+   * ID tenant.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  @ApiProperty({
+    description: "ID tenant chứa sản phẩm",
+    example: "tenant-123",
+  })
+  tenantId: string;
+}
+
+/**
+ * DTO cho việc cập nhật sản phẩm.
+ *
+ * Tất cả các trường đều tùy chọn — chỉ gửi những trường cần cập nhật.
+ */
+export class UpdateProductDto {
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  @ApiPropertyOptional({ description: "Tên sản phẩm" })
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  @ApiPropertyOptional({ description: "Slug URL" })
+  slug?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(128)
+  @ApiPropertyOptional({ description: "Mã SKU" })
+  sku?: string;
+
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional({ description: "Mô tả" })
+  description?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(36)
+  @ApiPropertyOptional({ description: "ID danh mục" })
+  categoryId?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(36)
+  @ApiPropertyOptional({ description: "ID thương hiệu" })
+  brandId?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({ description: "Giá bán lẻ" })
+  price?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({ description: "Giá vốn" })
+  costPrice?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({ description: "Giá so sánh" })
+  compareAtPrice?: number;
+
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional({ description: "Đơn vị tiền tệ" })
+  currency?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({ description: "Khối lượng (gram)" })
+  weight?: number;
+
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({ description: "Kích thước" })
+  dimensions?: Record<string, any>;
+
+  @IsEnum(PRODUCT_STATUSES)
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Trạng thái",
+    enum: PRODUCT_STATUSES,
+  })
+  status?: string;
+
+  @IsEnum(VISIBILITY_OPTIONS)
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Mức độ hiển thị",
+    enum: VISIBILITY_OPTIONS,
+  })
+  visibility?: string;
+
+  @IsArray()
+  @IsOptional()
+  @ApiPropertyOptional({ description: "Danh sách thẻ" })
+  tags?: string[];
+
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({ description: "Metadata SEO" })
+  seoMetadata?: Record<string, any>;
+
+  @IsArray()
+  @IsOptional()
+  @ApiPropertyOptional({ description: "Danh sách hình ảnh" })
+  images?: string[];
+
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({ description: "Dữ liệu bổ sung" })
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO trả về thông tin sản phẩm.
+ */
+export class ProductResponseDto {
+  @ApiProperty({ description: "Định danh sản phẩm" })
+  productId: string;
+
+  @ApiProperty({ description: "Tên sản phẩm" })
+  name: string;
+
+  @ApiProperty({ description: "Slug" })
+  slug: string;
+
+  @ApiProperty({ description: "Mã SKU" })
+  sku: string;
+
+  @ApiProperty({ description: "Mô tả" })
+  description: string;
+
+  @ApiProperty({ description: "ID danh mục" })
+  categoryId: string;
+
+  @ApiPropertyOptional({ description: "ID thương hiệu" })
+  brandId: string | null;
+
+  @ApiProperty({ description: "Giá bán" })
+  price: number;
+
+  @ApiProperty({ description: "Giá vốn" })
+  costPrice: number;
+
+  @ApiPropertyOptional({ description: "Giá so sánh" })
+  compareAtPrice: number | null;
+
+  @ApiProperty({ description: "Đơn vị tiền tệ" })
+  currency: string;
+
+  @ApiPropertyOptional({ description: "Khối lượng (gram)" })
+  weight: number | null;
+
+  @ApiPropertyOptional({ description: "Kích thước" })
+  dimensions: Record<string, any> | null;
+
+  @ApiProperty({ description: "Trạng thái", enum: PRODUCT_STATUSES })
+  status: string;
+
+  @ApiProperty({ description: "Mức độ hiển thị", enum: VISIBILITY_OPTIONS })
+  visibility: string;
+
+  @ApiProperty({ description: "Danh sách thẻ" })
+  tags: string[];
+
+  @ApiPropertyOptional({ description: "Metadata SEO" })
+  seoMetadata: Record<string, any> | null;
+
+  @ApiProperty({ description: "Danh sách hình ảnh" })
+  images: string[];
+
+  @ApiPropertyOptional({ description: "Dữ liệu bổ sung" })
+  metadata: Record<string, any>;
+
+  @ApiProperty({ description: "ID tenant" })
+  tenantId: string;
+
+  @ApiProperty({ description: "Thời điểm tạo" })
+  createdAt: Date;
+
+  @ApiProperty({ description: "Thời điểm cập nhật" })
+  updatedAt: Date;
+}
+
+// ===========================================================================
+// Category DTOs
+// ===========================================================================
+
+/**
+ * DTO cho việc tạo danh mục mới.
+ *
+ * Trường bắt buộc:
+ * - name: tên danh mục
+ * - slug: slug URL
+ *
+ * Trường tùy chọn:
+ * - description: mô tả
+ * - parentId: ID danh mục cha
+ * - sortOrder: thứ tự sắp xếp
+ * - icon: biểu tượng
+ * - metadata: dữ liệu bổ sung
+ */
+export class CreateCategoryDto {
+  /**
+   * Tên danh mục.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  @ApiProperty({
+    description: "Tên danh mục",
+    example: "Thời trang nam",
+  })
+  name: string;
+
+  /**
+   * Slug URL.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  @ApiProperty({
+    description: "Slug URL thân thiện",
+    example: "thoi-trang-nam",
+  })
+  slug: string;
+
+  /**
+   * Mô tả danh mục.
+   */
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Mô tả chi tiết danh mục",
+    example: "Các sản phẩm thời trang dành cho nam giới",
+  })
+  description?: string;
+
+  /**
+   * ID danh mục cha.
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(36)
+  @ApiPropertyOptional({
+    description: "ID danh mục cha (null = root)",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  parentId?: string;
+
+  /**
+   * Thứ tự sắp xếp.
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({
+    description: "Thứ tự sắp xếp",
+    example: 1,
+  })
+  sortOrder?: number;
+
+  /**
+   * Biểu tượng.
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  @ApiPropertyOptional({
+    description: "Biểu tượng danh mục",
+    example: "👔",
+  })
+  icon?: string;
+
+  /**
+   * Dữ liệu bổ sung.
+   */
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Dữ liệu bổ sung dạng JSON",
+    example: { banner_url: "https://example.com/banner.jpg" },
+  })
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO cho việc cập nhật danh mục.
+ */
+export class UpdateCategoryDto {
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  @ApiPropertyOptional({ description: "Tên danh mục" })
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  @ApiPropertyOptional({ description: "Slug" })
+  slug?: string;
+
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional({ description: "Mô tả" })
+  description?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(36)
+  @ApiPropertyOptional({ description: "ID danh mục cha" })
+  parentId?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({ description: "Thứ tự sắp xếp" })
+  sortOrder?: number;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  @ApiPropertyOptional({ description: "Biểu tượng" })
+  icon?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  @ApiPropertyOptional({ description: "Có đang hoạt động" })
+  isActive?: boolean;
+
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({ description: "Dữ liệu bổ sung" })
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO trả về thông tin danh mục.
+ */
+export class CategoryResponseDto {
+  @ApiProperty({ description: "Định danh danh mục" })
+  categoryId: string;
+
+  @ApiProperty({ description: "Tên danh mục" })
+  name: string;
+
+  @ApiProperty({ description: "Slug" })
+  slug: string;
+
+  @ApiProperty({ description: "Mô tả" })
+  description: string;
+
+  @ApiPropertyOptional({ description: "ID danh mục cha" })
+  parentId: string | null;
+
+  @ApiProperty({ description: "Thứ tự sắp xếp" })
+  sortOrder: number;
+
+  @ApiPropertyOptional({ description: "Biểu tượng" })
+  icon: string | null;
+
+  @ApiProperty({ description: "Có đang hoạt động" })
+  isActive: boolean;
+
+  @ApiProperty({ description: "Số lượng danh mục con" })
+  descendantCount: number;
+
+  @ApiPropertyOptional({ description: "Dữ liệu bổ sung" })
+  metadata: Record<string, any>;
+
+  @ApiProperty({ description: "Thời điểm tạo" })
+  createdAt: Date;
+
+  @ApiProperty({ description: "Thời điểm cập nhật" })
+  updatedAt: Date;
+}
+
+/**
+ * DTO trả về cây danh mục phân cấp.
+ */
+export class CategoryTreeDto {
+  @ApiProperty({ description: "Định danh danh mục" })
+  categoryId: string;
+
+  @ApiProperty({ description: "Tên danh mục" })
+  name: string;
+
+  @ApiProperty({ description: "Slug" })
+  slug: string;
+
+  @ApiPropertyOptional({ description: "Biểu tượng" })
+  icon: string | null;
+
+  @ApiProperty({ description: "Có đang hoạt động" })
+  isActive: boolean;
+
+  @ApiProperty({ description: "Danh sách danh mục con", type: [CategoryTreeDto] })
+  children: CategoryTreeDto[];
+}
+
+// ===========================================================================
+// ProductVariant DTOs
+// ===========================================================================
+
+/**
+ * DTO cho việc tạo biến thể sản phẩm mới.
+ *
+ * Trường bắt buộc:
+ * - productId: ID sản phẩm cha
+ * - sku: mã SKU biến thể
+ * - name: tên biến thể
+ * - price: giá bán
+ *
+ * Trường tùy chọn:
+ * - attributeValues: giá trị thuộc tính
+ * - costPrice: giá vốn
+ * - weight: khối lượng
+ * - barcode: mã vạch
+ * - images: hình ảnh
+ * - sortOrder: thứ tự
+ * - metadata: dữ liệu bổ sung
+ */
+export class CreateVariantDto {
+  /**
+   * ID sản phẩm cha.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(36)
+  @ApiProperty({
+    description: "ID sản phẩm cha",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  productId: string;
+
+  /**
+   * Mã SKU biến thể.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  @ApiProperty({
+    description: "Mã SKU của biến thể",
+    example: "ATB-001-XANH-M",
+  })
+  sku: string;
+
+  /**
+   * Tên biến thể.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  @ApiProperty({
+    description: "Tên biến thể",
+    example: "Áo thun - Xanh - M",
+  })
+  name: string;
+
+  /**
+   * Giá trị thuộc tính.
+   */
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Giá trị thuộc tính",
+    example: { color: "xanh", size: "M" },
+  })
+  attributeValues?: Record<string, any>;
+
+  /**
+   * Giá bán lẻ.
+   */
+  @IsNumber()
+  @Min(0)
+  @ApiProperty({
+    description: "Giá bán lẻ",
+    example: 250000,
+  })
+  price: number;
+
+  /**
+   * Giá vốn.
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({
+    description: "Giá vốn",
+    example: 150000,
+  })
+  costPrice?: number;
+
+  /**
+   * Khối lượng (gram).
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({
+    description: "Khối lượng biến thể (gram)",
+    example: 200,
+  })
+  weight?: number;
+
+  /**
+   * Mã vạch.
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(64)
+  @ApiPropertyOptional({
+    description: "Mã vạch EAN/UPC",
+    example: "8901234567890",
+  })
+  barcode?: string;
+
+  /**
+   * Danh sách hình ảnh.
+   */
+  @IsArray()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Danh sách URL hình ảnh",
+    example: ["https://example.com/variant1.jpg"],
+  })
+  images?: string[];
+
+  /**
+   * Thứ tự sắp xếp.
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({
+    description: "Thứ tự sắp xếp",
+    example: 0,
+  })
+  sortOrder?: number;
+
+  /**
+   * Dữ liệu bổ sung.
+   */
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Dữ liệu bổ sung dạng JSON",
+    example: { warehouse: "A1" },
+  })
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO trả về thông tin biến thể sản phẩm.
+ */
+export class VariantResponseDto {
+  @ApiProperty({ description: "Định danh biến thể" })
+  variantId: string;
+
+  @ApiProperty({ description: "ID sản phẩm" })
+  productId: string;
+
+  @ApiProperty({ description: "Mã SKU" })
+  sku: string;
+
+  @ApiProperty({ description: "Tên biến thể" })
+  name: string;
+
+  @ApiProperty({ description: "Giá trị thuộc tính" })
+  attributeValues: Record<string, any>;
+
+  @ApiProperty({ description: "Giá bán" })
+  price: number;
+
+  @ApiProperty({ description: "Giá vốn" })
+  costPrice: number;
+
+  @ApiPropertyOptional({ description: "Khối lượng (gram)" })
+  weight: number | null;
+
+  @ApiPropertyOptional({ description: "Mã vạch" })
+  barcode: string | null;
+
+  @ApiProperty({ description: "Danh sách hình ảnh" })
+  images: string[];
+
+  @ApiProperty({ description: "Có đang hoạt động" })
+  isActive: boolean;
+
+  @ApiProperty({ description: "Thứ tự sắp xếp" })
+  sortOrder: number;
+
+  @ApiPropertyOptional({ description: "Dữ liệu bổ sung" })
+  metadata: Record<string, any>;
+
+  @ApiProperty({ description: "Thời điểm tạo" })
+  createdAt: Date;
+
+  @ApiProperty({ description: "Thời điểm cập nhật" })
+  updatedAt: Date;
+}
+
+// ===========================================================================
+// Attribute DTOs
+// ===========================================================================
+
+/**
+ * DTO cho việc tạo định nghĩa thuộc tính mới.
+ *
+ * Trường bắt buộc:
+ * - name: tên thuộc tính
+ * - key: khóa thuộc tính
+ * - attributeType: loại thuộc tính
+ *
+ * Trường tùy chọn:
+ * - isRequired: có bắt buộc không
+ * - validationRules: quy tắc xác thực
+ * - options: danh sách tùy chọn
+ * - unit: đơn vị
+ * - isSearchable: có tìm kiếm không
+ * - isFilterable: có lọc không
+ * - isVisible: có hiển thị không
+ * - sortOrder: thứ tự
+ * - metadata: dữ liệu bổ sung
+ */
+export class CreateAttributeDto {
+  /**
+   * Tên thuộc tính.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  @ApiProperty({
+    description: "Tên thuộc tính",
+    example: "Màu sắc",
+  })
+  name: string;
+
+  /**
+   * Khóa thuộc tính.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  @ApiProperty({
+    description: "Khóa thuộc tính",
+    example: "color",
+  })
+  key: string;
+
+  /**
+   * Loại thuộc tính.
+   */
+  @IsEnum(ATTRIBUTE_TYPES)
+  @IsNotEmpty()
+  @ApiProperty({
+    description: "Loại thuộc tính",
+    enum: ATTRIBUTE_TYPES,
+    example: "select",
+  })
+  attributeType: string;
+
+  /**
+   * Có bắt buộc không.
+   */
+  @IsBoolean()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Thuộc tính có bắt buộc không",
+    example: true,
+  })
+  isRequired?: boolean;
+
+  /**
+   * Quy tắc xác thực.
+   */
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Quy tắc xác thực",
+    example: { min_length: 1, max_length: 50 },
+  })
+  validationRules?: Record<string, any>;
+
+  /**
+   * Danh sách tùy chọn.
+   */
+  @IsArray()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Danh sách tùy chọn (cho select/multi_select)",
+    example: [{ value: "red", label: "Đỏ" }, { value: "blue", label: "Xanh" }],
+  })
+  options?: Array<{ value: string; label: string }>;
+
+  /**
+   * Đơn vị.
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(32)
+  @ApiPropertyOptional({
+    description: "Đơn vị",
+    example: "cm",
+  })
+  unit?: string;
+
+  /**
+   * Có thể tìm kiếm.
+   */
+  @IsBoolean()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Có thể tìm kiếm theo thuộc tính này",
+    example: true,
+  })
+  isSearchable?: boolean;
+
+  /**
+   * Có thể lọc.
+   */
+  @IsBoolean()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Có thể lọc theo thuộc tính này",
+    example: true,
+  })
+  isFilterable?: boolean;
+
+  /**
+   * Có hiển thị.
+   */
+  @IsBoolean()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Có hiển thị cho người dùng",
+    example: true,
+  })
+  isVisible?: boolean;
+
+  /**
+   * Thứ tự sắp xếp.
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({
+    description: "Thứ tự sắp xếp",
+    example: 0,
+  })
+  sortOrder?: number;
+
+  /**
+   * Dữ liệu bổ sung.
+   */
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Dữ liệu bổ sung dạng JSON",
+    example: { group: "appearance" },
+  })
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO trả về thông tin thuộc tính.
+ */
+export class AttributeResponseDto {
+  @ApiProperty({ description: "Định danh thuộc tính" })
+  attributeId: string;
+
+  @ApiProperty({ description: "Tên thuộc tính" })
+  name: string;
+
+  @ApiProperty({ description: "Khóa thuộc tính" })
+  key: string;
+
+  @ApiProperty({ description: "Loại thuộc tính", enum: ATTRIBUTE_TYPES })
+  attributeType: string;
+
+  @ApiProperty({ description: "Có bắt buộc" })
+  isRequired: boolean;
+
+  @ApiPropertyOptional({ description: "Quy tắc xác thực" })
+  validationRules: Record<string, any> | null;
+
+  @ApiProperty({ description: "Danh sách tùy chọn" })
+  options: Array<{ value: string; label: string }>;
+
+  @ApiPropertyOptional({ description: "Đơn vị" })
+  unit: string | null;
+
+  @ApiProperty({ description: "Có thể tìm kiếm" })
+  isSearchable: boolean;
+
+  @ApiProperty({ description: "Có thể lọc" })
+  isFilterable: boolean;
+
+  @ApiProperty({ description: "Có hiển thị" })
+  isVisible: boolean;
+
+  @ApiProperty({ description: "Thứ tự sắp xếp" })
+  sortOrder: number;
+
+  @ApiPropertyOptional({ description: "Dữ liệu bổ sung" })
+  metadata: Record<string, any>;
+
+  @ApiProperty({ description: "Thời điểm tạo" })
+  createdAt: Date;
+
+  @ApiProperty({ description: "Thời điểm cập nhật" })
+  updatedAt: Date;
+}
+
+// ===========================================================================
+// AttributeValue DTOs
+// ===========================================================================
+
+/**
+ * DTO cho việc đặt giá trị thuộc tính.
+ *
+ * Trường bắt buộc:
+ * - attributeId: ID thuộc tính
+ * - value: giá trị
+ *
+ * Trường tùy chọn:
+ * - productId: ID sản phẩm (nếu gán cho sản phẩm)
+ * - variantId: ID biến thể (nếu gán cho biến thể)
+ */
+export class SetAttributeValueDto {
+  /**
+   * ID thuộc tính.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(36)
+  @ApiProperty({
+    description: "ID thuộc tính",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  attributeId: string;
+
+  /**
+   * ID sản phẩm (tùy chọn — nếu gán cho sản phẩm).
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(36)
+  @ApiPropertyOptional({
+    description: "ID sản phẩm",
+    example: "prod-123",
+  })
+  productId?: string;
+
+  /**
+   * ID biến thể (tùy chọn — nếu gán cho biến thể).
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(36)
+  @ApiPropertyOptional({
+    description: "ID biến thể",
+    example: "variant-456",
+  })
+  variantId?: string;
+
+  /**
+   * Giá trị thuộc tính.
+   */
+  @IsString()
+  @IsNotEmpty()
+  @ApiProperty({
+    description: "Giá trị thuộc tính",
+    example: "xanh",
+  })
+  value: string;
+}
+
+/**
+ * DTO trả về thông tin giá trị thuộc tính.
+ */
+export class AttributeValueResponseDto {
+  @ApiProperty({ description: "Định danh giá trị" })
+  attributeValueId: string;
+
+  @ApiProperty({ description: "ID thuộc tính" })
+  attributeId: string;
+
+  @ApiPropertyOptional({ description: "ID sản phẩm" })
+  productId: string | null;
+
+  @ApiPropertyOptional({ description: "ID biến thể" })
+  variantId: string | null;
+
+  @ApiProperty({ description: "Giá trị" })
+  value: string;
+}
+
+// ===========================================================================
+// Search DTOs
+// ===========================================================================
+
+/**
+ * DTO cho tìm kiếm có lọc faceted.
+ *
+ * Trường tùy chọn:
+ * - q: từ khóa tìm kiếm
+ * - categoryId: lọc theo danh mục
+ * - minPrice/maxPrice: lọc theo khoảng giá
+ * - status: lọc theo trạng thái
+ * - attributes: lọc theo thuộc tính (JSON)
+ * - tags: lọc theo thẻ
+ * - sortBy: trường sắp xếp
+ * - sortOrder: chiều sắp xếp
+ * - page/limit: phân trang
+ */
+export class FacetedSearchDto {
+  /**
+   * Từ khóa tìm kiếm.
+   */
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Từ khóa tìm kiếm",
+    example: "áo thun",
+  })
+  q?: string;
+
+  /**
+   * ID danh mục để lọc.
+   */
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "ID danh mục để lọc",
+    example: "550e8400-e29b-41d4-a716-446655440000",
+  })
+  categoryId?: string;
+
+  /**
+   * Giá tối thiểu.
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({
+    description: "Giá tối thiểu",
+    example: 100000,
+  })
+  minPrice?: number;
+
+  /**
+   * Giá tối đa.
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @ApiPropertyOptional({
+    description: "Giá tối đa",
+    example: 1000000,
+  })
+  maxPrice?: number;
+
+  /**
+   * Lọc theo trạng thái.
+   */
+  @IsEnum(PRODUCT_STATUSES)
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Trạng thái sản phẩm",
+    enum: PRODUCT_STATUSES,
+  })
+  status?: string;
+
+  /**
+   * Lọc theo thuộc tính.
+   */
+  @IsObject()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Lọc theo thuộc tính (JSON: { key: value })",
+    example: { color: "xanh", size: "M" },
+  })
+  attributes?: Record<string, any>;
+
+  /**
+   * Lọc theo thẻ.
+   */
+  @IsArray()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Lọc theo danh sách thẻ",
+    example: ["nam", "cotton"],
+  })
+  tags?: string[];
+
+  /**
+   * Trường sắp xếp.
+   */
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Trường sắp xếp",
+    example: "price",
+  })
+  sortBy?: string;
+
+  /**
+   * Chiều sắp xếp.
+   */
+  @IsString()
+  @IsOptional()
+  @IsIn(["ASC", "DESC"])
+  @ApiPropertyOptional({
+    description: "Chiều sắp xếp",
+    example: "DESC",
+  })
+  sortOrder?: string;
+
+  /**
+   * Số trang.
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @ApiPropertyOptional({
+    description: "Số trang",
+    example: 1,
+  })
+  page?: number;
+
+  /**
+   * Số lượng mỗi trang.
+   */
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @ApiPropertyOptional({
+    description: "Số lượng mỗi trang",
+    example: 20,
+  })
+  limit?: number;
+}
+
+/**
+ * DTO cho kết quả phân tích/tổng hợp.
+ */
+export class AggregationDto {
+  @ApiProperty({ description: "Khóa nhóm" })
+  key: string;
+
+  @ApiProperty({ description: "Tên hiển thị" })
+  label: string;
+
+  @ApiProperty({ description: "Số lượng" })
+  count: number;
+}
+
+/**
+ * DTO trả về kết quả tìm kiếm faceted.
+ */
+export class FacetedSearchResponseDto {
+  @ApiProperty({ description: "Danh sách sản phẩm", type: [ProductResponseDto] })
+  products: ProductResponseDto[];
+
+  @ApiProperty({ description: "Tổng số kết quả" })
+  total: number;
+
+  @ApiProperty({ description: "Số trang hiện tại" })
+  page: number;
+
+  @ApiProperty({ description: "Số lượng mỗi trang" })
+  limit: number;
+
+  @ApiProperty({ description: "Tổng số trang" })
+  totalPages: number;
+
+  @ApiProperty({
+    description: "Kết quả tổng hợp theo danh mục",
+    type: [AggregationDto],
+  })
+  categoryAggregations: AggregationDto[];
+
+  @ApiProperty({
+    description: "Kết quả tổng hợp theo thuộc tính",
+    type: [AggregationDto],
+  })
+  attributeAggregations: AggregationDto[];
+
+  @ApiProperty({
+    description: "Kết quả tổng hợp theo thẻ",
+    type: [AggregationDto],
+  })
+  tagAggregations: AggregationDto[];
+}

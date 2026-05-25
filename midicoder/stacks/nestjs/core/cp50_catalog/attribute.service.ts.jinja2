@@ -1,0 +1,401 @@
+/**
+ * AttributeService — dịch vụ quản lý thuộc tính trong Catalog & Taxonomy Engine.
+ *
+ * Cung cấp các phương thức chính:
+ * - createAttribute: tạo định nghĩa thuộc tính mới
+ * - findOne: tìm thuộc tính theo ID
+ * - findAll: lấy danh sách tất cả thuộc tính
+ * - setProductAttributeValue: đặt giá trị thuộc tính cho sản phẩm
+ * - setVariantAttributeValue: đặt giá trị thuộc tính cho biến thể
+ * - getProductAttributes: lấy tất cả thuộc tính của sản phẩm (dict map)
+ *
+ * CP50: Catalog & Taxonomy Engine
+ * Tổng số thuộc tính mẫu: {{ attribute_count }}
+ */
+
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { v4 as uuidv4 } from "uuid";
+import {
+  AttributeDefinitionEntity,
+  AttributeValueEntity,
+  AttributeType,
+} from "./catalog.entity";
+import {
+  CreateAttributeDto,
+  SetAttributeValueDto,
+} from "./catalog.dto";
+
+const logger = new Logger("AttributeService");
+
+// ===========================================================================
+// AttributeService
+// ===========================================================================
+
+/**
+ * AttributeService — quản lý định nghĩa và giá trị thuộc tính sản phẩm.
+ *
+ * Phương thức chính:
+ * - createAttribute: tạo định nghĩa thuộc tính, tự động sinh attributeId (UUID)
+ * - findOne: tìm theo attributeId
+ * - findAll: lấy tất cả định nghĩa (hỗ trợ lọc theo isSearchable, isFilterable)
+ * - setProductAttributeValue: đặt giá trị thuộc tính cho sản phẩm (upsert)
+ * - setVariantAttributeValue: đặt giá trị thuộc tính cho biến thể (upsert)
+ * - getProductAttributes: lấy tất cả thuộc tính của sản phẩm dạng dict map
+ */
+@Injectable()
+export class AttributeService {
+  /**
+   * Constructor.
+   *
+   * @param attributeRepository - Repository cho AttributeDefinitionEntity
+   * @param attributeValueRepository - Repository cho AttributeValueEntity
+   */
+  constructor(
+    @InjectRepository(AttributeDefinitionEntity)
+    private readonly attributeRepository: Repository<AttributeDefinitionEntity>,
+    @InjectRepository(AttributeValueEntity)
+    private readonly attributeValueRepository: Repository<AttributeValueEntity>,
+  ) {}
+
+  // ========================================================================
+  // Định nghĩa thuộc tính — Tạo (Create)
+  // ========================================================================
+
+  /**
+   * Tạo định nghĩa thuộc tính mới.
+   *
+   * Tự động sinh attributeId dạng UUID, xác thực key duy nhất.
+   *
+   * Xác thực:
+   * - key phải duy nhất (không trùng với thuộc tính khác)
+   * - attributeType phải hợp lệ
+   *
+   * @param dto - CreateAttributeDto
+   * @returns AttributeDefinitionEntity vừa tạo
+   */
+  async createAttribute(dto: CreateAttributeDto): Promise<AttributeDefinitionEntity> {
+    // Xác thực key duy nhất
+    const existingByKey = await this.attributeRepository.findOne({
+      where: { key: dto.key },
+    });
+
+    if (existingByKey) {
+      throw new BadRequestException(
+        "Khóa thuộc tính đã tồn tại: " + dto.key,
+      );
+    }
+
+    const attributeId = uuidv4();
+
+    const attribute = this.attributeRepository.create({
+      attributeId,
+      name: dto.name,
+      key: dto.key,
+      attributeType: dto.attributeType || "string",
+      isRequired: dto.isRequired ?? false,
+      validationRules: dto.validationRules || null,
+      options: dto.options || [],
+      unit: dto.unit || null,
+      isSearchable: dto.isSearchable ?? true,
+      isFilterable: dto.isFilterable ?? true,
+      isVisible: dto.isVisible ?? true,
+      sortOrder: dto.sortOrder ?? 0,
+      metadata: dto.metadata || {},
+    });
+
+    const saved = await this.attributeRepository.save(attribute);
+
+    logger.log(
+      "Tạo thuộc tính mới: attributeId=" + attributeId + ", key=" + dto.key
+      + ", type=" + dto.attributeType,
+    );
+
+    return saved;
+  }
+
+  // ========================================================================
+  // Định nghĩa thuộc tính — Tìm (Read)
+  // ========================================================================
+
+  /**
+   * Tìm định nghĩa thuộc tính theo ID.
+   *
+   * @param attributeId - ID thuộc tính
+   * @returns AttributeDefinitionEntity hoặc null
+   */
+  async findOne(attributeId: string): Promise<AttributeDefinitionEntity | null> {
+    return this.attributeRepository.findOne({
+      where: { attributeId },
+    });
+  }
+
+  /**
+   * Lấy danh sách tất cả định nghĩa thuộc tính.
+   *
+   * Hỗ trợ lọc theo:
+   * - isSearchable: chỉ lấy thuộc tính có thể tìm kiếm
+   * - isFilterable: chỉ lấy thuộc tính có thể lọc
+   * - isVisible: chỉ lấy thuộc tính hiển thị
+   *
+   * Sắp xếp theo sort_order tăng dần.
+   *
+   * @param filters - Object chứa các bộ lọc
+   * @returns List AttributeDefinitionEntity
+   */
+  async findAll(filters?: {
+    isSearchable?: boolean;
+    isFilterable?: boolean;
+    isVisible?: boolean;
+  }): Promise<AttributeDefinitionEntity[]> {
+    const where: any = {};
+
+    if (filters) {
+      if (filters.isSearchable !== undefined) {
+        where.isSearchable = filters.isSearchable;
+      }
+      if (filters.isFilterable !== undefined) {
+        where.isFilterable = filters.isFilterable;
+      }
+      if (filters.isVisible !== undefined) {
+        where.isVisible = filters.isVisible;
+      }
+    }
+
+    return this.attributeRepository.find({
+      where,
+      order: { sortOrder: "ASC", name: "ASC" },
+    });
+  }
+
+  // ========================================================================
+  // Giá trị thuộc tính — Đặt (Set)
+  // ========================================================================
+
+  /**
+   * Đặt giá trị thuộc tính cho sản phẩm.
+   *
+   * Nếu đã tồn tại giá trị (attributeId + productId) thì cập nhật,
+   * ngược lại tạo mới (upsert pattern).
+   *
+   * Xác thực:
+   * - attributeId phải tồn tại
+   * - productId phải tồn tại
+   *
+   * @param productId - ID sản phẩm
+   * @param attributeId - ID thuộc tính
+   * @param value - Giá trị thuộc tính
+   * @returns AttributeValueEntity
+   */
+  async setProductAttributeValue(
+    productId: string,
+    attributeId: string,
+    value: string,
+  ): Promise<AttributeValueEntity> {
+    // Xác thực thuộc tính tồn tại
+    const attribute = await this.findOne(attributeId);
+    if (!attribute) {
+      throw new NotFoundException("Không tìm thấy thuộc tính: " + attributeId);
+    }
+
+    // Tìm giá trị hiện có
+    let attrValue = await this.attributeValueRepository.findOne({
+      where: {
+        attributeId,
+        productId,
+      },
+    });
+
+    if (attrValue) {
+      // Cập nhật giá trị hiện có
+      attrValue.value = value;
+    } else {
+      // Tạo mới
+      const attributeValueId = uuidv4();
+      attrValue = this.attributeValueRepository.create({
+        attributeValueId,
+        attributeId,
+        productId,
+        variantId: null,
+        value,
+      });
+    }
+
+    const saved = await this.attributeValueRepository.save(attrValue);
+
+    logger.log(
+      "Đặt giá trị thuộc tính cho sản phẩm: productId=" + productId
+      + ", attributeId=" + attributeId + ", value=" + value,
+    );
+
+    return saved;
+  }
+
+  /**
+   * Đặt giá trị thuộc tính cho biến thể sản phẩm.
+   *
+   * Nếu đã tồn tại giá trị (attributeId + variantId) thì cập nhật,
+   * ngược lại tạo mới (upsert pattern).
+   *
+   * Xác thực:
+   * - attributeId phải tồn tại
+   * - variantId phải tồn tại
+   *
+   * @param productId - ID sản phẩm (dùng để tham chiếu)
+   * @param variantId - ID biến thể
+   * @param attributeId - ID thuộc tính
+   * @param value - Giá trị thuộc tính
+   * @returns AttributeValueEntity
+   */
+  async setVariantAttributeValue(
+    productId: string,
+    variantId: string,
+    attributeId: string,
+    value: string,
+  ): Promise<AttributeValueEntity> {
+    // Xác thực thuộc tính tồn tại
+    const attribute = await this.findOne(attributeId);
+    if (!attribute) {
+      throw new NotFoundException("Không tìm thấy thuộc tính: " + attributeId);
+    }
+
+    // Tìm giá trị hiện có
+    let attrValue = await this.attributeValueRepository.findOne({
+      where: {
+        attributeId,
+        variantId,
+      },
+    });
+
+    if (attrValue) {
+      // Cập nhật giá trị hiện có
+      attrValue.value = value;
+    } else {
+      // Tạo mới
+      const attributeValueId = uuidv4();
+      attrValue = this.attributeValueRepository.create({
+        attributeValueId,
+        attributeId,
+        productId: null,
+        variantId,
+        value,
+      });
+    }
+
+    const saved = await this.attributeValueRepository.save(attrValue);
+
+    logger.log(
+      "Đặt giá trị thuộc tính cho biến thể: variantId=" + variantId
+      + ", attributeId=" + attributeId + ", value=" + value,
+    );
+
+    return saved;
+  }
+
+  // ========================================================================
+  // Giá trị thuộc tính — Lấy (Get)
+  // ========================================================================
+
+  /**
+   * Lấy tất cả thuộc tính của sản phẩm.
+   *
+   * Trả về dict map: key (attribute key) -> value (giá trị thuộc tính).
+   * Ví dụ: { "color": "xanh", "size": "M", "material": "cotton" }
+   *
+   * @param productId - ID sản phẩm
+   * @returns Object map { attributeKey: value }
+   */
+  async getProductAttributes(productId: string): Promise<Record<string, string>> {
+    const values = await this.attributeValueRepository.find({
+      where: { productId },
+      relations: [],
+    });
+
+    // Tạo map: key -> value
+    const attrMap: Record<string, string> = {};
+
+    // Lấy thông tin định nghĩa để lấy key
+    for (const value of values) {
+      const attribute = await this.findOne(value.attributeId);
+      if (attribute) {
+        attrMap[attribute.key] = value.value;
+      }
+    }
+
+    logger.debug(
+      "Lấy thuộc tính sản phẩm: productId=" + productId
+      + ", số lượng=" + Object.keys(attrMap).length,
+    );
+
+    return attrMap;
+  }
+
+  /**
+   * Lấy tất cả thuộc tính của biến thể sản phẩm.
+   *
+   * Trả về dict map: key (attribute key) -> value (giá trị thuộc tính).
+   *
+   * @param variantId - ID biến thể
+   * @returns Object map { attributeKey: value }
+   */
+  async getVariantAttributes(variantId: string): Promise<Record<string, string>> {
+    const values = await this.attributeValueRepository.find({
+      where: { variantId },
+    });
+
+    const attrMap: Record<string, string> = {};
+
+    for (const value of values) {
+      const attribute = await this.findOne(value.attributeId);
+      if (attribute) {
+        attrMap[attribute.key] = value.value;
+      }
+    }
+
+    return attrMap;
+  }
+
+  // ========================================================================
+  // Xóa giá trị thuộc tính
+  // ========================================================================
+
+  /**
+   * Xóa giá trị thuộc tính của sản phẩm.
+   *
+   * @param productId - ID sản phẩm
+   * @param attributeId - ID thuộc tính
+   * @returns Kết quả xóa
+   */
+  async removeProductAttributeValue(
+    productId: string,
+    attributeId: string,
+  ): Promise<any> {
+    return this.attributeValueRepository.delete({
+      attributeId,
+      productId,
+    });
+  }
+
+  /**
+   * Xóa giá trị thuộc tính của biến thể.
+   *
+   * @param variantId - ID biến thể
+   * @param attributeId - ID thuộc tính
+   * @returns Kết quả xóa
+   */
+  async removeVariantAttributeValue(
+    variantId: string,
+    attributeId: string,
+  ): Promise<any> {
+    return this.attributeValueRepository.delete({
+      attributeId,
+      variantId,
+    });
+  }
+}

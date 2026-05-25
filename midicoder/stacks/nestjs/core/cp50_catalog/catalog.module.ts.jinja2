@@ -1,0 +1,125 @@
+/**
+ * CatalogModule — NestJS Module cho Catalog & Taxonomy Engine.
+ *
+ * Khởi tạo và kết nối tất cả các component của hệ thống catalog:
+ * - TypeORM entities (Product, Category, ProductVariant,
+ *   AttributeDefinition, AttributeValue)
+ * - ProductService — quản lý sản phẩm và biến thể
+ * - CategoryService — quản lý danh mục phân cấp
+ * - AttributeService — quản lý thuộc tính sản phẩm
+ * - CatalogController — REST API endpoints
+ *
+ * CP50: Catalog & Taxonomy Engine
+ * Tổng số sản phẩm mẫu: {{ product_count }}
+ * Tổng số danh mục mẫu: {{ category_count }}
+ * Tổng số biến thể mẫu: {{ variant_count }}
+ * Tổng số thuộc tính mẫu: {{ attribute_count }}
+ */
+
+import { Module } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import {
+  ProductEntity,
+  CategoryEntity,
+  ProductVariantEntity,
+  AttributeDefinitionEntity,
+  AttributeValueEntity,
+} from "./catalog.entity";
+import { CatalogController } from "./catalog.controller";
+import { ProductService } from "./product.service";
+import { CategoryService } from "./category.service";
+import { AttributeService } from "./attribute.service";
+
+/**
+ * CatalogModule — module cho Catalog & Taxonomy Engine.
+ *
+ * Structure:
+ * - Imports:
+ *   - TypeOrmModule.forFeature() — 5 entities cho catalog
+ *
+ * - Controllers:
+ *   - CatalogController — REST API cho product, category, attribute, search
+ *
+ * - Providers:
+ *   - ProductService — business logic sản phẩm & biến thể
+ *   - CategoryService — business logic danh mục phân cấp
+ *   - AttributeService — business logic thuộc tính sản phẩm
+ *
+ * - Exports:
+ *   - ProductService — để module khác inject được API sản phẩm
+ *   - CategoryService — để module khác inject được API danh mục
+ *   - AttributeService — để module khác inject được API thuộc tính
+ *
+ * Usage trong AppModule:
+ * @Module({
+ *   imports: [
+ *     CatalogModule,
+ *   ],
+ * })
+ * export class AppModule {}
+ */
+@Module({
+  imports: [
+    // TypeORM — quản lý các entity cho hệ thống catalog
+    // - ProductEntity: sản phẩm trong catalog
+    // - CategoryEntity: danh mục phân loại (cây phân cấp)
+    // - ProductVariantEntity: biến thể sản phẩm (màu, kích thước, ...)
+    // - AttributeDefinitionEntity: định nghĩa thuộc tính (color, size, ...)
+    // - AttributeValueEntity: giá trị thuộc tính gán cho sản phẩm/biến thể
+    TypeOrmModule.forFeature([
+      ProductEntity,
+      CategoryEntity,
+      ProductVariantEntity,
+      AttributeDefinitionEntity,
+      AttributeValueEntity,
+    ]),
+  ],
+  controllers: [
+    // REST Controller cho catalog API
+    // - GET    /products                        - danh sách sản phẩm
+    // - GET    /products/:id                    - chi tiết sản phẩm
+    // - POST   /products                        - tạo sản phẩm mới
+    // - PUT    /products/:id                    - cập nhật sản phẩm
+    // - DELETE /products/:id                    - xóa mềm sản phẩm
+    // - POST   /products/:id/restore            - khôi phục sản phẩm
+    // - GET    /products/:id/variants           - danh sách biến thể
+    // - POST   /products/:id/variants           - tạo biến thể mới
+    // - GET    /categories                      - danh sách danh mục
+    // - GET    /categories/tree                 - cây danh mục phân cấp
+    // - GET    /categories/:id/ancestors        - đường dẫn tổ tiên
+    // - GET    /categories/:id/descendants      - tất cả danh mục con
+    // - POST   /categories                      - tạo danh mục mới
+    // - PUT    /categories/:id                  - cập nhật danh mục
+    // - GET    /attributes                      - danh sách thuộc tính
+    // - POST   /attributes                      - tạo thuộc tính mới
+    // - POST   /attributes/values               - đặt giá trị thuộc tính
+    // - GET    /search                          - tìm kiếm faceted
+    CatalogController,
+  ],
+  providers: [
+    // Service chính — business logic cho sản phẩm & biến thể
+    // - createProduct, findOne, findAll, update, softDelete, restore
+    // - findBySku (unique SKU per tenant)
+    // - getVariantsByProductId, createVariant
+    ProductService,
+
+    // Service quản lý danh mục phân cấp
+    // - createCategory, findOne, findAll
+    // - getCategoryTree (BFS), getAncestors, getDescendants
+    // - detectCycle (DFS), updateDescendantCount
+    CategoryService,
+
+    // Service quản lý thuộc tính sản phẩm
+    // - createAttribute, findOne, findAll
+    // - setProductAttributeValue, setVariantAttributeValue (upsert)
+    // - getProductAttributes (dict map)
+    AttributeService,
+  ],
+  exports: [
+    // Export các service để module khác có thể inject
+    ProductService,
+    CategoryService,
+    AttributeService,
+  ],
+})
+export class CatalogModule {}

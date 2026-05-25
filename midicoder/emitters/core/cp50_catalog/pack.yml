@@ -1,0 +1,245 @@
+# ===========================================================================
+# CP50 — Catalog & Taxonomy Engine
+# ===========================================================================
+# File contributions declaration cho 4 stacks: FastAPI, NestJS, Angular, React
+#
+# Capabilities:
+# - catalog_manage: Quản lý sản phẩm/dịch vụ
+# - taxonomy_hierarchy: Phân loại phân cấp (unbounded depth)
+# - faceted_search: Tìm kiếm theo facets
+# - attribute_manage: Quản lý thuộc tính động
+# - variant_manage: Quản lý biến thể sản phẩm
+#
+# Storage: SQLite + Search index (CP10)
+# ===========================================================================
+
+pack:
+  id: "CP50"
+  name: "Catalog & Taxonomy Engine"
+  internal_id: "cp50_catalog"
+  version: "1.0.0"
+  status: "stable"
+  category: "commerce"
+  depends_on: ["CP01", "CP08", "CP10"]
+  definitions_count: 5
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP50"
+    range: "MDC-CP50-001 to MDC-CP50-010"
+  capabilities_provided:
+    - catalog_manage
+    - taxonomy_hierarchy
+    - faceted_search
+    - attribute_manage
+    - variant_manage
+  capabilities:
+    - id: "catalog_manage"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "taxonomy_hierarchy"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "faceted_search"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "attribute_manage"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "variant_manage"
+      emitter: "fastapi, nestjs, angular, react"
+  definitions:
+    - name: "Product"
+      description: "Sản phẩm trong catalog"
+    - name: "Category"
+      description: "Phân loại sản phẩm (hierarchical)"
+    - name: "ProductVariant"
+      description: "Biến thể sản phẩm (SKU)"
+    - name: "AttributeDefinition"
+      description: "Định nghĩa thuộc tính động"
+    - name: "AttributeValue"
+      description: "Giá trị thuộc tính cho product/variant"
+  obligations:
+    - name: "SoftDelete"
+      description: "Product được soft delete, không xóa vật lý"
+    - name: "UniqueSKU"
+      description: "SKU duy nhất trong tenant"
+  file_contributions:
+    infrastructure:
+      # ------------------------------------------------------------------
+      # FastAPI — Backend
+      # ------------------------------------------------------------------
+      - path: "app/models/catalog_models.py"
+        file_type: "catalog_models"
+        template: "cp50_catalog/catalog_models.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["products", "categories", "variants", "attributes"]
+      - path: "app/schemas/catalog_schemas.py"
+        file_type: "catalog_schemas"
+        template: "cp50_catalog/catalog_schemas.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["products"]
+      - path: "app/services/product_service.py"
+        file_type: "product_service"
+        template: "cp50_catalog/product_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["products", "variants"]
+      - path: "app/services/category_service.py"
+        file_type: "category_service"
+        template: "cp50_catalog/category_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["categories"]
+      - path: "app/services/attribute_service.py"
+        file_type: "attribute_service"
+        template: "cp50_catalog/attribute_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["attributes", "attribute_values"]
+      - path: "app/services/faceted_search_service.py"
+        file_type: "faceted_search_service"
+        template: "cp50_catalog/faceted_search_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["products", "attributes"]
+      - path: "app/api/catalog_router.py"
+        file_type: "catalog_router"
+        template: "cp50_catalog/catalog_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # ------------------------------------------------------------------
+      # NestJS — Backend
+      # ------------------------------------------------------------------
+      - path: "src/catalog/entities/catalog.entity.ts"
+        file_type: "catalog_entity"
+        template: "cp50_catalog/catalog.entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["products", "categories"]
+      - path: "src/catalog/dtos/catalog.dto.ts"
+        file_type: "catalog_dto"
+        template: "cp50_catalog/catalog.dto.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["products"]
+      - path: "src/catalog/services/product.service.ts"
+        file_type: "product_service"
+        template: "cp50_catalog/product.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["products"]
+      - path: "src/catalog/services/category.service.ts"
+        file_type: "category_service"
+        template: "cp50_catalog/category.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["categories"]
+      - path: "src/catalog/services/attribute.service.ts"
+        file_type: "attribute_service"
+        template: "cp50_catalog/attribute.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["attributes"]
+      - path: "src/catalog/controllers/catalog.controller.ts"
+        file_type: "catalog_controller"
+        template: "cp50_catalog/catalog.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/catalog/catalog.module.ts"
+        file_type: "catalog_module"
+        template: "cp50_catalog/catalog.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      # ------------------------------------------------------------------
+      # Angular — Frontend
+      # ------------------------------------------------------------------
+      - path: "src/app/catalog/product-list.component.ts"
+        file_type: "product_list"
+        template: "cp50_catalog/product-list.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["products"]
+      - path: "src/app/catalog/product-detail.component.ts"
+        file_type: "product_detail"
+        template: "cp50_catalog/product-detail.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["products", "variants"]
+      - path: "src/app/catalog/category-tree.component.ts"
+        file_type: "category_tree"
+        template: "cp50_catalog/category-tree.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["categories"]
+      - path: "src/app/catalog/facet-filter.component.ts"
+        file_type: "facet_filter"
+        template: "cp50_catalog/facet-filter.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["attributes"]
+      - path: "src/app/core/catalog/catalog.service.ts"
+        file_type: "catalog_service"
+        template: "cp50_catalog/catalog.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/core/catalog/catalog.store.ts"
+        file_type: "catalog_store"
+        template: "cp50_catalog/catalog.store.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      # ------------------------------------------------------------------
+      # React — Frontend
+      # ------------------------------------------------------------------
+      - path: "src/catalog/ProductList.tsx"
+        file_type: "product_list"
+        template: "cp50_catalog/ProductList.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["products"]
+      - path: "src/catalog/ProductDetail.tsx"
+        file_type: "product_detail"
+        template: "cp50_catalog/ProductDetail.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["products", "variants"]
+      - path: "src/catalog/CategoryTree.tsx"
+        file_type: "category_tree"
+        template: "cp50_catalog/CategoryTree.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["categories"]
+      - path: "src/catalog/FacetFilter.tsx"
+        file_type: "facet_filter"
+        template: "cp50_catalog/FacetFilter.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["attributes"]
+      - path: "src/catalog/hooks/useCatalog.ts"
+        file_type: "catalog_hook"
+        template: "cp50_catalog/useCatalog.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/catalog/hooks/useFacetedSearch.ts"
+        file_type: "faceted_search_hook"
+        template: "cp50_catalog/useFacetedSearch.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+  frontend_integration:
+    react:
+      - ProductList
+      - ProductDetail
+      - CategoryTree
+      - FacetFilter
+    angular:
+      - ProductListComponent
+      - ProductDetailComponent
+      - CategoryTreeComponent
+      - FacetFilterComponent
+  recipes:
+    - basic_catalog_recipe
+    - full_catalog_recipe

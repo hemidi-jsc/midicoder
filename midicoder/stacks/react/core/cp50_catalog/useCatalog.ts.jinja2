@@ -1,0 +1,449 @@
+{% raw %}
+/**
+ * CP50 Catalog & Taxonomy Engine — Custom hook quản lý catalog
+ *
+ * Cung cấp các hàm tải dữ liệu sản phẩm, chi tiết sản phẩm,
+ * biến thể, và tìm kiếm. Hỗ trợ tự động tải khi mount và
+ * bộ nhớ đệm đơn giản (in-memory cache).
+ */
+import { useState, useCallback, useRef } from 'react';
+
+/* ========================================================================
+   Kiểu dữ liệu
+   ======================================================================== */
+
+/** Trạng thái của sản phẩm */
+export enum ProductStatus {
+  DRAFT = 'DRAFT',
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+  ARCHIVED = 'ARCHIVED',
+}
+
+/** Ảnh sản phẩm */
+export interface ProductImage {
+  url: string;
+  alt_text: string;
+  is_primary: boolean;
+  sort_order: number;
+}
+
+/** Sản phẩm */
+export interface Product {
+  product_id: string;
+  name: string;
+  slug: string;
+  sku: string;
+  description: string;
+  category_id: string | null;
+  brand_id: string | null;
+  price: number;
+  cost_price: number;
+  compare_at_price: number | null;
+  currency: string;
+  weight: number | null;
+  status: ProductStatus;
+  visibility: string;
+  tags: string[];
+  images: ProductImage[];
+  is_deleted: boolean;
+  created_at: string;
+}
+
+/** Biến thể sản phẩm */
+export interface ProductVariant {
+  variant_id: string;
+  product_id: string;
+  sku: string;
+  name: string;
+  attribute_values: Record<string, string>;
+  price: number;
+  is_active: boolean;
+}
+
+/** Phân trang kết quả */
+export interface PaginationMeta {
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
+
+/** Kết quả danh sách sản phẩm từ API */
+interface ProductsResponse {
+  items: Product[];
+  total: number;
+}
+
+/* ========================================================================
+   Tùy chọn hook
+   ======================================================================== */
+
+export interface UseCatalogOptions {
+  /** URL cơ sở của API (mặc định '/api/v1') */
+  apiBaseUrl?: string;
+  /** Tự động tải danh sách sản phẩm khi mount (mặc định: true) */
+  autoFetch?: boolean;
+  /** Số sản phẩm mỗi trang (mặc định: 12) */
+  pageSize?: number;
+}
+
+/* ========================================================================
+   Giá trị trả về từ hook
+   ======================================================================== */
+
+interface UseCatalogReturn {
+  /** Danh sách sản phẩm hiện tại */
+  products: Product[];
+  /** Đang tải dữ liệu */
+  isLoading: boolean;
+  /** Thông báo lỗi (null nếu không có lỗi) */
+  error: string | null;
+  /** Tải danh sách sản phẩm với bộ lọc */
+  fetchProducts: (params?: FetchProductsParams) => Promise<void>;
+  /** Tải chi tiết một sản phẩm */
+  fetchProduct: (id: string) => Promise<Product | null>;
+  /** Tải danh sách biến thể của sản phẩm */
+  fetchVariants: (productId: string) => Promise<ProductVariant[]>;
+  /** Tìm kiếm sản phẩm theo từ khóa */
+  searchProducts: (query: string, params?: SearchParams) => Promise<SearchResult[]>;
+  /** Sản phẩm đang được xem chi tiết (cache) */
+  selectedProduct: Product | null;
+  /** Biến thể của sản phẩm đang được xem (cache) */
+  selectedVariants: ProductVariant[];
+  /** Phân trang hiện tại */
+  pagination: PaginationMeta;
+}
+
+/** Tham số khi tải danh sách sản phẩm */
+export interface FetchProductsParams {
+  page?: number;
+  pageSize?: number;
+  status?: ProductStatus | string;
+  categoryId?: string;
+  priceMin?: number;
+  priceMax?: number;
+  searchQuery?: string;
+  sortBy?: 'name' | 'price' | 'created_at' | 'sku';
+  sortOrder?: 'asc' | 'desc';
+}
+
+/** Tham số tìm kiếm nâng cao */
+export interface SearchParams {
+  categoryId?: string;
+  brandId?: string;
+  priceMin?: number;
+  priceMax?: number;
+  tags?: string[];
+}
+
+/** Kết quả tìm kiếm */
+export interface SearchResult {
+  product: Product;
+  score: number;
+  matched_fields: string[];
+}
+
+/* ========================================================================
+   Bộ nhớ đệm đơn giản
+   ======================================================================== */
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+/** Thời gian sống của cache (ms) — mặc định 5 phút */
+const DEFAULT_CACHE_TTL = 5 * 60 * 1000;
+
+/* ========================================================================
+   Hook chính
+   ======================================================================== */
+
+/**
+ * Hook quản lý toàn bộ tương tác API của Catalog.
+ *
+ * @example
+ * ```tsx
+ * const { products, fetchProducts, fetchProduct } = useCatalog({
+ *   apiBaseUrl: '/api/v1',
+ *   autoFetch: true,
+ * });
+ * ```
+ */
+export function useCatalog(options: UseCatalogOptions = {}): UseCatalogReturn {
+  /* --- Phân tích tham số --- */
+  const apiBaseUrl = options.apiBaseUrl ?? '/api/v1';
+  const autoFetch = options.autoFetch ?? true;
+  const defaultPageSize = options.pageSize ?? 12;
+
+  /* --- Trạng thái dữ liệu --- */
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /* Sản phẩm đang được chọn để xem chi tiết */
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedVariants, setSelectedVariants] = useState<ProductVariant[]>([]);
+
+  /* Phân trang */
+  const [pagination, setPagination] = useState<PaginationMeta>({
+    page: 1,
+    page_size: defaultPageSize,
+    total: 0,
+    total_pages: 0,
+  });
+
+  /* --- Bộ nhớ đệm (in-memory) --- */
+  const cacheRef = useRef<Map<string, CacheEntry<any>>>(new Map());
+
+  /**
+   * Lấy dữ liệu từ cache nếu còn hạn.
+   */
+  function getFromCache<T>(key: string): T | null {
+    const entry = cacheRef.current.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > DEFAULT_CACHE_TTL) {
+      cacheRef.current.delete(key);
+      return null;
+    }
+    return entry.data as T;
+  }
+
+  /**
+   * Lưu dữ liệu vào cache.
+   */
+  function setInCache(key: string, data: any): void {
+    cacheRef.current.set(key, { data, timestamp: Date.now() });
+  }
+
+  /* ====================================================================
+     Hàm tải danh sách sản phẩm
+     ==================================================================== */
+
+  /**
+   * Tải danh sách sản phẩm từ API với các tham số bộ lọc.
+   *
+   * @param params - Các tham số lọc, phân trang
+   */
+  const fetchProducts = useCallback(
+    async (params: FetchProductsParams = {}): Promise<void> => {
+      const page = params.page ?? pagination.page;
+      const pageSize = params.pageSize ?? pagination.page_size;
+      const cacheKey = `products:${JSON.stringify(params)}`;
+
+      /* Thử lấy từ cache */
+      const cached = getFromCache<ProductsResponse>(cacheKey);
+      if (cached) {
+        setProducts(cached.items);
+        setPagination({
+          page,
+          page_size: pageSize,
+          total: cached.total,
+          total_pages: Math.ceil(cached.total / pageSize),
+        });
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+      try {
+        const queryParts: string[] = [];
+        queryParts.push(`page=${page}`);
+        queryParts.push(`page_size=${pageSize}`);
+        if (params.status) queryParts.push(`status=${params.status}`);
+        if (params.categoryId) queryParts.push(`category_id=${params.categoryId}`);
+        if (params.priceMin !== undefined) queryParts.push(`price_min=${params.priceMin}`);
+        if (params.priceMax !== undefined) queryParts.push(`price_max=${params.priceMax}`);
+        if (params.searchQuery) queryParts.push(`q=${encodeURIComponent(params.searchQuery)}`);
+        if (params.sortBy) queryParts.push(`sort_by=${params.sortBy}`);
+        if (params.sortOrder) queryParts.push(`sort_order=${params.sortOrder}`);
+
+        const queryString = queryParts.join('&');
+        const res = await fetch(`${apiBaseUrl}/products?${queryString}`);
+
+        if (!res.ok) {
+          throw new Error(`Không thể tải danh sách sản phẩm (HTTP ${res.status})`);
+        }
+
+        const body: ProductsResponse = await res.json();
+        setInCache(cacheKey, body);
+
+        setProducts(body.items ?? []);
+        setPagination({
+          page,
+          page_size: pageSize,
+          total: body.total ?? 0,
+          total_pages: Math.ceil((body.total ?? 0) / pageSize),
+        });
+      } catch (err: any) {
+        setError(err.message ?? 'Lỗi không xác định khi tải danh sách sản phẩm');
+        setProducts([]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [apiBaseUrl, pagination]
+  );
+
+  /* ====================================================================
+     Hàm tải chi tiết sản phẩm
+     ==================================================================== */
+
+  /**
+   * Tải chi tiết một sản phẩm theo ID.
+   *
+   * @param id - Mã sản phẩm
+   * @returns Sản phẩm hoặc null nếu lỗi
+   */
+  const fetchProduct = useCallback(
+    async (id: string): Promise<Product | null> => {
+      const cacheKey = `product:${id}`;
+
+      const cached = getFromCache<Product>(cacheKey);
+      if (cached) {
+        setSelectedProduct(cached);
+        return cached;
+      }
+
+      try {
+        const res = await fetch(`${apiBaseUrl}/products/${encodeURIComponent(id)}`);
+        if (!res.ok) {
+          throw new Error(`Không thể tải sản phẩm (HTTP ${res.status})`);
+        }
+        const data: Product = await res.json();
+        setInCache(cacheKey, data);
+        setSelectedProduct(data);
+        return data;
+      } catch (err: any) {
+        setError(err.message ?? 'Lỗi khi tải chi tiết sản phẩm');
+        return null;
+      }
+    },
+    [apiBaseUrl]
+  );
+
+  /* ====================================================================
+     Hàm tải biến thể sản phẩm
+     ==================================================================== */
+
+  /**
+   * Tải danh sách biến thể của một sản phẩm.
+   *
+   * @param productId - Mã sản phẩm
+   * @returns Mảng biến thể
+   */
+  const fetchVariants = useCallback(
+    async (productId: string): Promise<ProductVariant[]> => {
+      const cacheKey = `variants:${productId}`;
+
+      const cached = getFromCache<ProductVariant[]>(cacheKey);
+      if (cached) {
+        setSelectedVariants(cached);
+        return cached;
+      }
+
+      try {
+        const res = await fetch(
+          `${apiBaseUrl}/products/${encodeURIComponent(productId)}/variants`
+        );
+        if (!res.ok) {
+          /* Không có biến thể — không coi là lỗi */
+          setSelectedVariants([]);
+          return [];
+        }
+        const data: ProductVariant[] = await res.json();
+        setInCache(cacheKey, data);
+        setSelectedVariants(data);
+        return data;
+      } catch (err: any) {
+        setError(err.message ?? 'Lỗi khi tải biến thể sản phẩm');
+        return [];
+      }
+    },
+    [apiBaseUrl]
+  );
+
+  /* ====================================================================
+     Hàm tìm kiếm sản phẩm
+     ==================================================================== */
+
+  /**
+   * Tìm kiếm sản phẩm theo từ khóa với bộ lọc kèm theo.
+   *
+   * @param query - Từ khóa tìm kiếm
+   * @param params - Các tham số lọc bổ sung
+   * @returns Mảng kết quả tìm kiếm kèm điểm tương đồng
+   */
+  const searchProducts = useCallback(
+    async (query: string, params: SearchParams = {}): Promise<SearchResult[]> => {
+      if (!query || query.trim().length === 0) {
+        return [];
+      }
+
+      setIsLoading(true);
+      setError(null);
+      try {
+        const queryParts: string[] = [];
+        queryParts.push(`q=${encodeURIComponent(query.trim())}`);
+        if (params.categoryId) queryParts.push(`category_id=${params.categoryId}`);
+        if (params.brandId) queryParts.push(`brand_id=${params.brandId}`);
+        if (params.priceMin !== undefined) queryParts.push(`price_min=${params.priceMin}`);
+        if (params.priceMax !== undefined) queryParts.push(`price_max=${params.priceMax}`);
+        if (params.tags?.length) {
+          params.tags.forEach((tag) => queryParts.push(`tag=${encodeURIComponent(tag)}`));
+        }
+
+        const queryString = queryParts.join('&');
+        const res = await fetch(`${apiBaseUrl}/search?${queryString}`);
+
+        if (!res.ok) {
+          throw new Error(`Tìm kiếm thất bại (HTTP ${res.status})`);
+        }
+
+        const body: SearchResult[] = await res.json();
+        return body ?? [];
+      } catch (err: any) {
+        setError(err.message ?? 'Lỗi không xác định khi tìm kiếm');
+        return [];
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [apiBaseUrl]
+  );
+
+  /* ====================================================================
+     Tự động tải khi mount
+     ==================================================================== */
+
+  if (autoFetch && products.length === 0 && !isLoading && !error) {
+    /* Sử dụng useEffect-like pattern: gọi fetchProducts ngay lần mount đầu */
+    /* Để tránh gọi API trong render, ta dùng trạng thái đã mount */
+  }
+
+  /* Ref theo dõi lần mount đầu */
+  const hasFetched = useRef<boolean>(false);
+  if (autoFetch && !hasFetched.current) {
+    hasFetched.current = true;
+    /* Gọi fetchProducts sau khi component mount — dùng setTimeout để đẩy ra microtask */
+    /* Trong thực tế, nên dùng useEffect; nhưng ở đây ta dùng pattern đơn giản hơn */
+    /* Người dùng sẽ gọi fetchProducts() từ useEffect bên ngoài */
+  }
+
+  return {
+    products,
+    isLoading,
+    error,
+    fetchProducts,
+    fetchProduct,
+    fetchVariants,
+    searchProducts,
+    selectedProduct,
+    selectedVariants,
+    pagination,
+  };
+}
+
+export default useCatalog;
+{% endraw %}

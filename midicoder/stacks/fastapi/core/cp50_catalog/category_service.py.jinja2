@@ -1,0 +1,526 @@
+# ----------------------------------------------------------
+# CP50 Catalog & Taxonomy Engine — Dich vu quan ly danh muc
+# ----------------------------------------------------------
+# Sinh bởi CP50CatalogEmitter
+# Class: CategoryService voi CRUD danh muc, xay dung cay,
+#        cycle detection, va descendant_count
+# ----------------------------------------------------------
+
+import logging
+from collections import deque
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+
+class CategoryService:
+    """
+    Dich vu quan ly danh muc — thuc hien CRUD danh muc, xay dung cay danh muc,
+    phat hien vong quan he (cycle detection), va cap nhat descendant_count.
+
+    Cach layer: (1) Kiem tra cycle truoc khi them danh muc con,
+    (2) Cap nhat descendant_count sau khi them/xoa,
+    (3) BFS de xay dung cay danh muc.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+{% if use_audit %}
+        _audit_logger=None,
+{% endif %}
+    ) -> None:
+        """
+        Khoi tao dich vu danh muc voi phien lam viec SQLAlchemy async
+        va cac thanh phan tuy chon (audit logger).
+
+        Tham so:
+            session: Phien lam viec async de truy cap co so du lieu.
+{% if use_audit %}
+            _audit_logger: Audit logger de ghi nhat ky kiem toan (tuy chon).
+{% endif %}
+        """
+        self._session = session
+{% if use_audit %}
+        self._audit_logger = _audit_logger
+{% else %}
+        self._audit_logger = None
+{% endif %}
+
+    # --------------------------------------------------------------
+    # Tạo danh mục
+    # --------------------------------------------------------------
+
+    async def create_category(
+        self,
+        data: "CategoryCreate",
+    ) -> Any:
+        """
+        Tao danh muc moi trong taxonomy.
+
+        Kiem tra cycle detection: neu parent_id duoc cung cap, kiem tra
+        xem danh muc moi co tao vong quan he khong (con -> cha -> ... -> con).
+        Sau khi tao, cap nhat descendant_count cua danh muc cha.
+
+        Tham so:
+            data: Schema CategoryCreate chua thong tin danh muc.
+
+        Tra ve:
+            doi tuong CategoryModel moi duoc tao.
+
+        Nem ra:
+            ValueError: Neu danh muc cha khong ton tai.
+            ValueError: Neu tao ra vong quan he (cycle).
+        """
+        now = datetime.now(timezone.utc)
+
+        # Kiem tra danh muc cha neu co parent_id
+        if data.parent_id:
+            parent = await self.get_category(data.parent_id)
+            if parent is None:
+                raise ValueError(
+                    "Khong tim thay danh muc cha voi ID: {}".format(data.parent_id)
+                )
+
+            # Kiem tra cycle: danh muc cha khong duoc la con cua chinh no
+            await self._detect_cycle(data.category_id, data.parent_id)
+
+        category = self._category_model()(
+            category_id=data.category_id,
+            name=data.name,
+            slug=data.slug or self._slugify(data.name),
+            description=data.description,
+            parent_id=data.parent_id,
+            sort_order=data.sort_order,
+            icon=data.icon,
+            is_active=data.is_active,
+            descendant_count=0,
+            metadata_json=data.metadata,
+            created_at=now,
+            updated_at=now,
+        )
+
+        self._session.add(category)
+        await self._session.commit()
+        await self._session.refresh(category)
+
+        # Cap nhat descendant_count cho danh muc cha
+        if data.parent_id:
+            await self._increment_descendant_count(data.parent_id)
+
+        # Phat audit event
+{% if use_audit %}
+        await self._audit_log(
+            action="category.created",
+            resource_id=data.category_id,
+            details={"name": data.name, "parent_id": data.parent_id},
+        )
+{% endif %}
+
+        logger.info(
+            "Da tao danh muc: category_id=%s, name=%s, parent_id=%s",
+            data.category_id,
+            data.name,
+            data.parent_id,
+        )
+
+        return category
+
+    # --------------------------------------------------------------
+    # Lấy danh mục theo ID
+    # --------------------------------------------------------------
+
+    async def get_category(
+        self,
+        category_id: str,
+    ) -> Optional[Any]:
+        """
+        Lay danh muc theo category_id.
+
+        Tham so:
+            category_id: ID duy nhat cua danh muc.
+
+        Tra ve:
+            doi tuong CategoryModel hoac None neu khong tim thay.
+        """
+        query = select(self._category_model()).where(
+            self._category_model().category_id == category_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    # --------------------------------------------------------------
+    # Liệt kê danh mục (flat)
+    # --------------------------------------------------------------
+
+    async def list_categories(
+        self,
+        include_inactive: bool = False,
+    ) -> List[Any]:
+        """
+        Lay tat ca danh muc theo danh sach flat (khong co cau truc cay).
+
+        Sap xep theo sort_order va ten. Mac dinh chi tra ve danh muc
+        dang hoat dong (is_active=True).
+
+        Tham so:
+            include_inactive: Co bao gom danh muc khong hoat dong khong.
+
+        Tra ve:
+            Danh sach CategoryModel sap xep theo sort_order, name.
+        """
+        query = select(self._category_model())
+
+        if not include_inactive:
+            query = query.where(
+                self._category_model().is_active == True
+            )
+
+        query = query.order_by(
+            self._category_model().sort_order.asc(),
+            self._category_model().name.asc(),
+        )
+
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    # --------------------------------------------------------------
+    # Lấy cây danh mục
+    # --------------------------------------------------------------
+
+    async def get_category_tree(
+        self,
+    ) -> List[Dict[str, Any]]:
+        """
+        Xay dung cay danh muc tu danh sach flat.
+
+        Su dung BFS de xay dung cau truc cay: bat dau tu cac danh muc
+        goc (parent_id=None), sau do them con vao dua tren parent_id.
+        Tra ve danh sach CategoryTreeResponse co cau truc pho dang.
+
+        Tra ve:
+            Danh sach dict voi cau truc cay (co 'children' nested).
+        """
+        # Lay tat ca danh muc
+        all_categories = await self.list_categories(include_inactive=True)
+
+        # Xay dung anh xa category_id -> category
+        category_map: Dict[str, Any] = {}
+        for cat in all_categories:
+            category_map[cat.category_id] = {
+                "category_id": cat.category_id,
+                "name": cat.name,
+                "slug": cat.slug,
+                "description": cat.description,
+                "parent_id": cat.parent_id,
+                "sort_order": cat.sort_order,
+                "icon": cat.icon,
+                "is_active": cat.is_active,
+                "descendant_count": cat.descendant_count,
+                "children": [],
+            }
+
+        # Xay dung cay: tim cac nut goc va them con
+        roots = []
+        for cat_id, cat_data in category_map.items():
+            if cat_data["parent_id"] is None:
+                roots.append(cat_data)
+            else:
+                parent = category_map.get(cat_data["parent_id"])
+                if parent:
+                    parent["children"].append(cat_data)
+
+        # Sap xep roots theo sort_order
+        roots.sort(key=lambda x: x["sort_order"])
+
+        # Sap xep children cua moi nut
+        def sort_children(node):
+            node["children"].sort(key=lambda x: x["sort_order"])
+            for child in node["children"]:
+                sort_children(child)
+
+        for root in roots:
+            sort_children(root)
+
+        return roots
+
+    # --------------------------------------------------------------
+    # Lấy danh mục tổ tiên (ancestors)
+    # --------------------------------------------------------------
+
+    async def get_category_ancestors(
+        self,
+        category_id: str,
+    ) -> List[Any]:
+        """
+        Lay tat ca danh muc to tien (cha, o, ...) cua mot danh muc.
+
+        Dieu tra tu danh muc hien tai len tren den nut goc (parent_id=None).
+        Ket qua duoc sap xep tu nut goc den danh muc cha giap.
+
+        Tham so:
+            category_id: ID danh muc can tim to tien.
+
+        Tra ve:
+            Danh sach CategoryModel tu goc den cha giap.
+        """
+        category = await self.get_category(category_id)
+        if category is None:
+            return []
+
+        ancestors = []
+        current = category
+        while current and current.parent_id:
+            parent = await self.get_category(current.parent_id)
+            if parent:
+                ancestors.append(parent)
+                current = parent
+            else:
+                break
+
+        # Dao nguoc: tu goc den cha giap
+        ancestors.reverse()
+        return ancestors
+
+    # --------------------------------------------------------------
+    # Lấy danh mục hậu duệ (descendants)
+    # --------------------------------------------------------------
+
+    async def get_category_descendants(
+        self,
+        category_id: str,
+    ) -> List[Any]:
+        """
+        Lay tat ca danh muc hau due (con, chau, ...) cua mot danh muc.
+
+        Su dung BFS de duyet toan bo cay con cua danh muc da cho.
+        Tra ve tat ca cac danh muc con (tat ca cap).
+
+        Tham so:
+            category_id: ID danh muc can tim hau due.
+
+        Tra ve:
+            Danh sach CategoryModel cua tat ca danh muc con.
+        """
+        category = await self.get_category(category_id)
+        if category is None:
+            return []
+
+        # Lay tat ca danh muc de xay dung anh xa
+        all_categories = await self.list_categories(include_inactive=True)
+        children_map: Dict[str, List[Any]] = {}
+        for cat in all_categories:
+            if cat.parent_id:
+                if cat.parent_id not in children_map:
+                    children_map[cat.parent_id] = []
+                children_map[cat.parent_id].append(cat)
+
+        # BFS tu danh muc hien tai
+        descendants = []
+        queue = deque([category_id])
+
+        while queue:
+            current_id = queue.popleft()
+            children = children_map.get(current_id, [])
+            for child in children:
+                descendants.append(child)
+                queue.append(child.category_id)
+
+        return descendants
+
+    # --------------------------------------------------------------
+    # Nội bộ — Phát hiện vòng quan hệ (cycle detection)
+    # --------------------------------------------------------------
+
+    async def _detect_cycle(
+        self,
+        new_category_id: str,
+        parent_id: str,
+    ) -> None:
+        """
+        Kiem tra xem viec gan parent_id co tao ra vong quan he khong.
+
+        Diep lai len tren cay tu parent_id, neu gap new_category_id
+        thi co cycle (vong quan he). Neu den nut goc ma khong gap
+        thi an toan.
+
+        Tham so:
+            new_category_id: ID danh muc moi dang tao.
+            parent_id: ID danh muc cha duoc chon.
+
+        Nem ra:
+            ValueError: Neu phat hien vong quan he.
+        """
+        visited = set()
+        current_id = parent_id
+
+        while current_id:
+            if current_id == new_category_id:
+                raise ValueError(
+                    "Khong the dat parent_id='%s' cho category='%s' vi "
+                    "se tao ra vong quan he (cycle)."
+                )
+
+            if current_id in visited:
+                # Da qua nut nay roi, co cycle ton tai trong cay hien co
+                raise ValueError(
+                    "Phat hien vong quan he trong cay danh muc tai category_id='%s'."
+                )
+
+            visited.add(current_id)
+            parent = await self.get_category(current_id)
+
+            if parent is None:
+                break
+
+            current_id = parent.parent_id
+
+    # --------------------------------------------------------------
+    # Nội bộ — Tăng descendant_count
+    # --------------------------------------------------------------
+
+    async def _increment_descendant_count(
+        self,
+        parent_id: str,
+    ) -> None:
+        """
+        Tang descendant_count cua danh muc cha va toan bo danh muc to tien.
+
+        Sau khi them danh muc con, cap nhat descendant_count cua cha
+        va diep lai len den nut goc.
+
+        Tham so:
+            parent_id: ID danh muc cha can cap nhat.
+        """
+        current_id = parent_id
+        while current_id:
+            query = select(self._category_model()).where(
+                self._category_model().category_id == current_id
+            )
+            result = await self._session.execute(query)
+            category = result.scalar_one_or_none()
+
+            if category is None:
+                break
+
+            category.descendant_count += 1
+            category.updated_at = datetime.now(timezone.utc)
+            current_id = category.parent_id
+
+        await self._session.commit()
+
+    # --------------------------------------------------------------
+    # Nội bộ — Giảm descendant_count
+    # --------------------------------------------------------------
+
+    async def _decrement_descendant_count(
+        self,
+        parent_id: str,
+    ) -> None:
+        """
+        Giam descendant_count cua danh muc cha va toan bo danh muc to tien.
+
+        Sau khi xoa danh muc con, cap nhat descendant_count cua cha
+        va diep lai len den nut goc.
+
+        Tham so:
+            parent_id: ID danh muc cha can cap nhat.
+        """
+        current_id = parent_id
+        while current_id:
+            query = select(self._category_model()).where(
+                self._category_model().category_id == current_id
+            )
+            result = await self._session.execute(query)
+            category = result.scalar_one_or_none()
+
+            if category is None:
+                break
+
+            if category.descendant_count > 0:
+                category.descendant_count -= 1
+            category.updated_at = datetime.now(timezone.utc)
+            current_id = category.parent_id
+
+        await self._session.commit()
+
+    # --------------------------------------------------------------
+    # Nội bộ — Tự động tạo slug
+    # --------------------------------------------------------------
+
+    @staticmethod
+    def _slugify(text: str) -> str:
+        """
+        Chuyen chuoi thanh slug than thien voi URL.
+
+        Tham so:
+            text: Chuoi dau vao.
+
+        Tra ve:
+            Chuoi slug da xu ly.
+        """
+        import re
+        import unicodedata
+
+        text = text.lower().strip()
+        text = unicodedata.normalize("NFKD", text)
+        text = text.encode("ascii", "ignore").decode("ascii")
+        text = re.sub(r"[^\w\s-]", "", text)
+        text = re.sub(r"[\s_]+", "-", text)
+        text = re.sub(r"-+", "-", text)
+        return text.strip("-")
+
+    # --------------------------------------------------------------
+    # Nội bộ — Lấy model class
+    # --------------------------------------------------------------
+
+    @staticmethod
+    def _category_model():
+        """Lay CategoryModel class."""
+        from catalog_models import CategoryModel
+        return CategoryModel
+
+    # --------------------------------------------------------------
+    # Nội bộ — Audit log
+    # --------------------------------------------------------------
+
+{% if use_audit %}
+    async def _audit_log(
+        self,
+        action: str,
+        resource_id: str,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Phat audit event neu co audit logger.
+
+        Ghi nhan cac thao tac tren danh muc de danh sach kiem toan.
+
+        Tham so:
+            action: Thao tac (category.created, ...).
+            resource_id: ID tai nguyen lien quan.
+            details: Chi tiet bo sung.
+        """
+        if self._audit_logger is None:
+            return
+
+        try:
+            event_data = {
+                "action": action,
+                "resource_id": resource_id,
+                "details": details or {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            await self._audit_logger.log_event(event_data)
+        except Exception as e:
+            logger.warning(
+                "Loi ghi audit log: action=%s, error=%s",
+                action,
+                str(e),
+            )
+{% endif %}

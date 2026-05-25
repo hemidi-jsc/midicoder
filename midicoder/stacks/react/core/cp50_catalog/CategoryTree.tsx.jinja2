@@ -1,0 +1,464 @@
+{% raw %}
+/**
+ * CP50 Catalog & Taxonomy Engine — Cây danh mục
+ *
+ * Thành phần hiển thị cây phân cấp danh mục dạng đệ quy.
+ * Hỗ trợ thu gọn/mở rộng (expand/collapse), làm nổi bật nút
+ * đang được chọn, và tự động xây dựng cây từ danh sách phẳng.
+ */
+import React, { useState, useMemo, useCallback } from 'react';
+
+/* ========================================================================
+   Kiểu dữ liệu
+   ======================================================================== */
+
+/** Một danh mục trong hệ thống phân loại */
+export interface Category {
+  category_id: string;
+  name: string;
+  slug: string;
+  description: string;
+  parent_id: string | null;
+  sort_order: number;
+  icon: string | null;
+  is_active: boolean;
+  descendant_count: number;
+}
+
+/* ========================================================================
+   Props
+   ======================================================================== */
+
+export interface CategoryTreeProps {
+  /** Danh sách danh mục dạng phẳng (flat list) */
+  categories: Category[];
+  /** Mã danh mục đang được chọn (nếu có) */
+  selectedId?: string;
+  /** Hàm gọi khi người dùng chọn một danh mục */
+  onSelect?: (id: string) => void;
+  /** Độ thụt mặc định cho mỗi cấp (px) */
+  indent?: number;
+  /** Có cho phép nhấp để chọn hay không (mặc định: true) */
+  selectable?: boolean;
+  /** Mã danh mục bị vô hiệu hóa (không thể chọn) */
+  disabledIds?: string[];
+}
+
+/* ========================================================================
+   Hàm xây dựng cây từ danh sách phẳng
+   ======================================================================== */
+
+/** Nút cây đã xây dựng — bao gồm con trỏ tới các danh mục con */
+interface CategoryNode {
+  category: Category;
+  children: CategoryNode[];
+  depth: number;
+}
+
+/**
+ * Chuyển đổi danh sách danh mục phẳng thành cây phân cấp.
+ *
+ * Thuật toán: duyệt một lần (O(n)), tạo bản đồ parent_id -> children,
+ * sau đó thu thập các nút gốc (parent_id === null).
+ */
+function buildCategoryTree(categories: Category[]): CategoryNode[] {
+  const map = new Map<string, CategoryNode>();
+
+  /* Bước 1: Tạo node cho từng danh mục */
+  categories.forEach((cat) => {
+    map.set(cat.category_id, {
+      category: cat,
+      children: [],
+      depth: 0,
+    });
+  });
+
+  /* Bước 2: Gắn node cha -> con và tính depth */
+  const roots: CategoryNode[] = [];
+  map.forEach((node) => {
+    if (node.category.parent_id) {
+      const parent = map.get(node.category.parent_id);
+      if (parent) {
+        node.depth = parent.depth + 1;
+        parent.children.push(node);
+      } else {
+        /* Parent không tồn tại trong danh sách — coi là gốc */
+        roots.push(node);
+      }
+    } else {
+      roots.push(node);
+    }
+  });
+
+  /* Bước 3: Sắp xếp theo sort_order trong từng cấp */
+  const sortInPlace = (nodes: CategoryNode[]): void => {
+    nodes.sort((a, b) => a.category.sort_order - b.category.sort_order);
+    nodes.forEach((n) => sortInPlace(n.children));
+  };
+  sortInPlace(roots);
+
+  return roots;
+}
+
+/* ========================================================================
+   Thành phần: Nút cây danh mục (đệ quy)
+   ======================================================================== */
+
+/**
+ * Một nút trong cây danh mục.
+ *
+ * Hiển thị tên danh mục kèm icon, số lượng con (descendant_count).
+ * Có thể mở/đóng các danh mục con, và nhấp để chọn.
+ */
+function CategoryTreeNode({
+  node,
+  selectedId,
+  onSelect,
+  indent,
+  selectable,
+  disabledIds,
+}: {
+  node: CategoryNode;
+  selectedId?: string;
+  onSelect?: (id: string) => void;
+  indent: number;
+  selectable: boolean;
+  disabledIds: Set<string>;
+}) {
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
+  const isSelected = node.category.category_id === selectedId;
+  const isDisabled = disabledIds.has(node.category.category_id);
+  const hasChildren = node.children.length > 0;
+
+  /* Tự động mở rộng nếu danh mục con đang được chọn */
+  const hasSelectedChild = useMemo(() => {
+    if (!selectedId) return false;
+    const check = (nodes: CategoryNode[]): boolean => {
+      return nodes.some(
+        (n) =>
+          n.category.category_id === selectedId || check(n.children)
+      );
+    };
+    return check(node.children);
+  }, [node.children, selectedId]);
+
+  /* Force expand nếu có con đang được chọn */
+  const shouldExpand = isExpanded || hasSelectedChild;
+
+  const handleClick = useCallback(() => {
+    if (selectable && !isDisabled && onSelect) {
+      onSelect(node.category.category_id);
+    }
+    /* Nếu có con, toggle mở/đóng khi nhấp kép hoặc không selectable */
+    if (hasChildren && !selectable) {
+      setIsExpanded((prev) => !prev);
+    }
+  }, [selectable, isDisabled, onSelect, node.category.category_id, hasChildren]);
+
+  const handleToggle = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setIsExpanded((prev) => !prev);
+    },
+    []
+  );
+
+  /* Icon mũi tên xoay theo trạng thái mở/đóng */
+  const arrowRotation = shouldExpand ? 90 : 0;
+
+  /* Icon danh mục */
+  const categoryIcon = node.category.icon ?? '📁';
+
+  /* Xác định style cho nút */
+  const nodeBackgroundColor = isSelected
+    ? '#dbeafe'
+    : isDisabled
+      ? '#f9fafb'
+      : 'transparent';
+
+  const nodeColor = isSelected
+    ? '#1d4ed8'
+    : isDisabled
+      ? '#d1d5db'
+      : node.category.is_active
+        ? '#1e293b'
+        : '#94a3b8';
+
+  return (
+    <div>
+      {/* Dòng nút */}
+      <div
+        role="treeitem"
+        tabIndex={selectable && !isDisabled ? 0 : -1}
+        aria-selected={isSelected}
+        aria-expanded={hasChildren ? shouldExpand : undefined}
+        aria-level={node.depth + 1}
+        onClick={handleClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleClick();
+          }
+        }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '6px 8px',
+          paddingLeft: `${node.depth * indent}px`,
+          borderRadius: '6px',
+          cursor: selectable && !isDisabled ? 'pointer' : 'default',
+          backgroundColor: nodeBackgroundColor,
+          color: nodeColor,
+          fontSize: '14px',
+          transition: 'background-color 0.15s',
+          userSelect: 'none',
+          opacity: isDisabled ? 0.6 : 1,
+        }}
+        onMouseEnter={(e) => {
+          if (!isSelected && !isDisabled) {
+            e.currentTarget.style.backgroundColor = '#f1f5f9';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!isSelected && !isDisabled) {
+            e.currentTarget.style.backgroundColor = nodeBackgroundColor;
+          }
+        }}
+      >
+        {/* Nút mở/đóng */}
+        {hasChildren ? (
+          <button
+            onClick={handleToggle}
+            aria-label={shouldExpand ? 'Thu gọn' : 'Mở rộng'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '18px',
+              height: '18px',
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              color: '#94a3b8',
+              fontSize: '11px',
+              flexShrink: 0,
+              transform: `rotate(${arrowRotation}deg)`,
+              transition: 'transform 0.15s',
+            }}
+          >
+            ▶
+          </button>
+        ) : (
+          <span style={{ width: '18px', flexShrink: 0 }} />
+        )}
+
+        {/* Icon danh mục */}
+        <span style={{ fontSize: '16px', flexShrink: 0 }}>{categoryIcon}</span>
+
+        {/* Tên danh mục */}
+        <span
+          style={{
+            flex: 1,
+            fontWeight: isSelected ? 600 : 400,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {node.category.name}
+        </span>
+
+        {/* Số lượng danh mục con */}
+        {node.category.descendant_count > 0 && (
+          <span
+            style={{
+              fontSize: '11px',
+              color: '#94a3b8',
+              backgroundColor: '#f1f5f9',
+              padding: '1px 6px',
+              borderRadius: '9999px',
+              flexShrink: 0,
+            }}
+          >
+            {node.category.descendant_count}
+          </span>
+        )}
+
+        {/* Dấu hiệu danh mục không hoạt động */}
+        {!node.category.is_active && (
+          <span
+            style={{
+              fontSize: '10px',
+              color: '#ef4444',
+              flexShrink: 0,
+            }}
+          >
+            (ngừng)
+          </span>
+        )}
+      </div>
+
+      {/* Danh mục con */}
+      {hasChildren && shouldExpand && (
+        <div role="group">
+          {node.children.map((child) => (
+            <CategoryTreeNode
+              key={child.category.category_id}
+              node={child}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              indent={indent}
+              selectable={selectable}
+              disabledIds={disabledIds}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ========================================================================
+   Thành phần chính: Cây danh mục
+   ======================================================================== */
+
+/**
+ * Thành phần cây danh mục chính.
+ *
+ * Tự động xây dựng cây phân cấp từ danh sách phẳng, hiển thị
+ * giao diện thu gọn/mở rộng và chọn danh mục.
+ */
+export function CategoryTree({
+  categories,
+  selectedId,
+  onSelect,
+  indent = 20,
+  selectable = true,
+  disabledIds = [],
+}: CategoryTreeProps) {
+  /* Xây dựng cây từ danh sách phẳng — cache bằng useMemo */
+  const tree = useMemo(() => buildCategoryTree(categories), [categories]);
+
+  /* Tập hợp các ID bị vô hiệu hóa */
+  const disabledSet = useMemo(() => new Set(disabledIds), [disabledIds]);
+
+  /* Đếm tổng số danh mục đang hoạt động */
+  const activeCount = useMemo(
+    () => categories.filter((c) => c.is_active).length,
+    [categories]
+  );
+
+  /* Xử lý chọn danh mục */
+  const handleSelect = useCallback(
+    (id: string) => {
+      onSelect?.(id);
+    },
+    [onSelect]
+  );
+
+  /* Xử lý mở rộng tất cả / thu gọn tất cả */
+  const [allExpanded, setAllExpanded] = useState<boolean>(false);
+
+  /* Khi allExpanded thay đổi, cần propagate xuống các node con.
+     Vì CategoryTreeNode quản lý trạng thái mở/đóng nội bộ,
+     ta dùng cách đơn giản: force re-render bằng key. */
+  const treeKey = `${allExpanded ? 'expanded' : 'collapsed'}`;
+
+  return (
+    <div
+      style={{
+        fontFamily: 'system-ui, sans-serif',
+        border: '1px solid #e2e8f0',
+        borderRadius: '12px',
+        backgroundColor: '#fff',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Thanh tiêu đề */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 16px',
+          borderBottom: '1px solid #e2e8f0',
+          backgroundColor: '#f8fafc',
+        }}
+      >
+        <span style={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
+          Danh mục ({activeCount}/{categories.length})
+        </span>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            onClick={() => setAllExpanded(true)}
+            style={{
+              padding: '4px 10px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              backgroundColor: '#fff',
+              fontSize: '12px',
+              cursor: 'pointer',
+              color: '#374151',
+            }}
+          >
+            Mở tất cả
+          </button>
+          <button
+            onClick={() => setAllExpanded(false)}
+            style={{
+              padding: '4px 10px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              backgroundColor: '#fff',
+              fontSize: '12px',
+              cursor: 'pointer',
+              color: '#374151',
+            }}
+          >
+            Đóng tất cả
+          </button>
+        </div>
+      </div>
+
+      {/* Cây */}
+      <div
+        role="tree"
+        style={{
+          padding: '8px',
+          maxHeight: '500px',
+          overflowY: 'auto',
+        }}
+      >
+        {tree.length === 0 ? (
+          <div
+            style={{
+              padding: '24px 0',
+              textAlign: 'center',
+              color: '#94a3b8',
+              fontSize: '14px',
+            }}
+          >
+            Không có danh mục nào.
+          </div>
+        ) : (
+          tree.map((rootNode) => (
+            <CategoryTreeNode
+              key={rootNode.category.category_id}
+              node={rootNode}
+              selectedId={selectedId}
+              onSelect={handleSelect}
+              indent={indent}
+              selectable={selectable}
+              disabledIds={disabledSet}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default CategoryTree;
+{% endraw %}

@@ -1,0 +1,579 @@
+{% raw %}/**
+ * CP50 Catalog & Taxonomy Engine — Product List Component.
+ *
+ * Component hiển thị danh sách sản phẩm với khả năng lọc, tìm kiếm, và phân trang.
+ * - Lọc theo trạng thái, danh mục, khoảng giá
+ * - Tìm kiếm theo tên, mã SKU, từ khóa
+ * - Sắp xếp theo tên, giá, ngày tạo
+ * - Phân trang client-side
+ *
+ * Sử dụng Signal-based state management và reactive patterns của Angular.
+ *
+ * Tạo tự động bởi CP50 — không sửa thủ công.
+ */
+
+import { Component, inject, OnInit, signal, computed } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { CatalogStore } from './catalog.store';
+import {
+  Product,
+  ProductStatus,
+  Visibility,
+  Category,
+} from './catalog-types';
+
+/**
+ * Bộ lọc sản phẩm.
+ */
+interface ProductFilterState {
+  /** Lọc theo trạng thái sản phẩm. */
+  status: ProductStatus | null;
+  /** Lọc theo danh mục. */
+  categoryId: string | null;
+  /** Giá tối thiểu. */
+  priceMin: number | null;
+  /** Giá tối đa. */
+  priceMax: number | null;
+  /** Từ khóa tìm kiếm. */
+  search: string;
+  /** Trường sắp xếp. */
+  sortBy: 'name' | 'price' | 'created_at';
+  /** Chiều sắp xếp. */
+  sortOrder: 'asc' | 'desc';
+}
+
+/**
+ * Phân trang.
+ */
+interface PaginationState {
+  /** Trang hiện tại (bắt đầu từ 1). */
+  page: number;
+  /** Số lượng mục mỗi trang. */
+  pageSize: number;
+  /** Tổng số mục. */
+  totalItems: number;
+  /** Tổng số trang. */
+  totalPages: number;
+}
+
+/**
+ * ProductListComponent — Danh sách sản phẩm với bộ lọc và phân trang.
+ *
+ * Cung cấp giao diện để người dùng:
+ * - Xem danh sách sản phẩm dưới dạng bảng/danh sách
+ * - Lọc theo trạng thái, danh mục, khoảng giá
+ * - Tìm kiếm theo tên, SKU, mô tả
+ * - Sắp xếp theo tên, giá, ngày tạo
+ * - Chuyển đổi phân trang
+ */
+@Component({
+  selector: 'app-product-list',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './product-list.component.html',
+  styleUrl: './product-list.component.css',
+})
+export class ProductListComponent implements OnInit {
+  // ===========================================================================
+  // Inject dependencies
+  // ===========================================================================
+
+  /** Store quản lý trạng thái catalog. */
+  private readonly catalogStore = inject(CatalogStore);
+
+  // ===========================================================================
+  // Signals
+  // ===========================================================================
+
+  /** Danh sách tất cả sản phẩm. */
+  readonly products = signal<Product[]>([]);
+
+  /** Danh sách sản phẩm đã lọc. */
+  readonly filteredProducts = signal<Product[]>([]);
+
+  /** Danh sách sản phẩm đang hiển thị (sau phân trang). */
+  readonly paginatedProducts = signal<Product[]>([]);
+
+  /** Danh sách danh mục để lọc. */
+  readonly categories = signal<Category[]>([]);
+
+  /** Bộ lọc hiện tại. */
+  readonly filters = signal<ProductFilterState>({
+    status: null,
+    categoryId: null,
+    priceMin: null,
+    priceMax: null,
+    search: '',
+    sortBy: 'name',
+    sortOrder: 'asc',
+  });
+
+  /** Phân trang hiện tại. */
+  readonly pagination = signal<PaginationState>({
+    page: 1,
+    pageSize: 20,
+    totalItems: 0,
+    totalPages: 0,
+  });
+
+  /** Đang tải dữ liệu. */
+  readonly isLoading = signal<boolean>(false);
+
+  /** Thông báo lỗi. */
+  readonly error = signal<string | null>(null);
+
+  // Các tùy chọn lọc
+  readonly statuses: ProductStatus[] = ['draft', 'active', 'inactive', 'archived'];
+  readonly visibilities: Visibility[] = ['public', 'private', 'internal'];
+
+  // ===========================================================================
+  // Lifecycle
+  // ===========================================================================
+
+  /**
+   * Khởi tạo component — tải danh sách sản phẩm và danh mục.
+   */
+  async ngOnInit(): Promise<void> {
+    await Promise.all([
+      this.loadProducts(),
+      this.loadCategories(),
+    ]);
+  }
+
+  // ===========================================================================
+  // Data loading
+  // ===========================================================================
+
+  /**
+   * Tải danh sách sản phẩm từ store.
+   */
+  private async loadProducts(): Promise<void> {
+    this.isLoading.set(true);
+    this.error.set(null);
+
+    try {
+      this.catalogStore.loadProducts();
+      const products = this.catalogStore.products();
+      this.products.set(products);
+      this.applyFilters();
+    } catch (err: any) {
+      this.error.set(err.message || 'Lỗi khi tải danh sách sản phẩm');
+      console.error('[CP50] Lỗi tải products:', err);
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  /**
+   * Tải danh sách danh mục để hiển thị bộ lọc.
+   */
+  private async loadCategories(): Promise<void> {
+    try {
+      this.catalogStore.loadCategories();
+      const categories = this.catalogStore.categories();
+      this.categories.set(categories);
+    } catch (err: any) {
+      console.error('[CP50] Lỗi tải categories:', err);
+    }
+  }
+
+  // ===========================================================================
+  // Filtering
+  // ===========================================================================
+
+  /**
+   * Áp dụng bộ lọc lên danh sách sản phẩm.
+   */
+  applyFilters(): void {
+    const filters = this.filters();
+    let filtered = [...this.products()];
+
+    // Lọc theo trạng thái
+    if (filters.status) {
+      filtered = filtered.filter((p) => p.status === filters.status);
+    }
+
+    // Lọc theo danh mục
+    if (filters.categoryId) {
+      filtered = filtered.filter((p) => p.category_id === filters.categoryId);
+    }
+
+    // Lọc theo khoảng giá
+    if (filters.priceMin !== null && filters.priceMin !== undefined) {
+      filtered = filtered.filter((p) => p.price >= filters.priceMin!);
+    }
+    if (filters.priceMax !== null && filters.priceMax !== undefined) {
+      filtered = filtered.filter((p) => p.price <= filters.priceMax!);
+    }
+
+    // Tìm kiếm theo từ khóa
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      filtered = filtered.filter(
+        (p) =>
+          p.name.toLowerCase().includes(searchLower) ||
+          p.sku.toLowerCase().includes(searchLower) ||
+          (p.description && p.description.toLowerCase().includes(searchLower))
+      );
+    }
+
+    // Sắp xếp
+    filtered = this.sortProducts(filtered, filters.sortBy, filters.sortOrder);
+
+    // Cập nhật tổng số mục và phân trang
+    const pagination = this.pagination();
+    const totalPages = Math.ceil(filtered.length / pagination.pageSize);
+
+    this.filteredProducts.set(filtered);
+    this.pagination.set({
+      ...pagination,
+      totalItems: filtered.length,
+      totalPages,
+    });
+
+    // Áp dụng phân trang
+    this.applyPagination(filtered);
+  }
+
+  /**
+   * Sắp xếp danh sách sản phẩm theo trường và chiều đã chọn.
+   *
+   * @param products - Danh sách sản phẩm cần sắp xếp.
+   * @param sortBy - Trường sắp xếp.
+   * @param sortOrder - Chiều sắp xếp.
+   * @returns Danh sách đã sắp xếp.
+   */
+  private sortProducts(
+    products: Product[],
+    sortBy: 'name' | 'price' | 'created_at',
+    sortOrder: 'asc' | 'desc'
+  ): Product[] {
+    const multiplier = sortOrder === 'asc' ? 1 : -1;
+
+    return [...products].sort((a, b) => {
+      switch (sortBy) {
+        case 'name':
+          return multiplier * a.name.localeCompare(b.name);
+        case 'price':
+          return multiplier * (a.price - b.price);
+        case 'created_at': {
+          const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return multiplier * (dateA - dateB);
+        }
+        default:
+          return 0;
+      }
+    });
+  }
+
+  /**
+   * Áp dụng phân trang lên danh sách đã lọc.
+   *
+   * @param filtered - Danh sách sản phẩm đã lọc.
+   */
+  private applyPagination(filtered: Product[]): void {
+    const pagination = this.pagination();
+    const start = (pagination.page - 1) * pagination.pageSize;
+    const end = start + pagination.pageSize;
+    this.paginatedProducts.set(filtered.slice(start, end));
+  }
+
+  /**
+   * Xóa tất cả bộ lọc.
+   */
+  clearFilters(): void {
+    this.filters.set({
+      status: null,
+      categoryId: null,
+      priceMin: null,
+      priceMax: null,
+      search: '',
+      sortBy: 'name',
+      sortOrder: 'asc',
+    });
+    // Reset về trang 1
+    this.pagination.update((p) => ({ ...p, page: 1 }));
+    this.applyFilters();
+  }
+
+  // ===========================================================================
+  // Filter change handlers
+  // ===========================================================================
+
+  /**
+   * Xử lý thay đổi bộ lọc trạng thái.
+   *
+   * @param status - Trạng thái mới.
+   */
+  onStatusChange(status: ProductStatus | null): void {
+    this.filters.update((f) => ({ ...f, status }));
+    this.pagination.update((p) => ({ ...p, page: 1 }));
+    this.applyFilters();
+  }
+
+  /**
+   * Xử lý thay đổi bộ lọc danh mục.
+   *
+   * @param categoryId - ID danh mục mới.
+   */
+  onCategoryChange(categoryId: string | null): void {
+    this.filters.update((f) => ({ ...f, categoryId }));
+    this.pagination.update((p) => ({ ...p, page: 1 }));
+    this.applyFilters();
+  }
+
+  /**
+   * Xử lý thay đổi giá tối thiểu.
+   *
+   * @param priceMin - Giá tối thiểu mới.
+   */
+  onPriceMinChange(priceMin: number | null): void {
+    this.filters.update((f) => ({ ...f, priceMin }));
+    this.pagination.update((p) => ({ ...p, page: 1 }));
+    this.applyFilters();
+  }
+
+  /**
+   * Xử lý thay đổi giá tối đa.
+   *
+   * @param priceMax - Giá tối đa mới.
+   */
+  onPriceMaxChange(priceMax: number | null): void {
+    this.filters.update((f) => ({ ...f, priceMax }));
+    this.pagination.update((p) => ({ ...p, page: 1 }));
+    this.applyFilters();
+  }
+
+  /**
+   * Xử lý thay đổi từ khóa tìm kiếm.
+   *
+   * @param search - Từ khóa tìm kiếm mới.
+   */
+  onSearchChange(search: string): void {
+    this.filters.update((f) => ({ ...f, search }));
+    this.pagination.update((p) => ({ ...p, page: 1 }));
+    this.applyFilters();
+  }
+
+  /**
+   * Xử lý thay đổi trường sắp xếp.
+   *
+   * @param sortBy - Trường sắp xếp mới.
+   */
+  onSortChange(sortBy: 'name' | 'price' | 'created_at'): void {
+    this.filters.update((f) => ({ ...f, sortBy }));
+    this.applyFilters();
+  }
+
+  /**
+   * Xử lý thay đổi chiều sắp xếp.
+   *
+   * @param sortOrder - Chiều sắp xếp mới.
+   */
+  onSortOrderChange(sortOrder: 'asc' | 'desc'): void {
+    this.filters.update((f) => ({ ...f, sortOrder }));
+    this.applyFilters();
+  }
+
+  // ===========================================================================
+  // Pagination
+  // ===========================================================================
+
+  /**
+   * Chuyển đến trang khác.
+   *
+   * @param page - Số trang cần chuyển đến.
+   */
+  changePage(page: number): void {
+    const pagination = this.pagination();
+    if (page < 1 || page > pagination.totalPages) {
+      return;
+    }
+    this.pagination.update((p) => ({ ...p, page }));
+    this.applyPagination(this.filteredProducts());
+  }
+
+  /**
+   * Chuyển đến trang đầu.
+   */
+  goToFirstPage(): void {
+    this.changePage(1);
+  }
+
+  /**
+   * Chuyển đến trang cuối.
+   */
+  goToLastPage(): void {
+    this.changePage(this.pagination().totalPages);
+  }
+
+  /**
+   * Chuyển đến trang trước.
+   */
+  goToPreviousPage(): void {
+    const page = this.pagination().page;
+    if (page > 1) {
+      this.changePage(page - 1);
+    }
+  }
+
+  /**
+   * Chuyển đến trang sau.
+   */
+  goToNextPage(): void {
+    const page = this.pagination().page;
+    if (page < this.pagination().totalPages) {
+      this.changePage(page + 1);
+    }
+  }
+
+  /**
+   * Thay đổi số lượng mục mỗi trang.
+   *
+   * @param pageSize - Số lượng mục mới.
+   */
+  changePageSize(pageSize: number): void {
+    this.pagination.set({
+      ...this.pagination(),
+      page: 1,
+      pageSize,
+    });
+    this.applyFilters();
+  }
+
+  /**
+   * Tạo mảng số trang để hiển thị.
+   *
+   * @returns Mảng số trang.
+   */
+  getPageNumbers(): number[] {
+    const { page, totalPages } = this.pagination();
+    const pages: number[] = [];
+
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      pages.push(1);
+      let start = Math.max(2, page - 1);
+      let end = Math.min(totalPages - 1, page + 1);
+
+      if (start > 2) {
+        pages.push(-1); // Ellipsis
+      }
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+      if (end < totalPages - 1) {
+        pages.push(-1); // Ellipsis
+      }
+      pages.push(totalPages);
+    }
+
+    return pages;
+  }
+
+  // ===========================================================================
+  // Utility
+  // ===========================================================================
+
+  /**
+   * Lấy nhãn hiển thị cho trạng thái sản phẩm.
+   *
+   * @param status - Trạng thái sản phẩm.
+   * @returns Chuỗi nhãn hiển thị.
+   */
+  getStatusLabel(status: ProductStatus): string {
+    const labels: Record<ProductStatus, string> = {
+      draft: 'Bản nháp',
+      active: 'Đang hoạt động',
+      inactive: 'Tạm ngưng',
+      archived: 'Đã lưu kho',
+    };
+    return labels[status] || status;
+  }
+
+  /**
+   * Lấy màu trạng thái sản phẩm.
+   *
+   * @param status - Trạng thái sản phẩm.
+   * @returns Mã màu CSS.
+   */
+  getStatusColor(status: ProductStatus): string {
+    const colors: Record<string, string> = {
+      draft: '#6b7280',
+      active: '#22c55e',
+      inactive: '#f59e0b',
+      archived: '#94a3b8',
+    };
+    return colors[status] || '#6b7280';
+  }
+
+  /**
+   * Định dạng giá tiền.
+   *
+   * @param price - Giá tiền.
+   * @param currency - Đơn vị tiền tệ.
+   * @returns Chuỗi giá đã định dạng.
+   */
+  formatPrice(price: number, currency: string = 'VND'): string {
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: currency === 'VND' ? 'VND' : 'USD',
+    }).format(price);
+  }
+
+  /**
+   * Lấy nhãn hiển thị cho khả năng hiển thị.
+   *
+   * @param visibility - Khả năng hiển thị.
+   * @returns Chuỗi nhãn.
+   */
+  getVisibilityLabel(visibility: Visibility): string {
+    const labels: Record<Visibility, string> = {
+      public: 'Công khai',
+      private: 'Riêng tư',
+      internal: 'Nội bộ',
+    };
+    return labels[visibility] || visibility;
+  }
+
+  /**
+   * Lấy tên danh mục từ ID.
+   *
+   * @param categoryId - ID danh mục.
+   * @returns Tên danh mục hoặc 'Không phân loại'.
+   */
+  getCategoryName(categoryId: string | null): string {
+    if (!categoryId) return 'Không phân loại';
+    const category = this.categories().find((c) => c.category_id === categoryId);
+    return category?.name || 'Không phân loại';
+  }
+
+  /**
+   * Kiểm tra có đang áp dụng bộ lọc nào không.
+   *
+   * @returns True nếu có bộ lọc đang hoạt động.
+   */
+  hasActiveFilters(): boolean {
+    const f = this.filters();
+    return !!(
+      f.status ||
+      f.categoryId ||
+      f.priceMin !== null ||
+      f.priceMax !== null ||
+      f.search
+    );
+  }
+
+  /**
+   * Refresh danh sách sản phẩm.
+   */
+  async refresh(): Promise<void> {
+    await this.loadProducts();
+  }
+}
+{% endraw %}

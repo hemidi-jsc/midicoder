@@ -1,0 +1,361 @@
+{% raw %}/**
+ * CP50 Catalog & Taxonomy Engine — Dịch vụ HTTP cho quản lý danh mục sản phẩm và phân loại.
+ *
+ * Cung cấp các phương thức HTTP để thao tác với sản phẩm, danh mục,
+ * biến thể, thuộc tính, và tìm kiếm.
+ *
+ * Sử dụng HttpClient và injection hiện đại của Angular.
+ * Tất cả phương thức trả về Observable để store có thể chuyển đổi thành Signal.
+ *
+ * Tạo tự động bởi CP50 — không sửa thủ công.
+ */
+
+import { Injectable, inject } from '@angular/core';
+import {
+  HttpClient,
+  HttpErrorResponse,
+  HttpParams,
+} from '@angular/common/http';
+import { Observable, catchError, shareReplay, tap, timeout } from 'rxjs';
+
+import {
+  Product,
+  ProductFilters,
+  ProductSearchFilters,
+  Category,
+  ProductVariant,
+  AttributeDefinition,
+  AttributeValue,
+  AttributeValueCreateDto,
+  ApiError,
+} from './catalog-types';
+
+// ===========================================================================
+// Hằng số
+// ===========================================================================
+
+/** URL cơ bản cho Catalog API. */
+export const CATALOG_API_BASE = '/api/v1/catalog';
+
+/** Thời gian chờ mặc định (ms). */
+export const DEFAULT_TIMEOUT_MS = 30000;
+
+// ===========================================================================
+// Helper functions
+// ===========================================================================
+
+/**
+ * Chuyển đổi HttpErrorResponse thành ApiError chuẩn.
+ * Đảm bảo giao diện luôn nhận được định dạng lỗi nhất quán.
+ */
+function toApiError(error: HttpErrorResponse): ApiError {
+  const serverCode = error.status;
+  const message =
+    error.error?.message ?? error.statusText ?? 'Lỗi không xác định';
+  return {
+    code: `HTTP_${serverCode}`,
+    message,
+    details: error.error?.details,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * CatalogService — Dịch vụ trung gian HTTP cho CP50 Catalog & Taxonomy Engine.
+ *
+ * Tổ chức theo các nhóm phương thức:
+ * - Sản phẩm (Product)
+ * - Danh mục (Category)
+ * - Biến thể (ProductVariant)
+ * - Thuộc tính (AttributeDefinition, AttributeValue)
+ * - Tìm kiếm (Search)
+ *
+ * Tất cả phương thức trả về Observable; người gọi (Store) sẽ subscribe
+ * và đẩy dữ liệu vào Signal.
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class CatalogService {
+  // ===========================================================================
+  // Inject dependencies
+  // ===========================================================================
+
+  /** HttpClient — inject theo phong cách hiện đại của Angular. */
+  private readonly http = inject(HttpClient);
+
+  // ===========================================================================
+  // Phương thức sản phẩm (Product)
+  // ===========================================================================
+
+  /**
+   * Lấy tất cả sản phẩm với bộ lọc tùy chọn.
+   *
+   * @param filters - Tiêu chí lọc (trạng thái, danh mục, giá, phân trang).
+   * @returns Observable danh sách sản phẩm.
+   */
+  getProducts(filters?: ProductFilters): Observable<Product[]> {
+    let params = new HttpParams();
+
+    if (filters) {
+      if (filters.status) {
+        params = params.set('status', filters.status);
+      }
+      if (filters.categoryId) {
+        params = params.set('category_id', filters.categoryId);
+      }
+      if (filters.priceMin) {
+        params = params.set('price_min', String(filters.priceMin));
+      }
+      if (filters.priceMax) {
+        params = params.set('price_max', String(filters.priceMax));
+      }
+      if (filters.visibility) {
+        params = params.set('visibility', filters.visibility);
+      }
+      if (filters.page) {
+        params = params.set('page', String(filters.page));
+      }
+      if (filters.pageSize) {
+        params = params.set('page_size', String(filters.pageSize));
+      }
+      if (filters.sortBy) {
+        params = params.set('sort_by', filters.sortBy);
+      }
+      if (filters.sortOrder) {
+        params = params.set('sort_order', filters.sortOrder);
+      }
+    }
+
+    return this.http
+      .get<Product[]>(`${CATALOG_API_BASE}/products`, { params })
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Lấy chi tiết sản phẩm theo ID.
+   *
+   * @param id - ID duy nhất của sản phẩm.
+   * @returns Observable thông tin sản phẩm.
+   */
+  getProduct(id: string): Observable<Product> {
+    return this.http
+      .get<Product>(`${CATALOG_API_BASE}/products/${encodeURIComponent(id)}`)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  // ===========================================================================
+  // Phương thức danh mục (Category)
+  // ===========================================================================
+
+  /**
+   * Lấy tất cả danh mục sản phẩm (dạng phẳng).
+   *
+   * @returns Observable danh sách danh mục.
+   */
+  getCategories(): Observable<Category[]> {
+    return this.http
+      .get<Category[]>(`${CATALOG_API_BASE}/categories`)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Lấy cây danh mục sản phẩm (dạng phân cấp).
+   *
+   * @returns Observable cây danh mục.
+   */
+  getCategoryTree(): Observable<Category[]> {
+    return this.http
+      .get<Category[]>(`${CATALOG_API_BASE}/categories/tree`)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  // ===========================================================================
+  // Phương thức thuộc tính (Attribute)
+  // ===========================================================================
+
+  /**
+   * Lấy tất cả định nghĩa thuộc tính.
+   *
+   * @returns Observable danh sách định nghĩa thuộc tính.
+   */
+  getAttributes(): Observable<AttributeDefinition[]> {
+    return this.http
+      .get<AttributeDefinition[]>(`${CATALOG_API_BASE}/attributes`)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Lấy giá trị thuộc tính của một sản phẩm.
+   *
+   * @param productId - ID sản phẩm.
+   * @returns Observable danh sách giá trị thuộc tính.
+   */
+  getProductAttributes(productId: string): Observable<AttributeValue[]> {
+    return this.http
+      .get<AttributeValue[]>(
+        `${CATALOG_API_BASE}/products/${encodeURIComponent(productId)}/attributes`
+      )
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Tạo giá trị thuộc tính mới cho sản phẩm.
+   *
+   * @param dto - Dữ liệu tạo giá trị thuộc tính.
+   * @returns Observable giá trị thuộc tính đã tạo.
+   */
+  createAttributeValue(dto: AttributeValueCreateDto): Observable<AttributeValue> {
+    return this.http
+      .post<AttributeValue>(`${CATALOG_API_BASE}/attribute-values`, dto)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap((value) => {
+          console.log(
+            `[CP50] Đã tạo giá trị thuộc tính: ${value.attribute_value_id}`
+          );
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  // ===========================================================================
+  // Phương thức biến thể (Variant)
+  // ===========================================================================
+
+  /**
+   * Lấy tất cả biến thể của một sản phẩm.
+   *
+   * @param productId - ID sản phẩm.
+   * @returns Observable danh sách biến thể.
+   */
+  getVariants(productId: string): Observable<ProductVariant[]> {
+    return this.http
+      .get<ProductVariant[]>(
+        `${CATALOG_API_BASE}/products/${encodeURIComponent(productId)}/variants`
+      )
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  // ===========================================================================
+  // Phương thức tìm kiếm (Search)
+  // ===========================================================================
+
+  /**
+   * Tìm kiếm sản phẩm theo từ khóa và bộ lọc.
+   *
+   * @param query - Từ khóa tìm kiếm.
+   * @param filters - Bộ lọc bổ sung.
+   * @returns Observable danh sách sản phẩm tìm thấy.
+   */
+  searchProducts(
+    query: string,
+    filters?: ProductSearchFilters
+  ): Observable<Product[]> {
+    let params = new HttpParams().set('q', query);
+
+    if (filters) {
+      if (filters.categoryId) {
+        params = params.set('category_id', filters.categoryId);
+      }
+      if (filters.brandId) {
+        params = params.set('brand_id', filters.brandId);
+      }
+      if (filters.priceMin) {
+        params = params.set('price_min', String(filters.priceMin));
+      }
+      if (filters.priceMax) {
+        params = params.set('price_max', String(filters.priceMax));
+      }
+      if (filters.status) {
+        params = params.set('status', filters.status);
+      }
+      if (filters.tags && filters.tags.length > 0) {
+        params = params.set('tags', filters.tags.join(','));
+      }
+    }
+
+    return this.http
+      .get<Product[]>(`${CATALOG_API_BASE}/search`, { params })
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap((results) => {
+          console.log(`[CP50] Tìm kiếm "${query}": ${results.length} kết quả`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  // ===========================================================================
+  // Internal helpers
+  // ===========================================================================
+
+  /**
+   * Xây dựng HttpParams từ bộ lọc sản phẩm.
+   *
+   * @param filters - Bộ lọc sản phẩm.
+   * @returns HttpParams đã được xây dựng.
+   */
+  private buildProductParams(filters: ProductFilters): HttpParams {
+    let params = new HttpParams();
+
+    if (filters.status) {
+      params = params.set('status', filters.status);
+    }
+    if (filters.categoryId) {
+      params = params.set('category_id', filters.categoryId);
+    }
+    if (filters.priceMin) {
+      params = params.set('price_min', String(filters.priceMin));
+    }
+    if (filters.priceMax) {
+      params = params.set('price_max', String(filters.priceMax));
+    }
+    if (filters.visibility) {
+      params = params.set('visibility', filters.visibility);
+    }
+    if (filters.page) {
+      params = params.set('page', String(filters.page));
+    }
+    if (filters.pageSize) {
+      params = params.set('page_size', String(filters.pageSize));
+    }
+    if (filters.sortBy) {
+      params = params.set('sort_by', filters.sortBy);
+    }
+    if (filters.sortOrder) {
+      params = params.set('sort_order', filters.sortOrder);
+    }
+
+    return params;
+  }
+}
+{% endraw %}

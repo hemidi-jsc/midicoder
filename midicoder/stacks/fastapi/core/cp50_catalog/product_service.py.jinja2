@@ -1,0 +1,845 @@
+# ----------------------------------------------------------
+# CP50 Catalog & Taxonomy Engine — Dich vu quan ly san pham
+# ----------------------------------------------------------
+# Sinh bởi CP50CatalogEmitter
+# Class: ProductService voi CRUD san pham, quyen bien the, va validate SKU
+# ----------------------------------------------------------
+
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import and_, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+
+class ProductService:
+    """
+    Dich vu quan ly san pham — thuc hien CRUD san pham, quan ly bien the,
+    va kiem tra duplicate SKU trong tenant.
+
+    Cach layer: (1) Validate SKU duy nhat trong tenant,
+    (2) Soft delete voi is_deleted va deleted_at,
+    (3) Tu dong cap nhat timestamp updated_at.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+{% if use_search %}
+        _search_index=None,
+{% endif %}
+{% if use_audit %}
+        _audit_logger=None,
+{% endif %}
+    ) -> None:
+        """
+        Khoi tao dich vu san pham voi phien lam viec SQLAlchemy async
+        va cac thanh phan tuy chon (search index, audit logger).
+
+        Tham so:
+            session: Phien lam viec async de truy cap co so du lieu.
+{% if use_search %}
+            _search_index: Search index de cap nhat chi tim kiem CP10 (tuy chon).
+{% endif %}
+{% if use_audit %}
+            _audit_logger: Audit logger de ghi nhat ky kiem toan (tuy chon).
+{% endif %}
+        """
+        self._session = session
+{% if use_search %}
+        self._search_index = _search_index
+{% else %}
+        self._search_index = None
+{% endif %}
+{% if use_audit %}
+        self._audit_logger = _audit_logger
+{% else %}
+        self._audit_logger = None
+{% endif %}
+
+    # --------------------------------------------------------------
+    # Tạo sản phẩm
+    # --------------------------------------------------------------
+
+    async def create_product(
+        self,
+        data: "ProductCreate",
+    ) -> Any:
+        """
+        Tao san pham moi trong catalog.
+
+        Kiem tra SKU duy nhat trong tenant, tao moi ProductModel
+        voi tat ca cac truong tu ProductCreate. Tu dong dat timestamp.
+
+        Tham so:
+            data: Schema ProductCreate chua toan bo thong tin san pham.
+
+        Tra ve:
+            doi tuong ProductModel moi duoc tao.
+
+        Nem ra:
+            ValueError: Neu SKU da ton tai trong tenant.
+        """
+        # Kiem tra SKU duy nhat trong tenant
+        await self._validate_sku_unique(data.sku, data.tenant_id, exclude_product_id=None)
+
+        now = datetime.now(timezone.utc)
+
+        # Tao ProductModel
+        product = self._product_model()(
+            product_id=data.product_id,
+            name=data.name,
+            slug=data.slug or self._slugify(data.name),
+            sku=data.sku,
+            description=data.description,
+            category_id=data.category_id,
+            brand_id=data.brand_id,
+            price=data.price,
+            cost_price=data.cost_price,
+            compare_at_price=data.compare_at_price,
+            currency=data.currency,
+            weight=data.weight,
+            dimensions=data.dimensions,
+            status=data.status.value if hasattr(data.status, "value") else data.status,
+            visibility=data.visibility.value if hasattr(data.visibility, "value") else data.visibility,
+            tags=data.tags,
+            seo_metadata=data.seo_metadata,
+            images=data.images,
+            metadata_json=data.metadata,
+            is_deleted=False,
+            tenant_id=data.tenant_id,
+            created_at=now,
+            updated_at=now,
+            deleted_at=None,
+        )
+
+        self._session.add(product)
+        await self._session.commit()
+        await self._session.refresh(product)
+
+        # Cap nhat chi tim kiem neu co search index
+{% if use_search %}
+        await self._index_product(product)
+{% endif %}
+
+        # Phat audit event
+{% if use_audit %}
+        await self._audit_log(
+            action="product.created",
+            resource_id=data.product_id,
+            tenant_id=data.tenant_id,
+            details={"name": data.name, "sku": data.sku},
+        )
+{% endif %}
+
+        logger.info(
+            "Da tao san pham: product_id=%s, name=%s, sku=%s, tenant=%s",
+            data.product_id,
+            data.name,
+            data.sku,
+            data.tenant_id,
+        )
+
+        return product
+
+    # --------------------------------------------------------------
+    # Lấy sản phẩm theo ID
+    # --------------------------------------------------------------
+
+    async def get_product(
+        self,
+        product_id: str,
+        include_deleted: bool = False,
+    ) -> Optional[Any]:
+        """
+        Lay san pham theo product_id.
+
+        Mac dinh chi tra ve san pham chua bi xoa. Neu include_deleted=True,
+        tra ve ca san pham da bi soft delete.
+
+        Tham so:
+            product_id: ID duy nhat cua san pham.
+            include_deleted: Co tra ve san pham da xoa khong.
+
+        Tra ve:
+            doi tuong ProductModel hoac None neu khong tim thay.
+        """
+        query = select(self._product_model()).where(
+            self._product_model().product_id == product_id
+        )
+
+        if not include_deleted:
+            query = query.where(
+                self._product_model().is_deleted == False
+            )
+
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    # --------------------------------------------------------------
+    # Liệt kê sản phẩm với bộ lọc
+    # --------------------------------------------------------------
+
+    async def list_products(
+        self,
+        tenant_id: str,
+        status: Optional[str] = None,
+        category_id: Optional[str] = None,
+        brand_id: Optional[str] = None,
+        search: Optional[str] = None,
+        visibility: Optional[str] = None,
+        include_deleted: bool = False,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
+        """
+        Lay danh sach san pham voi bo loc day du.
+
+        Bo loc: status, category_id, brand_id, search (name, description),
+        visibility, include_deleted. Co phan trang (page, page_size).
+
+        Tham so:
+            tenant_id: ID tenant so huu san pham.
+            status: Loc theo trang thai (draft, active, inactive, archived).
+            category_id: Loc theo danh muc.
+            brand_id: Loc theo thuong hieu.
+            search: Tu khoa tim kiem tren ten va mo ta.
+            visibility: Loc theo che do hien thi.
+            include_deleted: Co bao gom san pham da xoa khong.
+            page: So trang (bat dau tu 1).
+            page_size: So phan tu tren trang (1-100).
+
+        Tra ve:
+            Dict voi 'items' (danh sach san pham) va 'total' (tong so ket qua).
+        """
+        conditions = [
+            self._product_model().tenant_id == tenant_id
+        ]
+
+        # Loai tru san pham da xoa (mac dinh)
+        if not include_deleted:
+            conditions.append(self._product_model().is_deleted == False)
+
+        # Bo loc theo status
+        if status:
+            conditions.append(
+                self._product_model().status == status
+            )
+
+        # Bo loc theo category_id
+        if category_id:
+            conditions.append(
+                self._product_model().category_id == category_id
+            )
+
+        # Bo loc theo brand_id
+        if brand_id:
+            conditions.append(
+                self._product_model().brand_id == brand_id
+            )
+
+        # Bo loc theo visibility
+        if visibility:
+            conditions.append(
+                self._product_model().visibility == visibility
+            )
+
+        # Tim kiem full-text tren name va description
+        if search:
+            search_pattern = f"%{search}%"
+            conditions.append(
+                or_(
+                    self._product_model().name.ilike(search_pattern),
+                    self._product_model().description.ilike(search_pattern),
+                )
+            )
+
+        model = self._product_model()
+
+        # Dem tong so ket qua
+        count_query = select(model.__table__.primary_key.columns.values()[0]).where(
+            and_(*conditions)
+        )
+        # Sử dụng func.count
+        from sqlalchemy import func
+        count_query = select(func.count(model.id)).where(and_(*conditions))
+        count_result = await self._session.execute(count_query)
+        total = count_result.scalar_one()
+
+        # Xay dung query chon voi sap xep va phan trang
+        offset = (page - 1) * page_size
+        query = select(model).where(
+            and_(*conditions)
+        ).order_by(
+            model.created_at.desc()
+        ).offset(offset).limit(page_size)
+
+        result = await self._session.execute(query)
+        items = list(result.scalars().all())
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+
+    # --------------------------------------------------------------
+    # Cập nhật sản phẩm
+    # --------------------------------------------------------------
+
+    async def update_product(
+        self,
+        product_id: str,
+        data: "ProductUpdate",
+    ) -> Any:
+        """
+        Cap nhat thong tin san pham.
+
+        Lay san pham theo product_id, cap nhat cac truong duoc cung cap
+        trong ProductUpdate (chi cap nhat truong khong None). Tu dong
+        cap nhat timestamp updated_at.
+
+        Tham so:
+            product_id: ID duy nhat cua san pham can cap nhat.
+            data: Schema ProductUpdate chua cac truong can thay doi.
+
+        Tra ve:
+            doi tuong ProductModel da duoc cap nhat.
+
+        Nem ra:
+            ValueError: Neu san pham khong ton tai hoac da bi xoa.
+        """
+        product = await self.get_product(product_id, include_deleted=False)
+        if product is None:
+            raise ValueError(
+                "Khong tim thay san pham voi ID: {}".format(product_id)
+            )
+
+        # Lay data dict va loai bo cac truong la None
+        update_data = data.model_dump(exclude_unset=True)
+
+        # Xu ly enum: chuyen sang .value neu co
+        if "status" in update_data and update_data["status"] is not None:
+            val = update_data["status"]
+            update_data["status"] = val.value if hasattr(val, "value") else val
+
+        if "visibility" in update_data and update_data["visibility"] is not None:
+            val = update_data["visibility"]
+            update_data["visibility"] = val.value if hasattr(val, "value") else val
+
+        # Kiem tra SKU thay doi — validate duy nhat
+        if "sku" in update_data and update_data["sku"] != product.sku:
+            await self._validate_sku_unique(
+                update_data["sku"],
+                product.tenant_id,
+                exclude_product_id=product_id,
+            )
+
+        # Cap nhat ten va tu dong tao slug
+        if "name" in update_data and update_data["name"]:
+            if "slug" not in update_data or not update_data.get("slug"):
+                update_data["slug"] = self._slugify(update_data["name"])
+
+        # Cap nhat timestamp
+        update_data["updated_at"] = datetime.now(timezone.utc)
+
+        # Map metadata -> metadata_json
+        if "metadata" in update_data:
+            update_data["metadata_json"] = update_data.pop("metadata", None)
+
+        # Thuc hien cap nhat
+        for key, value in update_data.items():
+            if hasattr(product, key):
+                setattr(product, key, value)
+
+        await self._session.commit()
+        await self._session.refresh(product)
+
+        # Cap nhat chi tim kiem
+{% if use_search %}
+        await self._index_product(product)
+{% endif %}
+
+        # Phat audit event
+{% if use_audit %}
+        await self._audit_log(
+            action="product.updated",
+            resource_id=product_id,
+            tenant_id=product.tenant_id,
+            details={"updated_fields": list(update_data.keys())},
+        )
+{% endif %}
+
+        logger.info(
+            "Da cap nhat san pham: product_id=%s",
+            product_id,
+        )
+
+        return product
+
+    # --------------------------------------------------------------
+    # Xóa sản phẩm (soft delete)
+    # --------------------------------------------------------------
+
+    async def delete_product(
+        self,
+        product_id: str,
+    ) -> Any:
+        """
+        Xoa san pham theo cach thuc soft delete.
+
+        Set is_deleted=True va deleted_at=now, khong xoa khoi co so du lieu.
+        San pham da xoa se bi loai khoi cac truy van mac dinh.
+
+        Tham so:
+            product_id: ID duy nhat cua san pham can xoa.
+
+        Tra ve:
+            doi tuong ProductModel da duoc danh dau la xoa.
+
+        Nem ra:
+            ValueError: Neu san pham khong ton tai hoac da duoc xoa truoc do.
+        """
+        product = await self.get_product(product_id, include_deleted=False)
+        if product is None:
+            raise ValueError(
+                "Khong tim thay san pham voi ID: {}".format(product_id)
+            )
+
+        now = datetime.now(timezone.utc)
+        product.is_deleted = True
+        product.deleted_at = now
+        product.updated_at = now
+
+        await self._session.commit()
+        await self._session.refresh(product)
+
+        # Xoa khoi chi tim kiem neu co
+{% if use_search %}
+        await self._remove_from_index(product_id)
+{% endif %}
+
+        # Phat audit event
+{% if use_audit %}
+        await self._audit_log(
+            action="product.deleted",
+            resource_id=product_id,
+            tenant_id=product.tenant_id,
+            details={"deleted_at": now.isoformat()},
+        )
+{% endif %}
+
+        logger.info(
+            "Da xoa san pham (soft delete): product_id=%s",
+            product_id,
+        )
+
+        return product
+
+    # --------------------------------------------------------------
+    # Khôi phục sản phẩm
+    # --------------------------------------------------------------
+
+    async def restore_product(
+        self,
+        product_id: str,
+    ) -> Any:
+        """
+        Khoi phuc san pham da bi soft delete.
+
+        Set is_deleted=False va deleted_at=None de khoi phuc san pham
+        ve trang thai hoat dong binh thuong.
+
+        Tham so:
+            product_id: ID duy nhat cua san pham can khoi phuc.
+
+        Tra ve:
+            doi tuong ProductModel da duoc khoi phuc.
+
+        Nem ra:
+            ValueError: Neu san pham khong ton tai hoac chua bi xoa.
+        """
+        product = await self.get_product(product_id, include_deleted=True)
+        if product is None:
+            raise ValueError(
+                "Khong tim thay san pham voi ID: {}".format(product_id)
+            )
+        if not product.is_deleted:
+            raise ValueError(
+                "San pham khong bi xoa: khong the khoi phuc. product_id={}".format(
+                    product_id
+                )
+            )
+
+        now = datetime.now(timezone.utc)
+        product.is_deleted = False
+        product.deleted_at = None
+        product.updated_at = now
+
+        await self._session.commit()
+        await self._session.refresh(product)
+
+        # Them vao chi tim kiem lai
+{% if use_search %}
+        await self._index_product(product)
+{% endif %}
+
+        # Phat audit event
+{% if use_audit %}
+        await self._audit_log(
+            action="product.restored",
+            resource_id=product_id,
+            tenant_id=product.tenant_id,
+            details={"restored_at": now.isoformat()},
+        )
+{% endif %}
+
+        logger.info(
+            "Da khoi phuc san pham: product_id=%s",
+            product_id,
+        )
+
+        return product
+
+    # --------------------------------------------------------------
+    # Lấy biến thể của sản phẩm
+    # --------------------------------------------------------------
+
+    async def get_variants_for_product(
+        self,
+        product_id: str,
+    ) -> List[Any]:
+        """
+        Lay tat ca bien the cua mot san pham.
+
+        Tham so:
+            product_id: ID san pham me.
+
+        Tra ve:
+            Danh sach ProductVariantModel cua san pham.
+        """
+        query = select(self._variant_model()).where(
+            self._variant_model().product_id == product_id
+        ).order_by(
+            self._variant_model().sort_order.asc()
+        )
+
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    # --------------------------------------------------------------
+    # Tạo biến thể mới
+    # --------------------------------------------------------------
+
+    async def create_variant(
+        self,
+        product_id: str,
+        variant_data: "VariantCreate",
+    ) -> Any:
+        """
+        Tao bien the moi cho san pham.
+
+        Kiem tra san pham ton tai, kiem tra SKU duy nhat, va tao
+        ProductVariantModel moi voi product_id lien ket.
+
+        Tham so:
+            product_id: ID san pham me.
+            variant_data: Schema VariantCreate chua thong tin bien the.
+
+        Tra ve:
+            doi tuong ProductVariantModel moi duoc tao.
+
+        Nem ra:
+            ValueError: Neu san pham khong ton tai.
+            ValueError: Neu SKU da ton tai.
+        """
+        # Kiem tra san pham ton tai
+        product = await self.get_product(product_id, include_deleted=False)
+        if product is None:
+            raise ValueError(
+                "Khong tim thay san pham voi ID: {}".format(product_id)
+            )
+
+        # Kiem tra SKU duy nhat trong tenant
+        await self._validate_sku_unique(
+            variant_data.sku,
+            product.tenant_id,
+            exclude_product_id=product_id,
+            is_variant=True,
+        )
+
+        now = datetime.now(timezone.utc)
+
+        variant = self._variant_model()(
+            variant_id=variant_data.variant_id,
+            product_id=product_id,
+            sku=variant_data.sku,
+            name=variant_data.name,
+            attribute_values=variant_data.attribute_values,
+            price=variant_data.price,
+            cost_price=variant_data.cost_price,
+            weight=variant_data.weight,
+            barcode=variant_data.barcode,
+            images=variant_data.images,
+            is_active=variant_data.is_active,
+            sort_order=variant_data.sort_order,
+            metadata_json=variant_data.metadata,
+            created_at=now,
+            updated_at=now,
+        )
+
+        self._session.add(variant)
+        await self._session.commit()
+        await self._session.refresh(variant)
+
+        # Phat audit event
+{% if use_audit %}
+        await self._audit_log(
+            action="variant.created",
+            resource_id=variant_data.variant_id,
+            tenant_id=product.tenant_id,
+            details={"product_id": product_id, "sku": variant_data.sku},
+        )
+{% endif %}
+
+        logger.info(
+            "Da tao bien the: variant_id=%s, product_id=%s, sku=%s",
+            variant_data.variant_id,
+            product_id,
+            variant_data.sku,
+        )
+
+        return variant
+
+    # --------------------------------------------------------------
+    # Nội bộ — Validate SKU duy nhất trong tenant
+    # --------------------------------------------------------------
+
+    async def _validate_sku_unique(
+        self,
+        sku: str,
+        tenant_id: str,
+        exclude_product_id: Optional[str] = None,
+        is_variant: bool = False,
+    ) -> None:
+        """
+        Kiem tra SKU duy nhat trong tenant.
+
+        Tim kiem trong ca bang products va product_variants (neu co),
+        loai tru product_id hien tai neu dang cap nhat.
+
+        Tham so:
+            sku: Ma SKU can kiem tra.
+            tenant_id: ID tenant.
+            exclude_product_id: ID san pham de loai tru (neu cap nhat).
+            is_variant: Co la SKU cua bien the khong.
+
+        Nem ra:
+            ValueError: Neu SKU da ton tai trong tenant.
+        """
+        # Kiem tra trong bang products
+        if not is_variant:
+            conditions = [
+                self._product_model().sku == sku,
+                self._product_model().tenant_id == tenant_id,
+                self._product_model().is_deleted == False,
+            ]
+            if exclude_product_id:
+                conditions.append(
+                    self._product_model().product_id != exclude_product_id
+                )
+
+            query = select(self._product_model()).where(and_(*conditions))
+            result = await self._session.execute(query)
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                raise ValueError(
+                    "SKU '{}' da ton tai trong tenant. sku={}".format(
+                        sku, sku
+                    )
+                )
+
+        # Kiem tra trong bang product_variants
+        conditions = [
+            self._variant_model().sku == sku,
+        ]
+        # Tim tenant_id qua product_id cua variant
+        # (variant khong co tenant_id truc tiep, nen qua product)
+        variant_query = select(self._variant_model()).where(and_(*conditions))
+        variant_result = await self._session.execute(variant_query)
+        existing_variants = list(variant_result.scalars().all())
+
+        for v in existing_variants:
+            # Kiem tra variant nay thuoc tung tenant
+            if exclude_product_id and v.product_id == exclude_product_id:
+                continue
+            # Lay product de kiem tra tenant
+            prod = await self.get_product(v.product_id, include_deleted=False)
+            if prod and prod.tenant_id == tenant_id:
+                raise ValueError(
+                    "SKU '{}' da ton tai o bien the cua san pham. sku={}".format(
+                        sku, sku
+                    )
+                )
+
+    # --------------------------------------------------------------
+    # Nội bộ — Tự động tạo slug
+    # --------------------------------------------------------------
+
+    @staticmethod
+    def _slugify(text: str) -> str:
+        """
+        Chuyen chuoi thanh slug than thien voi URL.
+
+        Thuc hien:
+        1. Chuyen sang chu thuong
+        2. Chuan hoa Unicode (dau -> khong dau)
+        3. Thay khoang trang va ky tu dac biet bang dau gạch ngang
+        4. Loai bo ky tu khong phai ASCII chu/so/gach ngang
+
+        Tham so:
+            text: Chuoi dau vao.
+
+        Tra ve:
+            Chuoi slug da xu ly.
+        """
+        import re
+        import unicodedata
+
+        text = text.lower().strip()
+        text = unicodedata.normalize("NFKD", text)
+        text = text.encode("ascii", "ignore").decode("ascii")
+        text = re.sub(r"[^\w\s-]", "", text)
+        text = re.sub(r"[\s_]+", "-", text)
+        text = re.sub(r"-+", "-", text)
+        return text.strip("-")
+
+    # --------------------------------------------------------------
+    # Nội bộ — Lấy model class
+    # --------------------------------------------------------------
+
+    @staticmethod
+    def _product_model():
+        """Lay ProductModel class."""
+        from catalog_models import ProductModel
+        return ProductModel
+
+    @staticmethod
+    def _variant_model():
+        """Lay ProductVariantModel class."""
+        from catalog_models import ProductVariantModel
+        return ProductVariantModel
+
+    # --------------------------------------------------------------
+    # Nội bộ — Chỉ mục tìm kiếm
+    # --------------------------------------------------------------
+
+{% if use_search %}
+    async def _index_product(self, product: Any) -> None:
+        """
+        Cap nhat chi tim kiem cho san pham.
+
+        Su dung search index (CP10) de them/cap nhat san pham
+        vao chi tim kiem, cho phep tim kiem nhanh tren name, description.
+
+        Tham so:
+            product: doi tuong ProductModel can chi muc.
+        """
+        if self._search_index is None:
+            return
+
+        try:
+            await self._search_index.index_document(
+                document_id=product.product_id,
+                data={
+                    "product_id": product.product_id,
+                    "name": product.name,
+                    "slug": product.slug,
+                    "sku": product.sku,
+                    "description": product.description or "",
+                    "category_id": product.category_id,
+                    "brand_id": product.brand_id,
+                    "price": float(product.price),
+                    "status": product.status,
+                    "visibility": product.visibility,
+                    "tags": product.tags or [],
+                    "tenant_id": product.tenant_id,
+                },
+            )
+        except Exception as e:
+            logger.warning(
+                "Loi chi muc tim kiem product: product_id=%s, error=%s",
+                product.product_id,
+                str(e),
+            )
+
+    async def _remove_from_index(self, product_id: str) -> None:
+        """
+        Xoa san pham khoi chi tim kiem.
+
+        Tham so:
+            product_id: ID san pham can xoa khoi chi.
+        """
+        if self._search_index is None:
+            return
+
+        try:
+            await self._search_index.remove_document(product_id)
+        except Exception as e:
+            logger.warning(
+                "Loi xoa khoi chi tim kiem: product_id=%s, error=%s",
+                product_id,
+                str(e),
+            )
+{% endif %}
+
+    # --------------------------------------------------------------
+    # Nội bộ — Audit log
+    # --------------------------------------------------------------
+
+{% if use_audit %}
+    async def _audit_log(
+        self,
+        action: str,
+        resource_id: str,
+        tenant_id: str,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Phat audit event neu co audit logger.
+
+        Ghi nhan cac thao tac tren san pham va bien the
+        de danh sach kiem toan.
+
+        Tham so:
+            action: Thao tac (product.created, product.updated, ...).
+            resource_id: ID tai nguyen lien quan.
+            tenant_id: ID tenant.
+            details: Chi tiet bo sung.
+        """
+        if self._audit_logger is None:
+            return
+
+        try:
+            event_data = {
+                "action": action,
+                "resource_id": resource_id,
+                "tenant_id": tenant_id,
+                "details": details or {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            await self._audit_logger.log_event(event_data)
+        except Exception as e:
+            logger.warning(
+                "Loi ghi audit log: action=%s, error=%s",
+                action,
+                str(e),
+            )
+{% endif %}

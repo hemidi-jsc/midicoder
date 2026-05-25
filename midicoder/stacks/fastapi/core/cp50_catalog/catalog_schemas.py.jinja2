@@ -1,0 +1,654 @@
+# ----------------------------------------------------------
+# CP50 Catalog & Taxonomy Engine — Pydantic v2 schemas cho validation
+# ----------------------------------------------------------
+# Sinh bởi CP50CatalogEmitter
+# Schemas: Product, Category, ProductVariant, AttributeDefinition,
+#          AttributeValue, FacetedSearch
+# ----------------------------------------------------------
+
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+
+# ====================================================================
+# Enum Definitions
+# ====================================================================
+
+
+class ProductStatus(str, Enum):
+    """Trang thai vong doi cua san pham."""
+    DRAFT = "draft"
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    ARCHIVED = "archived"
+
+
+class AttributeType(str, Enum):
+    """Loai du lieu cua thuoc tinh san pham."""
+    STRING = "string"
+    NUMBER = "number"
+    BOOLEAN = "boolean"
+    DATE = "date"
+    ENUM = "enum"
+    COLOR = "color"
+
+
+class Visibility(str, Enum):
+    """Che do hien thi cua san pham."""
+    PUBLIC = "public"
+    INTERNAL = "internal"
+    RESTRICTED = "restricted"
+
+
+# ====================================================================
+# Product Schemas
+# ====================================================================
+
+
+class ProductCreate(BaseModel):
+    """Schema tao san pham moi."""
+    product_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID duy nhat cua san pham"
+    )
+    name: str = Field(
+        ..., min_length=1, max_length=512,
+        description="Ten san pham (hien thi)"
+    )
+    slug: Optional[str] = Field(
+        None, max_length=512,
+        description="Duong dan URL than thien (tu dong tu neu de trong)"
+    )
+    sku: str = Field(
+        ..., min_length=1, max_length=128,
+        description="Ma SKU duy nhat cua san pham"
+    )
+    description: Optional[str] = Field(
+        None, max_length=10000,
+        description="Mo ta chi tiet san pham"
+    )
+    category_id: Optional[str] = Field(
+        None, max_length=64,
+        description="ID danh muc phan loai"
+    )
+    brand_id: Optional[str] = Field(
+        None, max_length=64,
+        description="ID thuong hieu"
+    )
+    price: float = Field(
+        ..., ge=0,
+        description="Gia ban"
+    )
+    cost_price: float = Field(
+        0.0, ge=0,
+        description="Gia von"
+    )
+    compare_at_price: Optional[float] = Field(
+        None, ge=0,
+        description="Gia so sanh (gia goc/gia cu)"
+    )
+    currency: str = Field(
+        "VND", max_length=8,
+        description="Don vi tien te (mac dinh VND)"
+    )
+    weight: float = Field(
+        0.0, ge=0,
+        description="Khoi luong san pham"
+    )
+    dimensions: Optional[Dict[str, float]] = Field(
+        None,
+        description="Kich thuoc (length, width, height)"
+    )
+    status: ProductStatus = Field(
+        ProductStatus.DRAFT,
+        description="Trang thai vong doi san pham"
+    )
+    visibility: Visibility = Field(
+        Visibility.PUBLIC,
+        description="Che do hien thi"
+    )
+    tags: List[str] = Field(
+        default_factory=list,
+        description="Danh sach the phan loai"
+    )
+    seo_metadata: Optional[Dict[str, str]] = Field(
+        None,
+        description="Metadata cho SEO (title, description, keywords)"
+    )
+    images: List[str] = Field(
+        default_factory=list,
+        description="Danh sach URL anh xung"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Du lieu bo sung tuy chinh"
+    )
+    tenant_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID tenant so huu san pham"
+    )
+
+
+class ProductUpdate(BaseModel):
+    """Schema cap nhat san pham (bat chon)."""
+    name: Optional[str] = Field(
+        None, min_length=1, max_length=512,
+        description="Ten san pham"
+    )
+    slug: Optional[str] = Field(
+        None, max_length=512,
+        description="Duong dan URL"
+    )
+    description: Optional[str] = Field(
+        None, max_length=10000,
+        description="Mo ta chi tiet"
+    )
+    category_id: Optional[str] = Field(
+        None, max_length=64,
+        description="ID danh muc"
+    )
+    brand_id: Optional[str] = Field(
+        None, max_length=64,
+        description="ID thuong hieu"
+    )
+    price: Optional[float] = Field(
+        None, ge=0,
+        description="Gia ban"
+    )
+    cost_price: Optional[float] = Field(
+        None, ge=0,
+        description="Gia von"
+    )
+    compare_at_price: Optional[float] = Field(
+        None, ge=0,
+        description="Gia so sanh"
+    )
+    currency: Optional[str] = Field(
+        None, max_length=8,
+        description="Don vi tien te"
+    )
+    weight: Optional[float] = Field(
+        None, ge=0,
+        description="Khoi luong"
+    )
+    dimensions: Optional[Dict[str, float]] = Field(
+        None,
+        description="Kich thuoc"
+    )
+    status: Optional[ProductStatus] = Field(
+        None,
+        description="Trang thai"
+    )
+    visibility: Optional[Visibility] = Field(
+        None,
+        description="Che do hien thi"
+    )
+    tags: Optional[List[str]] = Field(
+        None,
+        description="Danh sach tags"
+    )
+    seo_metadata: Optional[Dict[str, str]] = Field(
+        None,
+        description="SEO metadata"
+    )
+    images: Optional[List[str]] = Field(
+        None,
+        description="Danh sach anh"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Du lieu bo sung"
+    )
+
+
+class ProductResponse(BaseModel):
+    """Schema tra ve san pham."""
+    product_id: str = Field(..., description="ID duy nhat")
+    name: str = Field(..., description="Ten san pham")
+    slug: str = Field(..., description="URL slug")
+    sku: str = Field(..., description="Ma SKU")
+    description: Optional[str] = Field(None, description="Mo ta")
+    category_id: Optional[str] = Field(None, description="ID danh muc")
+    brand_id: Optional[str] = Field(None, description="ID thuong hieu")
+    price: float = Field(..., description="Gia ban")
+    cost_price: float = Field(..., description="Gia von")
+    compare_at_price: Optional[float] = Field(None, description="Gia so sanh")
+    currency: str = Field(..., description="Don vi tien te")
+    weight: float = Field(..., description="Khoi luong")
+    dimensions: Optional[Dict[str, float]] = Field(None, description="Kich thuoc")
+    status: str = Field(..., description="Trang thai")
+    visibility: str = Field(..., description="Che do hien thi")
+    tags: List[str] = Field(default_factory=list, description="Danh sach tags")
+    seo_metadata: Optional[Dict[str, str]] = Field(None, description="SEO metadata")
+    images: List[str] = Field(default_factory=list, description="Danh sach anh")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Du lieu bo sung")
+    is_deleted: bool = Field(..., description="Co bi xoa khong")
+    tenant_id: str = Field(..., description="ID tenant")
+    created_at: datetime = Field(..., description="Thoi diem tao")
+    updated_at: datetime = Field(..., description="Thoi diem cap nhat")
+    deleted_at: Optional[datetime] = Field(None, description="Thoi diem xoa")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# Category Schemas
+# ====================================================================
+
+
+class CategoryCreate(BaseModel):
+    """Schema tao danh muc moi."""
+    category_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID duy nhat cua danh muc"
+    )
+    name: str = Field(
+        ..., min_length=1, max_length=256,
+        description="Ten danh muc (hien thi)"
+    )
+    slug: Optional[str] = Field(
+        None, max_length=256,
+        description="URL slug (tu dong tu neu de trong)"
+    )
+    description: Optional[str] = Field(
+        None, max_length=4096,
+        description="Mo ta danh muc"
+    )
+    parent_id: Optional[str] = Field(
+        None, max_length=64,
+        description="ID danh muc cha (None = cap goc)"
+    )
+    sort_order: int = Field(
+        0,
+        description="Thu tu sap xep trong cung cap"
+    )
+    icon: Optional[str] = Field(
+        None, max_length=256,
+        description="URL hoac ten bieu tuong"
+    )
+    is_active: bool = Field(
+        True,
+        description="Co hoat dong khong"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Du lieu bo sung tuy chinh"
+    )
+
+
+class CategoryUpdate(BaseModel):
+    """Schema cap nhat danh muc (bat chon)."""
+    name: Optional[str] = Field(
+        None, min_length=1, max_length=256,
+        description="Ten danh muc"
+    )
+    slug: Optional[str] = Field(
+        None, max_length=256,
+        description="URL slug"
+    )
+    description: Optional[str] = Field(
+        None, max_length=4096,
+        description="Mo ta"
+    )
+    parent_id: Optional[str] = Field(
+        None, max_length=64,
+        description="ID danh muc cha"
+    )
+    sort_order: Optional[int] = Field(
+        None,
+        description="Thu tu sap xep"
+    )
+    icon: Optional[str] = Field(
+        None, max_length=256,
+        description="Bieu tuong"
+    )
+    is_active: Optional[bool] = Field(
+        None,
+        description="Trang thai hoat dong"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Du lieu bo sung"
+    )
+
+
+class CategoryResponse(BaseModel):
+    """Schema tra ve danh muc."""
+    category_id: str = Field(..., description="ID duy nhat")
+    name: str = Field(..., description="Ten danh muc")
+    slug: str = Field(..., description="URL slug")
+    description: Optional[str] = Field(None, description="Mo ta")
+    parent_id: Optional[str] = Field(None, description="ID cha")
+    sort_order: int = Field(..., description="Thu tu sap xep")
+    icon: Optional[str] = Field(None, description="Bieu tuong")
+    is_active: bool = Field(..., description="Co hoat dong khong")
+    descendant_count: int = Field(..., description="So danh muc con")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Du lieu bo sung")
+    created_at: datetime = Field(..., description="Thoi diem tao")
+    updated_at: datetime = Field(..., description="Thoi diem cap nhat")
+
+    model_config = {"from_attributes": True}
+
+
+class CategoryTreeResponse(BaseModel):
+    """Schema tra ve danh muc co cau truc cay."""
+    category_id: str = Field(..., description="ID duy nhat")
+    name: str = Field(..., description="Ten danh muc")
+    slug: str = Field(..., description="URL slug")
+    description: Optional[str] = Field(None, description="Mo ta")
+    parent_id: Optional[str] = Field(None, description="ID cha")
+    sort_order: int = Field(..., description="Thu tu sap xep")
+    icon: Optional[str] = Field(None, description="Bieu tuong")
+    is_active: bool = Field(..., description="Co hoat dong khong")
+    descendant_count: int = Field(..., description="So danh muc con")
+    children: List["CategoryTreeResponse"] = Field(
+        default_factory=list,
+        description="Danh sach danh muc con"
+    )
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# ProductVariant Schemas
+# ====================================================================
+
+
+class VariantCreate(BaseModel):
+    """Schema tao bien the san pham moi."""
+    variant_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID duy nhat cua bien the"
+    )
+    product_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID san pham me"
+    )
+    sku: str = Field(
+        ..., min_length=1, max_length=128,
+        description="Ma SKU duy nhat cua bien the"
+    )
+    name: Optional[str] = Field(
+        None, max_length=256,
+        description="Ten bien the (hien thi)"
+    )
+    attribute_values: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Gia tri thuoc tinh (key -> value)"
+    )
+    price: float = Field(
+        ..., ge=0,
+        description="Gia ban bien the"
+    )
+    cost_price: float = Field(
+        0.0, ge=0,
+        description="Gia von bien the"
+    )
+    weight: float = Field(
+        0.0, ge=0,
+        description="Khoi luong bien the"
+    )
+    barcode: Optional[str] = Field(
+        None, max_length=64,
+        description="Ma vạch (EAN, UPC)"
+    )
+    images: List[str] = Field(
+        default_factory=list,
+        description="Danh sach URL anh bien the"
+    )
+    is_active: bool = Field(
+        True,
+        description="Co hoat dong khong"
+    )
+    sort_order: int = Field(
+        0,
+        description="Thu tu sap xep"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Du lieu bo sung tuy chinh"
+    )
+
+
+class VariantResponse(BaseModel):
+    """Schema tra ve bien the san pham."""
+    variant_id: str = Field(..., description="ID duy nhat")
+    product_id: str = Field(..., description="ID san pham me")
+    sku: str = Field(..., description="Ma SKU")
+    name: Optional[str] = Field(None, description="Ten bien the")
+    attribute_values: Dict[str, str] = Field(..., description="Gia tri thuoc tinh")
+    price: float = Field(..., description="Gia ban")
+    cost_price: float = Field(..., description="Gia von")
+    weight: float = Field(..., description="Khoi luong")
+    barcode: Optional[str] = Field(None, description="Ma vạch")
+    images: List[str] = Field(default_factory=list, description="Danh sach anh")
+    is_active: bool = Field(..., description="Co hoat dong khong")
+    sort_order: int = Field(..., description="Thu tu sap xep")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Du lieu bo sung")
+    created_at: datetime = Field(..., description="Thoi diem tao")
+    updated_at: datetime = Field(..., description="Thoi diem cap nhat")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# AttributeDefinition Schemas
+# ====================================================================
+
+
+class AttributeDefinitionCreate(BaseModel):
+    """Schema tao dinh nghia thuoc tinh moi."""
+    attribute_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID duy nhat cua thuoc tinh"
+    )
+    name: str = Field(
+        ..., min_length=1, max_length=256,
+        description="Ten hien thi cua thuoc tinh"
+    )
+    key: Optional[str] = Field(
+        None, max_length=128,
+        description="Khoa may doc (tu dong tu neu de trong)"
+    )
+    attribute_type: AttributeType = Field(
+        AttributeType.STRING,
+        description="Loai du lieu (STRING, NUMBER, BOOLEAN, DATE, ENUM, COLOR)"
+    )
+    is_required: bool = Field(
+        False,
+        description="Bat buoc phai co gia tri"
+    )
+    validation_rules: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Quy tac kiem tra (min, max, pattern)"
+    )
+    options: List[str] = Field(
+        default_factory=list,
+        description="Danh sach gia tri cho ENUM"
+    )
+    unit: Optional[str] = Field(
+        None, max_length=32,
+        description="Don vi (kg, cm, ml, v.v.)"
+    )
+    is_searchable: bool = Field(
+        False,
+        description="Co the tim kiem theo thuoc tinh nay"
+    )
+    is_filterable: bool = Field(
+        False,
+        description="Co the loc theo thuoc tinh nay"
+    )
+    is_visible: bool = Field(
+        True,
+        description="Hien thi tren giao dien"
+    )
+    sort_order: int = Field(
+        0,
+        description="Thu tu sap xep"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Du lieu bo sung tuy chinh"
+    )
+
+    @field_validator("options")
+    @classmethod
+    def validate_enum_options(cls, v: List[str], info) -> List[str]:
+        """Kiem tra options chi co su dung voi ENUM type."""
+        # Validation chi bat buoc neu attribute_type la ENUM va options de trong
+        # Neu co options, moi phan tu khong duoc de trong
+        if v:
+            for opt in v:
+                if not opt.strip():
+                    raise ValueError("Moi tu chon ENUM khong duoc de trong")
+        return v
+
+
+class AttributeDefinitionResponse(BaseModel):
+    """Schema tra ve dinh nghia thuoc tinh."""
+    attribute_id: str = Field(..., description="ID duy nhat")
+    name: str = Field(..., description="Ten hien thi")
+    key: str = Field(..., description="Khoa may doc")
+    attribute_type: str = Field(..., description="Loai du lieu")
+    is_required: bool = Field(..., description="Co bat buoc khong")
+    validation_rules: Optional[Dict[str, Any]] = Field(None, description="Quy tac kiem tra")
+    options: List[str] = Field(default_factory=list, description="Danh sach tu chon")
+    unit: Optional[str] = Field(None, description="Don vi")
+    is_searchable: bool = Field(..., description="Co the tim kiem khong")
+    is_filterable: bool = Field(..., description="Co the loc khong")
+    is_visible: bool = Field(..., description="Co hien thi khong")
+    sort_order: int = Field(..., description="Thu tu sap xep")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Du lieu bo sung")
+    created_at: datetime = Field(..., description="Thoi diem tao")
+    updated_at: datetime = Field(..., description="Thoi diem cap nhat")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# AttributeValue Schemas
+# ====================================================================
+
+
+class AttributeValueCreate(BaseModel):
+    """Schema tao gia tri thuoc tinh moi."""
+    attribute_value_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID duy nhat cua gia tri thuoc tinh"
+    )
+    attribute_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID thuoc tinh dinh nghia"
+    )
+    product_id: Optional[str] = Field(
+        None, max_length=64,
+        description="ID san pham (neu gan o cap product)"
+    )
+    variant_id: Optional[str] = Field(
+        None, max_length=64,
+        description="ID bien the (neu gan o cap variant)"
+    )
+    value: Any = Field(
+        ...,
+        description="Gia tri thuc te (str/int/float/bool/list)"
+    )
+
+    @field_validator("value")
+    @classmethod
+    def validate_value_not_none(cls, v: Any) -> Any:
+        """Kiem tra value khong duoc la None."""
+        if v is None:
+            raise ValueError("value khong duoc de trong hoac None")
+        return v
+
+
+class AttributeValueResponse(BaseModel):
+    """Schema tra ve gia tri thuoc tinh."""
+    attribute_value_id: str = Field(..., description="ID duy nhat")
+    attribute_id: str = Field(..., description="ID thuoc tinh")
+    product_id: Optional[str] = Field(None, description="ID san pham")
+    variant_id: Optional[str] = Field(None, description="ID bien the")
+    value: Any = Field(..., description="Gia tri")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# Faceted Search Schemas
+# ====================================================================
+
+
+class FacetedSearchRequest(BaseModel):
+    """Schema yeu cau tim kiem voi bo loc (faceted search)."""
+    query: Optional[str] = Field(
+        None, max_length=512,
+        description="Tu khoa tim kiem (ten, mo ta)"
+    )
+    status: Optional[str] = Field(
+        None, max_length=16,
+        description="Loc theo trang thai san pham"
+    )
+    category_id: Optional[str] = Field(
+        None, max_length=64,
+        description="Loc theo danh muc"
+    )
+    brand_id: Optional[str] = Field(
+        None, max_length=64,
+        description="Loc theo thuong hieu"
+    )
+    price_min: Optional[float] = Field(
+        None, ge=0,
+        description="Gia toi thieu"
+    )
+    price_max: Optional[float] = Field(
+        None, ge=0,
+        description="Gia toi da"
+    )
+    tags: Optional[List[str]] = Field(
+        None,
+        description="Loc theo tags"
+    )
+    visibility: Optional[str] = Field(
+        None, max_length=16,
+        description="Loc theo che do hien thi"
+    )
+    attributes: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Loc theo gia tri thuoc tinh (key -> value)"
+    )
+    page: int = Field(
+        1, ge=1,
+        description="So trang"
+    )
+    page_size: int = Field(
+        20, ge=1, le=100,
+        description="So phan tu tren trang"
+    )
+
+
+class AggregationResponse(BaseModel):
+    """Schema tra ve tong hop ket qua tim kiem."""
+    label: str = Field(..., description="Nhien cua tong hop")
+    type: str = Field(..., description="Loai tong hop (count, range)")
+    buckets: List[Dict[str, Any]] = Field(
+        ...,
+        description="Danh sach bucket (key, count, min, max, ...)"
+    )
+
+
+class FacetedSearchResponse(BaseModel):
+    """Schema tra ve ket qua tim kiem voi bo loc."""
+    total: int = Field(..., description="Tong so ket qua")
+    page: int = Field(..., description="So trang hien tai")
+    page_size: int = Field(..., description="So phan tu tren trang")
+    products: List[ProductResponse] = Field(
+        ...,
+        description="Danh sach san pham trong trang hien tai"
+    )
+    aggregations: List[AggregationResponse] = Field(
+        default_factory=list,
+        description="Danh sach tong hop (category, brand, price_range, attributes)"
+    )

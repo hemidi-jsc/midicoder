@@ -1,0 +1,473 @@
+# ----------------------------------------------------------
+# CP50 Catalog & Taxonomy Engine — SQLAlchemy mô hình dữ liệu
+# ----------------------------------------------------------
+# Sinh bởi CP50CatalogEmitter
+# Mô hình: Product, Category, ProductVariant,
+#          AttributeDefinition, AttributeValue
+# ----------------------------------------------------------
+
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+import sqlalchemy as sa
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    """Co so khai bao cho toan bo mo hinh SQLAlchemy cua he thong catalog va taxonomy."""
+    pass
+
+
+class ProductStatus(str, Enum):
+    """Trang thai vong doi cua san pham."""
+    DRAFT = "draft"
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    ARCHIVED = "archived"
+
+
+class AttributeType(str, Enum):
+    """Loai du lieu cua thuoc tinh san pham."""
+    STRING = "string"
+    NUMBER = "number"
+    BOOLEAN = "boolean"
+    DATE = "date"
+    ENUM = "enum"
+    COLOR = "color"
+
+
+class Visibility(str, Enum):
+    """Che do hien thi cua san pham."""
+    PUBLIC = "public"
+    INTERNAL = "internal"
+    RESTRICTED = "restricted"
+
+
+class ProductModel(Base):
+    """
+    Mo hinh san pham trong catalog.
+
+    Dai dien cho mot san pham voi day du thong tin gia ca, kich thuoc,
+    anh xung, SEO, va thuoc tinh mo rong qua metadata.
+
+    Soft delete: su dung is_deleted va deleted_at de xoa mem.
+    """
+    __tablename__ = "products"
+
+    # Dinh danh
+    id: Mapped[int] = mapped_column(
+        sa.Integer, primary_key=True, autoincrement=True
+    )
+    product_id: Mapped[str] = mapped_column(
+        sa.String(64), unique=True, nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(
+        sa.String(512), nullable=False, index=True
+    )
+    slug: Mapped[str] = mapped_column(
+        sa.String(512), nullable=False, index=True
+    )
+    sku: Mapped[str] = mapped_column(
+        sa.String(128), nullable=False, index=True
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        sa.Text, nullable=True
+    )
+
+    # Phan loai
+    category_id: Mapped[Optional[str]] = mapped_column(
+        sa.String(64), nullable=True, index=True
+    )
+    brand_id: Mapped[Optional[str]] = mapped_column(
+        sa.String(64), nullable=True, index=True
+    )
+
+    # Gia ca
+    price: Mapped[float] = mapped_column(
+        sa.Numeric(15, 2), nullable=False, server_default="0"
+    )
+    cost_price: Mapped[float] = mapped_column(
+        sa.Numeric(15, 2), nullable=False, server_default="0"
+    )
+    compare_at_price: Mapped[Optional[float]] = mapped_column(
+        sa.Numeric(15, 2), nullable=True
+    )
+    currency: Mapped[str] = mapped_column(
+        sa.String(8), nullable=False, server_default="VND"
+    )
+
+    # Vat ly
+    weight: Mapped[float] = mapped_column(
+        sa.Numeric(10, 3), nullable=False, server_default="0"
+    )
+    dimensions: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+
+    # Trang thai va hien thi
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="draft", index=True
+    )
+    visibility: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="public", index=True
+    )
+
+    # Tags va SEO
+    tags: Mapped[Optional[List[str]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    seo_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    images: Mapped[Optional[List[str]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+
+    # Metadata va thoi gian
+    metadata_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    is_deleted: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="0", index=True
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    # Mối quan hệ
+    variants: Mapped[List["ProductVariantModel"]] = relationship(
+        "ProductVariantModel",
+        back_populates="product",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    attribute_values: Mapped[List["AttributeValueModel"]] = relationship(
+        "AttributeValueModel",
+        back_populates="product",
+        lazy="selectin",
+    )
+
+    # Rang buoc duy nhat: SKU + tenant_id
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "sku", "tenant_id",
+            name="uq_product_sku_tenant"
+        ),
+    )
+
+
+class CategoryModel(Base):
+    """
+    Mo hinh danh muc san pham (hierarchical).
+
+    Dai dien cho mot danh muc co the co parent_id de tao cau truc cay.
+    Gioi han do sau toi da la 4 cap (ROOT + 3 levels).
+
+    Self-referential: parent_id la foreign key chi den category_id trong bang nay.
+    """
+    __tablename__ = "categories"
+
+    # Dinh danh
+    id: Mapped[int] = mapped_column(
+        sa.Integer, primary_key=True, autoincrement=True
+    )
+    category_id: Mapped[str] = mapped_column(
+        sa.String(64), unique=True, nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(
+        sa.String(256), nullable=False, index=True
+    )
+    slug: Mapped[str] = mapped_column(
+        sa.String(256), nullable=False, index=True
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        sa.Text, nullable=True
+    )
+
+    # Self-referential: parent_id chi den category_id
+    parent_id: Mapped[Optional[str]] = mapped_column(
+        sa.String(64), nullable=True, index=True
+    )
+    sort_order: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="0", index=True
+    )
+    icon: Mapped[Optional[str]] = mapped_column(
+        sa.String(256), nullable=True
+    )
+
+    # Trang thai
+    is_active: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="1", index=True
+    )
+    descendant_count: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="0"
+    )
+
+    # Metadata va thoi gian
+    metadata_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Mối quan hệ — self-referential
+    parent: Mapped[Optional["CategoryModel"]] = relationship(
+        "CategoryModel",
+        back_populates="children",
+        remote_side="CategoryModel.id",
+        lazy="joined",
+    )
+    children: Mapped[List["CategoryModel"]] = relationship(
+        "CategoryModel",
+        back_populates="parent",
+        lazy="selectin",
+    )
+
+
+class ProductVariantModel(Base):
+    """
+    Mo hinh bien the cua san pham.
+
+    Dai dien cho mot bien the cu the cua san pham, vi du:
+    ao phong mau do kich thuoc L, hoac dien thoai 256GB mau den.
+    """
+    __tablename__ = "product_variants"
+
+    # Dinh danh
+    id: Mapped[int] = mapped_column(
+        sa.Integer, primary_key=True, autoincrement=True
+    )
+    variant_id: Mapped[str] = mapped_column(
+        sa.String(64), unique=True, nullable=False, index=True
+    )
+    product_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+    sku: Mapped[str] = mapped_column(
+        sa.String(128), nullable=False, index=True
+    )
+    name: Mapped[Optional[str]] = mapped_column(
+        sa.String(256), nullable=True
+    )
+
+    # Thuoc tinh bien the
+    attribute_values: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+
+    # Gia ca
+    price: Mapped[float] = mapped_column(
+        sa.Numeric(15, 2), nullable=False, server_default="0"
+    )
+    cost_price: Mapped[float] = mapped_column(
+        sa.Numeric(15, 2), nullable=False, server_default="0"
+    )
+
+    # Vat ly
+    weight: Mapped[float] = mapped_column(
+        sa.Numeric(10, 3), nullable=False, server_default="0"
+    )
+    barcode: Mapped[Optional[str]] = mapped_column(
+        sa.String(64), nullable=True, index=True
+    )
+
+    # Anh xung va trang thai
+    images: Mapped[Optional[List[str]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="1", index=True
+    )
+    sort_order: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="0"
+    )
+
+    # Metadata va thoi gian
+    metadata_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Mối quan hệ
+    product: Mapped["ProductModel"] = relationship(
+        "ProductModel",
+        back_populates="variants",
+        lazy="joined",
+    )
+    variant_attribute_values: Mapped[List["AttributeValueModel"]] = relationship(
+        "AttributeValueModel",
+        back_populates="variant",
+        lazy="selectin",
+    )
+
+
+class AttributeDefinitionModel(Base):
+    """
+    Mo hinh dinh nghia thuoc tinh cua san pham.
+
+    Mo ta mot thuoc tinh co the gan cho san pham, bao gom loai du lieu,
+    quy tac kiem tra, va cac tuy chon (cho ENUM).
+    """
+    __tablename__ = "attribute_definitions"
+
+    # Dinh danh
+    id: Mapped[int] = mapped_column(
+        sa.Integer, primary_key=True, autoincrement=True
+    )
+    attribute_id: Mapped[str] = mapped_column(
+        sa.String(64), unique=True, nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(
+        sa.String(256), nullable=False, index=True
+    )
+    key: Mapped[str] = mapped_column(
+        sa.String(128), nullable=False, index=True
+    )
+
+    # Loai va quy tac
+    attribute_type: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="string", index=True
+    )
+    is_required: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="0", index=True
+    )
+    validation_rules: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    options: Mapped[Optional[List[str]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    unit: Mapped[Optional[str]] = mapped_column(
+        sa.String(32), nullable=True
+    )
+
+    # Tim kiem va loc
+    is_searchable: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="0", index=True
+    )
+    is_filterable: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="0", index=True
+    )
+    is_visible: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="1", index=True
+    )
+    sort_order: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="0"
+    )
+
+    # Metadata va thoi gian
+    metadata_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Mối quan hệ
+    values: Mapped[List["AttributeValueModel"]] = relationship(
+        "AttributeValueModel",
+        back_populates="attribute",
+        lazy="selectin",
+    )
+
+
+class AttributeValueModel(Base):
+    """
+    Mo hinh gia tri thuoc tinh gan cho san pham hoac bien the.
+
+    Lien ket mot gia tri cu the voi mot thuoc tinh da dinh nghia,
+    co the gan o cap do product hoac variant.
+    """
+    __tablename__ = "attribute_values"
+
+    # Dinh danh
+    id: Mapped[int] = mapped_column(
+        sa.Integer, primary_key=True, autoincrement=True
+    )
+    attribute_value_id: Mapped[str] = mapped_column(
+        sa.String(64), unique=True, nullable=False, index=True
+    )
+    attribute_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+    product_id: Mapped[Optional[str]] = mapped_column(
+        sa.String(64), nullable=True, index=True
+    )
+    variant_id: Mapped[Optional[str]] = mapped_column(
+        sa.String(64), nullable=True, index=True
+    )
+
+    # Gia tri (JSON — ho tro tat ca loai: str, int, float, bool, list)
+    value: Mapped[Optional[Any]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+
+    # Mối quan hệ
+    attribute: Mapped["AttributeDefinitionModel"] = relationship(
+        "AttributeDefinitionModel",
+        back_populates="values",
+        lazy="joined",
+    )
+    product: Mapped[Optional["ProductModel"]] = relationship(
+        "ProductModel",
+        back_populates="attribute_values",
+        lazy="joined",
+    )
+    variant: Mapped[Optional["ProductVariantModel"]] = relationship(
+        "ProductVariantModel",
+        back_populates="variant_attribute_values",
+        lazy="joined",
+    )
+
+    # Rang buoc: mot gia tri thuoc tinh chi gan cho product HOAC variant
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "attribute_id", "product_id",
+            name="uq_attr_value_product",
+            sqlite_where=product_id.isnot(None),
+        ),
+        sa.UniqueConstraint(
+            "attribute_id", "variant_id",
+            name="uq_attr_value_variant",
+            sqlite_where=variant_id.isnot(None),
+        ),
+    )

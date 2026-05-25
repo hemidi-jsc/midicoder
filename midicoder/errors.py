@@ -1064,6 +1064,20 @@ class ErrorCode(str, Enum):
     CP49_CONSENT_EXPIRED_NEED_RENEW = "MDC-CP49-010"
 
     # =========================================================================
+    # CP50: Catalog & Taxonomy Engine Errors
+    # =========================================================================
+    CP50_PRODUCT_NOT_FOUND = "MDC-CP50-001"
+    CP50_CATEGORY_NOT_FOUND = "MDC-CP50-002"
+    CP50_VARIANT_NOT_FOUND = "MDC-CP50-003"
+    CP50_ATTRIBUTE_NOT_FOUND = "MDC-CP50-004"
+    CP50_DUPLICATE_SKU = "MDC-CP50-005"
+    CP50_INVALID_PRODUCT_STATUS = "MDC-CP50-006"
+    CP50_CATEGORY_CYCLE_DETECTED = "MDC-CP50-007"
+    CP50_ATTRIBUTE_TYPE_INVALID = "MDC-CP50-008"
+    CP50_CATEGORY_DEPTH_EXCEEDED = "MDC-CP50-009"
+    CP50_SEARCH_INDEX_NOT_READY = "MDC-CP50-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

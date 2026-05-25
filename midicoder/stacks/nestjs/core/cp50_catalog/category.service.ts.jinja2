@@ -1,0 +1,449 @@
+/**
+ * CategoryService — dịch vụ quản lý danh mục phân loại trong Catalog & Taxonomy Engine.
+ *
+ * Cung cấp các phương thức chính:
+ * - createCategory: tạo danh mục mới
+ * - findOne: tìm danh mục theo ID
+ * - findAll: lấy danh sách tất cả danh mục
+ * - getCategoryTree: xây dựng cây danh mục từ danh sách phẳng (BFS)
+ * - getAncestors: lấy đường dẫn từ danh mục lên root
+ * - getDescendants: lấy tất cả danh mục con (đệ quy)
+ * - detectCycle: phát hiện chu kỳ khi di chuyển danh mục
+ * - updateDescendantCount: cập nhật số lượng con
+ *
+ * CP50: Catalog & Taxonomy Engine
+ * Tổng số danh mục mẫu: {{ category_count }}
+ */
+
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { v4 as uuidv4 } from "uuid";
+import { CategoryEntity } from "./catalog.entity";
+import {
+  CreateCategoryDto,
+  UpdateCategoryDto,
+} from "./catalog.dto";
+
+const logger = new Logger("CategoryService");
+
+// ===========================================================================
+// CategoryService
+// ===========================================================================
+
+/**
+ * CategoryService — quản lý danh mục phân cấp.
+ *
+ * Phương thức chính:
+ * - createCategory: tạo danh mục mới, tự động sinh categoryId (UUID)
+ * - findOne: tìm theo categoryId
+ * - findAll: lấy tất cả danh mục (hỗ trợ lọc theo isActive, parentId)
+ * - getCategoryTree: BFS build tree từ flat list
+ * - getAncestors: DFS traverse up đến root
+ * - getDescendants: đệ quy lấy tất cả con
+ * - detectCycle: DFS để phát hiện chu kỳ khi thay đổi parent
+ * - updateDescendantCount: tính lại số lượng con sau khi thêm/xóa
+ */
+@Injectable()
+export class CategoryService {
+  /**
+   * Constructor.
+   *
+   * @param categoryRepository - Repository cho CategoryEntity
+   */
+  constructor(
+    @InjectRepository(CategoryEntity)
+    private readonly categoryRepository: Repository<CategoryEntity>,
+  ) {}
+
+  // ========================================================================
+  // Danh mục — Tạo (Create)
+  // ========================================================================
+
+  /**
+   * Tạo danh mục mới.
+   *
+   * Tự động sinh categoryId dạng UUID, kiểm tra cycle nếu có parentId.
+   *
+   * Xác thực:
+   * - parentId phải tồn tại (nếu có)
+   * - parentId không được tạo cycle (con không thể là tổ tiên của chính nó)
+   *
+   * @param dto - CreateCategoryDto
+   * @returns CategoryEntity vừa tạo
+   */
+  async createCategory(dto: CreateCategoryDto): Promise<CategoryEntity> {
+    // Nếu có parentId, kiểm tra existence và cycle
+    if (dto.parentId) {
+      const parent = await this.findOne(dto.parentId);
+      if (!parent) {
+        throw new NotFoundException("Không tìm thấy danh mục cha: " + dto.parentId);
+      }
+
+      // Phát hiện chu kỳ: nếu parent là con của category đang tạo -> cycle
+      // (Vì category chưa tồn tại nên chỉ cần kiểm tra parent có phải là con của chính nó)
+      const hasCycle = await this.detectCycle(dto.parentId, dto.parentId);
+      if (hasCycle) {
+        throw new BadRequestException(
+          "Không thể thiết lập danh mục cha — gây ra chu kỳ phân cấp",
+        );
+      }
+    }
+
+    const categoryId = uuidv4();
+
+    const category = this.categoryRepository.create({
+      categoryId,
+      name: dto.name,
+      slug: dto.slug,
+      description: dto.description || "",
+      parentId: dto.parentId || null,
+      sortOrder: dto.sortOrder ?? 0,
+      icon: dto.icon || null,
+      isActive: true,
+      descendantCount: 0,
+      metadata: dto.metadata || {},
+    });
+
+    const saved = await this.categoryRepository.save(category);
+
+    // Cập nhật descendantCount của parent
+    if (dto.parentId) {
+      await this.incrementDescendantCount(dto.parentId);
+    }
+
+    logger.log(
+      "Tạo danh mục mới: categoryId=" + categoryId + ", name=" + dto.name
+      + ", parentId=" + (dto.parentId || "null"),
+    );
+
+    return saved;
+  }
+
+  // ========================================================================
+  // Danh mục — Tìm (Read)
+  // ========================================================================
+
+  /**
+   * Tìm danh mục theo ID.
+   *
+   * @param categoryId - ID danh mục
+   * @returns CategoryEntity hoặc null
+   */
+  async findOne(categoryId: string): Promise<CategoryEntity | null> {
+    return this.categoryRepository.findOne({
+      where: { categoryId },
+    });
+  }
+
+  /**
+   * Lấy danh sách tất cả danh mục.
+   *
+   * Hỗ trợ lọc theo trạng thái hoạt động và danh mục cha.
+   * Sắp xếp theo sort_order tăng dần.
+   *
+   * @param isActive - Chỉ lấy danh mục đang hoạt động (tùy chọn)
+   * @param parentId - Chỉ lấy con của danh mục cụ thể (tùy chọn)
+   * @returns List CategoryEntity
+   */
+  async findAll(isActive?: boolean, parentId?: string): Promise<CategoryEntity[]> {
+    const where: any = {};
+
+    if (isActive !== undefined) {
+      where.isActive = isActive;
+    }
+    if (parentId !== undefined) {
+      where.parentId = parentId;
+    }
+
+    return this.categoryRepository.find({
+      where,
+      order: { sortOrder: "ASC", name: "ASC" },
+    });
+  }
+
+  // ========================================================================
+  // Cây danh mục (Tree Operations)
+  // ========================================================================
+
+  /**
+   * Xây dựng cây danh mục từ danh sách phẳng.
+   *
+   * Sử dụng BFS (Breadth-First Search) để xây dựng cây phân cấp
+   * từ danh sách phẳng các danh mục.
+   *
+   * Thuật toán:
+   * 1. Tạo map categoryId -> category
+   * 2. Duyệt danh sách, gán children cho mỗi parent
+   * 3. Thu thập các root categories (parentId = null)
+   * 4. BFS từ roots để trả về tree
+   *
+   * @returns List CategoryEntity dạng cây
+   */
+  async getCategoryTree(): Promise<CategoryEntity[]> {
+    const allCategories = await this.findAll();
+
+    // Tạo map: categoryId -> category
+    const categoryMap = new Map<string, CategoryEntity>();
+    for (const category of allCategories) {
+      categoryMap.set(category.categoryId, { ...category, children: [] });
+    }
+
+    // Gán children cho mỗi parent
+    const roots: CategoryEntity[] = [];
+    for (const category of allCategories) {
+      const mapped = categoryMap.get(category.categoryId);
+      if (!mapped) continue;
+
+      if (category.parentId && categoryMap.has(category.parentId)) {
+        const parent = categoryMap.get(category.parentId);
+        if (parent) {
+          parent.children.push(mapped);
+        }
+      } else {
+        roots.push(mapped);
+      }
+    }
+
+    // Sắp xếp roots theo sort_order
+    roots.sort((a, b) => a.sortOrder - b.sortOrder);
+
+    logger.debug("Xây dựng cây danh mục: " + roots.length + " root categories");
+
+    return roots;
+  }
+
+  /**
+   * Lấy đường dẫn từ danh mục lên root.
+   *
+   * Traverses up qua parentId liên tiếp cho đến khi gặp root.
+   * Trả về danh sách từ root xuống danh mục hiện tại.
+   *
+   * Thuật toán:
+   * 1. Bắt đầu từ categoryId hiện tại
+   * 2. Theo chuỗi parentId lên trên
+   * 3. Đảo ngược danh sách để root đứng đầu
+   *
+   * @param categoryId - ID danh mục
+   * @returns List CategoryEntity từ root đến current
+   */
+  async getAncestors(categoryId: string): Promise<CategoryEntity[]> {
+    const category = await this.findOne(categoryId);
+    if (!category) {
+      throw new NotFoundException("Không tìm thấy danh mục: " + categoryId);
+    }
+
+    const path: CategoryEntity[] = [category];
+    let current = category;
+
+    // Traverses up qua parentId
+    while (current.parentId) {
+      const parent = await this.findOne(current.parentId);
+      if (!parent) break;
+      path.unshift(parent);
+      current = parent;
+    }
+
+    logger.debug(
+      "Lấy đường dẫn tổ tiên: categoryId=" + categoryId
+      + ", độ sâu=" + path.length,
+    );
+
+    return path;
+  }
+
+  /**
+   * Lấy tất cả danh mục con (đệ quy).
+   *
+   * Traverses down từ categoryId hiện tại, trả về tất cả con
+   * ở mọi cấp độ (depth-first).
+   *
+   * Thuật toán:
+   * 1. Lấy trực tiếp children của categoryId
+   * 2. Đệ quy lấy children của mỗi child
+   * 3. Gộp tất cả vào danh sách
+   *
+   * @param categoryId - ID danh mục
+   * @returns List CategoryEntity (tất cả con, mọi cấp)
+   */
+  async getDescendants(categoryId: string): Promise<CategoryEntity[]> {
+    const children = await this.findAll(undefined, categoryId);
+    const allDescendants: CategoryEntity[] = [];
+
+    // Đệ quy lấy tất cả con
+    for (const child of children) {
+      allDescendants.push(child);
+      const subDescendants = await this.getDescendants(child.categoryId);
+      allDescendants.push(...subDescendants);
+    }
+
+    logger.debug(
+      "Lấy danh mục con: categoryId=" + categoryId
+      + ", số lượng=" + allDescendants.length,
+    );
+
+    return allDescendants;
+  }
+
+  // ========================================================================
+  // Phát hiện chu kỳ (Cycle Detection)
+  // ========================================================================
+
+  /**
+   * Phát hiện chu kỳ trong cây danh mục.
+   *
+   * Sử dụng DFS để kiểm tra nếu việc thiết lập parentId cho categoryId
+   * sẽ tạo ra chu kỳ (con trở thành tổ tiên của chính nó).
+   *
+   * Thuật toán:
+   * 1. Bắt đầu từ potentialParentId
+   * 2. DFS xuống tất cả descendants
+   * 3. Nếu gặp categoryId -> có chu kỳ
+   *
+   * @param categoryId - ID danh mục cần di chuyển
+   * @param potentialParentId - ID danh mục cha tiềm năng
+   * @returns True nếu có chu kỳ
+   */
+  async detectCycle(
+    categoryId: string,
+    potentialParentId: string,
+  ): Promise<boolean> {
+    // Nếu parent là chính mình -> cycle
+    if (categoryId === potentialParentId) {
+      return true;
+    }
+
+    // DFS xuống tất cả descendants của potentialParentId
+    // Nếu gặp categoryId -> có chu kỳ
+    const descendants = await this.getDescendants(potentialParentId);
+    return descendants.some((d) => d.categoryId === categoryId);
+  }
+
+  // ========================================================================
+  // Cập nhật descendantCount
+  // ========================================================================
+
+  /**
+   * Cập nhật số lượng danh mục con cho tất cả tổ tiên.
+   *
+   * Gọi sau khi thêm hoặc xóa danh mục, đảm bảo descendantCount
+   * luôn phản ánh chính xác số lượng con thực tế.
+   *
+   * @param categoryId - ID danh mục cần tính lại
+   */
+  async updateDescendantCount(categoryId: string): Promise<void> {
+    const category = await this.findOne(categoryId);
+    if (!category) return;
+
+    // Lấy tất cả descendants để tính count
+    const descendants = await this.getDescendants(categoryId);
+    category.descendantCount = descendants.length;
+
+    await this.categoryRepository.save(category);
+
+    // Nếu có parent, đệ quy cập nhật parent
+    if (category.parentId) {
+      await this.updateDescendantCount(category.parentId);
+    }
+
+    logger.debug(
+      "Cập nhật descendantCount: categoryId=" + categoryId
+      + ", count=" + category.descendantCount,
+    );
+  }
+
+  /**
+   * Tăng số lượng con của danh mục.
+   *
+   * @param categoryId - ID danh mục cần tăng count
+   */
+  private async incrementDescendantCount(categoryId: string): Promise<void> {
+    const category = await this.findOne(categoryId);
+    if (!category) return;
+
+    category.descendantCount = (category.descendantCount || 0) + 1;
+    await this.categoryRepository.save(category);
+
+    // Đệ quy tăng cho tổ tiên
+    if (category.parentId) {
+      await this.incrementDescendantCount(category.parentId);
+    }
+  }
+
+  /**
+   * Giảm số lượng con của danh mục.
+   *
+   * @param categoryId - ID danh mục cần giảm count
+   */
+  private async decrementDescendantCount(categoryId: string): Promise<void> {
+    const category = await this.findOne(categoryId);
+    if (!category) return;
+
+    if (category.descendantCount > 0) {
+      category.descendantCount--;
+      await this.categoryRepository.save(category);
+    }
+
+    // Đệ quy giảm cho tổ tiên
+    if (category.parentId) {
+      await this.decrementDescendantCount(category.parentId);
+    }
+  }
+
+  // ========================================================================
+  // Cập nhật danh mục
+  // ========================================================================
+
+  /**
+   * Cập nhật danh mục.
+   *
+   * Hỗ trợ thay đổi parentId với kiểm tra cycle.
+   * Tự động cập nhật descendantCount khi thay đổi cây.
+   *
+   * @param categoryId - ID danh mục
+   * @param dto - UpdateCategoryDto
+   * @returns CategoryEntity đã cập nhật
+   */
+  async update(categoryId: string, dto: UpdateCategoryDto): Promise<CategoryEntity> {
+    const category = await this.findOne(categoryId);
+    if (!category) {
+      throw new NotFoundException("Không tìm thấy danh mục: " + categoryId);
+    }
+
+    // Nếu thay đổi parentId, kiểm tra cycle
+    if (dto.parentId !== undefined && dto.parentId !== category.parentId) {
+      if (dto.parentId) {
+        const hasCycle = await this.detectCycle(categoryId, dto.parentId);
+        if (hasCycle) {
+          throw new BadRequestException(
+            "Không thể thay đổi danh mục cha — gây ra chu kỳ phân cấp",
+          );
+        }
+      }
+    }
+
+    // Cập nhật từng trường
+    if (dto.name !== undefined) category.name = dto.name;
+    if (dto.slug !== undefined) category.slug = dto.slug;
+    if (dto.description !== undefined) category.description = dto.description;
+    if (dto.parentId !== undefined) category.parentId = dto.parentId;
+    if (dto.sortOrder !== undefined) category.sortOrder = dto.sortOrder;
+    if (dto.icon !== undefined) category.icon = dto.icon;
+    if (dto.isActive !== undefined) category.isActive = dto.isActive;
+    if (dto.metadata !== undefined) category.metadata = dto.metadata;
+
+    const saved = await this.categoryRepository.save(category);
+
+    // Cập nhật lại descendantCount
+    await this.updateDescendantCount(categoryId);
+
+    logger.log("Cập nhật danh mục: categoryId=" + categoryId);
+
+    return saved;
+  }
+}

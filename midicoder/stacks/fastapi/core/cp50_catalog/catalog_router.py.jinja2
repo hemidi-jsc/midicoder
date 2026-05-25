@@ -1,0 +1,745 @@
+# ----------------------------------------------------------
+# CP50 Catalog & Taxonomy Engine — Router FastAPI cho catalog
+# ----------------------------------------------------------
+# Sinh bởi CP50CatalogEmitter
+# Routes: CRUD san pham, CRUD danh muc (flat + cay), CRUD thuoc tinh,
+#         CRUD bien the, tim kiem voi bo loc (faceted search)
+# ----------------------------------------------------------
+
+import logging
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+# Dinh danh router
+router = APIRouter(prefix="/catalog", tags=["catalog"])
+
+
+# --------------------------------------------------------------
+# Phu thuoc — injection
+# --------------------------------------------------------------
+
+def get_product_service(session: AsyncSession = Depends(lambda: None)) -> "ProductService":
+    """
+    Cung cap dich vu san pham cho cac route.
+    Day la diem phu thuoc injection cho ProductService.
+    """
+    from product_service import ProductService
+    return ProductService(session)
+
+
+def get_category_service(session: AsyncSession = Depends(lambda: None)) -> "CategoryService":
+    """
+    Cung cap dich vu danh muc cho cac route.
+    """
+    from category_service import CategoryService
+    return CategoryService(session)
+
+
+def get_attribute_service(session: AsyncSession = Depends(lambda: None)) -> "AttributeService":
+    """
+    Cung cap dich vu thuoc tinh cho cac route.
+    """
+    from attribute_service import AttributeService
+    return AttributeService(session)
+
+
+def get_faceted_search_service(
+    session: AsyncSession = Depends(lambda: None),
+    tenant_id: str = Query("default", description="ID tenant"),
+) -> "FacetedSearchService":
+    """
+    Cung cap dich vu tim kiem voi bo loc cho route /search.
+    """
+    from faceted_search_service import FacetedSearchService
+    return FacetedSearchService(session, tenant_id=tenant_id)
+
+
+# ===========================================================
+# SAN PHAM — CRUD
+# ===========================================================
+
+# --------------------------------------------------------------
+# Route: liet ke san pham
+# --------------------------------------------------------------
+
+@router.get(
+    "/products",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Liet ke san pham",
+    description="Lay danh sach san pham voi cac bo loc va phan trang.",
+)
+async def list_products(
+    tenant_id: str = Query(..., description="ID tenant"),
+    status_filter: Optional[str] = Query(None, alias="status", description="Loc theo trang thai"),
+    category_id: Optional[str] = Query(None, description="Loc theo danh muc"),
+    brand_id: Optional[str] = Query(None, description="Loc theo thuong hieu"),
+    search: Optional[str] = Query(None, description="Tu khoa tim kiem"),
+    visibility: Optional[str] = Query(None, description="Loc theo che do hien thi"),
+    page: int = Query(1, ge=1, description="So trang"),
+    page_size: int = Query(20, ge=1, le=100, description="So phan tu tren trang"),
+    service: "ProductService" = Depends(get_product_service),
+) -> Dict[str, Any]:
+    """
+    Lay danh sach san pham voi cac bo loc.
+
+    Query params:
+    - tenant_id (bat buoc): ID tenant
+    - status: Trang thai san pham (draft, active, inactive, archived)
+    - category_id: ID danh muc
+    - brand_id: ID thuong hieu
+    - search: Tu khoa tim kiem (name, description)
+    - visibility: Che do hien thi (public, internal, restricted)
+    - page: So trang (mac dinh 1)
+    - page_size: So phan tu tren trang (mac dinh 20, toi da 100)
+    """
+    result = await service.list_products(
+        tenant_id=tenant_id,
+        status=status_filter,
+        category_id=category_id,
+        brand_id=brand_id,
+        search=search,
+        visibility=visibility,
+        page=page,
+        page_size=page_size,
+    )
+
+    return {
+        "items": [item.__dict__ for item in result["items"]],
+        "total": result["total"],
+        "page": result["page"],
+        "page_size": result["page_size"],
+    }
+
+
+# --------------------------------------------------------------
+# Route: lay san pham chi tiet
+# --------------------------------------------------------------
+
+@router.get(
+    "/products/{product_id}",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Lay san pham chi tiet",
+    description="Lay thong tin chi tiet cua mot san pham theo ID.",
+)
+async def get_product(
+    product_id: str,
+    service: "ProductService" = Depends(get_product_service),
+) -> Dict[str, Any]:
+    """
+    Lay thong tin chi tiet cua mot san pham.
+    """
+    product = await service.get_product(product_id)
+
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Khong tim thay san pham voi ID: {}".format(product_id),
+        )
+
+    return product.__dict__
+
+
+# --------------------------------------------------------------
+# Route: tao san pham
+# --------------------------------------------------------------
+
+@router.post(
+    "/products",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Tao san pham",
+    description="Tao san pham moi trong catalog.",
+)
+async def create_product(
+    payload: Dict[str, Any],
+    service: "ProductService" = Depends(get_product_service),
+) -> Dict[str, Any]:
+    """
+    Tao san pham moi trong catalog.
+
+    Payload can bao gom:
+    - product_id (bat buoc): ID duy nhat
+    - name (bat buoc): Ten san pham
+    - sku (bat buoc): Ma SKU duy nhat
+    - tenant_id (bat buoc): ID tenant
+    - description: Mo ta chi tiet
+    - category_id: ID danh muc
+    - brand_id: ID thuong hieu
+    - price (bat buoc): Gia ban
+    - cost_price: Gia von (mac dinh 0)
+    - currency: Don vi tien te (mac dinh VND)
+    - status: Trang thai (mac dinh draft)
+    - visibility: Che do hien thi (mac dinh public)
+    - tags: Danh sach tags
+    - seo_metadata: Metadata SEO
+    - images: Danh sach anh
+    - va cac truong khac
+    """
+    # Kiem tra du lieu bat buoc
+    required_fields = ["product_id", "name", "sku", "tenant_id", "price"]
+    for field in required_fields:
+        if not payload.get(field):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="{} la bat buoc".format(field),
+            )
+
+    try:
+        from catalog_schemas import ProductCreate
+        data = ProductCreate(**payload)
+        product = await service.create_product(data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+
+    return product.__dict__
+
+
+# --------------------------------------------------------------
+# Route: cap nhat san pham
+# --------------------------------------------------------------
+
+@router.put(
+    "/products/{product_id}",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Cap nhat san pham",
+    description="Cap nhat thong tin san pham (partial update).",
+)
+async def update_product(
+    product_id: str,
+    payload: Dict[str, Any],
+    service: "ProductService" = Depends(get_product_service),
+) -> Dict[str, Any]:
+    """
+    Cap nhat thong tin san pham.
+    Chi cac truong duoc cung cap moi duoc cap nhat.
+    """
+    try:
+        from catalog_schemas import ProductUpdate
+        data = ProductUpdate(**payload)
+        product = await service.update_product(product_id, data)
+    except ValueError as e:
+        error_msg = str(e)
+        if "Khong tim thay" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        elif "da ton tai" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+
+    return product.__dict__
+
+
+# --------------------------------------------------------------
+# Route: xoa san pham (soft delete)
+# --------------------------------------------------------------
+
+@router.delete(
+    "/products/{product_id}",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Xoa san pham (soft delete)",
+    description="Xoa san pham theo cach thuc soft delete.",
+)
+async def delete_product(
+    product_id: str,
+    service: "ProductService" = Depends(get_product_service),
+) -> Dict[str, Any]:
+    """
+    Xoa san pham (soft delete).
+    San pham se duoc danh dau la da xoa, khong bi xoa khoi co so du lieu.
+    """
+    try:
+        product = await service.delete_product(product_id)
+    except ValueError as e:
+        error_msg = str(e)
+        if "Khong tim thay" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+
+    return product.__dict__
+
+
+# --------------------------------------------------------------
+# Route: khoi phuc san pham
+# --------------------------------------------------------------
+
+@router.post(
+    "/products/{product_id}/restore",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Khoi phuc san pham",
+    description="Khoi phuc san pham da bi soft delete.",
+)
+async def restore_product(
+    product_id: str,
+    service: "ProductService" = Depends(get_product_service),
+) -> Dict[str, Any]:
+    """
+    Khoi phuc san pham da bi soft delete.
+    """
+    try:
+        product = await service.restore_product(product_id)
+    except ValueError as e:
+        error_msg = str(e)
+        if "Khong tim thay" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+
+    return product.__dict__
+
+
+# --------------------------------------------------------------
+# Route: liet ke bien the cua san pham
+# --------------------------------------------------------------
+
+@router.get(
+    "/products/{product_id}/variants",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Liet ke bien the cua san pham",
+    description="Lay tat ca bien the cua mot san pham.",
+)
+async def list_variants(
+    product_id: str,
+    service: "ProductService" = Depends(get_product_service),
+) -> List[Dict[str, Any]]:
+    """
+    Lay tat ca bien the cua mot san pham.
+    """
+    # Kiem tra san pham ton tai
+    product = await service.get_product(product_id)
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Khong tim thay san pham voi ID: {}".format(product_id),
+        )
+
+    variants = await service.get_variants_for_product(product_id)
+    return [v.__dict__ for v in variants]
+
+
+# --------------------------------------------------------------
+# Route: tao bien the moi
+# --------------------------------------------------------------
+
+@router.post(
+    "/products/{product_id}/variants",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Tao bien the san pham",
+    description="Tao bien the moi cho san pham.",
+)
+async def create_variant(
+    product_id: str,
+    payload: Dict[str, Any],
+    service: "ProductService" = Depends(get_product_service),
+) -> Dict[str, Any]:
+    """
+    Tao bien the moi cho san pham.
+
+    Payload can bao gom:
+    - variant_id (bat buoc): ID duy nhat cua bien the
+    - sku (bat buoc): Ma SKU duy nhat
+    - price (bat buoc): Gia ban
+    - name: Ten bien the
+    - attribute_values: Gia tri thuoc tinh
+    - barcode: Ma vạch
+    - images: Danh sach anh
+    - va cac truong khac
+    """
+    # Kiem tra du lieu bat buoc
+    required_fields = ["variant_id", "sku", "price"]
+    for field in required_fields:
+        if not payload.get(field) and payload.get(field) != 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="{} la bat buoc".format(field),
+            )
+
+    try:
+        from catalog_schemas import VariantCreate
+        data = VariantCreate(**payload)
+        variant = await service.create_variant(product_id, data)
+    except ValueError as e:
+        error_msg = str(e)
+        if "Khong tim thay" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        elif "da ton tai" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+
+    return variant.__dict__
+
+
+# ===========================================================
+# DANH MUC — CRUD & CAY
+# ===========================================================
+
+# --------------------------------------------------------------
+# Route: liet ke danh muc (flat)
+# --------------------------------------------------------------
+
+@router.get(
+    "/categories",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Liet ke danh muc (flat)",
+    description="Lay tat ca danh muc theo danh sach flat.",
+)
+async def list_categories(
+    service: "CategoryService" = Depends(get_category_service),
+) -> List[Dict[str, Any]]:
+    """
+    Lay tat ca danh muc theo danh sach flat (khong cau truc cay).
+    Sap xep theo sort_order va ten.
+    """
+    categories = await service.list_categories()
+    return [c.__dict__ for c in categories]
+
+
+# --------------------------------------------------------------
+# Route: cay danh muc
+# --------------------------------------------------------------
+
+@router.get(
+    "/categories/tree",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Cay danh muc",
+    description="Xay dung va tra ve cau truc cay cua danh muc.",
+)
+async def get_category_tree(
+    service: "CategoryService" = Depends(get_category_service),
+) -> List[Dict[str, Any]]:
+    """
+    Xay dung va tra ve cau truc cay cua danh muc.
+    Su dung BFS de xay dung: nut goc -> con -> chau.
+    """
+    tree = await service.get_category_tree()
+    return tree
+
+
+# --------------------------------------------------------------
+# Route: danh muc to tien
+# --------------------------------------------------------------
+
+@router.get(
+    "/categories/{category_id}/ancestors",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Danh muc to tien",
+    description="Lay tat ca danh muc to tien (cha, o, ...) cua mot danh muc.",
+)
+async def get_category_ancestors(
+    category_id: str,
+    service: "CategoryService" = Depends(get_category_service),
+) -> List[Dict[str, Any]]:
+    """
+    Lay tat ca danh muc to tien cua mot danh muc.
+    Ket qua sap xep tu nut goc den danh muc cha giap.
+    """
+    ancestors = await service.get_category_ancestors(category_id)
+    return [a.__dict__ for a in ancestors]
+
+
+# --------------------------------------------------------------
+# Route: danh muc hau due
+# --------------------------------------------------------------
+
+@router.get(
+    "/categories/{category_id}/descendants",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Danh muc hau due",
+    description="Lay tat ca danh muc hau due (con, chau, ...) cua mot danh muc.",
+)
+async def get_category_descendants(
+    category_id: str,
+    service: "CategoryService" = Depends(get_category_service),
+) -> List[Dict[str, Any]]:
+    """
+    Lay tat ca danh muc hau due cua mot danh muc.
+    Su dung BFS de duyet toan bo cay con.
+    """
+    descendants = await service.get_category_descendants(category_id)
+    return [d.__dict__ for d in descendants]
+
+
+# --------------------------------------------------------------
+# Route: tao danh muc
+# --------------------------------------------------------------
+
+@router.post(
+    "/categories",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Tao danh muc",
+    description="Tao danh muc moi trong taxonomy.",
+)
+async def create_category(
+    payload: Dict[str, Any],
+    service: "CategoryService" = Depends(get_category_service),
+) -> Dict[str, Any]:
+    """
+    Tao danh muc moi trong taxonomy.
+
+    Payload can bao gom:
+    - category_id (bat buoc): ID duy nhat
+    - name (bat buoc): Ten danh muc
+    - parent_id: ID danh muc cha (None = cap goc)
+    - description: Mo ta
+    - sort_order: Thu tu sap xep
+    - icon: Bieu tuong
+    - is_active: Trang thai hoat dong
+    """
+    # Kiem tra du lieu bat buoc
+    required_fields = ["category_id", "name"]
+    for field in required_fields:
+        if not payload.get(field):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="{} la bat buoc".format(field),
+            )
+
+    try:
+        from catalog_schemas import CategoryCreate
+        data = CategoryCreate(**payload)
+        category = await service.create_category(data)
+    except ValueError as e:
+        error_msg = str(e)
+        if "Khong tim thay" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        elif "vong quan he" in error_msg or "cycle" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+
+    return category.__dict__
+
+
+# ===========================================================
+# THUOC TINH — CRUD
+# ===========================================================
+
+# --------------------------------------------------------------
+# Route: liet ke thuoc tinh
+# --------------------------------------------------------------
+
+@router.get(
+    "/attributes",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Liet ke thuoc tinh",
+    description="Lay danh sach tat ca dinh nghia thuoc tinh.",
+)
+async def list_attributes(
+    attribute_type: Optional[str] = Query(None, description="Loc theo loai thuoc tinh"),
+    is_filterable: Optional[bool] = Query(None, description="Loc theo co loc duoc khong"),
+    is_searchable: Optional[bool] = Query(None, description="Loc theo co tim kiem duoc khong"),
+    service: "AttributeService" = Depends(get_attribute_service),
+) -> List[Dict[str, Any]]:
+    """
+    Lay danh sach tat ca dinh nghia thuoc tinh voi cac bo loc.
+    """
+    attributes = await service.list_attributes(
+        attribute_type=attribute_type,
+        is_filterable=is_filterable,
+        is_searchable=is_searchable,
+    )
+    return [a.__dict__ for a in attributes]
+
+
+# --------------------------------------------------------------
+# Route: tao thuoc tinh
+# --------------------------------------------------------------
+
+@router.post(
+    "/attributes",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Tao thuoc tinh",
+    description="Tao dinh nghia thuoc tinh moi cho catalog.",
+)
+async def create_attribute(
+    payload: Dict[str, Any],
+    service: "AttributeService" = Depends(get_attribute_service),
+) -> Dict[str, Any]:
+    """
+    Tao dinh nghia thuoc tinh moi.
+
+    Payload can bao gom:
+    - attribute_id (bat buoc): ID duy nhat
+    - name (bat buoc): Ten hien thi
+    - attribute_type: Loai du lieu (STRING, NUMBER, BOOLEAN, DATE, ENUM, COLOR)
+    - is_required: Bat buoc phai co gia tri
+    - validation_rules: Quy tac kiem tra
+    - options: Danh sach gia tri cho ENUM
+    - unit: Don vi
+    - is_searchable: Co the tim kiem
+    - is_filterable: Co the loc
+    - is_visible: Hien thi tren giao dien
+    """
+    # Kiem tra du lieu bat buoc
+    required_fields = ["attribute_id", "name"]
+    for field in required_fields:
+        if not payload.get(field):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="{} la bat buoc".format(field),
+            )
+
+    try:
+        from catalog_schemas import AttributeDefinitionCreate
+        data = AttributeDefinitionCreate(**payload)
+        attribute = await service.create_attribute(data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+
+    return attribute.__dict__
+
+
+# ===========================================================
+# TIM KIEM — FACETED SEARCH
+# ===========================================================
+
+# --------------------------------------------------------------
+# Route: tim kiem voi bo loc
+# --------------------------------------------------------------
+
+@router.get(
+    "/search",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Tim kiem voi bo loc",
+    description="Tim kiem san pham voi cac bo loc va tra ve aggregations (faceted search).",
+)
+async def faceted_search(
+    tenant_id: str = Query(..., description="ID tenant"),
+    query: Optional[str] = Query(None, description="Tu khoa tim kiem"),
+    status_filter: Optional[str] = Query(None, alias="status", description="Loc theo trang thai"),
+    category_id: Optional[str] = Query(None, description="Loc theo danh muc"),
+    brand_id: Optional[str] = Query(None, description="Loc theo thuong hieu"),
+    price_min: Optional[float] = Query(None, ge=0, description="Gia toi thieu"),
+    price_max: Optional[float] = Query(None, ge=0, description="Gia toi da"),
+    visibility: Optional[str] = Query(None, description="Loc theo hien thi"),
+    page: int = Query(1, ge=1, description="So trang"),
+    page_size: int = Query(20, ge=1, le=100, description="So phan tu tren trang"),
+    service: "FacetedSearchService" = Depends(get_faceted_search_service),
+) -> Dict[str, Any]:
+    """
+    Tim kiem san pham voi toan bo cac bo loc va tra ve aggregations.
+
+    Query params:
+    - tenant_id (bat buoc): ID tenant
+    - query: Tu khoa tim kiem (name, description)
+    - status: Trang thai san pham
+    - category_id: ID danh muc
+    - brand_id: ID thuong hieu
+    - price_min: Gia toi thieu
+    - price_max: Gia toi da
+    - visibility: Che do hien thi
+    - page: So trang
+    - page_size: So phan tu tren trang
+
+    Tra ve:
+    - total: Tong so ket qua
+    - page: So trang hien tai
+    - page_size: So phan tu tren trang
+    - products: Danh sach san pham trong trang
+    - aggregations: Danh sach tong hop (category, brand, price_range, attributes)
+    """
+    result = await service.search_products(
+        query=query,
+        status=status_filter,
+        category_id=category_id,
+        brand_id=brand_id,
+        price_min=price_min,
+        price_max=price_max,
+        visibility=visibility,
+        page=page,
+        page_size=page_size,
+    )
+
+    return {
+        "total": result["total"],
+        "page": result["page"],
+        "page_size": result["page_size"],
+        "products": [p.__dict__ for p in result["products"]],
+        "aggregations": result["aggregations"],
+    }

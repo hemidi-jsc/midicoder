@@ -1,0 +1,936 @@
+/**
+ * Catalog Entity — TypeORM entities cho Catalog & Taxonomy Engine.
+ *
+ * Định nghĩa các entity:
+ * - ProductEntity: sản phẩm trong catalog
+ * - CategoryEntity: danh mục phân loại (cây phân cấp)
+ * - ProductVariantEntity: biến thể sản phẩm
+ * - AttributeDefinitionEntity: định nghĩa thuộc tính
+ * - AttributeValueEntity: giá trị thuộc tính
+ *
+ * Enums:
+ * - ProductStatus, Visibility, AttributeType
+ *
+ * CP50: Catalog & Taxonomy Engine
+ * Tổng số sản phẩm mẫu: {{ product_count }}
+ * Tổng số danh mục mẫu: {{ category_count }}
+ * Tổng số biến thể mẫu: {{ variant_count }}
+ * Tổng số thuộc tính mẫu: {{ attribute_count }}
+ */
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  PrimaryColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  DeleteDateColumn,
+  Index,
+  OneToMany,
+  ManyToOne,
+  JoinColumn,
+} from "typeorm";
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+/**
+ * Các trạng thái của sản phẩm.
+ */
+export enum ProductStatus {
+  /** Bản nháp — chưa công khai */
+  DRAFT = "draft",
+  /** Đang hoạt động — hiển thị công khai */
+  ACTIVE = "active",
+  /** Tạm ngưng — không hiển thị nhưng vẫn giữ dữ liệu */
+  INACTIVE = "inactive",
+  /** Đã lưu trữ — sản phẩm cũ, không còn kinh doanh */
+  ARCHIVED = "archived",
+}
+
+/**
+ * Mức độ hiển thị của sản phẩm.
+ */
+export enum Visibility {
+  /** Công khai — ai cũng có thể xem */
+  PUBLIC = "public",
+  /** Nội bộ — chỉ nhân viên có thể xem */
+  INTERNAL = "internal",
+  /** Bị hạn chế — chỉ nhóm được ủy quyền mới xem */
+  RESTRICTED = "restricted",
+}
+
+/**
+ * Loại thuộc tính.
+ */
+export enum AttributeType {
+  /** Chuỗi ký tự */
+  STRING = "string",
+  /** Số nguyên */
+  INTEGER = "integer",
+  /** Số thập phân */
+  DECIMAL = "decimal",
+  /** Boolean */
+  BOOLEAN = "boolean",
+  /** Ngày tháng */
+  DATE = "date",
+  /** Danh sách lựa chọn */
+  SELECT = "select",
+  /** Nhiều lựa chọn */
+  MULTI_SELECT = "multi_select",
+  /** JSON tùy chỉnh */
+  JSON = "json",
+}
+
+// ===========================================================================
+// ProductEntity
+// ===========================================================================
+
+/**
+ * Interface cho ProductEntity properties.
+ */
+export interface IProduct {
+  productId: string;
+  name: string;
+  slug: string;
+  sku: string;
+  description: string;
+  categoryId: string;
+  brandId: string | null;
+  price: number;
+  costPrice: number;
+  compareAtPrice: number | null;
+  currency: string;
+  weight: number | null;
+  dimensions: Record<string, any> | null;
+  status: string;
+  visibility: string;
+  tags: string[];
+  seoMetadata: Record<string, any> | null;
+  images: string[];
+  metadata: Record<string, any>;
+  tenantId: string;
+  isDeleted: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+}
+
+/**
+ * ProductEntity — sản phẩm trong catalog.
+ *
+ * Đại diện cho một sản phẩm, bao gồm thông tin cơ bản (tên, slug, SKU),
+ * giá cả, danh mục, thương hiệu, và các biến thể liên quan.
+ *
+ * Indexes:
+ * - (product_id) unique — định danh sản phẩm
+ * - (slug) unique — tối ưu URL thân thiện
+ * - (sku) unique — tối ưu tìm theo mã SKU
+ * - (tenant_id) — tối ưu lọc theo tenant
+ * - (category_id) — tối ưu lọc theo danh mục
+ * - (status) — tối ưu lọc theo trạng thái
+ * - (tenant_id, sku) unique — SKU duy nhất trong mỗi tenant
+ */
+@Entity("products")
+@Index("idx_product_id", ["productId"], { unique: true })
+@Index("idx_product_slug", ["slug"], { unique: true })
+@Index("idx_product_sku", ["sku"], { unique: true })
+@Index("idx_product_tenant_id", ["tenantId"])
+@Index("idx_product_category_id", ["categoryId"])
+@Index("idx_product_status", ["status"])
+@Index("idx_product_tenant_sku", ["tenantId", "sku"], { unique: true })
+export class ProductEntity implements IProduct {
+  /**
+   * Định danh sản phẩm — UUID duy nhất.
+   */
+  @PrimaryColumn({ name: "product_id", type: "varchar", length: 36 })
+  productId: string;
+
+  /**
+   * Tên sản phẩm.
+   */
+  @Column({ type: "varchar", length: 255, default: "" })
+  name: string;
+
+  /**
+   * Slug URL thân thiện.
+   */
+  @Column({ type: "varchar", length: 255, default: "" })
+  slug: string;
+
+  /**
+   * Mã SKU — định danh sản phẩm trong hệ thống kho.
+   */
+  @Column({ type: "varchar", length: 128, default: "" })
+  sku: string;
+
+  /**
+   * Mô tả chi tiết sản phẩm.
+   */
+  @Column({ type: "text", default: "" })
+  description: string;
+
+  /**
+   * ID danh mục phân loại.
+   */
+  @Column({ name: "category_id", type: "varchar", length: 36 })
+  categoryId: string;
+
+  /**
+   * ID thương hiệu (tùy chọn).
+   */
+  @Column({ name: "brand_id", type: "varchar", length: 36, nullable: true })
+  brandId: string | null;
+
+  /**
+   * Giá bán lẻ.
+   */
+  @Column({ type: "decimal", precision: 15, scale: 2, default: 0 })
+  price: number;
+
+  /**
+   * Giá vốn.
+   */
+  @Column({ name: "cost_price", type: "decimal", precision: 15, scale: 2, default: 0 })
+  costPrice: number;
+
+  /**
+   * Giá so sánh (giá gốc, trước khi giảm giá).
+   */
+  @Column({ name: "compare_at_price", type: "decimal", precision: 15, scale: 2, nullable: true })
+  compareAtPrice: number | null;
+
+  /**
+   * Đơn vị tiền tệ (mặc định VND).
+   */
+  @Column({ type: "varchar", length: 8, default: "VND" })
+  currency: string;
+
+  /**
+   * Khối lượng sản phẩm (gram).
+   */
+  @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
+  weight: number | null;
+
+  /**
+   * Kích thước sản phẩm (JSON: { length, width, height }).
+   */
+  @Column({ name: "dimensions", type: "jsonb", nullable: true })
+  dimensions: Record<string, any> | null;
+
+  /**
+   * Trạng thái sản phẩm.
+   *
+   * - "draft": bản nháp
+   * - "active": đang hoạt động
+   * - "inactive": tạm ngưng
+   * - "archived": đã lưu trữ
+   */
+  @Column({ type: "varchar", length: 20, default: "draft" })
+  status: string;
+
+  /**
+   * Mức độ hiển thị.
+   *
+   * - "public": công khai
+   * - "internal": nội bộ
+   * - "restricted": bị hạn chế
+   */
+  @Column({ type: "varchar", length: 20, default: "public" })
+  visibility: string;
+
+  /**
+   * Danh sách thẻ phân loại.
+   */
+  @Column({ type: "jsonb", default: () => "'[]'::jsonb" })
+  tags: string[];
+
+  /**
+   * Metadata SEO (JSON: { title, description, keywords }).
+   */
+  @Column({ name: "seo_metadata", type: "jsonb", nullable: true })
+  seoMetadata: Record<string, any> | null;
+
+  /**
+   * Danh sách hình ảnh (URLs).
+   */
+  @Column({ type: "jsonb", default: () => "'[]'::jsonb" })
+  images: string[];
+
+  /**
+   * Dữ liệu bổ sung dạng JSON.
+   */
+  @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  /**
+   * ID tenant chứa sản phẩm.
+   */
+  @Column({ name: "tenant_id", type: "varchar", length: 64 })
+  tenantId: string;
+
+  /**
+   * Cờ xóa mềm.
+   */
+  @Column({ name: "is_deleted", type: "boolean", default: false })
+  isDeleted: boolean;
+
+  /**
+   * Danh sách biến thể của sản phẩm.
+   */
+  @OneToMany(() => ProductVariantEntity, (variant) => variant.product)
+  variants: ProductVariantEntity[];
+
+  /**
+   * Created at — thời điểm tạo sản phẩm.
+   */
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  /**
+   * Updated at — thời điểm cập nhật sản phẩm.
+   */
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  /**
+   * Deleted at — thời điểm xóa mềm.
+   */
+  @DeleteDateColumn({ name: "deleted_at" })
+  deletedAt: Date | null;
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra sản phẩm có đang hoạt động không.
+   *
+   * @returns True nếu status là "active"
+   */
+  isActive(): boolean {
+    return this.status === "active";
+  }
+
+  /**
+   * Kiểm tra sản phẩm có được hiển thị công khai không.
+   *
+   * @returns True nếu visibility là "public"
+   */
+  isPublic(): boolean {
+    return this.visibility === "public";
+  }
+
+  /**
+   * Tính tỷ lệ chênh lệch giá so sánh (phần trăm giảm).
+   *
+   * @returns Tỷ lệ phần trăm hoặc null nếu không có giá so sánh
+   */
+  getDiscountPercent(): number | null {
+    if (this.compareAtPrice == null || this.compareAtPrice <= 0) {
+      return null;
+    }
+    return Math.round(((this.compareAtPrice - this.price) / this.compareAtPrice) * 100);
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string
+   */
+  toString(): string {
+    return "<Product(productId=\"" + this.productId + "\" , name=\"" + this.name
+      + "\" , sku=\"" + this.sku + "\" , status=\"" + this.status + "\")>";
+  }
+}
+
+// ===========================================================================
+// CategoryEntity
+// ===========================================================================
+
+/**
+ * Interface cho CategoryEntity properties.
+ */
+export interface ICategory {
+  categoryId: string;
+  name: string;
+  slug: string;
+  description: string;
+  parentId: string | null;
+  sortOrder: number;
+  icon: string | null;
+  isActive: boolean;
+  descendantCount: number;
+  metadata: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * CategoryEntity — danh mục phân loại sản phẩm.
+ *
+ * Đại diện cho một danh mục trong hệ thống phân cấp,
+ * hỗ trợ cây phân cấp đa cấp qua quan hệ self-referential.
+ *
+ * Indexes:
+ * - (category_id) unique — định danh danh mục
+ * - (slug) — tối ưu URL
+ * - (parent_id) — tối ưu tìm con theo cha
+ * - (is_active) — tối ưu lọc danh mục đang hoạt động
+ */
+@Entity("categories")
+@Index("idx_category_id", ["categoryId"], { unique: true })
+@Index("idx_category_slug", ["slug"])
+@Index("idx_category_parent_id", ["parentId"])
+@Index("idx_category_active", ["isActive"])
+export class CategoryEntity implements ICategory {
+  /**
+   * Định danh danh mục — UUID duy nhất.
+   */
+  @PrimaryColumn({ name: "category_id", type: "varchar", length: 36 })
+  categoryId: string;
+
+  /**
+   * Tên danh mục.
+   */
+  @Column({ type: "varchar", length: 255, default: "" })
+  name: string;
+
+  /**
+   * Slug URL thân thiện.
+   */
+  @Column({ type: "varchar", length: 255, default: "" })
+  slug: string;
+
+  /**
+   * Mô tả danh mục.
+   */
+  @Column({ type: "text", default: "" })
+  description: string;
+
+  /**
+   * ID danh mục cha (null = root).
+   */
+  @Column({ name: "parent_id", type: "varchar", length: 36, nullable: true })
+  parentId: string | null;
+
+  /**
+   * Thứ tự sắp xếp.
+   */
+  @Column({ name: "sort_order", type: "int", default: 0 })
+  sortOrder: number;
+
+  /**
+   * Biểu tượng danh mục (URL icon hoặc emoji).
+   */
+  @Column({ type: "varchar", length: 255, nullable: true })
+  icon: string | null;
+
+  /**
+   * Danh mục có đang hoạt động không.
+   */
+  @Column({ name: "is_active", type: "boolean", default: true })
+  isActive: boolean;
+
+  /**
+   * Số lượng danh mục con (tất cả cấp độ).
+   */
+  @Column({ name: "descendant_count", type: "int", default: 0 })
+  descendantCount: number;
+
+  /**
+   * Dữ liệu bổ sung dạng JSON.
+   */
+  @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  /**
+   * Danh mục cha (quan hệ ManyToOne self-referential).
+   */
+  @ManyToOne(() => CategoryEntity, (category) => category.children)
+  @JoinColumn({ name: "parent_id" })
+  parent: CategoryEntity | null;
+
+  /**
+   * Danh sách danh mục con (quan hệ OneToMany self-referential).
+   */
+  @OneToMany(() => CategoryEntity, (category) => category.parent)
+  children: CategoryEntity[];
+
+  /**
+   * Created at — thời điểm tạo danh mục.
+   */
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  /**
+   * Updated at — thời điểm cập nhật danh mục.
+   */
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra danh mục có là root không.
+   *
+   * @returns True nếu parentId là null
+   */
+  isRoot(): boolean {
+    return this.parentId == null;
+  }
+
+  /**
+   * Kiểm tra danh mục có đang hoạt động không.
+   *
+   * @returns True nếu isActive là true
+   */
+  isActiveCategory(): boolean {
+    return this.isActive === true;
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string
+   */
+  toString(): string {
+    return "<Category(categoryId=\"" + this.categoryId + "\" , name=\"" + this.name
+      + "\" , parentId=\"" + (this.parentId || "null") + "\" , active=" + this.isActive + ")>";
+  }
+}
+
+// ===========================================================================
+// ProductVariantEntity
+// ===========================================================================
+
+/**
+ * Interface cho ProductVariantEntity properties.
+ */
+export interface IProductVariant {
+  variantId: string;
+  productId: string;
+  sku: string;
+  name: string;
+  attributeValues: Record<string, any>;
+  price: number;
+  costPrice: number;
+  weight: number | null;
+  barcode: string | null;
+  images: string[];
+  isActive: boolean;
+  sortOrder: number;
+  metadata: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * ProductVariantEntity — biến thể sản phẩm.
+ *
+ * Đại diện cho một biến thể của sản phẩm chính
+ * (ví dụ: cùng một áo thun nhưng khác màu, kích thước).
+ *
+ * Indexes:
+ * - (variant_id) unique — định danh biến thể
+ * - (product_id) — tối ưu tìm biến thể theo sản phẩm
+ * - (sku) unique — tối ưu tìm theo mã SKU
+ */
+@Entity("product_variants")
+@Index("idx_variant_id", ["variantId"], { unique: true })
+@Index("idx_variant_product_id", ["productId"])
+@Index("idx_variant_sku", ["sku"], { unique: true })
+export class ProductVariantEntity implements IProductVariant {
+  /**
+   * Định danh biến thể — UUID duy nhất.
+   */
+  @PrimaryColumn({ name: "variant_id", type: "varchar", length: 36 })
+  variantId: string;
+
+  /**
+   * ID sản phẩm cha.
+   */
+  @Column({ name: "product_id", type: "varchar", length: 36 })
+  productId: string;
+
+  /**
+   * Mã SKU của biến thể.
+   */
+  @Column({ type: "varchar", length: 128, default: "" })
+  sku: string;
+
+  /**
+   * Tên biến thể (ví dụ: "Áo thun - Xanh - M").
+   */
+  @Column({ type: "varchar", length: 255, default: "" })
+  name: string;
+
+  /**
+   * Giá trị thuộc tính (JSON: { color: "xanh", size: "M" }).
+   */
+  @Column({ name: "attribute_values", type: "jsonb", default: () => "'{}'::jsonb" })
+  attributeValues: Record<string, any>;
+
+  /**
+   * Giá bán lẻ của biến thể.
+   */
+  @Column({ type: "decimal", precision: 15, scale: 2, default: 0 })
+  price: number;
+
+  /**
+   * Giá vốn của biến thể.
+   */
+  @Column({ name: "cost_price", type: "decimal", precision: 15, scale: 2, default: 0 })
+  costPrice: number;
+
+  /**
+   * Khối lượng biến thể (gram).
+   */
+  @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
+  weight: number | null;
+
+  /**
+   * Mã vạch (EAN/UPC).
+   */
+  @Column({ type: "varchar", length: 64, nullable: true })
+  barcode: string | null;
+
+  /**
+   * Danh sách hình ảnh (URLs).
+   */
+  @Column({ type: "jsonb", default: () => "'[]'::jsonb" })
+  images: string[];
+
+  /**
+   * Biến thể có đang hoạt động không.
+   */
+  @Column({ name: "is_active", type: "boolean", default: true })
+  isActive: boolean;
+
+  /**
+   * Thứ tự sắp xếp.
+   */
+  @Column({ name: "sort_order", type: "int", default: 0 })
+  sortOrder: number;
+
+  /**
+   * Dữ liệu bổ sung dạng JSON.
+   */
+  @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  /**
+   * Sản phẩm cha (quan hệ ManyToOne).
+   */
+  @ManyToOne(() => ProductEntity)
+  @JoinColumn({ name: "product_id" })
+  product: ProductEntity;
+
+  /**
+   * Created at — thời điểm tạo biến thể.
+   */
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  /**
+   * Updated at — thời điểm cập nhật biến thể.
+   */
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra biến thể có đang hoạt động không.
+   *
+   * @returns True nếu isActive là true
+   */
+  isActiveVariant(): boolean {
+    return this.isActive === true;
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string
+   */
+  toString(): string {
+    return "<ProductVariant(variantId=\"" + this.variantId + "\" , productId=\"" + this.productId
+      + "\" , sku=\"" + this.sku + "\" , active=" + this.isActive + ")>";
+  }
+}
+
+// ===========================================================================
+// AttributeDefinitionEntity
+// ===========================================================================
+
+/**
+ * Interface cho AttributeDefinitionEntity properties.
+ */
+export interface IAttributeDefinition {
+  attributeId: string;
+  name: string;
+  key: string;
+  attributeType: string;
+  isRequired: boolean;
+  validationRules: Record<string, any> | null;
+  options: Array<{ value: string; label: string }>;
+  unit: string | null;
+  isSearchable: boolean;
+  isFilterable: boolean;
+  isVisible: boolean;
+  sortOrder: number;
+  metadata: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * AttributeDefinitionEntity — định nghĩa thuộc tính.
+ *
+ * Đại diện cho định nghĩa của một thuộc tính sản phẩm
+ * (ví dụ: màu sắc, kích thước, trọng lượng).
+ *
+ * Indexes:
+ * - (attribute_id) unique — định danh thuộc tính
+ * - (key) unique — tối ưu tìm theo khóa
+ */
+@Entity("attribute_definitions")
+@Index("idx_attribute_id", ["attributeId"], { unique: true })
+@Index("idx_attribute_key", ["key"], { unique: true })
+export class AttributeDefinitionEntity implements IAttributeDefinition {
+  /**
+   * Định danh thuộc tính — UUID duy nhất.
+   */
+  @PrimaryColumn({ name: "attribute_id", type: "varchar", length: 36 })
+  attributeId: string;
+
+  /**
+   * Tên hiển thị thuộc tính.
+   */
+  @Column({ type: "varchar", length: 255, default: "" })
+  name: string;
+
+  /**
+   * Khóa thuộc tính (ví dụ: "color", "size").
+   */
+  @Column({ type: "varchar", length: 128, default: "" })
+  key: string;
+
+  /**
+   * Loại thuộc tính.
+   *
+   * - "string": chuỗi ký tự
+   * - "integer": số nguyên
+   * - "decimal": số thập phân
+   * - "boolean": boolean
+   * - "date": ngày tháng
+   * - "select": danh sách lựa chọn
+   * - "multi_select": nhiều lựa chọn
+   * - "json": JSON tùy chỉnh
+   */
+  @Column({ name: "attribute_type", type: "varchar", length: 20, default: "string" })
+  attributeType: string;
+
+  /**
+   * Thuộc tính có bắt buộc không.
+   */
+  @Column({ name: "is_required", type: "boolean", default: false })
+  isRequired: boolean;
+
+  /**
+   * Quy tắc xác thực (JSON: { min, max, pattern, ... }).
+   */
+  @Column({ name: "validation_rules", type: "jsonb", nullable: true })
+  validationRules: Record<string, any> | null;
+
+  /**
+   * Danh sách tùy chọn (cho loại select/multi_select).
+   */
+  @Column({ type: "jsonb", default: () => "'[]'::jsonb" })
+  options: Array<{ value: string; label: string }>;
+
+  /**
+   * Đơn vị (ví dụ: "kg", "cm", "ml").
+   */
+  @Column({ type: "varchar", length: 32, nullable: true })
+  unit: string | null;
+
+  /**
+   * Có thể tìm kiếm theo thuộc tính này không.
+   */
+  @Column({ name: "is_searchable", type: "boolean", default: true })
+  isSearchable: boolean;
+
+  /**
+   * Có thể lọc theo thuộc tính này không.
+   */
+  @Column({ name: "is_filterable", type: "boolean", default: true })
+  isFilterable: boolean;
+
+  /**
+   * Có hiển thị thuộc tính này cho người dùng không.
+   */
+  @Column({ name: "is_visible", type: "boolean", default: true })
+  isVisible: boolean;
+
+  /**
+   * Thứ tự sắp xếp.
+   */
+  @Column({ name: "sort_order", type: "int", default: 0 })
+  sortOrder: number;
+
+  /**
+   * Dữ liệu bổ sung dạng JSON.
+   */
+  @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  /**
+   * Created at — thời điểm tạo định nghĩa.
+   */
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  /**
+   * Updated at — thời điểm cập nhật định nghĩa.
+   */
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra thuộc tính có bắt buộc không.
+   *
+   * @returns True nếu isRequired là true
+   */
+  isRequiredAttribute(): boolean {
+    return this.isRequired === true;
+  }
+
+  /**
+   * Kiểm tra thuộc tính có hiển thị không.
+   *
+   * @returns True nếu isVisible là true
+   */
+  isAttributeVisible(): boolean {
+    return this.isVisible === true;
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string
+   */
+  toString(): string {
+    return "<AttributeDefinition(attributeId=\"" + this.attributeId + "\" , key=\"" + this.key
+      + "\" , type=\"" + this.attributeType + "\")>";
+  }
+}
+
+// ===========================================================================
+// AttributeValueEntity
+// ===========================================================================
+
+/**
+ * Interface cho AttributeValueEntity properties.
+ */
+export interface IAttributeValue {
+  attributeValueId: string;
+  attributeId: string;
+  productId: string | null;
+  variantId: string | null;
+  value: string;
+}
+
+/**
+ * AttributeValueEntity — giá trị thuộc tính.
+ *
+ * Liên kết giá trị thuộc tính với sản phẩm hoặc biến thể,
+ * cho phép truy vấn và lọc theo các thuộc tính tùy chỉnh.
+ *
+ * Indexes:
+ * - (attribute_value_id) unique — định danh giá trị
+ * - (attribute_id) — tối ưu tìm theo thuộc tính
+ * - (product_id) — tối ưu tìm theo sản phẩm
+ * - (variant_id) — tối ưu tìm theo biến thể
+ * - (attribute_id, product_id) — tìm giá trị của thuộc tính cho sản phẩm
+ */
+@Entity("attribute_values")
+@Index("idx_attr_value_id", ["attributeValueId"], { unique: true })
+@Index("idx_attr_value_attribute_id", ["attributeId"])
+@Index("idx_attr_value_product_id", ["productId"])
+@Index("idx_attr_value_variant_id", ["variantId"])
+@Index("idx_attr_value_attr_product", ["attributeId", "productId"])
+export class AttributeValueEntity implements IAttributeValue {
+  /**
+   * Định danh giá trị — UUID duy nhất.
+   */
+  @PrimaryColumn({ name: "attribute_value_id", type: "varchar", length: 36 })
+  attributeValueId: string;
+
+  /**
+   * ID thuộc tính.
+   */
+  @Column({ name: "attribute_id", type: "varchar", length: 36 })
+  attributeId: string;
+
+  /**
+   * ID sản phẩm (null nếu gán cho biến thể).
+   */
+  @Column({ name: "product_id", type: "varchar", length: 36, nullable: true })
+  productId: string | null;
+
+  /**
+   * ID biến thể (null nếu gán cho sản phẩm).
+   */
+  @Column({ name: "variant_id", type: "varchar", length: 36, nullable: true })
+  variantId: string | null;
+
+  /**
+   * Giá trị thuộc tính (chuỗi).
+   */
+  @Column({ type: "text", default: "" })
+  value: string;
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra giá trị có được gán cho sản phẩm không.
+   *
+   * @returns True nếu productId không null
+   */
+  isProductLevel(): boolean {
+    return this.productId != null;
+  }
+
+  /**
+   * Kiểm tra giá trị có được gán cho biến thể không.
+   *
+   * @returns True nếu variantId không null
+   */
+  isVariantLevel(): boolean {
+    return this.variantId != null;
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string
+   */
+  toString(): string {
+    return "<AttributeValue(attributeValueId=\"" + this.attributeValueId + "\" , attributeId=\""
+      + this.attributeId + "\" , value=\"" + this.value + "\")>";
+  }
+}

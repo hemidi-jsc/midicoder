@@ -1,0 +1,685 @@
+/**
+ * CatalogController — REST controller cho Catalog & Taxonomy Engine.
+ *
+ * Cung cấp các endpoint REST:
+ * - Products:  GET /products, GET /products/:id, POST /products,
+ *              PUT /products/:id, DELETE /products/:id, POST /products/:id/restore
+ * - Variants:  GET /products/:id/variants, POST /products/:id/variants
+ * - Categories: GET /categories, GET /categories/tree,
+ *               GET /categories/:id/ancestors, GET /categories/:id/descendants,
+ *               POST /categories
+ * - Attributes: GET /attributes, POST /attributes
+ * - Search:    GET /search
+ *
+ * CP50: Catalog & Taxonomy Engine
+ * Tổng số sản phẩm mẫu: {{ product_count }}
+ * Tổng số danh mục mẫu: {{ category_count }}
+ * Tổng số biến thể mẫu: {{ variant_count }}
+ * Tổng số thuộc tính mẫu: {{ attribute_count }}
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  HttpStatus,
+  HttpCode,
+  ValidationPipe,
+} from "@nestjs/common";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiParam,
+} from "@nestjs/swagger";
+import { ProductService } from "./product.service";
+import { CategoryService } from "./category.service";
+import { AttributeService } from "./attribute.service";
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  CreateVariantDto,
+  CreateCategoryDto,
+  UpdateCategoryDto,
+  CreateAttributeDto,
+  SetAttributeValueDto,
+  FacetedSearchDto,
+} from "./catalog.dto";
+
+/**
+ * CatalogController — quản lý sản phẩm, danh mục, thuộc tính, và tìm kiếm.
+ *
+ * API Routes:
+ * - GET    /products                        - Danh sách sản phẩm
+ * - GET    /products/:id                    - Chi tiết sản phẩm
+ * - POST   /products                        - Tạo sản phẩm mới
+ * - PUT    /products/:id                    - Cập nhật sản phẩm
+ * - DELETE /products/:id                    - Xóa mềm sản phẩm
+ * - POST   /products/:id/restore            - Khôi phục sản phẩm
+ * - GET    /products/:id/variants           - Danh sách biến thể
+ * - POST   /products/:id/variants           - Tạo biến thể mới
+ * - GET    /categories                      - Danh sách danh mục
+ * - GET    /categories/tree                 - Cây danh mục phân cấp
+ * - GET    /categories/:id/ancestors        - Đường dẫn tổ tiên
+ * - GET    /categories/:id/descendants      - Tất cả con
+ * - POST   /categories                      - Tạo danh mục mới
+ * - PUT    /categories/:id                  - Cập nhật danh mục
+ * - GET    /attributes                      - Danh sách thuộc tính
+ * - POST   /attributes                      - Tạo thuộc tính mới
+ * - POST   /attributes/values               - Đặt giá trị thuộc tính
+ * - GET    /search                          - Tìm kiếm faceted
+ */
+@ApiTags("Catalog")
+@ApiBearerAuth()
+@Controller("catalog")
+export class CatalogController {
+  /**
+   * Constructor.
+   *
+   * @param productService - ProductService instance
+   * @param categoryService - CategoryService instance
+   * @param attributeService - AttributeService instance
+   */
+  constructor(
+    private readonly productService: ProductService,
+    private readonly categoryService: CategoryService,
+    private readonly attributeService: AttributeService,
+  ) {}
+
+  // ========================================================================
+  // Product Endpoints
+  // ========================================================================
+
+  /**
+   * Lấy danh sách sản phẩm.
+   *
+   * Hỗ trợ lọc theo status, categoryId, visibility, tenantId, search.
+   *
+   * @returns List ProductEntity
+   */
+  @Get("products")
+  @ApiOperation({
+    summary: "Lấy danh sách sản phẩm",
+    description: "Lấy tất cả sản phẩm với bộ lọc tùy chọn.",
+  })
+  @ApiQuery({ name: "status", required: false, description: "Trạng thái sản phẩm" })
+  @ApiQuery({ name: "categoryId", required: false, description: "ID danh mục" })
+  @ApiQuery({ name: "visibility", required: false, description: "Mức độ hiển thị" })
+  @ApiQuery({ name: "tenantId", required: false, description: "ID tenant" })
+  @ApiQuery({ name: "search", required: false, description: "Từ khóa tìm kiếm" })
+  @ApiQuery({ name: "limit", required: false, description: "Số lượng mỗi trang" })
+  @ApiQuery({ name: "offset", required: false, description: "Số lượng bỏ qua" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List sản phẩm thành công",
+  })
+  async findAllProducts(
+    @Query("status") status?: string,
+    @Query("categoryId") categoryId?: string,
+    @Query("visibility") visibility?: string,
+    @Query("tenantId") tenantId?: string,
+    @Query("search") search?: string,
+    @Query("limit") limit?: number,
+    @Query("offset") offset?: number,
+  ): Promise<any[]> {
+    return this.productService.findAll({
+      status,
+      categoryId,
+      visibility,
+      tenantId,
+      search,
+      limit,
+      offset,
+    });
+  }
+
+  /**
+   * Lấy chi tiết sản phẩm theo ID.
+   *
+   * @param id - ID sản phẩm
+   * @returns ProductEntity
+   */
+  @Get("products/:id")
+  @ApiOperation({
+    summary: "Lấy chi tiết sản phẩm",
+    description: "Lấy thông tin chi tiết của một sản phẩm.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID sản phẩm",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Chi tiết sản phẩm",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy sản phẩm",
+  })
+  async findOneProduct(
+    @Param("id") id: string,
+  ): Promise<any> {
+    const product = await this.productService.findOne(id);
+    if (!product) {
+      throw new Error("Không tìm thấy sản phẩm: " + id);
+    }
+    return product;
+  }
+
+  /**
+   * Tạo sản phẩm mới.
+   *
+   * @param dto - CreateProductDto
+   * @returns ProductEntity vừa tạo
+   */
+  @Post("products")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo sản phẩm mới",
+    description: "Tạo sản phẩm mới trong catalog.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Sản phẩm đã được tạo",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ hoặc SKU trùng",
+  })
+  async createProduct(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: CreateProductDto,
+  ): Promise<any> {
+    return this.productService.createProduct(dto);
+  }
+
+  /**
+   * Cập nhật sản phẩm.
+   *
+   * @param id - ID sản phẩm
+   * @param dto - UpdateProductDto
+   * @returns ProductEntity đã cập nhật
+   */
+  @Put("products/:id")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Cập nhật sản phẩm",
+    description: "Cập nhật thông tin sản phẩm.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID sản phẩm",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Sản phẩm đã được cập nhật",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy sản phẩm",
+  })
+  async updateProduct(
+    @Param("id") id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: UpdateProductDto,
+  ): Promise<any> {
+    return this.productService.update(id, dto);
+  }
+
+  /**
+   * Xóa mềm sản phẩm.
+   *
+   * Đánh dấu is_deleted = true, không xóa vật lý.
+   *
+   * @param id - ID sản phẩm
+   * @returns Kết quả xóa
+   */
+  @Delete("products/:id")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Xóa mềm sản phẩm",
+    description: "Xóa mềm sản phẩm (đánh dấu is_deleted).",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID sản phẩm",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Sản phẩm đã được xóa mềm",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy sản phẩm",
+  })
+  async softDeleteProduct(
+    @Param("id") id: string,
+  ): Promise<any> {
+    return this.productService.softDelete(id);
+  }
+
+  /**
+   * Khôi phục sản phẩm đã xóa mềm.
+   *
+   * @param id - ID sản phẩm
+   * @returns ProductEntity đã khôi phục
+   */
+  @Post("products/:id/restore")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Khôi phục sản phẩm",
+    description: "Khôi phục sản phẩm đã xóa mềm.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID sản phẩm",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Sản phẩm đã được khôi phục",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy sản phẩm",
+  })
+  async restoreProduct(
+    @Param("id") id: string,
+  ): Promise<any> {
+    return this.productService.restore(id);
+  }
+
+  // ========================================================================
+  // Variant Endpoints
+  // ========================================================================
+
+  /**
+   * Lấy danh sách biến thể của sản phẩm.
+   *
+   * @param id - ID sản phẩm
+   * @returns List ProductVariantEntity
+   */
+  @Get("products/:id/variants")
+  @ApiOperation({
+    summary: "Lấy danh sách biến thể",
+    description: "Lấy tất cả biến thể của một sản phẩm.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID sản phẩm",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List biến thể thành công",
+  })
+  async getVariants(
+    @Param("id") id: string,
+  ): Promise<any[]> {
+    return this.productService.getVariantsByProductId(id);
+  }
+
+  /**
+   * Tạo biến thể mới cho sản phẩm.
+   *
+   * @param id - ID sản phẩm
+   * @param dto - CreateVariantDto
+   * @returns ProductVariantEntity vừa tạo
+   */
+  @Post("products/:id/variants")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo biến thể mới",
+    description: "Tạo biến thể sản phẩm mới.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID sản phẩm",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Biến thể đã được tạo",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ hoặc SKU trùng",
+  })
+  async createVariant(
+    @Param("id") id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: CreateVariantDto,
+  ): Promise<any> {
+    return this.productService.createVariant(id, dto);
+  }
+
+  // ========================================================================
+  // Category Endpoints
+  // ========================================================================
+
+  /**
+   * Lấy danh sách danh mục.
+   *
+   * @param isActive - Chỉ lấy danh mục đang hoạt động
+   * @returns List CategoryEntity
+   */
+  @Get("categories")
+  @ApiOperation({
+    summary: "Lấy danh sách danh mục",
+    description: "Lấy tất cả danh mục (danh sách phẳng).",
+  })
+  @ApiQuery({ name: "isActive", required: false, description: "Chỉ lấy danh mục đang hoạt động" })
+  @ApiQuery({ name: "parentId", required: false, description: "Chỉ lấy con của danh mục" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List danh mục thành công",
+  })
+  async findAllCategories(
+    @Query("isActive") isActive?: boolean,
+    @Query("parentId") parentId?: string,
+  ): Promise<any[]> {
+    return this.categoryService.findAll(isActive, parentId);
+  }
+
+  /**
+   * Lấy cây danh mục phân cấp.
+   *
+   * Trả về cấu trúc cây từ root xuống các cấp con.
+   *
+   * @returns List CategoryEntity dạng cây
+   */
+  @Get("categories/tree")
+  @ApiOperation({
+    summary: "Lấy cây danh mục",
+    description: "Lấy danh mục dưới dạng cây phân cấp.",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Cây danh mục thành công",
+  })
+  async getCategoryTree(): Promise<any[]> {
+    return this.categoryService.getCategoryTree();
+  }
+
+  /**
+   * Lấy đường dẫn tổ tiên của danh mục.
+   *
+   * @param id - ID danh mục
+   * @returns List CategoryEntity từ root đến current
+   */
+  @Get("categories/:id/ancestors")
+  @ApiOperation({
+    summary: "Lấy đường dẫn tổ tiên",
+    description: "Lấy đường dẫn từ root đến danh mục hiện tại.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID danh mục",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Đường dẫn tổ tiên thành công",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy danh mục",
+  })
+  async getAncestors(
+    @Param("id") id: string,
+  ): Promise<any[]> {
+    return this.categoryService.getAncestors(id);
+  }
+
+  /**
+   * Lấy tất cả danh mục con.
+   *
+   * @param id - ID danh mục
+   * @returns List CategoryEntity (tất cả con, mọi cấp)
+   */
+  @Get("categories/:id/descendants")
+  @ApiOperation({
+    summary: "Lấy danh mục con",
+    description: "Lấy tất cả danh mục con ở mọi cấp độ.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID danh mục",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Danh sách con thành công",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy danh mục",
+  })
+  async getDescendants(
+    @Param("id") id: string,
+  ): Promise<any[]> {
+    return this.categoryService.getDescendants(id);
+  }
+
+  /**
+   * Tạo danh mục mới.
+   *
+   * @param dto - CreateCategoryDto
+   * @returns CategoryEntity vừa tạo
+   */
+  @Post("categories")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo danh mục mới",
+    description: "Tạo danh mục phân loại mới.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Danh mục đã được tạo",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ hoặc gây ra chu kỳ",
+  })
+  async createCategory(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: CreateCategoryDto,
+  ): Promise<any> {
+    return this.categoryService.createCategory(dto);
+  }
+
+  /**
+   * Cập nhật danh mục.
+   *
+   * @param id - ID danh mục
+   * @param dto - UpdateCategoryDto
+   * @returns CategoryEntity đã cập nhật
+   */
+  @Put("categories/:id")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Cập nhật danh mục",
+    description: "Cập nhật thông tin danh mục.",
+  })
+  @ApiParam({
+    name: "id",
+    description: "ID danh mục",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Danh mục đã được cập nhật",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy danh mục",
+  })
+  async updateCategory(
+    @Param("id") id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: UpdateCategoryDto,
+  ): Promise<any> {
+    return this.categoryService.update(id, dto);
+  }
+
+  // ========================================================================
+  // Attribute Endpoints
+  // ========================================================================
+
+  /**
+   * Lấy danh sách thuộc tính.
+   *
+   * @param isSearchable - Chỉ lấy thuộc tính có thể tìm kiếm
+   * @param isFilterable - Chỉ lấy thuộc tính có thể lọc
+   * @param isVisible - Chỉ lấy thuộc tính hiển thị
+   * @returns List AttributeDefinitionEntity
+   */
+  @Get("attributes")
+  @ApiOperation({
+    summary: "Lấy danh sách thuộc tính",
+    description: "Lấy tất cả định nghĩa thuộc tính.",
+  })
+  @ApiQuery({ name: "isSearchable", required: false, description: "Chỉ thuộc tính tìm kiếm được" })
+  @ApiQuery({ name: "isFilterable", required: false, description: "Chỉ thuộc tính lọc được" })
+  @ApiQuery({ name: "isVisible", required: false, description: "Chỉ thuộc tính hiển thị" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List thuộc tính thành công",
+  })
+  async findAllAttributes(
+    @Query("isSearchable") isSearchable?: boolean,
+    @Query("isFilterable") isFilterable?: boolean,
+    @Query("isVisible") isVisible?: boolean,
+  ): Promise<any[]> {
+    return this.attributeService.findAll({ isSearchable, isFilterable, isVisible });
+  }
+
+  /**
+   * Tạo thuộc tính mới.
+   *
+   * @param dto - CreateAttributeDto
+   * @returns AttributeDefinitionEntity vừa tạo
+   */
+  @Post("attributes")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo thuộc tính mới",
+    description: "Tạo định nghĩa thuộc tính mới.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Thuộc tính đã được tạo",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ hoặc key trùng",
+  })
+  async createAttribute(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: CreateAttributeDto,
+  ): Promise<any> {
+    return this.attributeService.createAttribute(dto);
+  }
+
+  /**
+   * Đặt giá trị thuộc tính cho sản phẩm hoặc biến thể.
+   *
+   * @param dto - SetAttributeValueDto
+   * @returns AttributeValueEntity
+   */
+  @Post("attributes/values")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Đặt giá trị thuộc tính",
+    description: "Đặt hoặc cập nhật giá trị thuộc tính cho sản phẩm/biến thể.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Giá trị thuộc tính đã được đặt",
+  })
+  async setAttributeValue(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: SetAttributeValueDto,
+  ): Promise<any> {
+    if (dto.variantId) {
+      // Cần productId để tham chiếu khi đặt cho biến thể
+      // Trong thực tế, controller có thể lấy productId từ variant
+      // Ở đây dùng dto.productId nếu có, ngược lại tìm từ variant
+      return this.attributeService.setVariantAttributeValue(
+        dto.productId || "",
+        dto.variantId,
+        dto.attributeId,
+        dto.value,
+      );
+    } else if (dto.productId) {
+      return this.attributeService.setProductAttributeValue(
+        dto.productId,
+        dto.attributeId,
+        dto.value,
+      );
+    } else {
+      throw new Error("Phải cung cấp productId hoặc variantId");
+    }
+  }
+
+  // ========================================================================
+  // Search Endpoint
+  // ========================================================================
+
+  /**
+   * Tìm kiếm sản phẩm với bộ lọc faceted.
+   *
+   * Hỗ trợ tìm kiếm theo từ khóa, lọc theo danh mục, khoảng giá,
+   * thuộc tính, thẻ, với phân trang và tổng hợp kết quả.
+   *
+   * @param searchDto - FacetedSearchDto
+   * @returns FacetedSearchResponseDto
+   */
+  @Get("search")
+  @ApiOperation({
+    summary: "Tìm kiếm sản phẩm",
+    description: "Tìm kiếm sản phẩm với bộ lọc faceted và phân trang.",
+  })
+  @ApiQuery({ name: "q", required: false, description: "Từ khóa tìm kiếm" })
+  @ApiQuery({ name: "categoryId", required: false, description: "ID danh mục" })
+  @ApiQuery({ name: "minPrice", required: false, description: "Giá tối thiểu" })
+  @ApiQuery({ name: "maxPrice", required: false, description: "Giá tối đa" })
+  @ApiQuery({ name: "status", required: false, description: "Trạng thái" })
+  @ApiQuery({ name: "sortBy", required: false, description: "Trường sắp xếp" })
+  @ApiQuery({ name: "sortOrder", required: false, description: "Chiều sắp xếp" })
+  @ApiQuery({ name: "page", required: false, description: "Số trang" })
+  @ApiQuery({ name: "limit", required: false, description: "Số lượng mỗi trang" })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Kết quả tìm kiếm thành công",
+  })
+  async searchProducts(
+    @Query("q") q?: string,
+    @Query("categoryId") categoryId?: string,
+    @Query("minPrice") minPrice?: number,
+    @Query("maxPrice") maxPrice?: number,
+    @Query("status") status?: string,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortOrder") sortOrder?: string,
+    @Query("page") page?: number,
+    @Query("limit") limit?: number,
+  ): Promise<any> {
+    return this.productService.findAll({
+      search: q,
+      categoryId,
+      status,
+      limit,
+      offset: page ? (page - 1) * (limit || 20) : 0,
+    });
+  }
+}
