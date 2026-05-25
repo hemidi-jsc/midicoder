@@ -199,6 +199,10 @@ def _build_mir_from_projection_tree(tree: ProjectionTree) -> MIR:
     _store_ui_themes_in_metadata(builder, tree)
     _store_ui_form_builders_in_metadata(builder, tree)
 
+    # CP28: Store custom code blocks, hooks, patch_rules into metadata
+    # (di chuyển từ hack trong file_contributions_loader.py sang IR build phase)
+    _store_custom_code_in_metadata(builder, tree)
+
     # Process Commands → Operations
     for command in tree.get_commands():
         _process_command_to_mir(builder, command)
@@ -875,6 +879,43 @@ def _store_ui_form_builders_in_metadata(builder: MIRBuilder, tree: ProjectionTre
             "description": fb.params.get("description", ""),
         })
     builder.mir.metadata["ui_form_builders"] = ui_form_builders
+
+
+def _store_custom_code_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None:
+    """
+    Lưu CP28 custom code data vào MIR metadata.
+
+    Di chuyển từ hack trong file_contributions_loader.py (expand_infrastructure)
+    sang IR build phase — đúng với 3-layer pipeline (DSL → MIR → Emit).
+
+    Auto-generate từ entities và commands trong ProjectionTree.
+
+    Args:
+        builder: MIRBuilder
+        tree: ProjectionTree
+    """
+    # Đọc entities và commands đã store trong metadata
+    entities = builder.mir.metadata.get("entities", [])
+    commands = builder.mir.metadata.get("commands", [])
+
+    try:
+        from midicoder.emitters.core.cp28_custom_code.recipes import (
+            auto_generate_custom_code_from_mir,
+        )
+        collection = auto_generate_custom_code_from_mir({
+            "entities": entities,
+            "commands": commands,
+        })
+        coll_dict = collection.to_dict()
+        builder.mir.metadata["custom_code_blocks"] = coll_dict["blocks"]
+        builder.mir.metadata["hooks"] = coll_dict["hooks"]
+        builder.mir.metadata["patch_rules"] = coll_dict["patch_rules"]
+    except Exception:
+        # Fallback: nếu CP28 recipes không available, set empty lists
+        # — templates vẫn render được với data rỗng
+        builder.mir.metadata.setdefault("custom_code_blocks", [])
+        builder.mir.metadata.setdefault("hooks", [])
+        builder.mir.metadata.setdefault("patch_rules", [])
 
 
 def _process_ui_component_to_mir(builder: MIRBuilder, node: ProjectionNode) -> None:

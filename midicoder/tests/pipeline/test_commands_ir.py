@@ -618,5 +618,94 @@ class TestRequiredCategories:
         assert _REQUIRED_CATEGORIES == expected
 
 
+class TestCP28MetadataInMIR:
+    """Tests cho CP28 custom code metadata được populate trong MIR build phase.
+
+    Đây là regression test cho P1-12: CP28 hack trong file_contributions_loader.py
+    được di chuyển vào IR build phase (_store_custom_code_in_metadata).
+    """
+
+    def test_mir_metadata_contains_cp28_custom_code_blocks(self):
+        """Kiểm tra MIR metadata chứa custom_code_blocks sau khi build từ ProjectionTree."""
+        tree = ProjectionTree()
+        tree.add_node(ProjectionNode(
+            id="Customer",
+            kind=NodeKind.ENTITY,
+            params={"id": "Customer", "fields": [{"name": "name", "type": "str"}]}
+        ))
+        tree.add_node(ProjectionNode(
+            id="CreateOrder",
+            kind=NodeKind.COMMAND,
+            params={"id": "CreateOrder", "input": ["customer_id"]}
+        ))
+
+        mir = _build_mir_from_projection_tree(tree)
+
+        # MIR metadata PHẢI chứa CP28 keys sau khi build
+        assert "custom_code_blocks" in mir.metadata, (
+            "MIR metadata thiếu 'custom_code_blocks' — "
+            "_store_custom_code_in_metadata() có thể chưa được gọi"
+        )
+        assert "hooks" in mir.metadata, (
+            "MIR metadata thiếu 'hooks' — _store_custom_code_in_metadata() có thể chưa được gọi"
+        )
+        assert "patch_rules" in mir.metadata, (
+            "MIR metadata thiếu 'patch_rules' — _store_custom_code_in_metadata() có thể chưa được gọi"
+        )
+
+        # Custom code blocks phải có ít nhất 1 block (từ entity/command)
+        blocks = mir.metadata["custom_code_blocks"]
+        assert len(blocks) > 0, "custom_code_blocks trống — auto_generate_custom_code_from_mir() không sinh data"
+
+    def test_mir_metadata_cp28_data_is_non_empty(self):
+        """Kiểm tra CP28 data trong MIR metadata có content thực (không rỗng)."""
+        tree = ProjectionTree()
+        tree.add_node(ProjectionNode(
+            id="Product",
+            kind=NodeKind.ENTITY,
+            params={"id": "Product", "fields": [{"name": "sku", "type": "str"}]}
+        ))
+
+        mir = _build_mir_from_projection_tree(tree)
+
+        # Hooks phải có content (default: 3 hooks)
+        hooks = mir.metadata["hooks"]
+        assert len(hooks) >= 2, f"hooks quá ít ({len(hooks)}) — kỳ vọng >= 3 hooks mặc định"
+
+        # Patch rules phải có content
+        rules = mir.metadata["patch_rules"]
+        assert len(rules) >= 1, "patch_rules trống — kỳ vọng >= 1 patch rule mặc định"
+
+
+class TestCP28HackRemoved:
+    """Tests cho việc CP28 hack đã bị xóa khỏi file_contributions_loader.py."""
+
+    def test_expand_infrastructure_no_cp28_special_case(self):
+        """Kiểm tra expand_infrastructure() không còn special-case cho CP28.
+
+        Sau khi fix P1-12, expand_infrastructure() không nên import
+        auto_generate_custom_code_from_mir hay populate custom_code_blocks/hooks/patch_rules.
+        """
+        from midicoder.pipeline.file_contributions_loader import (
+            FileContributionsLoader,
+            FileContributions,
+        )
+
+        # Tạo FileContributions giả cho CP28
+        fc = FileContributions(
+            pack_id="CP28",
+            pack_internal_id="cp28_custom_code",
+            infrastructure=[],
+        )
+
+        # Gọi expand_infrastructure với MIR metadata rỗng
+        result = FileContributionsLoader.expand_infrastructure(fc, mir_metadata={})
+
+        # Result phải trống (không auto-populate từ recipes)
+        assert result == [], (
+            f"expand_infrastructure() vẫn auto-generate CP28 data: {result}"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
