@@ -1,9 +1,8 @@
 /**
- * PresenceService — theo dõi trạng thái presence realtime
- *
- * Sinh bởi CP22 AngularRealtimeEmitter
- * UI Framework: {[{ ui_framework }]}
- */
+* PresenceService — theo dõi trạng thái presence realtime
+*
+* Sinh bởi CP22 AngularRealtimeEmitter
+*/
 
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
@@ -12,53 +11,55 @@ import { ChannelSubscriptionService } from './channel-subscription.service';
 export type PresenceStatus = 'online' | 'offline' | 'typing' | 'away';
 
 export interface UserPresence {
-  user_id: string;
-  status: PresenceStatus;
-  last_seen?: string;
-{% if has_tenant_presence %}  tenant_id?: string;
+user_id: string;
+status: PresenceStatus;
+last_seen?: string;
+{% if has_tenant_presence %} tenant_id?: string;
 {% endif %}
 }
 
 /**
- * Service để theo dõi presence của users realtime
- */
+* Service để theo dõi presence của users realtime
+*/
 @Injectable({ providedIn: 'root' })
 export class PresenceService {
-  private usersSubject = new BehaviorSubject<Map<string, UserPresence>>(new Map());
-  private onlineCountSubject = new BehaviorSubject<number>(0);
+private usersSubject = new BehaviorSubject<Map<string, UserPresence>>(new Map());
+    private onlineCountSubject = new BehaviorSubject<number>(0);
 
-  users$: Observable<Map<string, UserPresence>> = this.usersSubject.asObservable();
-  onlineCount$: Observable<number> = this.onlineCountSubject.asObservable();
+        users$: Observable<Map<string, UserPresence>> = this.usersSubject.asObservable();
+            onlineCount$: Observable<number> = this.onlineCountSubject.asObservable();
 
-  constructor(private channelService: ChannelSubscriptionService) {}
+                constructor(private channelService: ChannelSubscriptionService) {}
 
-  startTracking(channel: string = 'user.presence.changed'{% if has_tenant_presence %}, tenantId?: string{% endif %}): void {
-    this.channelService.subscribe(channel{% if has_tenant_presence %}, { tenantId }{% endif %}).subscribe((msg) => {
-      const data = msg.data as UserPresence | { users?: UserPresence[] };
-      const current = new Map(this.usersSubject.value);
+                startTracking(channel: string = 'user.presence.changed'{% if has_tenant_presence %}, tenantId?: string{%
+                endif %}): void {
+                this.channelService.subscribe(channel{% if has_tenant_presence %}, { tenantId }{% endif
+                %}).subscribe((msg) => {
+                const data = msg.data as UserPresence | { users?: UserPresence[] };
+                const current = new Map(this.usersSubject.value);
 
-      if ('users' in data && Array.isArray(data.users)) {
-        data.users.forEach((u) => current.set(u.user_id, u));
-      } else if (data && 'user_id' in data) {
-        current.set((data as UserPresence).user_id, data as UserPresence);
-      }
+                if ('users' in data && Array.isArray(data.users)) {
+                data.users.forEach((u) => current.set(u.user_id, u));
+                } else if (data && 'user_id' in data) {
+                current.set((data as UserPresence).user_id, data as UserPresence);
+                }
 
-      this.usersSubject.next(current);
-      this.onlineCountSubject.next(
-        Array.from(current.values()).filter((u) => u.status === 'online').length,
-      );
-    });
-  }
+                this.usersSubject.next(current);
+                this.onlineCountSubject.next(
+                Array.from(current.values()).filter((u) => u.status === 'online').length,
+                );
+                });
+                }
 
-  isOnline(userId: string): boolean {
-    return this.usersSubject.value.get(userId)?.status === 'online';
-  }
+                isOnline(userId: string): boolean {
+                return this.usersSubject.value.get(userId)?.status === 'online';
+                }
 
-  isTyping(userId: string): boolean {
-    return this.usersSubject.value.get(userId)?.status === 'typing';
-  }
+                isTyping(userId: string): boolean {
+                return this.usersSubject.value.get(userId)?.status === 'typing';
+                }
 
-  stopTracking() {
-    this.channelService.unsubscribe('user.presence.changed');
-  }
-}
+                stopTracking() {
+                this.channelService.unsubscribe('user.presence.changed');
+                }
+                }

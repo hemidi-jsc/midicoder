@@ -114,7 +114,29 @@ cursors: Map<string, CursorData>;
                     }) => {
                     const { cursors } = useLiveCursor();
 
-                    {% if ui_framework == "tailwind" %}
+                    {% if ui_framework == "material" %}
+                    return (
+                    <div className={`midicoder-live-cursor ${className}`} style={{ position: 'relative' , width: '100%'
+                        , height: '100%' }}>
+                        {Array.from(cursors.values()).map((cursor) => (
+                        <Tooltip key={cursor.userId} title={`${cursor.label}: (${Math.round(cursor.x)},
+                            ${Math.round(cursor.y)})`}>
+                            <div style={{ position: 'absolute' , left: cursor.x, top: cursor.y, width: 2, height: 20,
+                                backgroundColor: cursor.color || '#1976d2' , transition: 'left 0.1s ease, top 0.1s ease'
+                                , pointerEvents: 'none' , zIndex: 1000 }}>
+                                {showLabels && (
+                                <div style={{ position: 'absolute' , top: -20, left: 0, padding: '2px 6px' ,
+                                    backgroundColor: cursor.color || '#1976d2' , color: 'white' , fontSize: 10,
+                                    borderRadius: 2, whiteSpace: 'nowrap' , pointerEvents: 'none' }}>
+                                    {cursor.label}
+                                </div>
+                                )}
+                            </div>
+                        </Tooltip>
+                        ))}
+                    </div>
+                    );
+                    {% elif ui_framework == "tailwind" %}
                     return (
                     <div className={`midicoder-live-cursor ${cursorClasses.container} ${className}`}>
                         {Array.from(cursors.values()).map((cursor) => (
@@ -130,23 +152,69 @@ cursors: Map<string, CursorData>;
                         ))}
                     </div>
                     );
-                    {% else %}
+                    {% elif ui_framework == "bootstrap" %}
                     return (
                     <div className={`midicoder-live-cursor ${className}`} style={{ position: 'relative' , width: '100%'
                         , height: '100%' }}>
                         {Array.from(cursors.values()).map((cursor) => (
-                        <div key={cursor.userId} style={{ position: 'absolute' , left: cursor.x, top: cursor.y, width:
-                            2, height: 20, backgroundColor: cursor.color || '#1976d2' ,
-                            transition: 'left 0.1s ease, top 0.1s ease' , pointerEvents: 'none' , zIndex: 1000, }}
-                            title={`${cursor.label}: (${Math.round(cursor.x)}, ${Math.round(cursor.y)})`}>
-                            {showLabels && (
-                            <div style={{ position: 'absolute' , top: -20, left: 0, padding: '2px 6px' ,
-                                backgroundColor: cursor.color || '#1976d2' , color: 'white' , fontSize: 10,
-                                borderRadius: 2, whiteSpace: 'nowrap' , pointerEvents: 'none' , }}>
-                                {cursor.label}
+                        <Tooltip key={cursor.userId} placement="top" title={`${cursor.label}: (${Math.round(cursor.x)},
+                            ${Math.round(cursor.y)})`}>
+                            <div style={{ position: 'absolute' , left: cursor.x, top: cursor.y, width: 2, height: 20,
+                                backgroundColor: cursor.color || '#1976d2' , transition: 'left 0.1s ease, top 0.1s ease'
+                                , pointerEvents: 'none' , zIndex: 1000 }}>
+                                {showLabels && (
+                                <div style={{ position: 'absolute' , top: -20, left: 0, padding: '2px 6px' ,
+                                    backgroundColor: cursor.color || '#1976d2' , color: 'white' , fontSize: 10,
+                                    borderRadius: 2, whiteSpace: 'nowrap' , pointerEvents: 'none' }}>
+                                    {cursor.label}
+                                </div>
+                                )}
                             </div>
-                            )}
-                        </div>
+                        </Tooltip>
+                        ))}
+                    </div>
+                    );
+                    {% elif ui_framework == "antd" %}
+                    return (
+                    <div className={`midicoder-live-cursor ${className}`} style={{ position: 'relative' , width: '100%'
+                        , height: '100%' }}>
+                        {Array.from(cursors.values()).map((cursor) => (
+                        <Tooltip key={cursor.userId} title={`${cursor.label}: (${Math.round(cursor.x)},
+                            ${Math.round(cursor.y)})`}>
+                            <div style={{ position: 'absolute' , left: cursor.x, top: cursor.y, width: 2, height: 20,
+                                backgroundColor: cursor.color || '#1976d2' , transition: 'left 0.1s ease, top 0.1s ease'
+                                , pointerEvents: 'none' , zIndex: 1000 }}>
+                                {showLabels && (
+                                <div style={{ position: 'absolute' , top: -20, left: 0, padding: '2px 6px' ,
+                                    backgroundColor: cursor.color || '#1976d2' , color: 'white' , fontSize: 10,
+                                    borderRadius: 2, whiteSpace: 'nowrap' , pointerEvents: 'none' }}>
+                                    {cursor.label}
+                                </div>
+                                )}
+                            </div>
+                        </Tooltip>
+                        ))}
+                    </div>
+                    );
+                    {% elif ui_framework == "carbon" %}
+                    return (
+                    <div className={`midicoder-live-cursor ${className}`} style={{ position: 'relative' , width: '100%'
+                        , height: '100%' }}>
+                        {Array.from(cursors.values()).map((cursor) => (
+                        <Tooltip key={cursor.userId} align="top" content={`${cursor.label}: (${Math.round(cursor.x)},
+                            ${Math.round(cursor.y)})`}>
+                            <div style={{ position: 'absolute' , left: cursor.x, top: cursor.y, width: 2, height: 20,
+                                backgroundColor: cursor.color || '#1976d2' , transition: 'left 0.1s ease, top 0.1s ease'
+                                , pointerEvents: 'none' , zIndex: 1000 }}>
+                                {showLabels && (
+                                <div style={{ position: 'absolute' , top: -20, left: 0, padding: '2px 6px' ,
+                                    backgroundColor: cursor.color || '#1976d2' , color: 'white' , fontSize: 10,
+                                    borderRadius: 2, whiteSpace: 'nowrap' , pointerEvents: 'none' }}>
+                                    {cursor.label}
+                                </div>
+                                )}
+                            </div>
+                        </Tooltip>
                         ))}
                     </div>
                     );

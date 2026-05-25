@@ -279,7 +279,7 @@ class AngularRealtimeEmitter:
         """Sinh fallback cho channel-subscription.service.ts."""
         channels = ctx.get("channels", [])
         has_tenant = ctx.get("has_tenant_channels", False)
-        ui_fw = ctx.get("ui_framework", "angular-material")
+        ui_fw = ctx.get("ui_framework", "material")
 
         lines: list[str] = []
         lines.append("/**")
@@ -419,7 +419,7 @@ class AngularRealtimeEmitter:
 
     def _fallback_presence_service(self, ctx: dict[str, Any]) -> str:
         """Sinh fallback cho presence.service.ts."""
-        ui_fw = ctx.get("ui_framework", "angular-material")
+        ui_fw = ctx.get("ui_framework", "material")
         presence_ch = ctx.get("presence_channels", [])
         has_tenant = ctx.get("has_tenant_presence", False)
 
@@ -520,7 +520,7 @@ class AngularRealtimeEmitter:
     def _fallback_refresh_mixin(self, ctx: dict[str, Any]) -> str:
         """Sinh fallback cho realtime-refresh-mixin.ts."""
         topics = ctx.get("channel_topics", [])
-        ui_fw = ctx.get("ui_framework", "angular-material")
+        ui_fw = ctx.get("ui_framework", "material")
 
         lines: list[str] = []
         lines.append("/**")
@@ -615,7 +615,7 @@ class AngularRealtimeEmitter:
     ) -> str:
         """Sinh fallback widget component."""
         widget_type = ctx.get("widget_type", "live_feed")
-        ui_fw = ctx.get("ui_framework", "angular-material")
+        ui_fw = ctx.get("ui_framework", "material")
 
         descriptions = {
             "PresenceIndicator": "Hiển thị trạng thái presence (online/offline/typing)",

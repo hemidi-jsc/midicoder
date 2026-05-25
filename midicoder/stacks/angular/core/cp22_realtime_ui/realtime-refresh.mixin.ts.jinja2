@@ -1,60 +1,56 @@
 /**
- * RealtimeRefreshMixin — mixin để enable realtime refresh cho CP19 components
- *
- * Sinh bởi CP22 AngularRealtimeEmitter
- * UI Framework: {[{ ui_framework }]}
- */
+* RealtimeRefreshMixin — mixin để enable realtime refresh cho CP19 components
+*
+* Sinh bởi CP22 AngularRealtimeEmitter
+*/
 
 import { Subject } from 'rxjs';
 
 // Danh sách event topics tự động sinh từ CP05
 const AUTO_REFRESH_TOPICS = [
-{% for topic in channel_topics %}  '{[{ topic }]}'{% if not loop.last %},{% endif %}
+{% for topic in channel_topics %} '{[{ topic }]}'{% if not loop.last %},{% endif %}
 {% endfor %}];
 
 export interface RefreshConfig {
-  debounceMs?: number;
-  throttleMs?: number;
-  topics?: string[];
+debounceMs?: number;
+throttleMs?: number;
+topics?: string[];
 }
 
 /**
- * Mixin class để thêm realtime refresh vào Angular component
- */
+* Mixin class để thêm realtime refresh vào Angular component
+*/
 export function RealtimeRefreshMixin<T extends new (...args: any[]): S>(
-  Base: T,
-  config?: RefreshConfig,
-): T & new (...args: any[]) => RealtimeRefresh {
-  return class extends Base {
+    Base: T,
+    config?: RefreshConfig,
+    ): T & new (...args: any[]) => RealtimeRefresh {
+    return class extends Base {
     private lastTrigger = 0;
     private timeout: ReturnType<typeof setTimeout> | null = null;
 
-    private debounceMs = config?.debounceMs ?? 300;
-    private throttleMs = config?.throttleMs ?? 1000;
-    private topics = config?.topics ?? AUTO_REFRESH_TOPICS;
+        private debounceMs = config?.debounceMs ?? 300;
+        private throttleMs = config?.throttleMs ?? 1000;
+        private topics = config?.topics ?? AUTO_REFRESH_TOPICS;
 
-    onRealtimeEvent(event: { channel: string; topic?: string }) {
-      const topic = event.topic || event.channel;
-      if (!this.topics.includes(topic)) return;
+        onRealtimeEvent(event: { channel: string; topic?: string }) {
+        const topic = event.topic || event.channel;
+        if (!this.topics.includes(topic)) return;
 
-      const now = Date.now();
-      if (now - this.lastTrigger < this.throttleMs) return;
-      this.lastTrigger = now;
+        const now = Date.now();
+        if (now - this.lastTrigger < this.throttleMs) return; this.lastTrigger=now; if (this.timeout)
+            clearTimeout(this.timeout); this.timeout=setTimeout(async ()=> {
+            const fn = (this as any).getRefreshFn?.();
+            if (fn) fn().catch(console.error);
+            }, this.debounceMs);
+            }
 
-      if (this.timeout) clearTimeout(this.timeout);
-      this.timeout = setTimeout(async () => {
-        const fn = (this as any).getRefreshFn?.();
-        if (fn) fn().catch(console.error);
-      }, this.debounceMs);
-    }
+            ngOnDestroy() {
+            if (this.timeout) clearTimeout(this.timeout);
+            super.ngOnDestroy?.();
+            }
+            };
+            }
 
-    ngOnDestroy() {
-      if (this.timeout) clearTimeout(this.timeout);
-      super.ngOnDestroy?.();
-    }
-  };
-}
-
-export interface RealtimeRefresh {
-  onRealtimeEvent(event: { channel: string; topic?: string }): void;
-}
+            export interface RealtimeRefresh {
+            onRealtimeEvent(event: { channel: string; topic?: string }): void;
+            }

@@ -1,94 +1,93 @@
 /**
- * ChannelSubscriptionService — subscribe realtime channels
- *
- * Sinh bởi CP22 AngularRealtimeEmitter
- * UI Framework: {[{ ui_framework }]}
- */
+* ChannelSubscriptionService — subscribe realtime channels
+*
+* Sinh bởi CP22 AngularRealtimeEmitter
+*/
 
 import { Injectable } from '@angular/core';
 import { Observable, Subject } from 'rxjs';
 
 export interface MessagePayload {
-  channel: string;
-  data: unknown;
-  timestamp: string;
-{% if has_tenant_channels %}  tenant_id: string;
+channel: string;
+data: unknown;
+timestamp: string;
+{% if has_tenant_channels %} tenant_id: string;
 {% endif %}
 }
 
 export interface ChannelConfig {
-  url: string;
-{% if has_tenant_channels %}  tenantId?: string;
-{% endif %}  autoReconnect: boolean;
-  maxRetries: number;
+url: string;
+{% if has_tenant_channels %} tenantId?: string;
+{% endif %} autoReconnect: boolean;
+maxRetries: number;
 }
 
 /**
- * Service để subscribe vào realtime channels (WebSocket + SSE fallback)
- */
+* Service để subscribe vào realtime channels (WebSocket + SSE fallback)
+*/
 @Injectable({ providedIn: 'root' })
 export class ChannelSubscriptionService {
-  private ws: WebSocket | null = null;
-  private subject = new Subject<MessagePayload>();
-  private isConnected$ = new Subject<boolean>();
-  private config?: ChannelConfig;
+private ws: WebSocket | null = null;
+private subject = new Subject<MessagePayload>();
+    private isConnected$ = new Subject<boolean>();
+        private config?: ChannelConfig;
 
-  isConnected: boolean = false;
+        isConnected: boolean = false;
 
-  subscribe(channelId: string, config?: ChannelConfig): Observable<MessagePayload> {
-    this.config = {
-      url: config?.url || '/ws',
-{% if has_tenant_channels %}      tenantId: config?.tenantId,
-{% endif %}      autoReconnect: config?.autoReconnect ?? true,
-      maxRetries: config?.maxRetries ?? 5,
-    };
+        subscribe(channelId: string, config?: ChannelConfig): Observable<MessagePayload> {
+            this.config = {
+            url: config?.url || '/ws',
+            {% if has_tenant_channels %} tenantId: config?.tenantId,
+            {% endif %} autoReconnect: config?.autoReconnect ?? true,
+            maxRetries: config?.maxRetries ?? 5,
+            };
 
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this._connect(channelId);
-    } else {
-      this.ws.send(JSON.stringify({ type: 'subscribe', channel: channelId }));
-    }
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            this._connect(channelId);
+            } else {
+            this.ws.send(JSON.stringify({ type: 'subscribe', channel: channelId }));
+            }
 
-    return this.subject.asObservable();
-  }
+            return this.subject.asObservable();
+            }
 
-  unsubscribe(channelId: string) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'unsubscribe', channel: channelId }));
-    }
-  }
+            unsubscribe(channelId: string) {
+            if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'unsubscribe', channel: channelId }));
+            }
+            }
 
-  disconnect() {
-    this.ws?.close();
-    this.subject.complete();
-  }
+            disconnect() {
+            this.ws?.close();
+            this.subject.complete();
+            }
 
-  private _connect(channelId: string) {
-    const params = new URLSearchParams();
-{% if has_tenant_channels %}    if (this.config?.tenantId) {
-      params.set('tenant_id', this.config.tenantId);
-    }
-{% endif %}    const query = params.toString();
-    const url = `${this.config?.url}/${channelId}${query ? `?${query}` : ''}`;
+            private _connect(channelId: string) {
+            const params = new URLSearchParams();
+            {% if has_tenant_channels %} if (this.config?.tenantId) {
+            params.set('tenant_id', this.config.tenantId);
+            }
+            {% endif %} const query = params.toString();
+            const url = `${this.config?.url}/${channelId}${query ? `?${query}` : ''}`;
 
-    this.ws = new WebSocket(url);
+            this.ws = new WebSocket(url);
 
-    this.ws.onopen = () => {
-      this.isConnected = true;
-      this.isConnected$.next(true);
-    };
+            this.ws.onopen = () => {
+            this.isConnected = true;
+            this.isConnected$.next(true);
+            };
 
-    this.ws.onmessage = (event) => {
-      const payload: MessagePayload = JSON.parse(event.data);
-      this.subject.next(payload);
-    };
+            this.ws.onmessage = (event) => {
+            const payload: MessagePayload = JSON.parse(event.data);
+            this.subject.next(payload);
+            };
 
-    this.ws.onclose = () => {
-      this.isConnected = false;
-      this.isConnected$.next(false);
-      if (this.config?.autoReconnect) {
-        setTimeout(() => this._connect(channelId), 1000);
-      }
-    };
-  }
-}
+            this.ws.onclose = () => {
+            this.isConnected = false;
+            this.isConnected$.next(false);
+            if (this.config?.autoReconnect) {
+            setTimeout(() => this._connect(channelId), 1000);
+            }
+            };
+            }
+            }
