@@ -162,6 +162,18 @@ class DependencyType(Enum):
     # Generic
     GENERIC = "generic"
 
+    # P2-15: Domain-specific dependency types
+    PLUGIN_SLOT_DEPENDENCY = "plugin_slot_dependency"      # P2-15a: CP27
+    CALENDAR_WORKFLOW_DEPENDENCY = "calendar_workflow"      # P2-15b: CP31
+    FINANCE_ENTITY_DEPENDENCY = "finance_entity"             # P2-15c: CP33
+    REPORT_ENTITY_DEPENDENCY = "report_entity"               # P2-15d: CP34
+    GEO_ENTITY_DEPENDENCY = "geo_entity"                     # P2-15e: CP35
+    ETL_ENTITY_DEPENDENCY = "etl_entity"                     # P2-15f: CP38
+    LOCALIZATION_ENTITY_DEPENDENCY = "localization_entity"   # P2-15g: CP39
+    API_VERSION_ENTITY_DEPENDENCY = "api_version_entity"     # P2-15h: CP43
+    PAYMENT_ENTITY_DEPENDENCY = "payment_entity"             # P2-15i: CP45
+    CATALOG_ENTITY_DEPENDENCY = "catalog_entity"             # P2-15j: CP50
+
 
 @dataclass
 class Dependency:
@@ -511,7 +523,7 @@ class DependencyBuilder:
     
     def _extract_node_dependencies(self, node: ProjectionNode) -> None:
         """Extract dependencies from a single node."""
-        
+
         if node.kind == NodeKind.ENTITY:
             self._extract_entity_dependencies(node)
         elif node.kind == NodeKind.COMMAND:
@@ -524,6 +536,250 @@ class DependencyBuilder:
             self._extract_workflow_dependencies(node)
         elif node.kind == NodeKind.ROLE:
             self._extract_role_dependencies(node)
+        # P2-15: Domain-specific dependency extraction
+        elif node.kind == NodeKind.PLUGIN_SLOT:
+            self._extract_plugin_slot_dependencies(node)
+        elif node.kind == NodeKind.CALENDAR_SCHEDULE:
+            self._extract_calendar_schedule_dependencies(node)
+        elif node.kind in (NodeKind.GENERAL_LEDGER, NodeKind.FINANCIAL_INSTRUMENT, NodeKind.CURRENCY_EXCHANGE):
+            self._extract_finance_dependencies(node)
+        elif node.kind in (NodeKind.REPORT, NodeKind.DASHBOARD, NodeKind.EXPORT):
+            self._extract_report_dependencies(node)
+        elif node.kind == NodeKind.GEO_SEARCH_INDEX:
+            self._extract_geo_search_dependencies(node)
+        elif node.kind in (NodeKind.DATA_MIGRATION, NodeKind.BATCH_JOB):
+            self._extract_etl_dependencies(node)
+        elif node.kind == NodeKind.LOCALIZATION:
+            self._extract_localization_dependencies(node)
+        elif node.kind == NodeKind.API_VERSION:
+            self._extract_api_version_dependencies(node)
+        elif node.kind == NodeKind.PAYMENT_GATEWAY:
+            self._extract_payment_gateway_dependencies(node)
+        elif node.kind in (NodeKind.PRODUCT_CATALOG, NodeKind.FACETED_SEARCH_INDEX):
+            self._extract_catalog_dependencies(node)
+
+    # -----------------------------------------------------------------------
+    # P2-15: Domain-specific dependency extraction methods
+    # -----------------------------------------------------------------------
+
+    def _extract_plugin_slot_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15a: CP27 PLUGIN_SLOT — depends on entities referenced in slot config.
+        """
+        # Plugin slots may reference entities via 'entity_id' or 'entities' param
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.PLUGIN_SLOT_DEPENDENCY,
+                field="entity_id",
+            )
+        for eid in node.params.get("entities", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=eid,
+                dep_type=DependencyType.PLUGIN_SLOT_DEPENDENCY,
+                field="entities",
+            )
+
+    def _extract_calendar_schedule_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15b: CP31 CALENDAR_SCHEDULE — depends on WORKFLOW (CP13).
+        """
+        workflow_id = node.params.get("workflow_id")
+        if workflow_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=workflow_id,
+                dep_type=DependencyType.CALENDAR_WORKFLOW_DEPENDENCY,
+                field="workflow_id",
+            )
+        # Also check 'workflow' field
+        wf = node.params.get("workflow")
+        if wf:
+            self.graph.add_edge(
+                source=node.id,
+                target=wf,
+                dep_type=DependencyType.CALENDAR_WORKFLOW_DEPENDENCY,
+                field="workflow",
+            )
+
+    def _extract_finance_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15c: CP33 GENERAL_LEDGER, FINANCIAL_INSTRUMENT, CURRENCY_EXCHANGE —
+        depends on ENTITY, CP08.
+        """
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.FINANCE_ENTITY_DEPENDENCY,
+                field="entity_id",
+            )
+        for eid in node.params.get("entities", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=eid,
+                dep_type=DependencyType.FINANCE_ENTITY_DEPENDENCY,
+                field="entities",
+            )
+
+    def _extract_report_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15d: CP34 REPORT, DASHBOARD, EXPORT — depends on ENTITY.
+        """
+        for ref in node.params.get("data_sources", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=ref,
+                dep_type=DependencyType.REPORT_ENTITY_DEPENDENCY,
+                field="data_sources",
+            )
+        source_id = node.params.get("source_id")
+        if source_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=source_id,
+                dep_type=DependencyType.REPORT_ENTITY_DEPENDENCY,
+                field="source_id",
+            )
+
+    def _extract_geo_search_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15e: CP35 GEO_SEARCH_INDEX — depends on ENTITY with geofield.
+        """
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.GEO_ENTITY_DEPENDENCY,
+                field="entity_id",
+            )
+
+    def _extract_etl_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15f: CP38 DATA_MIGRATION, BATCH_JOB — depends on ENTITY (source/target).
+        """
+        source_schema = node.params.get("source_schema")
+        if source_schema:
+            self.graph.add_edge(
+                source=node.id,
+                target=source_schema,
+                dep_type=DependencyType.ETL_ENTITY_DEPENDENCY,
+                field="source_schema",
+            )
+        target_schema = node.params.get("target_schema")
+        if target_schema:
+            self.graph.add_edge(
+                source=node.id,
+                target=target_schema,
+                dep_type=DependencyType.ETL_ENTITY_DEPENDENCY,
+                field="target_schema",
+            )
+        # Also check input_sources and output_destinations for BATCH_JOB
+        for src in node.params.get("input_sources", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=src,
+                dep_type=DependencyType.ETL_ENTITY_DEPENDENCY,
+                field="input_sources",
+            )
+        for dst in node.params.get("output_destinations", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=dst,
+                dep_type=DependencyType.ETL_ENTITY_DEPENDENCY,
+                field="output_destinations",
+            )
+
+    def _extract_localization_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15g: CP39 LOCALIZATION — depends on ENTITY (translatable fields).
+        """
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.LOCALIZATION_ENTITY_DEPENDENCY,
+                field="entity_id",
+            )
+
+    def _extract_api_version_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15h: CP43 API_VERSION — depends on ENTITY.
+        """
+        api_id = node.params.get("api_id")
+        if api_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=api_id,
+                dep_type=DependencyType.API_VERSION_ENTITY_DEPENDENCY,
+                field="api_id",
+            )
+        # Also check entities field
+        for eid in node.params.get("entities", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=eid,
+                dep_type=DependencyType.API_VERSION_ENTITY_DEPENDENCY,
+                field="entities",
+            )
+
+    def _extract_payment_gateway_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15i: CP45 PAYMENT_GATEWAY — depends on CP33 (Currency), CP40 (Webhook).
+        """
+        for currency in node.params.get("currencies", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=currency,
+                dep_type=DependencyType.PAYMENT_ENTITY_DEPENDENCY,
+                field="currencies",
+            )
+        webhook = node.params.get("webhook_id")
+        if webhook:
+            self.graph.add_edge(
+                source=node.id,
+                target=webhook,
+                dep_type=DependencyType.PAYMENT_ENTITY_DEPENDENCY,
+                field="webhook_id",
+            )
+
+    def _extract_catalog_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15j: CP50 PRODUCT_CATALOG, FACETED_SEARCH_INDEX — depends on CP08, CP10.
+        """
+        # Product catalog may reference entities for products
+        for product_id in node.params.get("products", []):
+            if isinstance(product_id, str):
+                self.graph.add_edge(
+                    source=node.id,
+                    target=product_id,
+                    dep_type=DependencyType.CATALOG_ENTITY_DEPENDENCY,
+                    field="products",
+                )
+        # Search index dependency
+        index_id = node.params.get("search_index_id")
+        if index_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=index_id,
+                dep_type=DependencyType.CATALOG_ENTITY_DEPENDENCY,
+                field="search_index_id",
+            )
+        # Entity reference
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.CATALOG_ENTITY_DEPENDENCY,
+                field="entity_id",
+            )
     
     def _extract_entity_dependencies(self, node: ProjectionNode) -> None:
         """Extract dependencies from entity (foreign keys)."""
