@@ -733,12 +733,9 @@ def _parse_geospatial_dict(raw: dict[str, Any]) -> Any:
 
 
 def _parse_financial_dict(raw: dict[str, Any]) -> Any:
-    """Parse raw financial dict from DSL/MIR into CP33 financial models.
-
-    FinancialParser has per-model static methods (parse_transaction, parse_currency, etc.)
-    but no unified parse_from_metadata. Return raw dict for the emitter to dispatch.
-    """
-    return raw
+    """Parse raw financial dict from DSL/MIR into CP33 FinancialIR — qua FinancialParser."""
+    from midicoder.emitters.core.cp33_financial.parser import FinancialParser
+    return FinancialParser.parse_to_ir(raw) if isinstance(raw, dict) else []
 
 
 def _parse_onboarding_dict(raw: dict[str, Any]) -> Any:
@@ -772,9 +769,9 @@ def _parse_mfa_dict(raw: dict[str, Any]) -> Any:
 
 
 def _parse_rate_limit_dict(raw: dict[str, Any]) -> Any:
-    """Parse raw rate limit dict from DSL/MIR into CP48 RateLimitIR."""
-    from midicoder.emitters.core.cp48_rate_limit.parser import RateLimitIR
-    return RateLimitIR.from_dict(raw) if isinstance(raw, dict) else []
+    """Parse raw rate limit dict from DSL/MIR into CP48 RateLimitIR — qua RateLimitParser."""
+    from midicoder.emitters.core.cp48_rate_limit.parser import RateLimitParser
+    return RateLimitParser.parse_to_ir(raw) if isinstance(raw, dict) else []
 
 
 def _parse_consent_dict(raw: dict[str, Any]) -> Any:

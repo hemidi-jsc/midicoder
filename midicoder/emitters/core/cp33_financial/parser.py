@@ -7,6 +7,7 @@ Parse dữ liệu từ DSL/dict thành các model của Financial Engine:
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -27,6 +28,45 @@ from midicoder.emitters.core.cp33_financial.models import (
     TransactionStatus,
     TransactionType,
 )
+
+
+# ===========================================================================
+# IR Dataclass
+# ===========================================================================
+
+
+@dataclass
+class FinancialIR:
+    """Intermediate Representation cho Financial Engine.
+
+    Attributes:
+        currencies: Danh sách currencies
+        fx_rates: Danh sách tỷ giá
+        accounts: Danh sách tài khoản
+        entries: Danh sách ledger entries
+        transactions: Danh sách giao dịch
+        rounding_rules: Danh sách rounding rules
+        snapshots: Danh sách ledger snapshots
+    """
+    currencies: list[Currency] = field(default_factory=list)
+    fx_rates: list[FXRate] = field(default_factory=list)
+    accounts: list[Account] = field(default_factory=list)
+    entries: list[LedgerEntry] = field(default_factory=list)
+    transactions: list[FinancialTransaction] = field(default_factory=list)
+    rounding_rules: list[RoundingRule] = field(default_factory=list)
+    snapshots: list[LedgerSnapshot] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển IR sang dict."""
+        return {
+            "currencies": [c.to_dict() for c in self.currencies],
+            "fx_rates": [r.to_dict() for r in self.fx_rates],
+            "accounts": [a.to_dict() for a in self.accounts],
+            "entries": [e.to_dict() for e in self.entries],
+            "transactions": [t.to_dict() for t in self.transactions],
+            "rounding_rules": [r.to_dict() for r in self.rounding_rules],
+            "snapshots": [s.to_dict() for s in self.snapshots],
+        }
 
 
 class FinancialParser:
@@ -271,3 +311,30 @@ class FinancialParser:
             List RoundingRule instances.
         """
         return [cls.parse_rounding_rule(d) for d in data]
+
+    @classmethod
+    def parse_to_ir(cls, data: dict[str, Any]) -> FinancialIR:
+        """Parse toàn bộ DSL dict thành FinancialIR.
+
+        Args:
+            data: Dict chứa keys: currencies, fx_rates, accounts, entries,
+                  transactions, rounding_rules, snapshots
+
+        Returns:
+            FinancialIR instance
+        """
+        return FinancialIR(
+            currencies=cls.parse_currencies(data.get("currencies", [])),
+            fx_rates=cls.parse_fx_rates(data.get("fx_rates", [])),
+            accounts=cls.parse_accounts(data.get("accounts", [])),
+            entries=cls.parse_ledger_entries(data.get("entries", [])),
+            transactions=cls.parse_transactions(data.get("transactions", [])),
+            rounding_rules=cls.parse_rounding_rules(data.get("rounding_rules", [])),
+            snapshots=[cls.parse_ledger_snapshot(d) for d in data.get("snapshots", [])],
+        )
+
+
+__all__ = [
+    "FinancialIR",
+    "FinancialParser",
+]
