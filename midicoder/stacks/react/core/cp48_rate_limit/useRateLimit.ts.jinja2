@@ -1,0 +1,497 @@
+/**
+* useRateLimit — React custom hook cho Rate Limiting.
+* Sinh bởi CP48 RateLimitEmitter.
+*
+* Cung cấp: theo dõi sử dụng rate limit, kiểm tra giới hạn, reset, tự động làm mới.
+*
+* Số lượng chính sách: {{ policies | length }}
+* Có chính sách: {{ has_policies | lower }}
+* Có quota: {{ has_quotas | lower }}
+*/
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+/* ======================================================================
+* ĐỊNH NGHĨA LOẠI TYPE — đặt ở đầu file để các component import được
+* ====================================================================== */
+
+/**
+* Các chiến lược rate limit được hỗ trợ
+*/
+export type RateLimitStrategy =
+| 'token_bucket' /* Bucket mã thông báo — refill liên tục */
+| 'sliding_window' /* Cửa sổ trượt — chính xác hơn fixed_window */
+| 'fixed_window' /* Cửa sổ cố định — đơn giản, hiệu quả */
+| 'leaky_bucket'; /* Bucket rò rỉ — tốc độ xử lý cố định */
+
+/**
+* Một chính sách rate limit từ server
+*/
+export interface RateLimitPolicy {
+/** ID duy nhất của chính sách */
+policy_id: string;
+/** Tên mô tả của chính sách */
+name: string;
+/** Chiến lược rate limit */
+strategy: RateLimitStrategy | string;
+/** Số request tối đa trong cửa sổ */
+max_requests: number;
+/** Cửa sổ thời gian (giây) */
+window_seconds: number;
+/** Tốc độ refill (mã thông báo/giây) — dùng cho token_bucket */
+refill_rate: number | null;
+/** Kích thước burst tối đa — dùng cho token_bucket và leaky_bucket */
+burst_size: number | null;
+/** Chính sách có đang hoạt động không */
+enabled: boolean;
+/** Danh sách các key được miễn trừ */
+bypass_keys: string[];
+/** Metadata tùy chỉnh */
+metadata: Record<string, unknown> | null;
+    }
+
+    /**
+    * Trạng thái sử dụng hiện tại của một key theo policy
+    */
+    export interface RateLimitUsage {
+    /** ID chính sách */
+    policy_id: string;
+    /** Key đang theo dõi */
+    key: string;
+    /** Số request hiện tại trong cửa sổ */
+    current: number;
+    /** Số request tối đa */
+    max_requests: number;
+    /** Số request còn lại */
+    remaining: number;
+    /** Tỷ lệ phần trăm đã sử dụng */
+    usage_percent: number;
+    /** Cửa sổ thời gian (giây) */
+    window_seconds: number;
+    /** Thời gian reset (ISO string) */
+    reset_at: string;
+    /** Có đang bị giới hạn không (đã đạt max) */
+    is_limited: boolean;
+    /** Số mili giây còn lại đến khi reset */
+    retry_after_ms: number | null;
+    }
+
+    /**
+    * Dữ liệu trả về từ API lấy usage
+    */
+    interface UsageApiResponse {
+    /** ID chính sách */
+    policy_id: string;
+    /** Key */
+    key: string;
+    /** Số request hiện tại */
+    current: number;
+    /** Số request tối đa */
+    max_requests: number;
+    /** Số request còn lại */
+    remaining: number;
+    /** Cửa sổ thời gian (giây) */
+    window_seconds: number;
+    /** Thời gian reset (ISO string) */
+    reset_at: string;
+    /** Có đang bị giới hạn không */
+    is_limited: boolean;
+    /** Số giây còn lại đến khi reset (null nếu không bị giới hạn) */
+    retry_after: number | null;
+    }
+
+    /**
+    * Dữ liệu trả về từ API kiểm tra giới hạn
+    */
+    interface CheckLimitApiResponse {
+    /** Có được phép thực hiện không */
+    allowed: boolean;
+    /** Số request còn lại sau khi kiểm tra */
+    remaining: number;
+    /** Thời gian reset (ISO string) */
+    reset_at: string;
+    /** Số giây phải đợi nếu bị từ chối */
+    retry_after: number | null;
+    /** Mã lỗi nếu bị từ chối */
+    error_code: string | null;
+    }
+
+    /**
+    * Cấu hình hook useRateLimit
+    */
+    export interface UseRateLimitOptions {
+    /** Base URL của API (mặc định: '/api/rate-limit') */
+    apiBaseUrl?: string;
+    /** Khoảng thời gian tự động làm mới (ms, mặc định: 10000) */
+    refreshIntervalMs?: number;
+    /** Tự động kiểm tra giới hạn khi mount (mặc định: true) */
+    autoCheck?: boolean;
+    /** Tự động làm mới nhanh khi đang bị giới hạn (mặc định: true) */
+    autoRefreshWhenLimited?: boolean;
+    /** Callback khi bị giới hạn */
+    onLimited?: (usage: RateLimitUsage) => void;
+    /** Callback khi được giải phóng khỏi giới hạn */
+    onUnlimited?: (usage: RateLimitUsage) => void;
+    }
+
+    /**
+    * Giá trị trả về của hook useRateLimit
+    */
+    export interface UseRateLimitReturn {
+    /** Trạng thái sử dụng hiện tại (null nếu chưa tải) */
+    usage: RateLimitUsage | null;
+    /** Đang tải dữ liệu? */
+    isLoading: boolean;
+    /** Lỗi (string) hoặc null nếu không có lỗi */
+    error: string | null;
+    /** Kiểm tra giới hạn — trả về true nếu được phép */
+    checkLimit: () => Promise<boolean>;
+        /** Reset bộ đếm cho key hiện tại */
+        reset: () => Promise<void>;
+            /** Làm mới dữ liệu sử dụng */
+            refresh: () => Promise<void>;
+                /** Thông tin chính sách (nếu có) */
+                policy: RateLimitPolicy | null;
+                /** Làm mới thông tin chính sách */
+                refreshPolicy: () => Promise<void>;
+                    }
+
+                    /* ======================================================================
+                    * CẤU HÌNH MẶC ĐỊNH — từ Jinja2 context
+                    * ====================================================================== */
+
+                    const DEFAULT_API_BASE = '/api/rate-limit';
+                    const DEFAULT_REFRESH_MS = 10000;
+                    const DEFAULT_AUTO_CHECK = true;
+
+                    {% if has_policies %}
+                    /* Danh sách chính sách — từ Jinja2 context */
+                    const POLICIES: RateLimitPolicy[] = [
+                    {% for policy in policies %}
+                    {
+                    policy_id: '{{ policy.policy_id }}',
+                    name: '{{ policy.name }}',
+                    strategy: '{{ policy.strategy }}' as RateLimitStrategy,
+                    max_requests: {{ policy.max_requests }},
+                    window_seconds: {{ policy.window_seconds }},
+                    refill_rate: {{ policy.refill_rate | default('null') }},
+                    burst_size: {{ policy.burst_size | default('null') }},
+                    enabled: {{ policy.enabled | lower }},
+                    bypass_keys: {{ policy.bypass_keys | tojson if policy.bypass_keys else '[]' }},
+                    metadata: {{ policy.metadata | tojson if policy.metadata else '{}' }},
+                    },
+                    {% endfor %}
+                    ];
+                    {% else %}
+                    const POLICIES: RateLimitPolicy[] = [];
+                    {% endif %}
+
+                    /* ======================================================================
+                    * HÀM API HELPER
+                    * ====================================================================== */
+
+                    /**
+                    * GET lấy trạng thái sử dụng rate limit cho một key theo policy
+                    */
+                    async function fetchUsage(apiBaseUrl: string, policyId: string, key: string): Promise
+                    <RateLimitUsage> {
+                        const url =
+                        `${apiBaseUrl}/policies/${encodeURIComponent(policyId)}/usage/${encodeURIComponent(key)}`;
+                        const response = await fetch(url);
+
+                        if (!response.ok) {
+                        /* 429 — bị giới hạn, vẫn trả về dữ liệu usage */
+                        if (response.status === 429) {
+                        const data: UsageApiResponse = await response.json();
+                        return mapUsageResponse(data);
+                        }
+                        throw new Error(`Lấy usage thất bại: ${response.status} ${response.statusText}`);
+                        }
+
+                        const data: UsageApiResponse = await response.json();
+                        return mapUsageResponse(data);
+                        }
+
+                        /**
+                        * Chuyển đổi response API sang RateLimitUsage
+                        */
+                        function mapUsageResponse(data: UsageApiResponse): RateLimitUsage {
+                        const resetTime = new Date(data.reset_at).getTime();
+                        const now = Date.now();
+                        const retryAfterMs = data.is_limited ? Math.max(0, resetTime - now) : null;
+
+                        return {
+                        policy_id: data.policy_id,
+                        key: data.key,
+                        current: data.current,
+                        max_requests: data.max_requests,
+                        remaining: Math.max(0, data.remaining),
+                        usage_percent: data.max_requests > 0
+                        ? Math.round((data.current / data.max_requests) * 100)
+                        : 0,
+                        window_seconds: data.window_seconds,
+                        reset_at: data.reset_at,
+                        is_limited: data.is_limited,
+                        retry_after_ms: retryAfterMs,
+                        };
+                        }
+
+                        /**
+                        * POST kiểm tra giới hạn — trả về kết quả cho phép hay không
+                        */
+                        async function checkLimitApi(apiBaseUrl: string, policyId: string, key: string): Promise
+                        <CheckLimitApiResponse> {
+                            const url =
+                            `${apiBaseUrl}/policies/${encodeURIComponent(policyId)}/check/${encodeURIComponent(key)}`;
+                            const response = await fetch(url, { method: 'POST' });
+
+                            if (!response.ok) {
+                            /* 429 — bị giới hạn */
+                            if (response.status === 429) {
+                            const data: CheckLimitApiResponse = await response.json();
+                            return data;
+                            }
+                            throw new Error(`Kiểm tra giới hạn thất bại: ${response.status} ${response.statusText}`);
+                            }
+
+                            return response.json();
+                            }
+
+                            /**
+                            * POST reset bộ đếm cho key
+                            */
+                            async function resetUsageApi(apiBaseUrl: string, policyId: string, key: string): Promise
+                            <void> {
+                                const url =
+                                `${apiBaseUrl}/policies/${encodeURIComponent(policyId)}/reset/${encodeURIComponent(key)}`;
+                                const response = await fetch(url, { method: 'POST' });
+
+                                if (!response.ok) {
+                                throw new Error(`Reset rate limit thất bại: ${response.status} ${response.statusText}`);
+                                }
+                                }
+
+                                /**
+                                * GET lấy thông tin chi tiết của một chính sách
+                                */
+                                async function fetchPolicy(apiBaseUrl: string, policyId: string): Promise
+                                <RateLimitPolicy | null> {
+                                    /* Kiểm tra trong danh sách static trước */
+                                    const staticPolicy = POLICIES.find((p) => p.policy_id === policyId);
+                                    if (staticPolicy) return staticPolicy;
+
+                                    const response = await
+                                    fetch(`${apiBaseUrl}/policies/${encodeURIComponent(policyId)}`);
+                                    if (response.status === 404) return null;
+                                    if (!response.ok) {
+                                    throw new Error(`Lấy chính sách ${policyId} thất bại: ${response.status}`);
+                                    }
+                                    return response.json();
+                                    }
+
+                                    /* ======================================================================
+                                    * HOOK CHÍNH: useRateLimit
+                                    * ====================================================================== */
+
+                                    export function useRateLimit(
+                                    policyId: string,
+                                    key: string,
+                                    options: UseRateLimitOptions = {},
+                                    ): UseRateLimitReturn {
+                                    /* Cấu hình từ options */
+                                    const {
+                                    apiBaseUrl = DEFAULT_API_BASE,
+                                    refreshIntervalMs = DEFAULT_REFRESH_MS,
+                                    autoCheck = DEFAULT_AUTO_CHECK,
+                                    autoRefreshWhenLimited = true,
+                                    onLimited,
+                                    onUnlimited,
+                                    } = options;
+
+                                    /* State */
+                                    const [usage, setUsage] = useState<RateLimitUsage | null>(null);
+                                        const [isLoading, setIsLoading] = useState(false);
+                                        const [error, setError] = useState<string | null>(null);
+                                            const [policy, setPolicy] = useState<RateLimitPolicy | null>(null);
+
+                                                /* Refs để tránh stale closure và cleanup đúng */
+                                                const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+                                                    const mountedRef = useRef<boolean>(true);
+
+                                                        /** Làm mới dữ liệu sử dụng */
+                                                        const refresh = useCallback(async () => {
+                                                        setIsLoading(true);
+                                                        setError(null);
+
+                                                        try {
+                                                        const data = await fetchUsage(apiBaseUrl, policyId, key);
+                                                        if (mountedRef.current) {
+                                                        setUsage(data);
+
+                                                        /* Gọi callback khi trạng thái thay đổi */
+                                                        if (data.is_limited && onLimited) {
+                                                        onLimited(data);
+                                                        } else if (!data.is_limited && usage?.is_limited && onUnlimited)
+                                                        {
+                                                        onUnlimited(data);
+                                                        }
+                                                        }
+                                                        } catch (err) {
+                                                        const message = err instanceof Error ? err.message : 'Lấy trạng
+                                                        thái rate limit thất bại';
+                                                        if (mountedRef.current) {
+                                                        setError(message);
+                                                        console.error('[useRateLimit] refresh:', message);
+                                                        }
+                                                        } finally {
+                                                        if (mountedRef.current) {
+                                                        setIsLoading(false);
+                                                        }
+                                                        }
+                                                        }, [apiBaseUrl, policyId, key, usage?.is_limited, onLimited,
+                                                        onUnlimited]);
+
+                                                        /** Kiểm tra giới hạn — trả về true nếu được phép thực hiện */
+                                                        const checkLimit = useCallback(async (): Promise<boolean> => {
+                                                            setError(null);
+
+                                                            try {
+                                                            const result = await checkLimitApi(apiBaseUrl, policyId,
+                                                            key);
+
+                                                            if (mountedRef.current) {
+                                                            /* Làm mới usage sau khi kiểm tra */
+                                                            if (result.allowed) {
+                                                            /* Nếu được phép, increment current và decrement remaining
+                                                            */
+                                                            setUsage((prev) => prev ? {
+                                                            ...prev,
+                                                            current: prev.current + 1,
+                                                            remaining: Math.max(0, prev.remaining - 1),
+                                                            usage_percent: prev.max_requests > 0
+                                                            ? Math.round(((prev.current + 1) / prev.max_requests) * 100)
+                                                            : 0,
+                                                            } : null);
+                                                            } else {
+                                                            /* Nếu bị từ chối, cập nhật trạng thái limited */
+                                                            setUsage((prev) => prev ? {
+                                                            ...prev,
+                                                            is_limited: true,
+                                                            remaining: 0,
+                                                            usage_percent: 100,
+                                                            reset_at: result.reset_at,
+                                                            retry_after_ms: result.retry_after ? result.retry_after *
+                                                            1000 : null,
+                                                            } : null);
+                                                            }
+                                                            }
+
+                                                            return result.allowed;
+                                                            } catch (err) {
+                                                            const message = err instanceof Error ? err.message : 'Kiểm
+                                                            tra giới hạn thất bại';
+                                                            if (mountedRef.current) {
+                                                            setError(message);
+                                                            console.error('[useRateLimit] checkLimit:', message);
+                                                            }
+                                                            /* Nếu kiểm tra thất bại, mặc định cho phép để không block
+                                                            UX */
+                                                            return true;
+                                                            }
+                                                            }, [apiBaseUrl, policyId, key]);
+
+                                                            /** Reset bộ đếm cho key hiện tại */
+                                                            const reset = useCallback(async (): Promise<void> => {
+                                                                setError(null);
+
+                                                                try {
+                                                                await resetUsageApi(apiBaseUrl, policyId, key);
+                                                                /* Làm mới dữ liệu sau khi reset */
+                                                                await refresh();
+                                                                } catch (err) {
+                                                                const message = err instanceof Error ? err.message :
+                                                                'Reset rate limit thất bại';
+                                                                if (mountedRef.current) {
+                                                                setError(message);
+                                                                console.error('[useRateLimit] reset:', message);
+                                                                }
+                                                                throw err;
+                                                                }
+                                                                }, [apiBaseUrl, policyId, key, refresh]);
+
+                                                                /** Làm mới thông tin chính sách */
+                                                                const refreshPolicy = useCallback(async (): Promise
+                                                                <void> => {
+                                                                    try {
+                                                                    const data = await fetchPolicy(apiBaseUrl,
+                                                                    policyId);
+                                                                    if (mountedRef.current) {
+                                                                    setPolicy(data);
+                                                                    }
+                                                                    } catch (err) {
+                                                                    const message = err instanceof Error ? err.message :
+                                                                    'Lấy chính sách thất bại';
+                                                                    console.error('[useRateLimit] refreshPolicy:',
+                                                                    message);
+                                                                    }
+                                                                    }, [apiBaseUrl, policyId]);
+
+                                                                    /* Tự động load usage khi mount */
+                                                                    useEffect(() => {
+                                                                    mountedRef.current = true;
+                                                                    refresh();
+                                                                    refreshPolicy();
+
+                                                                    return () => {
+                                                                    mountedRef.current = false;
+                                                                    /* Cleanup interval */
+                                                                    if (refreshRef.current) {
+                                                                    clearInterval(refreshRef.current);
+                                                                    refreshRef.current = null;
+                                                                    }
+                                                                    };
+                                                                    }, [refresh, refreshPolicy]);
+
+                                                                    /* Tự động làm mới theo khoảng thời gian */
+                                                                    useEffect(() => {
+                                                                    if (refreshRef.current) {
+                                                                    clearInterval(refreshRef.current);
+                                                                    refreshRef.current = null;
+                                                                    }
+
+                                                                    /* Nếu đang bị giới hạn, làm mới nhanh hơn (5s thay
+                                                                    vì cấu hình) */
+                                                                    const interval = (usage?.is_limited &&
+                                                                    autoRefreshWhenLimited) ? 5000 : refreshIntervalMs;
+                                                                    refreshRef.current = setInterval(refresh, interval);
+
+                                                                    return () => {
+                                                                    if (refreshRef.current) {
+                                                                    clearInterval(refreshRef.current);
+                                                                    refreshRef.current = null;
+                                                                    }
+                                                                    };
+                                                                    }, [refresh, refreshIntervalMs, usage?.is_limited,
+                                                                    autoRefreshWhenLimited]);
+
+                                                                    /* Tự động kiểm tra giới hạn khi mount */
+                                                                    useEffect(() => {
+                                                                    if (!autoCheck) return;
+                                                                    /* Chỉ kiểm tra nếu chưa có dữ liệu usage */
+                                                                    if (!usage && !isLoading) {
+                                                                    /* checkLimit sẽ được gọi khi component sẵn sàng */
+                                                                    }
+                                                                    }, [autoCheck, usage, isLoading]);
+
+                                                                    return {
+                                                                    usage,
+                                                                    isLoading,
+                                                                    error,
+                                                                    checkLimit,
+                                                                    reset,
+                                                                    refresh,
+                                                                    policy,
+                                                                    refreshPolicy,
+                                                                    };
+                                                                    }
+
+                                                                    export default useRateLimit;

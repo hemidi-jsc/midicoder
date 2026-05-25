@@ -1036,6 +1036,20 @@ class ErrorCode(str, Enum):
     CP47_RESTORE_FAILED = "MDC-CP47-010"
 
     # =========================================================================
+    # CP48: API Rate Limiting & Quota Management Errors
+    # =========================================================================
+    CP48_RATE_LIMIT_POLICY_NOT_FOUND = "MDC-CP48-001"
+    CP48_RATE_LIMIT_STRATEGY_INVALID = "MDC-CP48-002"
+    CP48_QUOTA_CONFIG_INVALID = "MDC-CP48-003"
+    CP48_RATE_LIMIT_EXCEEDED = "MDC-CP48-004"
+    CP48_QUOTA_EXCEEDED = "MDC-CP48-005"
+    CP48_WINDOW_SIZE_INVALID = "MDC-CP48-006"
+    CP48_REDIS_CONNECTION_FAILED = "MDC-CP48-007"
+    CP48_RATE_LIMIT_KEY_EMPTY = "MDC-CP48-008"
+    CP48_QUOTA_LEVEL_INVALID = "MDC-CP48-009"
+    CP48_THROTTLING_CONFIG_INVALID = "MDC-CP48-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

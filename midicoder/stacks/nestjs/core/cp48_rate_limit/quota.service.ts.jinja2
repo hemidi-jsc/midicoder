@@ -1,0 +1,636 @@
+/**
+ * Quota Service - Sinh tự động bởi Midicoder CP48.
+ *
+ * Service quản lý quota đa cấp, chịu trách nhiệm:
+ * - Kiểm tra quota cho từng cấp độ: USER, TENANT, ENDPOINT, GLOBAL
+ * - Hỗ trợ nhiều chu kỳ: MINUTE, HOUR, DAY, WEEK, MONTH
+ * - Tăng counter usage, lấy số lượng còn lại, reset quota
+ * - Lưu trữ in-memory với key: configId:key
+ *
+ * Phân biệt với rate limit:
+ * - Rate limit: giới hạn tần suất yêu cầu trong khoảng thời gian ngắn
+ * - Quota: giới hạn tổng số yêu cầu trong chu kỳ dài (ngày, tháng)
+ *
+ * CP48: Rate Limiting
+ */
+
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+
+/**
+ * Cấp độ áp dụng quota.
+ */
+export enum QuotaLevel {
+  USER = 'USER',
+  TENANT = 'TENANT',
+  ENDPOINT = 'ENDPOINT',
+  GLOBAL = 'GLOBAL',
+}
+
+/**
+ * Chu kỳ tính quota.
+ */
+export enum QuotaPeriod {
+  MINUTE = 'MINUTE',
+  HOUR = 'HOUR',
+  DAY = 'DAY',
+  WEEK = 'WEEK',
+  MONTH = 'MONTH',
+}
+
+/**
+ * Dữ liệu cấu hình quota.
+ */
+export interface QuotaConfig {
+  config_id: string;
+  level: QuotaLevel;
+  period: QuotaPeriod;
+  max_requests: number;
+  tenant_id: string | null;
+  endpoint: string | null;
+  enabled: boolean;
+  metadata: Record<string, any> | null;
+}
+
+/**
+ * Trạng thái usage của quota.
+ */
+interface QuotaUsage {
+  key: string;
+  config_id: string;
+  current_count: number;
+  period_start: number;
+  last_updated: number;
+}
+
+/**
+ * Kết quả kiểm tra quota.
+ */
+export interface QuotaCheckResult {
+  allowed: boolean;
+  config_id: string;
+  level: QuotaLevel;
+  period: QuotaPeriod;
+  current_count: number;
+  max_requests: number;
+  remaining: number;
+  reset_at: number;
+  percentage_used: number;
+}
+
+/**
+ * Thông tin quota còn lại.
+ */
+export interface QuotaRemainingInfo {
+  key: string;
+  config_id: string;
+  level: QuotaLevel;
+  period: QuotaPeriod;
+  current_count: number;
+  max_requests: number;
+  remaining: number;
+  percentage_used: number;
+  percentage_remaining: number;
+  reset_at: number;
+  reset_in_seconds: number;
+}
+
+@Injectable()
+export class QuotaService {
+  private readonly logger: Logger;
+
+  /** Danh sách cấu hình quota */
+  private readonly configs: Map<string, QuotaConfig> = new Map();
+
+  /** Lưu trữ usage theo key: configId:key -> QuotaUsage */
+  private readonly usageStore: Map<string, QuotaUsage> = new Map();
+
+  constructor() {
+    this.logger = new Logger(QuotaService.name);
+
+    // Khởi tạo các cấu hình quota từ template context
+    {% for quota in quotas %}
+    this.configs.set('{{ quota.config_id }}', {
+      config_id: '{{ quota.config_id }}',
+      level: QuotaLevel.{{ quota.level }},
+      period: QuotaPeriod.{{ quota.period }},
+      max_requests: {{ quota.max_requests }},
+      tenant_id: {{ "'" + quota.tenant_id + "'" if quota.tenant_id else 'null' }},
+      endpoint: {{ "'" + quota.endpoint + "'" if quota.endpoint else 'null' }},
+      enabled: {{ 'true' if quota.enabled else 'false' }},
+      metadata: {{ quota.metadata | tojson if quota.metadata else 'null' }},
+    });
+    {% endfor %}
+
+    if (this.configs.size > 0) {
+      this.logger.log(`Đã tải ${this.configs.size} cấu hình quota`);
+    } else {
+      this.logger.warn('Không có cấu hình quota nào được cấu hình');
+    }
+  }
+
+  /**
+   * Kiểm tra quota cho một key.
+   *
+   * Nếu config_id được chỉ định, chỉ kiểm tra quota đó.
+   * Nếu không, kiểm tra tất cả quotas đã bật.
+   *
+   * @param key Khóa cần kiểm tra (user ID, tenant ID, endpoint, hoặc 'global')
+   * @param configId Tùy chọn: ID của cấu hình quota cụ thể
+   * @returns QuotaCheckResult hoặc mảng kết quả nếu kiểm tra nhiều quotas
+   */
+  checkQuota(key: string, configId?: string): QuotaCheckResult | QuotaCheckResult[] {
+    if (configId) {
+      return this.checkSingleQuota(key, configId);
+    }
+
+    // Kiểm tra tất cả quotas đã bật
+    const results: QuotaCheckResult[] = [];
+    for (const config of this.configs.values()) {
+      if (!config.enabled) {
+        continue;
+      }
+
+      // Chỉ kiểm tra quotas khớp với key
+      if (this.shouldApplyQuota(key, config)) {
+        results.push(this.checkSingleQuota(key, config.config_id));
+      }
+    }
+
+    // Sắp xếp theo mức độ nghiêm trọng: remaining ít nhất lên đầu
+    results.sort((a, b) => a.remaining - b.remaining);
+
+    return results;
+  }
+
+  /**
+   * Kiểm tra một quota cụ thể.
+   *
+   * @param key Khóa cần kiểm tra
+   * @param configId ID của cấu hình quota
+   * @returns QuotaCheckResult
+   * @throws NotFoundException nếu config không tồn tại
+   * @throws BadRequestException nếu config bị vô hiệu hóa
+   */
+  private checkSingleQuota(key: string, configId: string): QuotaCheckResult {
+    const config = this.configs.get(configId);
+
+    if (!config) {
+      throw new NotFoundException(`Cấu hình quota ${configId} không tìm thấy`);
+    }
+
+    if (!config.enabled) {
+      throw new BadRequestException(`Cấu hình quota ${configId} đang bị vô hiệu hóa`);
+    }
+
+    const storeKey = `${configId}:${key}`;
+    const now = Date.now();
+
+    // Tính thời gian bắt đầu của chu kỳ hiện tại
+    const periodStart = this.getPeriodStart(now, config.period);
+    const periodMs = this.getPeriodDurationMs(config.period);
+    const resetAt = Math.floor((periodStart + periodMs) / 1000);
+
+    // Lấy hoặc tạo usage record
+    let usage = this.usageStore.get(storeKey);
+
+    if (!usage || now >= usage.period_start + periodMs) {
+      // Chu kỳ mới - reset usage
+      usage = {
+        key,
+        config_id: configId,
+        current_count: 0,
+        period_start: periodStart,
+        last_updated: now,
+      };
+      this.usageStore.set(storeKey, usage);
+    }
+
+    const remaining = Math.max(0, config.max_requests - usage.current_count);
+    const percentageUsed = config.max_requests > 0
+      ? Math.round((usage.current_count / config.max_requests) * 10000) / 100
+      : 0;
+
+    return {
+      allowed: usage.current_count < config.max_requests,
+      config_id: configId,
+      level: config.level,
+      period: config.period,
+      current_count: usage.current_count,
+      max_requests: config.max_requests,
+      remaining,
+      reset_at,
+      percentage_used: percentageUsed,
+    };
+  }
+
+  /**
+   * Tăng counter usage cho một key sau khi yêu cầu được xử lý.
+   *
+   * Phương thức này nên được gọi sau khi rate limit check thành công
+   * và yêu cầu đã được xử lý.
+   *
+   * @param key Khóa cần tăng counter
+   * @param configId ID của cấu hình quota, nếu không chỉ định thì tăng tất cả quotas khớp
+   * @returns Số lượng quotas đã được tăng
+   */
+  incrementUsage(key: string, configId?: string): number {
+    const now = Date.now();
+    let incremented = 0;
+
+    const configsToIncrement = configId
+      ? [this.configs.get(configId)]
+      : Array.from(this.configs.values()).filter((c) => c.enabled && this.shouldApplyQuota(key, c));
+
+    for (const config of configsToIncrement) {
+      if (!config) {
+        continue;
+      }
+
+      const storeKey = `${config.config_id}:${key}`;
+      const periodMs = this.getPeriodDurationMs(config.period);
+      const periodStart = this.getPeriodStart(now, config.period);
+
+      let usage = this.usageStore.get(storeKey);
+
+      if (!usage || now >= usage.period_start + periodMs) {
+        usage = {
+          key,
+          config_id: config.config_id,
+          current_count: 0,
+          period_start: periodStart,
+          last_updated: now,
+        };
+      }
+
+      usage.current_count++;
+      usage.last_updated = now;
+      this.usageStore.set(storeKey, usage);
+      incremented++;
+
+      // Cảnh báo khi quota sắp hết
+      if (usage.current_count >= config.max_requests * 0.9) {
+        this.logger.warn(
+          `Quota ${config.config_id} cho key ${key} đã sử dụng ${usage.current_count}/${config.max_requests} ` +
+          `(${Math.round(usage.current_count / config.max_requests * 100)}%)`,
+        );
+      }
+    }
+
+    return incremented;
+  }
+
+  /**
+   * Lấy thông tin số yêu cầu còn lại của quota.
+   *
+   * @param key Khóa cần kiểm tra
+   * @param configId ID của cấu hình quota
+   * @returns QuotaRemainingInfo
+   * @throws NotFoundException nếu config không tồn tại
+   */
+  getRemaining(key: string, configId: string): QuotaRemainingInfo {
+    const config = this.configs.get(configId);
+
+    if (!config) {
+      throw new NotFoundException(`Cấu hình quota ${configId} không tìm thấy`);
+    }
+
+    const storeKey = `${configId}:${key}`;
+    const now = Date.now();
+    const periodMs = this.getPeriodDurationMs(config.period);
+    const periodStart = this.getPeriodStart(now, config.period);
+    const resetAt = Math.floor((periodStart + periodMs) / 1000);
+    const resetInSeconds = Math.max(0, Math.ceil((periodStart + periodMs - now) / 1000));
+
+    let usage = this.usageStore.get(storeKey);
+
+    if (!usage || now >= usage.period_start + periodMs) {
+      usage = {
+        key,
+        config_id: configId,
+        current_count: 0,
+        period_start: periodStart,
+        last_updated: now,
+      };
+    }
+
+    const currentCount = usage.current_count;
+    const remaining = Math.max(0, config.max_requests - currentCount);
+    const percentageUsed = config.max_requests > 0
+      ? Math.round((currentCount / config.max_requests) * 10000) / 100
+      : 0;
+    const percentageRemaining = config.max_requests > 0
+      ? Math.round((remaining / config.max_requests) * 10000) / 100
+      : 100;
+
+    return {
+      key,
+      config_id: configId,
+      level: config.level,
+      period: config.period,
+      current_count: currentCount,
+      max_requests: config.max_requests,
+      remaining,
+      percentage_used: percentageUsed,
+      percentage_remaining: percentageRemaining,
+      reset_at,
+      reset_in_seconds: resetInSeconds,
+    };
+  }
+
+  /**
+   * Reset quota usage của một key.
+   *
+   * @param key Khóa cần reset
+   * @param configId ID của cấu hình quota, nếu undefined thì reset tất cả
+   * @returns Số lượng quotas đã được reset
+   */
+  reset(key: string, configId?: string): number {
+    let resetCount = 0;
+
+    if (configId) {
+      const storeKey = `${configId}:${key}`;
+      if (this.usageStore.delete(storeKey)) {
+        resetCount = 1;
+        this.logger.log(`Đã reset quota ${configId} cho key ${key}`);
+      }
+    } else {
+      // Reset tất cả quotas của key
+      const prefix = `:${key}`;
+      for (const storeKey of this.usageStore.keys()) {
+        if (storeKey.endsWith(prefix)) {
+          this.usageStore.delete(storeKey);
+          resetCount++;
+        }
+      }
+      this.logger.log(`Đã reset ${resetCount} quotas cho key ${key}`);
+    }
+
+    return resetCount;
+  }
+
+  /**
+   * Thêm hoặc cập nhật một cấu hình quota.
+   *
+   * @param config Cấu hình quota cần thêm/cập nhật
+   * @returns QuotaConfig đã lưu
+   */
+  upsertQuota(config: QuotaConfig): QuotaConfig {
+    this.configs.set(config.config_id, config);
+    this.logger.log(
+      `Đã ${this.configs.has(config.config_id) ? 'cập nhật' : 'thêm'} cấu hình quota: ` +
+      `${config.config_id} (${config.level}/${config.period})`,
+    );
+    return config;
+  }
+
+  /**
+   * Xóa một cấu hình quota.
+   *
+   * @param configId ID của cấu hình cần xóa
+   * @throws NotFoundException nếu config không tồn tại
+   */
+  deleteQuota(configId: string): void {
+    if (!this.configs.has(configId)) {
+      throw new NotFoundException(`Cấu hình quota ${configId} không tìm thấy`);
+    }
+
+    this.configs.delete(configId);
+
+    // Xóa tất cả usage liên quan đến config này
+    const prefix = `${configId}:`;
+    for (const storeKey of this.usageStore.keys()) {
+      if (storeKey.startsWith(prefix)) {
+        this.usageStore.delete(storeKey);
+      }
+    }
+
+    this.logger.log(`Đã xóa cấu hình quota: ${configId}`);
+  }
+
+  /**
+   * Lấy một cấu hình quota theo ID.
+   *
+   * @param configId ID của cấu hình
+   * @returns QuotaConfig hoặc undefined
+   */
+  getQuota(configId: string): QuotaConfig | undefined {
+    return this.configs.get(configId);
+  }
+
+  /**
+   * Lấy danh sách tất cả cấu hình quota.
+   *
+   * @returns Mảng các QuotaConfig
+   */
+  getAllQuotas(): QuotaConfig[] {
+    return Array.from(this.configs.values());
+  }
+
+  /**
+   * Lấy danh sách cấu hình quota với bộ lọc.
+   *
+   * @param level Tùy chọn: lọc theo cấp độ
+   * @param tenantId Tùy chọn: lọc theo tenant ID
+   * @returns Mảng các QuotaConfig khớp điều kiện
+   */
+  getQuotas(level?: QuotaLevel, tenantId?: string): QuotaConfig[] {
+    let quotas = Array.from(this.configs.values());
+
+    if (level) {
+      quotas = quotas.filter((q) => q.level === level);
+    }
+
+    if (tenantId) {
+      quotas = quotas.filter((q) => q.tenant_id === tenantId);
+    }
+
+    return quotas;
+  }
+
+  /**
+   * Dọn dẹp các usage records đã hết hạn để tiết kiệm bộ nhớ.
+   *
+   * Phương thức này nên được gọi định kỳ (ví dụ qua Cron job).
+   *
+   * @returns Số lượng records đã bị xóa
+   */
+  cleanupExpired(): number {
+    const now = Date.now();
+    let expiredCount = 0;
+
+    for (const [storeKey, usage] of this.usageStore.entries()) {
+      const config = this.configs.get(usage.config_id);
+
+      if (!config) {
+        this.usageStore.delete(storeKey);
+        expiredCount++;
+        continue;
+      }
+
+      const periodMs = this.getPeriodDurationMs(config.period);
+
+      if (now >= usage.period_start + periodMs) {
+        this.usageStore.delete(storeKey);
+        expiredCount++;
+      }
+    }
+
+    if (expiredCount > 0) {
+      this.logger.debug(`Đã dọn dẹp ${expiredCount} quota usage records hết hạn`);
+    }
+
+    return expiredCount;
+  }
+
+  /**
+   * Kiểm tra xem một quota có nên áp dụng cho key không.
+   *
+   * Logic:
+   * - GLOBAL: luôn áp dụng
+   * - TENANT: áp dụng nếu quota có tenant_id khớp với key, hoặc key có định dạng tenant:*
+   * - USER: áp dụng nếu key có định dạng user:*
+   * - ENDPOINT: áp dụng nếu key có định dạng endpoint:* hoặc chứa pattern endpoint
+   *
+   * @param key Khóa cần kiểm tra
+   * @param config Cấu hình quota
+   * @returns true nếu nên áp dụng
+   */
+  private shouldApplyQuota(key: string, config: QuotaConfig): boolean {
+    switch (config.level) {
+      case QuotaLevel.GLOBAL:
+        return true;
+
+      case QuotaLevel.TENANT:
+        // Áp dụng nếu tenant_id được chỉ định và khớp với key
+        // hoặc key có prefix 'tenant:'
+        if (config.tenant_id) {
+          return key === config.tenant_id || key.startsWith(`tenant:${config.tenant_id}`);
+        }
+        return key.startsWith('tenant:');
+
+      case QuotaLevel.USER:
+        // Áp dụng nếu key có prefix 'user:' hoặc là user ID trực tiếp
+        return key.startsWith('user:') || !key.includes(':');
+
+      case QuotaLevel.ENDPOINT:
+        // Áp dụng nếu key có prefix 'endpoint:' và khớp với pattern
+        if (config.endpoint) {
+          return key.startsWith(`endpoint:${config.endpoint}`) || key.includes(config.endpoint);
+        }
+        return key.startsWith('endpoint:');
+
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Tính thời gian bắt đầu của chu kỳ hiện tại.
+   *
+   * @param now Thời gian hiện tại (milliseconds)
+   * @param period Chu kỳ tính quota
+   * @returns Thời gian bắt đầu chu kỳ (milliseconds)
+   */
+  private getPeriodStart(now: number, period: QuotaPeriod): number {
+    const date = new Date(now);
+
+    switch (period) {
+      case QuotaPeriod.MINUTE:
+        // Làm tròn xuống phút hiện tại
+        date.setSeconds(0, 0);
+        return date.getTime();
+
+      case QuotaPeriod.HOUR:
+        // Làm tròn xuống giờ hiện tại
+        date.setMinutes(0, 0, 0);
+        return date.getTime();
+
+      case QuotaPeriod.DAY:
+        // Làm tròn xuống đầu ngày hiện tại
+        date.setHours(0, 0, 0, 0);
+        return date.getTime();
+
+      case QuotaPeriod.WEEK:
+        // Làm tròn xuống chủ nhật của tuần hiện tại
+        const dayOfWeek = date.getDay();
+        date.setDate(date.getDate() - dayOfWeek);
+        date.setHours(0, 0, 0, 0);
+        return date.getTime();
+
+      case QuotaPeriod.MONTH:
+        // Làm tròn xuống ngày 1 của tháng hiện tại
+        date.setDate(1);
+        date.setHours(0, 0, 0, 0);
+        return date.getTime();
+
+      default:
+        return now;
+    }
+  }
+
+  /**
+   * Tính độ dài của chu kỳ tính bằng milliseconds.
+   *
+   * @param period Chu kỳ tính quota
+   * @returns Độ dài chu kỳ (milliseconds)
+   */
+  private getPeriodDurationMs(period: QuotaPeriod): number {
+    const MS_PER_SECOND = 1000;
+    const MS_PER_MINUTE = 60 * MS_PER_SECOND;
+    const MS_PER_HOUR = 60 * MS_PER_MINUTE;
+    const MS_PER_DAY = 24 * MS_PER_HOUR;
+
+    switch (period) {
+      case QuotaPeriod.MINUTE:
+        return MS_PER_MINUTE;
+
+      case QuotaPeriod.HOUR:
+        return MS_PER_HOUR;
+
+      case QuotaPeriod.DAY:
+        return MS_PER_DAY;
+
+      case QuotaPeriod.WEEK:
+        return 7 * MS_PER_DAY;
+
+      case QuotaPeriod.MONTH:
+        // Xấp xỉ 30 ngày
+        return 30 * MS_PER_DAY;
+
+      default:
+        return MS_PER_DAY;
+    }
+  }
+
+  /**
+   * Lấy thống kê tổng quan của tất cả quotas.
+   *
+   * @returns Object chứa thông tin tổng hợp
+   */
+  getSummary(): Record<string, { total_keys: number; total_usage: number; config: QuotaConfig }> {
+    const summary: Record<string, { total_keys: number; total_usage: number; config: QuotaConfig }> = {};
+
+    // Nhóm usage theo config_id
+    const usageByConfig = new Map<string, number[]>();
+
+    for (const [, usage] of this.usageStore.entries()) {
+      if (!usageByConfig.has(usage.config_id)) {
+        usageByConfig.set(usage.config_id, []);
+      }
+      usageByConfig.get(usage.config_id)!.push(usage.current_count);
+    }
+
+    for (const config of this.configs.values()) {
+      const usages = usageByConfig.get(config.config_id) ?? [];
+      const totalUsage = usages.reduce((sum, count) => sum + count, 0);
+
+      summary[config.config_id] = {
+        total_keys: usages.length,
+        total_usage: totalUsage,
+        config,
+      };
+    }
+
+    return summary;
+  }
+}

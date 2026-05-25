@@ -1,0 +1,617 @@
+/**
+ * Rate Limit Service - Sinh tự động bởi Midicoder CP48.
+ *
+ * Service chính của rate limiting engine, chịu trách nhiệm:
+ * - Quản lý và áp dụng các chính sách rate limit theo từng chiến lược
+ * - 3 chiến lược: Fixed Window, Sliding Window, Token Bucket
+ * - Kiểm tra giới hạn, lấy thống kê usage, reset counters
+ * - Lưu trữ in-memory với placeholder cho Redis
+ * - Hỗ trợ bypass keys cho các yêu cầu đặc biệt
+ *
+ * CP48: Rate Limiting
+ */
+
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+
+/**
+ * Chiến lược rate limiting.
+ */
+export enum RateLimitStrategy {
+  FIXED_WINDOW = 'fixed_window',
+  SLIDING_WINDOW = 'sliding_window',
+  TOKEN_BUCKET = 'token_bucket',
+}
+
+/**
+ * Dữ liệu của một chính sách rate limit.
+ */
+export interface RateLimitPolicy {
+  policy_id: string;
+  name: string;
+  strategy: RateLimitStrategy;
+  max_requests: number;
+  window_seconds: number;
+  refill_rate: number;
+  burst_size: number;
+  enabled: boolean;
+  bypass_keys: string[];
+  metadata: Record<string, any> | null;
+}
+
+/**
+ * Trạng thái usage của một key trong window hiện tại.
+ */
+export interface WindowState {
+  key: string;
+  policy_id: string;
+  request_count: number;
+  window_start: number;
+  timestamps: number[];
+  tokens: number;
+  last_refill: number;
+}
+
+/**
+ * Kết quả kiểm tra rate limit.
+ */
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  limit: number;
+  reset_at: number;
+  retry_after: number | null;
+  policy_id: string;
+}
+
+/**
+ * Thống kê usage của một key.
+ */
+export interface UsageStats {
+  key: string;
+  policy_id: string;
+  current_count: number;
+  max_requests: number;
+  window_seconds: number;
+  remaining: number;
+  reset_at: number;
+  strategy: RateLimitStrategy;
+}
+
+@Injectable()
+export class RateLimitService {
+  private readonly logger: Logger;
+
+  /** Danh sách chính sách rate limit */
+  private readonly policies: Map<string, RateLimitPolicy> = new Map();
+
+  /** Lưu trữ trạng thái usage theo key: policyId:key -> WindowState */
+  private readonly store: Map<string, WindowState> = new Map();
+
+  constructor() {
+    this.logger = new Logger(RateLimitService.name);
+
+    // Khởi tạo các chính sách từ template context
+    {% for policy in policies %}
+    this.policies.set('{{ policy.policy_id }}', {
+      policy_id: '{{ policy.policy_id }}',
+      name: '{{ policy.name }}',
+      strategy: RateLimitStrategy.{{ policy.strategy | upper | replace('-', '_') }},
+      max_requests: {{ policy.max_requests }},
+      window_seconds: {{ policy.window_seconds }},
+      refill_rate: {{ policy.refill_rate }},
+      burst_size: {{ policy.burst_size }},
+      enabled: {{ 'true' if policy.enabled else 'false' }},
+      bypass_keys: {{ policy.bypass_keys | tojson }},
+      metadata: {{ policy.metadata | tojson if policy.metadata else 'null' }},
+    });
+    {% endfor %}
+
+    if (this.policies.size > 0) {
+      this.logger.log(`Đã tải ${this.policies.size} chính sách rate limit`);
+    } else {
+      this.logger.warn('Không có chính sách rate limit nào được cấu hình');
+    }
+  }
+
+  /**
+   * Kiểm tra xem yêu cầu có vượt quá giới hạn rate limit không.
+   *
+   * Phương thức này là entry point chính, tự động chọn chiến lược
+   * phù hợp dựa trên cấu hình của chính sách.
+   *
+   * @param key Khóa xác định yêu cầu (thường là IP, user ID, hoặc API key)
+   * @param policyId ID của chính sách cần áp dụng
+   * @returns RateLimitResult chứa kết quả kiểm tra
+   * @throws NotFoundException nếu policy không tồn tại
+   * @throws BadRequestException nếu policy bị vô hiệu hóa
+   */
+  checkLimit(key: string, policyId: string): RateLimitResult {
+    const policy = this.policies.get(policyId);
+
+    if (!policy) {
+      throw new NotFoundException(`Chính sách rate limit ${policyId} không tìm thấy`);
+    }
+
+    if (!policy.enabled) {
+      throw new BadRequestException(`Chính sách rate limit ${policyId} đang bị vô hiệu hóa`);
+    }
+
+    // Kiểm tra bypass - nếu key nằm trong danh sách bypass, luôn cho phép
+    if (this.isBypassed(key, policy)) {
+      return {
+        allowed: true,
+        remaining: policy.max_requests,
+        limit: policy.max_requests,
+        reset_at: Math.floor(Date.now() / 1000) + policy.window_seconds,
+        retry_after: null,
+        policy_id: policyId,
+      };
+    }
+
+    // Áp dụng chiến lược rate limit phù hợp
+    switch (policy.strategy) {
+      case RateLimitStrategy.FIXED_WINDOW:
+        return this.checkFixedWindow(key, policy);
+      case RateLimitStrategy.SLIDING_WINDOW:
+        return this.checkSlidingWindow(key, policy);
+      case RateLimitStrategy.TOKEN_BUCKET:
+        return this.checkTokenBucket(key, policy);
+      default:
+        throw new BadRequestException(`Chiến lược rate limit không hợp lệ: ${policy.strategy}`);
+    }
+  }
+
+  /**
+   * Chiến lược Fixed Window: chia thời gian thành các cửa sổ cố định,
+   * đếm số yêu cầu trong mỗi cửa sổ.
+   *
+   * Ưu điểm: đơn giản, hiệu suất cao
+   * Nhược điểm: có thể cho phép gấp đôi giới hạn tại biên cửa sổ
+   *
+   * @param key Khóa xác định yêu cầu
+   * @param policy Chính sách rate limit
+   * @returns RateLimitResult
+   */
+  private checkFixedWindow(key: string, policy: RateLimitPolicy): RateLimitResult {
+    const storeKey = `${policy.policy_id}:${key}`;
+    const now = Date.now();
+    const windowMs = policy.window_seconds * 1000;
+
+    let state = this.store.get(storeKey);
+
+    // Nếu không có state hoặc đã hết cửa sổ, tạo state mới
+    if (!state || (now - state.window_start) >= windowMs) {
+      state = {
+        key,
+        policy_id: policy.policy_id,
+        request_count: 0,
+        window_start: now,
+        timestamps: [],
+        tokens: policy.burst_size,
+        last_refill: now,
+      };
+      this.store.set(storeKey, state);
+    }
+
+    const resetAt = Math.floor((state.window_start + windowMs) / 1000);
+    const remaining = Math.max(0, policy.max_requests - state.request_count);
+
+    if (state.request_count >= policy.max_requests) {
+      // Vượt quá giới hạn - tính thời gian retry
+      const retryAfter = Math.ceil((state.window_start + windowMs - now) / 1000);
+      this.logger.verbose(
+        `FixedWindow: Key ${key} bị chặn (${state.request_count}/${policy.max_requests}) - policy ${policy.name}`,
+      );
+
+      return {
+        allowed: false,
+        remaining: 0,
+        limit: policy.max_requests,
+        reset_at: resetAt,
+        retry_after: retryAfter,
+        policy_id: policy.policy_id,
+      };
+    }
+
+    // Cho phép và tăng counter
+    state.request_count++;
+    this.store.set(storeKey, state);
+
+    this.logger.debug(
+      `FixedWindow: Key ${key} được phép (${state.request_count}/${policy.max_requests}) - policy ${policy.name}`,
+    );
+
+    return {
+      allowed: true,
+      remaining: policy.max_requests - state.request_count,
+      limit: policy.max_requests,
+      reset_at: resetAt,
+      retry_after: null,
+      policy_id: policy.policy_id,
+    };
+  }
+
+  /**
+   * Chiến lược Sliding Window: theo dõi timestamp của từng yêu cầu,
+   * chỉ đếm các yêu cầu trong khoảng thời gian hiện tại.
+   *
+   * Ưu điểm: chính xác hơn fixed window, không có vấn đề tại biên
+   * Nhược điểm: tiêu tốn bộ nhớ nhiều hơn (lưu timestamps)
+   *
+   * @param key Khóa xác định yêu cầu
+   * @param policy Chính sách rate limit
+   * @returns RateLimitResult
+   */
+  private checkSlidingWindow(key: string, policy: RateLimitPolicy): RateLimitResult {
+    const storeKey = `${policy.policy_id}:${key}`;
+    const now = Date.now();
+    const windowMs = policy.window_seconds * 1000;
+    const windowStart = now - windowMs;
+
+    let state = this.store.get(storeKey);
+
+    // Nếu không có state, tạo mới
+    if (!state) {
+      state = {
+        key,
+        policy_id: policy.policy_id,
+        request_count: 0,
+        window_start: now,
+        timestamps: [],
+        tokens: policy.burst_size,
+        last_refill: now,
+      };
+    }
+
+    // Loại bỏ các timestamps đã hết hạn
+    state.timestamps = state.timestamps.filter((ts) => ts > windowStart);
+    state.request_count = state.timestamps.length;
+
+    const resetAt = Math.floor((now + windowMs) / 1000);
+    const remaining = Math.max(0, policy.max_requests - state.request_count);
+
+    if (state.request_count >= policy.max_requests) {
+      // Tính retry_after: thời gian cho đến khi timestamp sớm nhất hết hạn
+      const oldestTimestamp = state.timestamps[0];
+      const retryAfter = Math.ceil((oldestTimestamp + windowMs - now) / 1000);
+
+      this.logger.verbose(
+        `SlidingWindow: Key ${key} bị chặn (${state.request_count}/${policy.max_requests}) - policy ${policy.name}`,
+      );
+
+      return {
+        allowed: false,
+        remaining: 0,
+        limit: policy.max_requests,
+        reset_at: resetAt,
+        retry_after: Math.max(1, retryAfter),
+        policy_id: policy.policy_id,
+      };
+    }
+
+    // Cho phép và thêm timestamp
+    state.timestamps.push(now);
+    state.request_count = state.timestamps.length;
+    this.store.set(storeKey, state);
+
+    this.logger.debug(
+      `SlidingWindow: Key ${key} được phép (${state.request_count}/${policy.max_requests}) - policy ${policy.name}`,
+    );
+
+    return {
+      allowed: true,
+      remaining: policy.max_requests - state.request_count,
+      limit: policy.max_requests,
+      reset_at: resetAt,
+      retry_after: null,
+      policy_id: policy.policy_id,
+    };
+  }
+
+  /**
+   * Chiến lược Token Bucket: mỗi yêu cầu tiêu thụ một token,
+   * bucket được refill theo refill_rate, max là burst_size.
+   *
+   * Ưu điểm: cho phép burst, mượt mà hơn
+   * Nhược điểm: tính toán phức tạp hơn
+   *
+   * @param key Khóa xác định yêu cầu
+   * @param policy Chính sách rate limit
+   * @returns RateLimitResult
+   */
+  private checkTokenBucket(key: string, policy: RateLimitPolicy): RateLimitResult {
+    const storeKey = `${policy.policy_id}:${key}`;
+    const now = Date.now();
+    const windowMs = policy.window_seconds * 1000;
+
+    let state = this.store.get(storeKey);
+
+    // Nếu không có state, tạo bucket đầy
+    if (!state) {
+      state = {
+        key,
+        policy_id: policy.policy_id,
+        request_count: 0,
+        window_start: now,
+        timestamps: [],
+        tokens: policy.burst_size,
+        last_refill: now,
+      };
+    }
+
+    // Refill tokens dựa trên thời gian trôi qua
+    const elapsed = now - state.last_refill;
+    const tokensToAdd = (elapsed / 1000) * policy.refill_rate;
+    state.tokens = Math.min(policy.burst_size, state.tokens + tokensToAdd);
+    state.last_refill = now;
+
+    const resetAt = Math.floor((state.last_refill + windowMs) / 1000);
+
+    if (state.tokens < 1) {
+      // Không đủ token - tính thời gian chờ
+      const deficit = 1 - state.tokens;
+      const retryAfter = Math.ceil(deficit / policy.refill_rate);
+
+      this.logger.verbose(
+        `TokenBucket: Key ${key} bị chặn (tokens: ${state.tokens.toFixed(2)}) - policy ${policy.name}`,
+      );
+
+      return {
+        allowed: false,
+        remaining: 0,
+        limit: policy.burst_size,
+        reset_at: resetAt,
+        retry_after: Math.max(1, retryAfter),
+        policy_id: policy.policy_id,
+      };
+    }
+
+    // Tiêu thụ token
+    state.tokens -= 1;
+    state.request_count++;
+    this.store.set(storeKey, state);
+
+    this.logger.debug(
+      `TokenBucket: Key ${key} được phép (tokens: ${state.tokens.toFixed(2)}) - policy ${policy.name}`,
+    );
+
+    return {
+      allowed: true,
+      remaining: Math.floor(state.tokens),
+      limit: policy.burst_size,
+      reset_at: resetAt,
+      retry_after: null,
+      policy_id: policy.policy_id,
+    };
+  }
+
+  /**
+   * Lấy thống kê usage hiện tại của một key.
+   *
+   * @param key Khóa xác định yêu cầu
+   * @param policyId ID của chính sách
+   * @returns UsageStats
+   * @throws NotFoundException nếu không tìm thấy dữ liệu usage
+   */
+  getUsage(key: string, policyId: string): UsageStats {
+    const policy = this.policies.get(policyId);
+
+    if (!policy) {
+      throw new NotFoundException(`Chính sách rate limit ${policyId} không tìm thấy`);
+    }
+
+    const storeKey = `${policyId}:${key}`;
+    const state = this.store.get(storeKey);
+
+    if (!state) {
+      throw new NotFoundException(`Không tìm thấy dữ liệu usage cho key ${key} với policy ${policyId}`);
+    }
+
+    const now = Date.now();
+    const windowMs = policy.window_seconds * 1000;
+
+    // Tính current_count theo chiến lược
+    let currentCount: number;
+    if (policy.strategy === RateLimitStrategy.SLIDING_WINDOW) {
+      const windowStart = now - windowMs;
+      currentCount = state.timestamps.filter((ts) => ts > windowStart).length;
+    } else {
+      // Kiểm tra window còn hạn không
+      if ((now - state.window_start) >= windowMs) {
+        currentCount = 0;
+      } else {
+        currentCount = state.request_count;
+      }
+    }
+
+    return {
+      key,
+      policy_id: policyId,
+      current_count: currentCount,
+      max_requests: policy.strategy === RateLimitStrategy.TOKEN_BUCKET ? policy.burst_size : policy.max_requests,
+      window_seconds: policy.window_seconds,
+      remaining: Math.max(
+        0,
+        (policy.strategy === RateLimitStrategy.TOKEN_BUCKET ? policy.burst_size : policy.max_requests) - currentCount,
+      ),
+      reset_at: Math.floor((state.window_start + windowMs) / 1000),
+      strategy: policy.strategy,
+    };
+  }
+
+  /**
+   * Reset trạng thái usage của một key.
+   *
+   * Dùng để quản trị hoặc khi chính sách thay đổi.
+   *
+   * @param key Khóa cần reset, nếu undefined thì reset tất cả
+   * @param policyId ID của chính sách, nếu undefined thì reset tất cả policies
+   * @returns Số lượng keys đã được reset
+   */
+  reset(key?: string, policyId?: string): number {
+    let resetCount = 0;
+
+    if (key && policyId) {
+      // Reset một key cụ thể của một policy
+      const storeKey = `${policyId}:${key}`;
+      if (this.store.delete(storeKey)) {
+        resetCount = 1;
+        this.logger.log(`Đã reset usage cho key ${key} (policy: ${policyId})`);
+      }
+    } else if (policyId) {
+      // Reset tất cả keys của một policy
+      const prefix = `${policyId}:`;
+      for (const storeKey of this.store.keys()) {
+        if (storeKey.startsWith(prefix)) {
+          this.store.delete(storeKey);
+          resetCount++;
+        }
+      }
+      this.logger.log(`Đã reset ${resetCount} keys cho policy ${policyId}`);
+    } else if (key) {
+      // Reset một key ở tất cả policies
+      for (const storeKey of this.store.keys()) {
+        if (storeKey.endsWith(`:${key}`)) {
+          this.store.delete(storeKey);
+          resetCount++;
+        }
+      }
+      this.logger.log(`Đã reset key ${key} cho ${resetCount} policies`);
+    } else {
+      // Reset toàn bộ store
+      resetCount = this.store.size;
+      this.store.clear();
+      this.logger.log(`Đã reset toàn bộ rate limit store (${resetCount} keys)`);
+    }
+
+    return resetCount;
+  }
+
+  /**
+   * Thêm hoặc cập nhật một chính sách rate limit.
+   *
+   * @param policy Chính sách cần thêm/cập nhật
+   */
+  upsertPolicy(policy: RateLimitPolicy): void {
+    this.policies.set(policy.policy_id, policy);
+    this.logger.log(`Đã ${this.policies.has(policy.policy_id) ? 'cập nhật' : 'thêm'} chính sách: ${policy.name} (${policy.policy_id})`);
+  }
+
+  /**
+   * Xóa một chính sách rate limit.
+   *
+   * @param policyId ID của chính sách cần xóa
+   * @throws NotFoundException nếu policy không tồn tại
+   */
+  deletePolicy(policyId: string): void {
+    if (!this.policies.has(policyId)) {
+      throw new NotFoundException(`Chính sách rate limit ${policyId} không tìm thấy`);
+    }
+
+    this.policies.delete(policyId);
+
+    // Xóa tất cả state liên quan đến policy này
+    const prefix = `${policyId}:`;
+    for (const storeKey of this.store.keys()) {
+      if (storeKey.startsWith(prefix)) {
+        this.store.delete(storeKey);
+      }
+    }
+
+    this.logger.log(`Đã xóa chính sách rate limit: ${policyId}`);
+  }
+
+  /**
+   * Lấy danh sách tất cả chính sách.
+   *
+   * @returns Mảng các chính sách rate limit
+   */
+  getPolicies(): RateLimitPolicy[] {
+    return Array.from(this.policies.values());
+  }
+
+  /**
+   * Lấy một chính sách theo ID.
+   *
+   * @param policyId ID của chính sách
+   * @returns RateLimitPolicy hoặc undefined
+   */
+  getPolicy(policyId: string): RateLimitPolicy | undefined {
+    return this.policies.get(policyId);
+  }
+
+  /**
+   * Kiểm tra xem một key có nằm trong danh sách bypass của policy không.
+   *
+   * @param key Khóa cần kiểm tra
+   * @param policy Chính sách rate limit
+   * @returns true nếu key được bypass
+   */
+  private isBypassed(key: string, policy: RateLimitPolicy): boolean {
+    if (!policy.bypass_keys || policy.bypass_keys.length === 0) {
+      return false;
+    }
+
+    return policy.bypass_keys.includes(key);
+  }
+
+  /**
+   * Dọn dẹp các trạng thái đã hết hạn để tiết kiệm bộ nhớ.
+   *
+   * Phương thức này nên được gọi định kỳ (ví dụ qua Cron job).
+   *
+   * @returns Số lượng trạng thái đã bị xóa
+   */
+  cleanupExpired(): number {
+    const now = Date.now();
+    let expiredCount = 0;
+
+    for (const [storeKey, state] of this.store.entries()) {
+      const policy = this.policies.get(state.policy_id);
+      if (!policy) {
+        this.store.delete(storeKey);
+        expiredCount++;
+        continue;
+      }
+
+      const windowMs = policy.window_seconds * 1000;
+
+      if (policy.strategy === RateLimitStrategy.SLIDING_WINDOW) {
+        // Xóa nếu không còn timestamps nào trong window
+        state.timestamps = state.timestamps.filter((ts) => ts > now - windowMs);
+        if (state.timestamps.length === 0) {
+          this.store.delete(storeKey);
+          expiredCount++;
+        }
+      } else {
+        // Xóa nếu đã quá window
+        if ((now - state.window_start) >= windowMs) {
+          this.store.delete(storeKey);
+          expiredCount++;
+        }
+      }
+    }
+
+    if (expiredCount > 0) {
+      this.logger.debug(`Đã dọn dẹp ${expiredCount} trạng thái hết hạn`);
+    }
+
+    return expiredCount;
+  }
+
+  /**
+   * Placeholder: Đồng bộ dữ liệu sang Redis.
+   *
+   * Trong môi trường production với nhiều instance, sử dụng Redis
+   * để chia sẻ state rate limit giữa các instance.
+   *
+   * TODO: Tích hợp với @nestjs/cache-manager hoặc ioredis.
+   */
+  async syncToRedis(): Promise<void> {
+    // Placeholder: tích hợp Redis cho distributed rate limiting
+    // Sử dụng Redis INCR/EXPIRE cho Fixed Window
+    // Sử dụng Redis Sorted Set cho Sliding Window
+    // Sử dụng Redis Lua Script cho Token Bucket
+    this.logger.debug('Redis sync placeholder - chưa tích hợp');
+  }
+}

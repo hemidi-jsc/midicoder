@@ -1,0 +1,708 @@
+/**
+* QuotaStatus — Hiển thị trạng thái quota còn lại cho các cấp độ khác nhau.
+* Sinh bởi CP48 RateLimitEmitter.
+*
+* Số lượng quota cấu hình: {{ quotas | length }}
+* Có quota: {{ has_quotas | lower }}
+*/
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+
+/* ======================================================================
+* ĐỊNH NGHĨA INTERFACE
+* ====================================================================== */
+
+/**
+* Một mục quota với thông tin sử dụng
+*/
+interface QuotaItem {
+/** ID cấu hình quota */
+config_id: string;
+/** Cấp độ: user, tenant, endpoint, global */
+level: string;
+/** Chu kỳ: minute, hour, day, week, month */
+period: string;
+/** Số request tối đa */
+max_requests: number;
+/** ID tenant (nếu có) */
+tenant_id: string | null;
+/** Endpoint (nếu có) */
+endpoint: string | null;
+/** Đã bật chưa */
+enabled: boolean;
+/** Số request hiện tại */
+current_usage: number;
+/** Số request còn lại */
+remaining: number;
+/** Tỷ lệ phần trăm đã sử dụng */
+usage_percent: number;
+/** Có đang bị giới hạn không */
+is_limited: boolean;
+/** Thời gian reset (ISO string) */
+reset_at: string;
+}
+
+/**
+* Dữ liệu trả về từ API quota
+*/
+interface QuotaApiResponse {
+quotas: Array<{ config_id: string; level: string; period: string; max_requests: number; tenant_id: string | null;
+    endpoint: string | null; enabled: boolean; }>;
+    usages: Record<string, { current: number; remaining: number; reset_at: string; is_limited: boolean; }>;
+        }
+
+        /* ======================================================================
+        * STYLE OBJECTS
+        * ====================================================================== */
+
+        const sWrap: React.CSSProperties = {
+        padding: '24px',
+        maxWidth: '1200px',
+        margin: '0 auto',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        backgroundColor: '#f9fafb',
+        minHeight: '100vh',
+        };
+
+        const sHeader: React.CSSProperties = {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        gap: '12px',
+        };
+
+        const sHeaderTitle: React.CSSProperties = {
+        margin: 0,
+        fontSize: '24px',
+        fontWeight: 700,
+        color: '#111827',
+        };
+
+        const sHeaderActions: React.CSSProperties = {
+        display: 'flex',
+        gap: '10px',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        };
+
+        const sBtnBase: React.CSSProperties = {
+        padding: '8px 16px',
+        border: '1px solid #d1d5db',
+        borderRadius: '8px',
+        background: '#fff',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: 500,
+        color: '#374151',
+        transition: 'all 0.15s',
+        };
+
+        const sBtnPrimary: React.CSSProperties = {
+        ...sBtnBase,
+        background: '#6366f1',
+        color: '#fff',
+        border: 'none',
+        boxShadow: '0 1px 2px rgba(99,102,241,0.3)',
+        };
+
+        const sSection: React.CSSProperties = {
+        marginBottom: '24px',
+        };
+
+        const sSectionTitle: React.CSSProperties = {
+        margin: '0 0 16px',
+        fontSize: '18px',
+        fontWeight: 600,
+        color: '#111827',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        };
+
+        const sGrid: React.CSSProperties = {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+        gap: '16px',
+        };
+
+        const sQuotaCard: React.CSSProperties = {
+        background: '#fff',
+        borderRadius: '12px',
+        padding: '20px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+        border: '1px solid #f3f4f6',
+        position: 'relative',
+        overflow: 'hidden',
+        };
+
+        const sQuotaCardLimited: React.CSSProperties = {
+        ...sQuotaCard,
+        borderColor: '#fecaca',
+        background: '#fff5f5',
+        };
+
+        const sQuotaCardWarning: React.CSSProperties = {
+        ...sQuotaCard,
+        borderColor: '#fde68a',
+        background: '#fffbeb',
+        };
+
+        const sQuotaLevel: React.CSSProperties = {
+        fontSize: '13px',
+        fontWeight: 600,
+        color: '#6366f1',
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+        marginBottom: '4px',
+        };
+
+        const sQuotaPeriod: React.CSSProperties = {
+        fontSize: '12px',
+        color: '#6b7280',
+        marginBottom: '12px',
+        };
+
+        const sQuotaValue: React.CSSProperties = {
+        fontSize: '32px',
+        fontWeight: 700,
+        lineHeight: 1.1,
+        marginBottom: '4px',
+        };
+
+        const sQuotaLabel: React.CSSProperties = {
+        fontSize: '13px',
+        color: '#6b7280',
+        marginBottom: '16px',
+        };
+
+        const sProgressTrack: React.CSSProperties = {
+        width: '100%',
+        height: '8px',
+        background: '#e5e7eb',
+        borderRadius: '4px',
+        overflow: 'hidden',
+        marginBottom: '8px',
+        };
+
+        const sProgressBar: React.CSSProperties = {
+        height: '100%',
+        borderRadius: '4px',
+        transition: 'width 0.3s ease, background-color 0.3s ease',
+        minWidth: '2px',
+        };
+
+        const sProgressInfo: React.CSSProperties = {
+        display: 'flex',
+        justifyContent: 'space-between',
+        fontSize: '12px',
+        color: '#6b7280',
+        };
+
+        const sWarningIcon: React.CSSProperties = {
+        position: 'absolute',
+        top: '12px',
+        right: '12px',
+        width: '24px',
+        height: '24px',
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '14px',
+        fontWeight: 700,
+        };
+
+        const sMetaInfo: React.CSSProperties = {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        marginBottom: '24px',
+        padding: '12px 16px',
+        background: '#f0f9ff',
+        borderRadius: '8px',
+        fontSize: '13px',
+        color: '#0369a1',
+        border: '1px solid #e0f2fe',
+        flexWrap: 'wrap',
+        };
+
+        const sMetaItem: React.CSSProperties = {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        };
+
+        const sBadgeBase: React.CSSProperties = {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        padding: '3px 10px',
+        borderRadius: '12px',
+        fontSize: '12px',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+        };
+
+        const sEmptyState: React.CSSProperties = {
+        padding: '48px 20px',
+        textAlign: 'center',
+        color: '#9ca3af',
+        fontSize: '15px',
+        };
+
+        const sLoading: React.CSSProperties = {
+        padding: '48px 20px',
+        textAlign: 'center',
+        color: '#6b7280',
+        fontSize: '15px',
+        };
+
+        const sError: React.CSSProperties = {
+        padding: '16px 20px',
+        background: '#fef2f2',
+        borderRadius: '8px',
+        color: '#991b1b',
+        fontSize: '14px',
+        border: '1px solid #fecaca',
+        marginBottom: '16px',
+        };
+
+        const sAutoRefreshLabel: React.CSSProperties = {
+        fontSize: '12px',
+        color: '#6b7280',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        };
+
+        const sRefreshDot: React.CSSProperties = {
+        width: '8px',
+        height: '8px',
+        borderRadius: '50%',
+        animation: 'pulse 2s ease-in-out infinite',
+        };
+
+        const sEndpointInfo: React.CSSProperties = {
+        fontSize: '12px',
+        color: '#9ca3af',
+        fontFamily: 'ui-monospace, monospace',
+        marginTop: '8px',
+        padding: '4px 8px',
+        background: '#f9fafb',
+        borderRadius: '4px',
+        };
+
+        const sFilterRow: React.CSSProperties = {
+        display: 'flex',
+        gap: '8px',
+        marginBottom: '16px',
+        flexWrap: 'wrap',
+        };
+
+        const sFilterTag: React.CSSProperties = {
+        padding: '6px 14px',
+        borderRadius: '20px',
+        fontSize: '13px',
+        fontWeight: 500,
+        cursor: 'pointer',
+        border: '1px solid #d1d5db',
+        background: '#fff',
+        color: '#374151',
+        transition: 'all 0.15s',
+        whiteSpace: 'nowrap',
+        };
+
+        const sFilterTagActive: React.CSSProperties = {
+        ...sFilterTag,
+        background: '#6366f1',
+        color: '#fff',
+        borderColor: '#6366f1',
+        };
+
+        /* Pulse keyframes */
+        const pulseKeyframes = `
+        @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+        }
+        `;
+
+        /* ======================================================================
+        * HÀM HELPER
+        * ====================================================================== */
+
+        /** Label cấp độ bằng tiếng Việt */
+        function levelLabel(level: string): string {
+        const map: Record<string, string> = {
+            'user': 'Người dùng',
+            'tenant': 'Tenant',
+            'endpoint': 'Endpoint',
+            'global': 'Toàn cục',
+            };
+            return map[level] || level;
+            }
+
+            /** Icon cấp độ */
+            function levelIcon(level: string): string {
+            const map: Record<string, string> = {
+                'user': '\u{1F464}',
+                'tenant': '\u{1F3E2}',
+                'endpoint': '\u{1F517}',
+                'global': '\u{1F310}',
+                };
+                return map[level] || '\u{1F4CB}';
+                }
+
+                /** Label chu kỳ bằng tiếng Việt */
+                function periodLabel(period: string): string {
+                const map: Record<string, string> = {
+                    'minute': 'Phút',
+                    'hour': 'Giờ',
+                    'day': 'Ngày',
+                    'week': 'Tuần',
+                    'month': 'Tháng',
+                    };
+                    return map[period] || period;
+                    }
+
+                    /** Trả về màu thanh tiến độ dựa trên tỷ lệ phần trăm */
+                    function progressColor(percent: number): string {
+                    if (percent >= 90) return '#ef4444';
+                    if (percent >= 70) return '#f59e0b';
+                    if (percent >= 50) return '#3b82f6';
+                    return '#22c55e';
+                    }
+
+                    /** Trả về màu chữ cho số còn lại */
+                    function remainingColor(percent: number): string {
+                    if (percent >= 90) return '#ef4444';
+                    if (percent >= 70) return '#f59e0b';
+                    return '#22c55e';
+                    }
+
+                    /** Kiểm tra xem có nên hiển thị cảnh báo vàng không */
+                    function isWarning(percent: number): boolean {
+                    return percent >= 70 && percent < 90; } /** Kiểm tra xem có nên hiển thị cảnh báo đỏ không */
+                        function isCritical(percent: number): boolean { return percent>= 90;
+                        }
+
+                        /** Format thời gian reset */
+                        function formatResetTime(iso: string): string {
+                        const d = new Date(iso);
+                        const now = new Date();
+                        const diff = d.getTime() - now.getTime();
+
+                        if (diff <= 0) return 'Đã hết hạn' ; if (diff < 60000) return `${Math.ceil(diff / 1000)}s nữa`;
+                            if (diff < 3600000) return `${Math.ceil(diff / 60000)}m nữa`; if (diff < 86400000) return
+                            `${Math.ceil(diff / 3600000)}h nữa`; return d.toLocaleDateString('vi-VN', { day: '2-digit' ,
+                            month: '2-digit' , year: 'numeric' , }); }
+                            /*======================================================================* COMPONENT CON:
+                            QuotaCard *======================================================================*/ const
+                            QuotaCard: React.FC<{ quota: QuotaItem }> = ({ quota }) => {
+                            /* Xác định style card dựa trên mức độ sử dụng */
+                            const cardStyle = quota.is_limited
+                            ? sQuotaCardLimited
+                            : isCritical(quota.usage_percent)
+                            ? sQuotaCardLimited
+                            : isWarning(quota.usage_percent)
+                            ? sQuotaCardWarning
+                            : sQuotaCard;
+
+                            const clamped = Math.max(0, Math.min(100, quota.usage_percent));
+                            const color = progressColor(clamped);
+                            const warnColor = remainingColor(clamped);
+
+                            return (
+                            <div style={cardStyle}>
+                                {/* Icon cảnh báo khi gần đạt giới hạn */}
+                                {quota.is_limited && (
+                                <div style={{ ...sWarningIcon, backgroundColor: '#fee2e2' , color: '#ef4444' }}
+                                    title="Đã đạt giới hạn">
+                                    !
+                                </div>
+                                )}
+                                {isCritical(quota.usage_percent) && !quota.is_limited && (
+                                <div style={{ ...sWarningIcon, backgroundColor: '#fee2e2' , color: '#ef4444' }}
+                                    title="Nguy cơ cao (&gt;90%)">
+                                    !
+                                </div>
+                                )}
+                                {isWarning(quota.usage_percent) && (
+                                <div style={{ ...sWarningIcon, backgroundColor: '#fef3c7' , color: '#f59e0b' }}
+                                    title="Cảnh báo (&gt;70%)">
+                                    !
+                                </div>
+                                )}
+
+                                {/* Cấp độ và chu kỳ */}
+                                <div style={sQuotaLevel}>
+                                    {levelIcon(quota.level)} {levelLabel(quota.level)}
+                                </div>
+                                <div style={sQuotaPeriod}>
+                                    Chu kỳ: {periodLabel(quota.period)}
+                                    <span style={{ marginLeft: '8px' , color: '#9ca3af' }}>
+                                        | Reset: {formatResetTime(quota.reset_at)}
+                                    </span>
+                                </div>
+
+                                {/* Giá trị còn lại */}
+                                <div style={{ ...sQuotaValue, color: warnColor }}>
+                                    {quota.remaining.toLocaleString('vi-VN')}
+                                </div>
+                                <div style={sQuotaLabel}>
+                                    còn lại trên {quota.max_requests.toLocaleString('vi-VN')}
+                                </div>
+
+                                {/* Thanh tiến độ */}
+                                <div style={sProgressTrack}>
+                                    <div style={{ ...sProgressBar, width: `${clamped}%`, backgroundColor: color, }}
+                                        title={`${clamped}% đã sử dụng`} />
+                                </div>
+                                <div style={sProgressInfo}>
+                                    <span>{quota.current_usage.toLocaleString('vi-VN')} đã dùng</span>
+                                    <span>{clamped}%</span>
+                                </div>
+
+                                {/* Thông tin endpoint nếu có */}
+                                {quota.endpoint && (
+                                <div style={sEndpointInfo}>
+                                    {quota.endpoint}
+                                </div>
+                                )}
+
+                                {/* Trạng thái enabled */}
+                                <div style={{ marginTop: '12px' , display: 'flex' , justifyContent: 'space-between' ,
+                                    alignItems: 'center' }}>
+                                    <span style={quota.enabled ? { ...sBadgeBase, backgroundColor: '#d1fae5' ,
+                                        color: '#065f46' } : { ...sBadgeBase, backgroundColor: '#f3f4f6' ,
+                                        color: '#6b7280' } }>
+                                        {quota.enabled ? 'Đang hoạt động' : 'Đã tắt'}
+                                    </span>
+                                    {quota.is_limited && (
+                                    <span style={{ ...sBadgeBase, backgroundColor: '#fee2e2' , color: '#991b1b' }}>
+                                        Đã đạt giới hạn
+                                    </span>
+                                    )}
+                                </div>
+                            </div>
+                            );
+                            };
+
+                            /* ======================================================================
+                            * COMPONENT CHÍNH: QuotaStatus
+                            * ====================================================================== */
+
+                            export const QuotaStatus: React.FC = () => {
+                            const [quotas, setQuotas] = useState<QuotaItem[]>([]);
+                                const [loading, setLoading] = useState(false);
+                                const [error, setError] = useState<string | null>(null);
+                                    const [autoRefresh, setAutoRefresh] = useState(true);
+                                    const [filterLevel, setFilterLevel] = useState<string>('all');
+
+                                        /** Làm mới danh sách quota và dữ liệu sử dụng */
+                                        const refreshQuotas = useCallback(async () => {
+                                        setLoading(true);
+                                        setError(null);
+                                        try {
+                                        const response = await fetch('/api/rate-limit/quotas');
+                                        if (!response.ok) {
+                                        throw new Error(`Lấy danh sách quota thất bại: ${response.status}
+                                        ${response.statusText}`);
+                                        }
+                                        const data: QuotaApiResponse = await response.json();
+
+                                        /* Ghép dữ liệu cấu hình quota với dữ liệu sử dụng */
+                                        const merged: QuotaItem[] = (data.quotas || []).map((q) => {
+                                        const usage = data.usages?.[q.config_id];
+                                        const current = usage?.current ?? 0;
+                                        const remaining = usage?.remaining ?? q.max_requests;
+                                        const percent = q.max_requests > 0
+                                        ? Math.round((current / q.max_requests) * 100)
+                                        : 0;
+
+                                        return {
+                                        config_id: q.config_id,
+                                        level: q.level,
+                                        period: q.period,
+                                        max_requests: q.max_requests,
+                                        tenant_id: q.tenant_id,
+                                        endpoint: q.endpoint,
+                                        enabled: q.enabled,
+                                        current_usage: current,
+                                        remaining: Math.max(0, remaining),
+                                        usage_percent: percent,
+                                        is_limited: usage?.is_limited ?? false,
+                                        reset_at: usage?.reset_at ?? new Date(Date.now() + 3600000).toISOString(),
+                                        };
+                                        });
+
+                                        setQuotas(merged);
+                                        } catch (err) {
+                                        const message = err instanceof Error ? err.message : 'Tải quota thất bại';
+                                        setError(message);
+                                        console.error('[QuotaStatus] refreshQuotas:', message);
+                                        } finally {
+                                        setLoading(false);
+                                        }
+                                        }, []);
+
+                                        /* Tính toán thống kê tổng hợp theo cấp độ */
+                                        const levelStats = useMemo(() => {
+                                        const levels = [...new Set(quotas.map((q) => q.level))];
+                                        return levels.map((level) => {
+                                        const items = quotas.filter((q) => q.level === level);
+                                        return {
+                                        level,
+                                        total: items.length,
+                                        limited: items.filter((q) => q.is_limited).length,
+                                        warning: items.filter((q) => isWarning(q.usage_percent)).length,
+                                        critical: items.filter((q) => isCritical(q.usage_percent)).length,
+                                        };
+                                        });
+                                        }, [quotas]);
+
+                                        /* Lọc theo cấp độ */
+                                        const filteredQuotas = useMemo(() => {
+                                        if (filterLevel === 'all') return quotas;
+                                        return quotas.filter((q) => q.level === filterLevel);
+                                        }, [quotas, filterLevel]);
+
+                                        /* Nhóm theo cấp độ */
+                                        const groupedQuotas = useMemo(() => {
+                                        const groups: Record<string, QuotaItem[]> = {};
+                                            filteredQuotas.forEach((q) => {
+                                            if (!groups[q.level]) {
+                                            groups[q.level] = [];
+                                            }
+                                            groups[q.level].push(q);
+                                            });
+                                            return groups;
+                                            }, [filteredQuotas]);
+
+                                            /* Tự động làm mới mỗi 10 giây */
+                                            useEffect(() => {
+                                            if (!autoRefresh) return;
+                                            const interval = setInterval(refreshQuotas, 10000);
+                                            return () => clearInterval(interval);
+                                            }, [autoRefresh, refreshQuotas]);
+
+                                            /* Inject pulse animation vào head */
+                                            useEffect(() => {
+                                            const styleId = 'cp48-quota-pulse-style';
+                                            if (!document.getElementById(styleId)) {
+                                            const styleEl = document.createElement('style');
+                                            styleEl.id = styleId;
+                                            styleEl.textContent = pulseKeyframes;
+                                            document.head.appendChild(styleEl);
+                                            }
+                                            }, []);
+
+                                            /* Load dữ liệu ban đầu */
+                                            useEffect(() => {
+                                            refreshQuotas();
+                                            }, [refreshQuotas]);
+
+                                            return (
+                                            <div style={sWrap}>
+                                                {/* Header */}
+                                                <div style={sHeader}>
+                                                    <h1 style={sHeaderTitle}>Trạng thái Quota</h1>
+                                                    <div style={sHeaderActions}>
+                                                        {autoRefresh && (
+                                                        <span style={sAutoRefreshLabel}>
+                                                            <span style={{ ...sRefreshDot, backgroundColor: '#22c55e'
+                                                                }} />
+                                                            Tự động làm mới (10s)
+                                                        </span>
+                                                        )}
+                                                        <button onClick={()=> setAutoRefresh(!autoRefresh)}
+                                                            style={{
+                                                            ...sBtnBase,
+                                                            ...(autoRefresh ? { background: '#ecfdf5', borderColor:
+                                                            '#6ee7b7', color: '#065f46' } : {}),
+                                                            }}
+                                                            title={autoRefresh ? 'Tắt tự động làm mới' : 'Bật tự động
+                                                            làm mới'}
+                                                            >
+                                                            {autoRefresh ? 'Tự động' : 'Thủ công'}
+                                                        </button>
+                                                        <button onClick={refreshQuotas} style={sBtnPrimary}
+                                                            disabled={loading}>
+                                                            {loading ? 'Đang tải...' : 'Làm mới'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Hiển thị lỗi */}
+                                                {error && (
+                                                <div style={sError}>
+                                                    <strong>Lỗi:</strong> {error}
+                                                </div>
+                                                )}
+
+                                                {/* Meta info */}
+                                                <div style={sMetaInfo}>
+                                                    <span style={sMetaItem}>
+                                                        <strong>Tổng quota:</strong> {{ quotas | length }}
+                                                    </span>
+                                                    <span style={sMetaItem}>
+                                                        <strong>Cấp độ:</strong> {{ has_quotas | lower }}
+                                                    </span>
+                                                    {% for q in quotas %}
+                                                    <span style={sMetaItem}>
+                                                        <strong>{{ q.level }}:</strong> {{ q.period }} ({{
+                                                        q.max_requests }})
+                                                    </span>
+                                                    {% endfor %}
+                                                </div>
+
+                                                {/* Bộ lọc cấp độ */}
+                                                {quotas.length > 0 && (
+                                                <div style={sFilterRow}>
+                                                    <button style={filterLevel==='all' ? sFilterTagActive : sFilterTag}
+                                                        onClick={()=> setFilterLevel('all')}
+                                                        >
+                                                        Tất cả ({quotas.length})
+                                                    </button>
+                                                    {levelStats.map((stat) => (
+                                                    <button key={stat.level} style={filterLevel===stat.level ?
+                                                        sFilterTagActive : sFilterTag} onClick={()=>
+                                                        setFilterLevel(stat.level)}
+                                                        >
+                                                        {levelLabel(stat.level)} ({stat.total})
+                                                    </button>
+                                                    ))}
+                                                </div>
+                                                )}
+
+                                                {/* Nội dung chính */}
+                                                {loading && !quotas.length ? (
+                                                <div style={sLoading}>Đang tải trạng thái quota...</div>
+                                                ) : filteredQuotas.length === 0 ? (
+                                                <div style={sEmptyState}>
+                                                    Không có quota nào{filterLevel !== 'all' ? ` cho cấp độ
+                                                    "${levelLabel(filterLevel)}"` : ''}.
+                                                </div>
+                                                ) : (
+                                                /* Render theo nhóm cấp độ */
+                                                <div>
+                                                    {Object.entries(groupedQuotas).map(([level, items]) => (
+                                                    <div key={level} style={sSection}>
+                                                        <h2 style={sSectionTitle}>
+                                                            {levelIcon(level)} {levelLabel(level)} ({items.length})
+                                                        </h2>
+                                                        <div style={sGrid}>
+                                                            {items.map((quota) => (
+                                                            <QuotaCard key={quota.config_id} quota={quota} />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    ))}
+                                                </div>
+                                                )}
+                                            </div>
+                                            );
+                                            };
+
+                                            export default QuotaStatus;

@@ -1,0 +1,63 @@
+/**
+ * Rate Limit Module - Sinh tự động bởi Midicoder CP48.
+ *
+ * Module NestJS cho rate limiting engine.
+ * Đóng gói toàn bộ components:
+ * - RateLimitService: Logic nghiệp vụ kiểm tra rate limit
+ * - RateLimitMiddleware: Middleware HTTP áp dụng rate limit tự động
+ * - RateLimitController: REST API quản lý chính sách và usage
+ * - QuotaService: Quản lý quota đa cấp (user, tenant, endpoint, global)
+ *
+ * Hỗ trợ 3 chiến lược rate limiting:
+ * - Fixed Window: Đếm yêu cầu trong các cửa sổ thời gian cố định
+ * - Sliding Window: Theo dõi timestamp từng yêu cầu
+ * - Token Bucket: Cho phép burst, refill liên tục
+ *
+ * Cấu hình middleware:
+ * - Tự động áp dụng cho tất cả routes (trừ các path được loại trừ)
+ * - Trả về 429 Too Many Requests với Retry-After header
+ * - Thêm X-RateLimit-* headers vào response
+ *
+ * CP48: Rate Limiting
+ */
+
+import { Module, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
+import { RateLimitService } from './rate-limit.service';
+import { RateLimitMiddleware } from './rate-limit.middleware';
+import { RateLimitController } from './rate-limit.controller';
+import { QuotaService } from './quota.service';
+
+@Module({
+  imports: [
+    // Module schedule cho các tác vụ định kỳ (cleanup expired states)
+    ScheduleModule.forRoot(),
+  ],
+  controllers: [RateLimitController],
+  providers: [
+    RateLimitService,
+    QuotaService,
+  ],
+  exports: [
+    RateLimitService,
+    QuotaService,
+  ],
+})
+export class RateLimitModule {
+  /**
+   * Cấu hình middleware rate limit cho toàn bộ ứng dụng.
+   *
+   * NestJS gọi phương thức configure() khi module được khởi tạo.
+   * Middleware được áp dụng cho tất cả HTTP methods.
+   *
+   * @param consumer MiddlewareConsumer để đăng ký middleware
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(RateLimitMiddleware)
+      .forRoutes({
+        path: '/api/*',
+        method: RequestMethod.ALL,
+      });
+  }
+}

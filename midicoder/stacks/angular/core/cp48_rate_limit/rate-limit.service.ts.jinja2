@@ -1,0 +1,211 @@
+/**
+ * Rate Limit Service - CP48 Rate Limiting.
+ *
+ * Service này xử lý giao tiếp API cho hệ thống rate limiting.
+ * Cung cấp CRUD policies, usage tracking, và quota management.
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable } from 'rxjs';
+
+/**
+ * Policy - chính sách rate limit.
+ *
+ * Đại diện cho một quy tắc giới hạn tốc độ truy cập API.
+ * Mỗi policy bao gồm chiến lược, giới hạn yêu cầu, và cấu hình cửa sổ thời gian.
+ */
+export interface Policy {
+  policy_id: string;
+  name: string;
+  strategy: string;
+  max_requests: number;
+  window_seconds: number;
+  refill_rate: number;
+  burst_size: number;
+  enabled: boolean;
+  bypass_keys: string[];
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * UsageStats - thống kê sử dụng của một policy.
+ *
+ * Theo dõi số lượng yêu cầu hiện tại, số còn lại,
+ * và thời điểm reset cho mỗi policy.
+ */
+export interface UsageStats {
+  policy_id: string;
+  key: string;
+  current_usage: number;
+  max_requests: number;
+  remaining: number;
+  reset_at: string;
+  window_seconds: number;
+}
+
+/**
+ * QuotaInfo - thông tin quota cho một cấp độ.
+ *
+ * Định nghĩa giới hạn sử dụng theo cấp độ (user, tenant, endpoint, global)
+ * với chu kỳ tính toán (phút, giờ, ngày, tuần, tháng).
+ */
+export interface QuotaInfo {
+  config_id: string;
+  level: string;
+  period: string;
+  max_requests: number;
+  current_usage: number;
+  remaining: number;
+  reset_at: string;
+  tenant_id?: string;
+  endpoint?: string;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * RateLimitService - CP48.
+ *
+ * Service này cung cấp các phương thức HTTP để quản lý rate limiting:
+ * - CRUD policies (tạo, xem, cập nhật, xóa)
+ * - Theo dõi usage (lấy thông kê, reset bộ đếm)
+ * - Quản lý quota (kiểm tra, lấy số còn lại)
+ */
+@Injectable({ providedIn: 'root' })
+export class RateLimitService {
+  private readonly BASE_URL = '/api/rate-limit';
+
+  constructor(private http: HttpClient) {}
+
+  // ==========================================
+  // Policy Management
+  // ==========================================
+
+  /**
+   * Lấy danh sách tất cả các chính sách rate limit.
+   *
+   * @param enabled - Chỉ lấy các policy đang bật (tùy chọn)
+   * @returns Observable Policy[]
+   */
+  getPolicies(enabled?: boolean): Observable<Policy[]> {
+    let params = new HttpParams();
+    if (enabled !== undefined) {
+      params = params.set('enabled', enabled.toString());
+    }
+    return this.http.get<Policy[]>(`${this.BASE_URL}/policies`, { params });
+  }
+
+  /**
+   * Lấy thông tin chi tiết của một policy theo ID.
+   *
+   * @param id - Policy ID
+   * @returns Observable Policy
+   */
+  getPolicy(id: string): Observable<Policy> {
+    return this.http.get<Policy>(`${this.BASE_URL}/policies/${id}`);
+  }
+
+  /**
+   * Tạo một chính sách rate limit mới.
+   *
+   * @param data - Dữ liệu yêu cầu tạo policy
+   * @returns Observable Policy được tạo
+   */
+  createPolicy(data: Omit<Policy, 'policy_id'>): Observable<Policy> {
+    return this.http.post<Policy>(`${this.BASE_URL}/policies`, data);
+  }
+
+  /**
+   * Cập nhật một chính sách rate limit hiện có.
+   *
+   * @param id - Policy ID
+   * @param data - Dữ liệu cập nhật
+   * @returns Observable Policy đã cập nhật
+   */
+  updatePolicy(id: string, data: Partial<Policy>): Observable<Policy> {
+    return this.http.patch<Policy>(`${this.BASE_URL}/policies/${id}`, data);
+  }
+
+  /**
+   * Xóa một chính sách rate limit.
+   *
+   * @param id - Policy ID
+   * @returns Observable void
+   */
+  deletePolicy(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.BASE_URL}/policies/${id}`);
+  }
+
+  // ==========================================
+  // Usage Tracking
+  // ==========================================
+
+  /**
+   * Lấy thống kê sử dụng hiện tại cho một key (policy key hoặc tenant key).
+   *
+   * @param key - Key để tra cứu usage (ví dụ: tenant_id, user_id, ip_address)
+   * @returns Observable UsageStats
+   */
+  getUsage(key: string): Observable<UsageStats> {
+    return this.http.get<UsageStats>(`${this.BASE_URL}/usage/${key}`);
+  }
+
+  /**
+   * Reset bộ đếm usage cho một key cụ thể.
+   *
+   * Hành động này yêu cầu quyền admin.
+   *
+   * @param key - Key cần reset usage
+   * @returns Observable với thông báo xác nhận
+   */
+  resetUsage(key: string): Observable<{ success: boolean; key: string }> {
+    return this.http.post<{ success: boolean; key: string }>(
+      `${this.BASE_URL}/usage/${key}/reset`,
+      {}
+    );
+  }
+
+  // ==========================================
+  // Quota Management
+  // ==========================================
+
+  /**
+   * Lấy số lượng quota còn lại cho tất cả các cấp độ.
+   *
+   * Trả về danh sách QuotaInfo cho từng cấp độ (user, tenant, endpoint, global).
+   *
+   * @param tenantId - Tenant ID để lọc (tùy chọn)
+   * @returns Observable QuotaInfo[]
+   */
+  getQuotaRemaining(tenantId?: string): Observable<QuotaInfo[]> {
+    let params = new HttpParams();
+    if (tenantId) {
+      params = params.set('tenant_id', tenantId);
+    }
+    return this.http.get<QuotaInfo[]>(`${this.BASE_URL}/quotas/remaining`, { params });
+  }
+
+  /**
+   * Kiểm tra xem một yêu cầu có vượt quá quota không.
+   *
+   * API này trả về kết quả kiểm tra mà không tăng bộ đếm.
+   * Sử dụng trước khi gửi yêu cầu thực tế để tránh bị từ chối.
+   *
+   * @param data - Dữ liệu kiểm tra bao gồm level, period, tenant_id
+   * @returns Observable với kết quả kiểm tra
+   */
+  checkQuota(data: {
+    level: string;
+    period: string;
+    tenant_id?: string;
+    endpoint?: string;
+  }): Observable<{ allowed: boolean; remaining: number; max_requests: number; reset_at: string }> {
+    return this.http.post<{
+      allowed: boolean;
+      remaining: number;
+      max_requests: number;
+      reset_at: string;
+    }>(`${this.BASE_URL}/quotas/check`, data);
+  }
+}

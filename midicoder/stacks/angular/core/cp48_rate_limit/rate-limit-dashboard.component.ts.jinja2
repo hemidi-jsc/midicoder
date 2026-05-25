@@ -1,0 +1,736 @@
+/**
+ * Rate Limit Dashboard Component - CP48 Rate Limiting.
+ *
+ * Trang tổng quan rate limiting với danh sách policies,
+ * thống kê sử dụng hiện tại, và các thanh tiến độ trực quan.
+ */
+
+import { Component, ChangeDetectionStrategy, AfterViewInit, OnDestroy, inject, signal, computed } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatIconModule } from '@angular/material/icon';
+import { MatDivider } from '@angular/material/divider';
+import { MatTableModule } from '@angular/material/table';
+import { MatChipModule } from '@angular/material/chip';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { RateLimitService, Policy, UsageStats } from './rate-limit.service';
+
+/** Nhãn chiến lược rate limit tiếng Việt */
+const STRATEGY_LABELS: Record<string, string> = {
+  'fixed_window': 'Cửa sổ cố định',
+  'sliding_window': 'Cửa sổ trượt',
+  'token_bucket': 'Bucket token',
+  'leaky_bucket': 'Bucket rò rỉ',
+  'fixed_window_log': 'Cửa sổ cố định có log',
+  'sliding_window_log': 'Cửa sổ trượt có log',
+};
+
+/** Dữ liệu cho thẻ thống kê */
+interface StatCard {
+  label: string;
+  value: number;
+  icon: string;
+  color: string;
+}
+
+/**
+ * RateLimitDashboardComponent - Trang tổng quan CP48.
+ *
+ * Hiển thị:
+ * - Các thẻ thống kê tổng quan (tổng policy, đang bật, đã vượt hạn, còn dư)
+ * - Bảng danh sách policies với usage hiện tại, remaining, percentage
+ * - Thanh tiến độ trực quan cho từng policy
+ * - Nút làm mới dữ liệu
+ *
+ * Sử dụng Angular Signals và OnPush change detection.
+ */
+@Component({
+  selector: 'app-rate-limit-dashboard',
+  standalone: true,
+  imports: [
+    CommonModule,
+    MatButtonModule,
+    MatCardModule,
+    MatProgressBarModule,
+    MatIconModule,
+    MatDivider,
+    MatTableModule,
+    MatChipModule,
+    MatTooltipModule,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="rate-limit-dashboard">
+      <!-- Thanh tiêu đề -->
+      <div class="dashboard-header">
+        <div class="header-left">
+          <h1>Rate Limiting - Tổng Quan</h1>
+          <p class="subtitle">Quản lý và theo dõi các chính sách giới hạn tốc độ truy cập</p>
+        </div>
+        <div class="header-right">
+          <button
+            mat-icon-button
+            (click)="refresh()"
+            [disabled]="loading()"
+            matTooltip="Làm mới dữ liệu"
+            aria-label="Làm mới"
+          >
+            <mat-icon [style.transform]="loading() ? 'rotate(360deg)' : 'none'">refresh</mat-icon>
+          </button>
+        </div>
+      </div>
+
+      <!-- Thanh tiến độ loading -->
+      <mat-progress-bar
+        *ngIf="loading()"
+        mode="indeterminate"
+        class="loading-bar"
+      ></mat-progress-bar>
+
+      <!-- Thông báo lỗi -->
+      <div class="error-banner" *ngIf="error()">
+        <mat-icon>error</mat-icon>
+        <span>{{ error() }}</span>
+        <button mat-button (click)="clearError()">Đóng</button>
+      </div>
+
+      <!-- Hàng thẻ thống kê -->
+      <div class="stats-grid">
+        <mat-card
+          class="stat-card"
+          *ngFor="let stat of statCards()"
+        >
+          <div class="stat-content">
+            <div class="stat-icon" [style.background]="stat.color">
+              <mat-icon>{{ stat.icon }}</mat-icon>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value">{{ stat.value }}</span>
+              <span class="stat-label">{{ stat.label }}</span>
+            </div>
+          </div>
+        </mat-card>
+      </div>
+
+      <mat-divider></mat-divider>
+
+      <!-- Bảng policies -->
+      <div class="policies-section">
+        <div class="section-header">
+          <h2>Danh Sách Chính Sách</h2>
+          <button mat-stroked-button (click)="refresh()">
+            <mat-icon>refresh</mat-icon>
+            Làm mới
+          </button>
+        </div>
+
+        <div class="table-container">
+          <table mat-table [dataSource]="policiesWithUsage()" class="policies-table">
+            <!-- Cột Policy ID -->
+            <ng-container matColumnDef="policy_id">
+              <th mat-header-cell *matHeaderCellDef>Policy ID</th>
+              <td mat-cell *matCellDef="let item">
+                <code>{{ item.policy.policy_id | slice:0:12 }}</code>
+              </td>
+            </ng-container>
+
+            <!-- Cột Tên -->
+            <ng-container matColumnDef="name">
+              <th mat-header-cell *matHeaderCellDef>Tên</th>
+              <td mat-cell *matCellDef="let item">
+                <span class="policy-name">{{ item.policy.name }}</span>
+              </td>
+            </ng-container>
+
+            <!-- Cột Chiến lược -->
+            <ng-container matColumnDef="strategy">
+              <th mat-header-cell *matHeaderCellDef>Chiến lược</th>
+              <td mat-cell *matCellDef="let item">
+                <span class="strategy-label">{{ getStrategyLabel(item.policy.strategy) }}</span>
+              </td>
+            </ng-container>
+
+            <!-- Cột Giới hạn -->
+            <ng-container matColumnDef="max_requests">
+              <th mat-header-cell *matHeaderCellDef>Giới hạn</th>
+              <td mat-cell *matCellDef="let item">
+                <span class="limit-value">{{ item.policy.max_requests }} / {{ item.policy.window_seconds }}s</span>
+              </td>
+            </ng-container>
+
+            <!-- Cột Sử dụng -->
+            <ng-container matColumnDef="usage">
+              <th mat-header-cell *matHeaderCellDef>Sử dụng</th>
+              <td mat-cell *matCellDef="let item">
+                <div class="usage-cell">
+                  <div class="usage-info">
+                    <span class="usage-text">{{ item.usage.current_usage }} / {{ item.usage.max_requests }}</span>
+                    <span class="usage-remaining">Còn {{ item.usage.remaining }}</span>
+                  </div>
+                  <mat-progress-bar
+                    mode="determinate"
+                    [value]="getUsagePercentage(item.usage)"
+                    class="usage-bar {{ getUsageBarClass(item.usage) }}"
+                  ></mat-progress-bar>
+                  <span class="usage-percentage">{{ getUsagePercentage(item.usage) }}%</span>
+                </div>
+              </td>
+            </ng-container>
+
+            <!-- Cột Trạng thái -->
+            <ng-container matColumnDef="enabled">
+              <th mat-header-cell *matHeaderCellDef>Trạng thái</th>
+              <td mat-cell *matCellDef="let item">
+                <mat-chip
+                  [style.background]="item.policy.enabled ? '#4caf50' : '#9e9e9e'"
+                  [style.color]="'white'"
+                  disabled
+                >
+                  {{ item.policy.enabled ? 'Đang bật' : 'Đã tắt' }}
+                </mat-chip>
+              </td>
+            </ng-container>
+
+            <!-- Cột Burst -->
+            <ng-container matColumnDef="burst_size">
+              <th mat-header-cell *matHeaderCellDef>Burst</th>
+              <td mat-cell *matCellDef="let item">
+                {{ item.policy.burst_size }}
+              </td>
+            </ng-container>
+
+            <!-- Cột Thao tác -->
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef>Thao tác</th>
+              <td mat-cell *matCellDef="let item">
+                <button
+                  mat-icon-button
+                  (click)="resetUsageFor(item.usage.key)"
+                  matTooltip="Reset bộ đếm"
+                  aria-label="Reset usage"
+                >
+                  <mat-icon>restart_alt</mat-icon>
+                </button>
+              </td>
+            </ng-container>
+
+            <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+          </table>
+        </div>
+
+        <!-- Trạng thái rỗng khi không có policies -->
+{% if has_policies %}
+        <div class="empty-state" *ngIf="!loading() && policies().length === 0">
+          <mat-icon>speed</mat-icon>
+          <p>Chưa có chính sách rate limit nào</p>
+          <p class="empty-hint">Tạo policy mới để bắt đầu giới hạn tốc độ truy cập</p>
+        </div>
+{% else %}
+        <div class="no-policies-notice">
+          <mat-icon>info</mat-icon>
+          <p>Module policies chưa được kích hoạt trong cấu hình hiện tại</p>
+        </div>
+{% endif %}
+      </div>
+    </div>
+  `,
+  styles: `
+    .rate-limit-dashboard {
+      padding: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .dashboard-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 24px;
+    }
+
+    .header-left h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .header-left .subtitle {
+      margin: 4px 0 0;
+      color: #666;
+      font-size: 14px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .loading-bar {
+      margin-bottom: 16px;
+    }
+
+    .error-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #ffebee;
+      color: #c62828;
+      border-radius: 4px;
+      margin-bottom: 16px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 960px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .stat-card {
+      cursor: default;
+    }
+
+    .stat-content {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 8px;
+    }
+
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stat-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    .policies-section {
+      margin-top: 24px;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .section-header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+    }
+
+    .policies-table {
+      width: 100%;
+    }
+
+    .policies-table td,
+    .policies-table th {
+      padding: 12px 16px;
+    }
+
+    td code {
+      font-family: monospace;
+      font-size: 12px;
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .policy-name {
+      font-weight: 500;
+    }
+
+    .strategy-label {
+      text-transform: capitalize;
+      font-size: 13px;
+    }
+
+    .limit-value {
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+    }
+
+    .usage-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 200px;
+    }
+
+    .usage-info {
+      display: flex;
+      flex-direction: column;
+      min-width: 100px;
+    }
+
+    .usage-text {
+      font-size: 13px;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .usage-remaining {
+      font-size: 11px;
+      color: #666;
+    }
+
+    .usage-bar {
+      flex: 1;
+      min-width: 80px;
+    }
+
+    .usage-safe {
+      background-color: #4caf50 !important;
+    }
+
+    .usage-warning {
+      background-color: #ff9800 !important;
+    }
+
+    .usage-danger {
+      background-color: #f44336 !important;
+    }
+
+    .usage-percentage {
+      font-size: 12px;
+      font-weight: 600;
+      min-width: 40px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 64px 0;
+      color: #666;
+    }
+
+    .empty-state mat-icon {
+      font-size: 64px;
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+      color: #ccc;
+    }
+
+    .empty-hint {
+      font-size: 13px;
+      color: #999;
+    }
+
+    .no-policies-notice {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 24px;
+      background: #e3f2fd;
+      border-radius: 8px;
+      color: #1565c0;
+      font-size: 14px;
+    }
+
+    .no-policies-notice mat-icon {
+      font-size: 24px;
+      width: 24px;
+      height: 24px;
+    }
+  `,
+})
+export class RateLimitDashboardComponent implements AfterViewInit, OnDestroy {
+  private readonly rateLimitService = inject(RateLimitService);
+
+  // Private writable signals
+  private _policies = signal<Policy[]>([]);
+  private _usages = signal<UsageStats[]>([]);
+  private _loading = signal<boolean>(false);
+  private _error = signal<string | null>(null);
+
+  // Readonly exposed signals
+  policies = this._policies.asReadonly();
+  usages = this._usages.asReadonly();
+  loading = this._loading.asReadonly();
+  error = this._error.asReadonly();
+
+  // Các cột hiển thị trong bảng
+  readonly displayedColumns: string[] = [
+    'policy_id',
+    'name',
+    'strategy',
+    'max_requests',
+    'usage',
+    'enabled',
+    'burst_size',
+    'actions',
+  ];
+
+  /**
+   * Computed: kết hợp policy và usage thành một danh sách duy nhất.
+   *
+   * Ghép mỗi policy với usage stats tương ứng để hiển thị trong bảng.
+   */
+  policiesWithUsage = computed<{ policy: Policy; usage: UsageStats }[]>(() => {
+    const policiesArr = this._policies();
+    const usagesArr = this._usages();
+
+    return policiesArr.map(policy => {
+      const usage = usagesArr.find(u => u.policy_id === policy.policy_id) ?? {
+        policy_id: policy.policy_id,
+        key: policy.policy_id,
+        current_usage: 0,
+        max_requests: policy.max_requests,
+        remaining: policy.max_requests,
+        reset_at: '',
+        window_seconds: policy.window_seconds,
+      };
+      return { policy, usage };
+    });
+  });
+
+  /**
+   * Computed: danh sách thẻ thống kê.
+   *
+   * Tính toán từ policies và usages hiện tại.
+   */
+  statCards = computed<StatCard[]>(() => {
+    const policiesArr = this._policies();
+    const usagesArr = this._usages();
+    const totalPolicies = policiesArr.length;
+    const enabledCount = policiesArr.filter(p => p.enabled).length;
+    const exceededCount = usagesArr.filter(u => u.remaining <= 0).length;
+    const healthyCount = usagesArr.filter(u => u.max_requests > 0 && u.remaining > u.max_requests * 0.5).length;
+
+    return [
+      {
+        label: 'Tổng Policy',
+        value: totalPolicies,
+        icon: 'speed',
+        color: '#e3f2fd',
+      },
+      {
+        label: 'Đang Bật',
+        value: enabledCount,
+        icon: 'toggle_on',
+        color: '#e8f5e9',
+      },
+      {
+        label: 'Đã Vượt Hạn',
+        value: exceededCount,
+        icon: 'warning',
+        color: '#ffebee',
+      },
+      {
+        label: 'Còn Dư',
+        value: healthyCount,
+        icon: 'check_circle',
+        color: '#e8f5e9',
+      },
+    ];
+  });
+
+  /**
+   * Sau khi view khởi tạo: tải dữ liệu ban đầu.
+   */
+  ngAfterViewInit(): void {
+    this.loadData();
+  }
+
+  /**
+   * Cleanup khi component bị huỷ.
+   */
+  ngOnDestroy(): void {
+    // Không có resource cần cleanup
+  }
+
+  /**
+   * Tải danh sách policies và usage stats từ API.
+   */
+  loadData(): void {
+    this._loading.set(true);
+    this._error.set(null);
+
+    // Tải danh sách policies
+    this.rateLimitService.getPolicies().subscribe({
+      next: (policiesArr: Policy[]) => {
+        this._policies.set(policiesArr);
+
+        // Nếu không có policies, thiết lập usages rỗng và hoàn tất
+        if (!policiesArr.length) {
+          this._usages.set([]);
+          this._loading.set(false);
+          return;
+        }
+
+        // Với mỗi policy, tải usage stats song song
+        const usageObservables = policiesArr.map(policy =>
+          this.rateLimitService.getUsage(policy.policy_id)
+        );
+
+        // Sử dụng forkJoin-like pattern để chờ tất cả requests
+        const usagesArr: UsageStats[] = [];
+        let completedCount = 0;
+
+        usageObservables.forEach((obs, index) => {
+          obs.subscribe({
+            next: (usage: UsageStats) => {
+              usagesArr[index] = usage;
+              completedCount++;
+              if (completedCount === policiesArr.length) {
+                this._usages.set(usagesArr);
+                this._loading.set(false);
+              }
+            },
+            error: (err: unknown) => {
+              // Nếu một request thất bại, dùng giá trị mặc định
+              usagesArr[index] = {
+                policy_id: policiesArr[index].policy_id,
+                key: policiesArr[index].policy_id,
+                current_usage: 0,
+                max_requests: policiesArr[index].max_requests,
+                remaining: policiesArr[index].max_requests,
+                reset_at: '',
+                window_seconds: policiesArr[index].window_seconds,
+              };
+              completedCount++;
+              if (completedCount === policiesArr.length) {
+                this._usages.set(usagesArr);
+                this._loading.set(false);
+              }
+            },
+          });
+        });
+      },
+      error: (err: unknown) => {
+        this._error.set(this.formatError(err, 'Tải danh sách policies thất bại'));
+        this._loading.set(false);
+      },
+    });
+  }
+
+  /**
+   * Làm mới dữ liệu thủ công.
+   */
+  refresh(): void {
+    this.loadData();
+  }
+
+  /**
+   * Xóa thông báo lỗi hiện tại.
+   */
+  clearError(): void {
+    this._error.set(null);
+  }
+
+  /**
+   * Reset usage cho một key cụ thể.
+   *
+   * @param key - Key cần reset usage
+   */
+  resetUsageFor(key: string): void {
+    this.rateLimitService.resetUsage(key).subscribe({
+      next: (result: { success: boolean; key: string }) => {
+        if (result.success) {
+          // Làm mới dữ liệu sau khi reset thành công
+          this.loadData();
+        }
+      },
+      error: (err: unknown) => {
+        this._error.set(this.formatError(err, 'Reset usage thất bại'));
+      },
+    });
+  }
+
+  /**
+   * Lấy phần trăm sử dụng từ usage stats.
+   *
+   * @param usage - UsageStats object
+   * @returns Phần trăm số nguyên (0-100)
+   */
+  getUsagePercentage(usage: UsageStats): number {
+    if (usage.max_requests === 0) return 0;
+    return Math.round((usage.current_usage / usage.max_requests) * 100);
+  }
+
+  /**
+   * Lấy CSS class cho thanh tiến độ dựa trên mức sử dụng.
+   *
+   * @param usage - UsageStats object
+   * @returns CSS class name
+   */
+  getUsageBarClass(usage: UsageStats): string {
+    const percentage = this.getUsagePercentage(usage);
+    if (percentage >= 90) {
+      return 'usage-danger';
+    } else if (percentage >= 70) {
+      return 'usage-warning';
+    }
+    return 'usage-safe';
+  }
+
+  /**
+   * Lấy nhãn chiến lược tiếng Việt.
+   *
+   * @param strategy - Tên chiến lược
+   * @returns Label tiếng Việt
+   */
+  getStrategyLabel(strategy: string): string {
+    return STRATEGY_LABELS[strategy] || strategy;
+  }
+
+  /**
+   * Format error message.
+   *
+   * @param error - Error object từ HTTP response
+   * @param defaultMessage - Thông báo mặc định
+   * @returns Message string
+   */
+  private formatError(error: unknown, defaultMessage: string): string {
+    if (error instanceof Error) {
+      return error.message || defaultMessage;
+    }
+    if (typeof error === 'string') {
+      return error;
+    }
+    return defaultMessage;
+  }
+}

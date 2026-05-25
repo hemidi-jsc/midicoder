@@ -1,0 +1,618 @@
+/**
+ * Rate Limit Controller - Sinh tự động bởi Midicoder CP48.
+ *
+ * Controller REST API cho rate limiting engine.
+ * Cung cấp các endpoint:
+ * - Quản lý chính sách rate limit (CRUD policies)
+ * - Xem usage và reset counters
+ * - Quản lý quota đa cấp
+ *
+ * DTOs được định nghĩa trong file này, sử dụng class-validator
+ * để validate đầu vào từ client.
+ *
+ * CP48: Rate Limiting
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Body,
+  Query,
+  HttpCode,
+  HttpStatus,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+  ApiBearerAuth,
+  ApiHeader,
+} from '@nestjs/swagger';
+import {
+  IsString,
+  IsInt,
+  IsOptional,
+  IsEnum,
+  IsBoolean,
+  IsArray,
+  IsNotEmpty,
+  IsNumber,
+  IsObject,
+  Min,
+  Max,
+  ValidateNested,
+  IsUUID,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+import { RateLimitService, RateLimitStrategy, RateLimitPolicy } from './rate-limit.service';
+import { QuotaService, QuotaLevel, QuotaPeriod } from './quota.service';
+
+// ============================================================================
+// DTOs
+// ============================================================================
+
+/**
+ * DTO để tạo một chính sách rate limit mới.
+ */
+class CreatePolicyDto {
+  @ApiProperty({ description: 'ID của chính sách', example: 'api_default' })
+  @IsNotEmpty()
+  @IsString()
+  policy_id: string;
+
+  @ApiProperty({ description: 'Tên chính sách', example: 'API Default Rate Limit' })
+  @IsNotEmpty()
+  @IsString()
+  name: string;
+
+  @ApiProperty({ description: 'Chiến lược rate limit', enum: RateLimitStrategy, example: 'fixed_window' })
+  @IsEnum(RateLimitStrategy)
+  strategy: RateLimitStrategy;
+
+  @ApiProperty({ description: 'Số yêu cầu tối đa trong window', example: 100 })
+  @IsInt()
+  @Min(1)
+  @Max(1000000)
+  max_requests: number;
+
+  @ApiProperty({ description: 'Thời gian window tính bằng giây', example: 60 })
+  @IsInt()
+  @Min(1)
+  @Max(86400)
+  window_seconds: number;
+
+  @ApiProperty({ description: 'Tốc độ refill token (token/giây)', example: 10 })
+  @IsNumber()
+  @Min(0.1)
+  @Max(10000)
+  refill_rate: number;
+
+  @ApiProperty({ description: 'Kích thước burst tối đa', example: 20 })
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  burst_size: number;
+
+  @ApiPropertyOptional({ description: 'Bật/tắt chính sách', example: true })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Danh sách keys được bypass', example: ['admin-key-1'] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  bypass_keys?: string[];
+
+  @ApiPropertyOptional({ description: 'Metadata tùy chỉnh', type: Object })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO để cập nhật chính sách rate limit.
+ */
+class UpdatePolicyDto {
+  @ApiPropertyOptional({ description: 'Tên chính sách' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ description: 'Chiến lược rate limit', enum: RateLimitStrategy })
+  @IsOptional()
+  @IsEnum(RateLimitStrategy)
+  strategy?: RateLimitStrategy;
+
+  @ApiPropertyOptional({ description: 'Số yêu cầu tối đa trong window' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000000)
+  max_requests?: number;
+
+  @ApiPropertyOptional({ description: 'Thời gian window tính bằng giây' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(86400)
+  window_seconds?: number;
+
+  @ApiPropertyOptional({ description: 'Tốc độ refill token (token/giây)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  @Max(10000)
+  refill_rate?: number;
+
+  @ApiPropertyOptional({ description: 'Kích thước burst tối đa' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  burst_size?: number;
+
+  @ApiPropertyOptional({ description: 'Bật/tắt chính sách' })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Danh sách keys được bypass' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  bypass_keys?: string[];
+
+  @ApiPropertyOptional({ description: 'Metadata tùy chỉnh', type: Object })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO để lấy thông tin usage.
+ */
+class UsageQueryDto {
+  @ApiPropertyOptional({ description: 'ID của chính sách rate limit' })
+  @IsOptional()
+  @IsString()
+  policy_id?: string;
+}
+
+/**
+ * DTO để tạo quota mới.
+ */
+class CreateQuotaDto {
+  @ApiProperty({ description: 'ID của cấu hình quota', example: 'tenant_api_quota' })
+  @IsNotEmpty()
+  @IsString()
+  config_id: string;
+
+  @ApiProperty({ description: 'Cấp độ áp dụng quota', enum: QuotaLevel, example: 'TENANT' })
+  @IsEnum(QuotaLevel)
+  level: QuotaLevel;
+
+  @ApiProperty({ description: 'Chu kỳ tính quota', enum: QuotaPeriod, example: 'DAY' })
+  @IsEnum(QuotaPeriod)
+  period: QuotaPeriod;
+
+  @ApiProperty({ description: 'Số yêu cầu tối đa trong chu kỳ', example: 10000 })
+  @IsInt()
+  @Min(1)
+  @Max(100000000)
+  max_requests: number;
+
+  @ApiPropertyOptional({ description: 'Tenant ID (nếu level = TENANT)' })
+  @IsOptional()
+  @IsString()
+  tenant_id?: string;
+
+  @ApiPropertyOptional({ description: 'Endpoint pattern (nếu level = ENDPOINT)' })
+  @IsOptional()
+  @IsString()
+  endpoint?: string;
+
+  @ApiPropertyOptional({ description: 'Bật/tắt quota', example: true })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Metadata tùy chỉnh', type: Object })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+/**
+ * DTO để cập nhật quota.
+ */
+class UpdateQuotaDto {
+  @ApiPropertyOptional({ description: 'Chu kỳ tính quota', enum: QuotaPeriod })
+  @IsOptional()
+  @IsEnum(QuotaPeriod)
+  period?: QuotaPeriod;
+
+  @ApiPropertyOptional({ description: 'Số yêu cầu tối đa trong chu kỳ' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100000000)
+  max_requests?: number;
+
+  @ApiPropertyOptional({ description: 'Tenant ID' })
+  @IsOptional()
+  @IsString()
+  tenant_id?: string;
+
+  @ApiPropertyOptional({ description: 'Endpoint pattern' })
+  @IsOptional()
+  @IsString()
+  endpoint?: string;
+
+  @ApiPropertyOptional({ description: 'Bật/tắt quota' })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Metadata tùy chỉnh', type: Object })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+// ============================================================================
+// Controller
+// ============================================================================
+
+@ApiTags('Rate Limit')
+@ApiBearerAuth()
+@Controller('rate-limit')
+export class RateLimitController {
+  private readonly logger: Logger;
+
+  constructor(
+    private readonly rateLimitService: RateLimitService,
+    private readonly quotaService: QuotaService,
+  ) {
+    this.logger = new Logger(RateLimitController.name);
+  }
+
+  // ========================================================================
+  // CRUD Policies
+  // ========================================================================
+
+  /**
+   * Lấy danh sách tất cả chính sách rate limit.
+   *
+   * @get /rate-limit/policies
+   */
+  @Get('policies')
+  @ApiOperation({ summary: 'Lấy danh sách chính sách rate limit' })
+  @ApiResponse({ status: 200, description: 'Danh sách chính sách' })
+  getPolicies(): RateLimitPolicy[] {
+    return this.rateLimitService.getPolicies();
+  }
+
+  /**
+   * Lấy thông tin chi tiết của một chính sách.
+   *
+   * @get /rate-limit/policies/:id
+   */
+  @Get('policies/:id')
+  @ApiOperation({ summary: 'Lấy thông tin chính sách rate limit' })
+  @ApiParam({ name: 'id', description: 'Policy ID' })
+  @ApiResponse({ status: 200, description: 'Thông tin chính sách' })
+  @ApiResponse({ status: 404, description: 'Chính sách không tìm thấy' })
+  getPolicy(@Param('id') id: string): RateLimitPolicy {
+    const policy = this.rateLimitService.getPolicy(id);
+
+    if (!policy) {
+      throw new BadRequestException(`Chính sách rate limit ${id} không tìm thấy`);
+    }
+
+    return policy;
+  }
+
+  /**
+   * Tạo một chính sách rate limit mới.
+   *
+   * @post /rate-limit/policies
+   */
+  @Post('policies')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Tạo chính sách rate limit mới' })
+  @ApiResponse({ status: 201, description: 'Chính sách đã được tạo' })
+  @ApiResponse({ status: 400, description: 'Dữ liệu đầu vào không hợp lệ' })
+  createPolicy(@Body() dto: CreatePolicyDto): RateLimitPolicy {
+    // Kiểm tra xem policy_id đã tồn tại chưa
+    if (this.rateLimitService.getPolicy(dto.policy_id)) {
+      throw new BadRequestException(`Chính sách rate limit ${dto.policy_id} đã tồn tại`);
+    }
+
+    const policy: RateLimitPolicy = {
+      policy_id: dto.policy_id,
+      name: dto.name,
+      strategy: dto.strategy,
+      max_requests: dto.max_requests,
+      window_seconds: dto.window_seconds,
+      refill_rate: dto.refill_rate,
+      burst_size: dto.burst_size,
+      enabled: dto.enabled ?? true,
+      bypass_keys: dto.bypass_keys ?? [],
+      metadata: dto.metadata ?? null,
+    };
+
+    this.rateLimitService.upsertPolicy(policy);
+
+    this.logger.log(`Đã tạo chính sách rate limit mới: ${dto.name} (${dto.policy_id})`);
+
+    return policy;
+  }
+
+  /**
+   * Cập nhật một chính sách rate limit hiện có.
+   *
+   * @put /rate-limit/policies/:id
+   */
+  @Put('policies/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cập nhật chính sách rate limit' })
+  @ApiParam({ name: 'id', description: 'Policy ID' })
+  @ApiResponse({ status: 200, description: 'Chính sách đã được cập nhật' })
+  @ApiResponse({ status: 404, description: 'Chính sách không tìm thấy' })
+  updatePolicy(@Param('id') id: string, @Body() dto: UpdatePolicyDto): RateLimitPolicy {
+    const existing = this.rateLimitService.getPolicy(id);
+
+    if (!existing) {
+      throw new BadRequestException(`Chính sách rate limit ${id} không tìm thấy`);
+    }
+
+    const updated: RateLimitPolicy = {
+      ...existing,
+      ...dto,
+      policy_id: id, // Đảm bảo không thể thay đổi policy_id
+    };
+
+    this.rateLimitService.upsertPolicy(updated);
+
+    this.logger.log(`Đã cập nhật chính sách rate limit: ${id}`);
+
+    return updated;
+  }
+
+  /**
+   * Xóa một chính sách rate limit.
+   *
+   * @delete /rate-limit/policies/:id
+   */
+  @Delete('policies/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Xóa chính sách rate limit' })
+  @ApiParam({ name: 'id', description: 'Policy ID' })
+  @ApiResponse({ status: 204, description: 'Chính sách đã được xóa' })
+  @ApiResponse({ status: 404, description: 'Chính sách không tìm thấy' })
+  deletePolicy(@Param('id') id: string): void {
+    this.rateLimitService.deletePolicy(id);
+    this.logger.log(`Đã xóa chính sách rate limit: ${id}`);
+  }
+
+  // ========================================================================
+  // Usage Management
+  // ========================================================================
+
+  /**
+   * Lấy thông tin usage hiện tại của một key.
+   *
+   * @get /rate-limit/usage/:key
+   */
+  @Get('usage/:key')
+  @ApiOperation({ summary: 'Lấy thông tin usage của key' })
+  @ApiParam({ name: 'key', description: 'Rate limit key (IP, user ID, API key)' })
+  @ApiQuery({ name: 'policy_id', required: false, description: 'Lọc theo policy ID' })
+  @ApiResponse({ status: 200, description: 'Thông tin usage' })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy dữ liệu usage' })
+  getUsage(
+    @Param('key') key: string,
+    @Query() query: UsageQueryDto,
+  ) {
+    // Nếu không có policy_id, lấy policy mặc định
+    const policies = this.rateLimitService.getPolicies();
+    const policyId = query.policy_id || (policies.length > 0 ? policies[0].policy_id : null);
+
+    if (!policyId) {
+      throw new BadRequestException('Không có chính sách rate limit nào được cấu hình');
+    }
+
+    return this.rateLimitService.getUsage(key, policyId);
+  }
+
+  /**
+   * Reset usage counters của một key.
+   *
+   * @post /rate-limit/usage/:key/reset
+   */
+  @Post('usage/:key/reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset usage counters của key' })
+  @ApiParam({ name: 'key', description: 'Rate limit key cần reset' })
+  @ApiQuery({ name: 'policy_id', required: false, description: 'Reset theo policy ID cụ thể' })
+  @ApiResponse({ status: 200, description: 'Kết quả reset', schema: { example: { reset_count: 1 } } })
+  resetUsage(
+    @Param('key') key: string,
+    @Query() query: UsageQueryDto,
+  ) {
+    let resetCount: number;
+
+    if (query.policy_id) {
+      resetCount = this.rateLimitService.reset(key, query.policy_id);
+    } else {
+      // Reset key ở tất cả policies
+      resetCount = this.rateLimitService.reset(key);
+    }
+
+    this.logger.log(`Đã reset usage cho key ${key}: ${resetCount} records`);
+
+    return { reset_count: resetCount };
+  }
+
+  // ========================================================================
+  // Quota Management
+  // ========================================================================
+
+  /**
+   * Lấy danh sách tất cả cấu hình quota.
+   *
+   * @get /rate-limit/quotas
+   */
+  @Get('quotas')
+  @ApiOperation({ summary: 'Lấy danh sách cấu hình quota' })
+  @ApiQuery({ name: 'level', required: false, enum: QuotaLevel, description: 'Lọc theo cấp độ' })
+  @ApiQuery({ name: 'tenant_id', required: false, description: 'Lọc theo tenant ID' })
+  @ApiResponse({ status: 200, description: 'Danh sách quota' })
+  getQuotas(
+    @Query('level') level?: QuotaLevel,
+    @Query('tenant_id') tenant_id?: string,
+  ) {
+    if (level || tenant_id) {
+      return this.quotaService.getQuotas(level, tenant_id);
+    }
+
+    return this.quotaService.getAllQuotas();
+  }
+
+  /**
+   * Tạo một cấu hình quota mới.
+   *
+   * @post /rate-limit/quotas
+   */
+  @Post('quotas')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Tạo cấu hình quota mới' })
+  @ApiResponse({ status: 201, description: 'Quota đã được tạo' })
+  @ApiResponse({ status: 400, description: 'Dữ liệu đầu vào không hợp lệ hoặc config_id đã tồn tại' })
+  createQuota(@Body() dto: CreateQuotaDto) {
+    // Kiểm tra config_id đã tồn tại chưa
+    const existing = this.quotaService.getQuota(dto.config_id);
+    if (existing) {
+      throw new BadRequestException(`Cấu hình quota ${dto.config_id} đã tồn tại`);
+    }
+
+    return this.quotaService.upsertQuota({
+      config_id: dto.config_id,
+      level: dto.level,
+      period: dto.period,
+      max_requests: dto.max_requests,
+      tenant_id: dto.tenant_id ?? null,
+      endpoint: dto.endpoint ?? null,
+      enabled: dto.enabled ?? true,
+      metadata: dto.metadata ?? null,
+    });
+  }
+
+  /**
+   * Cập nhật cấu hình quota.
+   *
+   * @put /rate-limit/quotas/:id
+   */
+  @Put('quotas/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cập nhật cấu hình quota' })
+  @ApiParam({ name: 'id', description: 'Config ID' })
+  @ApiResponse({ status: 200, description: 'Quota đã được cập nhật' })
+  @ApiResponse({ status: 404, description: 'Quota không tìm thấy' })
+  updateQuota(@Param('id') id: string, @Body() dto: UpdateQuotaDto) {
+    const existing = this.quotaService.getQuota(id);
+
+    if (!existing) {
+      throw new BadRequestException(`Cấu hình quota ${id} không tìm thấy`);
+    }
+
+    return this.quotaService.upsertQuota({
+      ...existing,
+      ...dto,
+      config_id: id,
+      tenant_id: dto.tenant_id !== undefined ? dto.tenant_id : existing.tenant_id,
+      endpoint: dto.endpoint !== undefined ? dto.endpoint : existing.endpoint,
+    });
+  }
+
+  /**
+   * Xóa cấu hình quota.
+   *
+   * @delete /rate-limit/quotas/:id
+   */
+  @Delete('quotas/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Xóa cấu hình quota' })
+  @ApiParam({ name: 'id', description: 'Config ID' })
+  @ApiResponse({ status: 204, description: 'Quota đã được xóa' })
+  @ApiResponse({ status: 404, description: 'Quota không tìm thấy' })
+  deleteQuota(@Param('id') id: string): void {
+    this.quotaService.deleteQuota(id);
+  }
+
+  /**
+   * Kiểm tra quota cho một key và trả về kết quả.
+   *
+   * @post /rate-limit/quotas/check
+   */
+  @Post('quotas/check')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Kiểm tra quota cho key' })
+  @ApiResponse({ status: 200, description: 'Kết quả kiểm tra quota' })
+  checkQuota(
+    @Body('key') key: string,
+    @Body('config_id') config_id?: string,
+  ) {
+    if (!key) {
+      throw new BadRequestException('Key không được để trống');
+    }
+
+    if (config_id) {
+      return this.quotaService.checkQuota(key, config_id);
+    }
+
+    // Kiểm tra tất cả quotas
+    return this.quotaService.checkQuota(key);
+  }
+
+  /**
+   * Lấy số yêu cầu còn lại của một key.
+   *
+   * @get /rate-limit/quotas/:config_id/remaining/:key
+   */
+  @Get('quotas/:config_id/remaining/:key')
+  @ApiOperation({ summary: 'Lấy số yêu cầu còn lại của quota' })
+  @ApiParam({ name: 'config_id', description: 'Config ID của quota' })
+  @ApiParam({ name: 'key', description: 'Key cần kiểm tra' })
+  @ApiResponse({ status: 200, description: 'Số yêu cầu còn lại' })
+  getRemaining(@Param('config_id') config_id: string, @Param('key') key: string) {
+    return this.quotaService.getRemaining(key, config_id);
+  }
+
+  /**
+   * Reset quota usage của một key.
+   *
+   * @post /rate-limit/quotas/:config_id/reset/:key
+   */
+  @Post('quotas/:config_id/reset/:key')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset quota usage của key' })
+  @ApiParam({ name: 'config_id', description: 'Config ID của quota' })
+  @ApiParam({ name: 'key', description: 'Key cần reset' })
+  @ApiResponse({ status: 200, description: 'Quota đã được reset' })
+  resetQuota(@Param('config_id') config_id: string, @Param('key') key: string) {
+    this.quotaService.reset(key, config_id);
+    return { message: `Đã reset quota ${config_id} cho key ${key}` };
+  }
+}

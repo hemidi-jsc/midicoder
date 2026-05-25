@@ -1,0 +1,278 @@
+/**
+ * Rate Limit Middleware - Sinh tự động bởi Midicoder CP48.
+ *
+ * Middleware NestJS để áp dụng rate limit cho mọi yêu cầu HTTP.
+ * - Tự động xác định key từ yêu cầu (IP, API key, tenant ID)
+ * - Áp dụng chính sách rate limit phù hợp
+ * - Trả về 429 Too Many Requests với Retry-After header khi vượt quá
+ * - Thêm các header X-RateLimit-* vào response
+ * - Hỗ trợ bypass cho các routes/keys đặc biệt
+ *
+ * CP48: Rate Limiting
+ */
+
+import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
+import { Request, Response, NextFunction } from 'express';
+import { RateLimitService, RateLimitStrategy } from './rate-limit.service';
+
+/**
+ * Cấu hình mặc định cho middleware.
+ */
+interface MiddlewareConfig {
+  /** Chính sách mặc định khi không có policy nào khớp với route */
+  default_policy_id: string;
+  /** Các route bypass (không áp dụng rate limit) */
+  exclude_paths: string[];
+  /** Phương thức xác định key: 'ip' | 'api_key' | 'user_id' */
+  key_extractor: 'ip' | 'api_key' | 'user_id';
+  /** Header chứa API key (nếu key_extractor = 'api_key') */
+  api_key_header: string;
+  /** Có nên thêm X-RateLimit headers vào response không */
+  include_headers: boolean;
+  /** Có nên log khi bị chặn không */
+  log_when_blocked: boolean;
+}
+
+@Injectable()
+export class RateLimitMiddleware implements NestMiddleware {
+  private readonly logger: Logger;
+  private readonly config: MiddlewareConfig;
+
+  constructor(private readonly rateLimitService: RateLimitService) {
+    this.logger = new Logger(RateLimitMiddleware.name);
+    this.config = {
+      // Chính sách mặc định: lấy policy đầu tiên nếu có
+      {% if has_policies %}
+      default_policy_id: '{{ policies[0].policy_id }}',
+      {% else %}
+      default_policy_id: 'default',
+      {% endif %}
+      exclude_paths: ['/health', '/metrics', '/favicon.ico'],
+      key_extractor: 'ip',
+      api_key_header: 'X-API-Key',
+      include_headers: true,
+      log_when_blocked: true,
+    };
+  }
+
+  /**
+   * Resolve method của NestMiddleware.
+   *
+   * NestJS gọi phương thức này để lấy hàm middleware thực tế.
+   * Trả về một hàm nhận (req, res, next) và xử lý rate limit.
+   *
+   * @returns Hàm middleware
+   */
+  resolve(): (req: Request, res: Response, next: NextFunction) => void {
+    return (req: Request, res: Response, next: NextFunction) => {
+      // =========================================================================
+      // Bước 1: Kiểm tra nếu route được loại trừ
+      // =========================================================================
+      if (this.shouldExclude(req)) {
+        return next();
+      }
+
+      // =========================================================================
+      // Bước 2: Xác định key và policy ID
+      // =========================================================================
+      const key = this.extractKey(req);
+      const policyId = this.resolvePolicyId(req);
+
+      // Nếu không tìm thấy policy, bỏ qua (log warning)
+      if (!policyId) {
+        this.logger.warn(`Không tìm thấy policy cho route ${req.method} ${req.url} - bỏ qua rate limit`);
+        return next();
+      }
+
+      // =========================================================================
+      // Bước 3: Kiểm tra rate limit
+      // =========================================================================
+      let result;
+      try {
+        result = this.rateLimitService.checkLimit(key, policyId);
+      } catch (error) {
+        // Nếu policy không tồn tại, bỏ qua rate limit
+        this.logger.warn(`Lỗi khi kiểm tra rate limit: ${error.message}`);
+        return next();
+      }
+
+      // =========================================================================
+      // Bước 4: Thêm headers vào response
+      // =========================================================================
+      if (this.config.include_headers) {
+        this.setRateLimitHeaders(res, result);
+      }
+
+      // =========================================================================
+      // Bước 5: Nếu vượt quá giới hạn, trả về 429
+      // =========================================================================
+      if (!result.allowed) {
+        if (this.config.log_when_blocked) {
+          this.logger.warn(
+            `Rate limit bị vượt: key=${key}, policy=${result.policy_id}, ` +
+            `method=${req.method}, url=${req.url}, ip=${req.ip}`,
+          );
+        }
+
+        return res.status(429).json({
+          error: 'Too Many Requests',
+          message: 'Bạn đã vượt quá giới hạn yêu cầu. Vui lòng thử lại sau.',
+          retry_after: result.retry_after,
+          limit: result.limit,
+          remaining: result.remaining,
+          reset_at: result.reset_at,
+        });
+      }
+
+      // =========================================================================
+      // Bước 6: Cho phép yêu cầu tiếp tục
+      // =========================================================================
+      next();
+    };
+  }
+
+  /**
+   * Kiểm tra xem route có nên được loại trừ khỏi rate limit không.
+   *
+   * @param req Yêu cầu HTTP
+   * @returns true nếu route được loại trừ
+   */
+  private shouldExclude(req: Request): boolean {
+    // Kiểm tra các path được loại trừ
+    for (const path of this.config.exclude_paths) {
+      if (req.path === path || req.path.startsWith(path)) {
+        return true;
+      }
+    }
+
+    // Kiểm tra các path hệ thống của NestJS
+    if (req.path.startsWith('/__') || req.path.startsWith('/.well-known')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Trích xuất key từ yêu cầu để làm khóa rate limit.
+   *
+   * Hỗ trợ 3 phương thức:
+   * - 'ip': Sử dụng địa chỉ IP của client
+   * - 'api_key': Sử dụng API key từ header
+   * - 'user_id': Sử dụng user ID từ authentication (chưa implement)
+   *
+   * @param req Yêu cầu HTTP
+   * @returns Key để làm khóa rate limit
+   */
+  private extractKey(req: Request): string {
+    switch (this.config.key_extractor) {
+      case 'api_key':
+        // Lấy API key từ header
+        const apiKey = req.headers[this.config.api_key_header] as string;
+        if (apiKey) {
+          return `api:${apiKey}`;
+        }
+        // Fallback sang IP nếu không có API key
+        this.logger.debug('Không tìm thấy API key, fallback sang IP');
+        return `ip:${this.getClientIp(req)}`;
+
+      case 'user_id':
+        // Lấy user ID từ request object (do auth middleware đặt vào)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const userId = (req as any).user?.id || (req as any).user?.sub;
+        if (userId) {
+          return `user:${userId}`;
+        }
+        // Fallback sang IP
+        this.logger.debug('Không tìm thấy user ID, fallback sang IP');
+        return `ip:${this.getClientIp(req)}`;
+
+      case 'ip':
+      default:
+        return `ip:${this.getClientIp(req)}`;
+    }
+  }
+
+  /**
+   * Xác định policy ID phù hợp cho route hiện tại.
+   *
+   * Logic ưu tiên:
+   * 1. Kiểm tra nếu có policy cụ thể cho route
+   * 2. Fallback sang policy mặc định
+   *
+   * @param req Yêu cầu HTTP
+   * @returns Policy ID hoặc null nếu không có policy phù hợp
+   */
+  private resolvePolicyId(req: Request): string | null {
+    // Mapping route -> policy ID
+    // Có thể mở rộng để match theo pattern
+    const routePolicyMap: Record<string, string> = {
+      {% for policy in policies %}
+      '{{ policy.metadata?.route_pattern if policy.metadata and policy.metadata.route_pattern else "" }}': '{{ policy.policy_id }}',
+      {% endfor %}
+    };
+
+    // Kiểm tra xem route có khớp với bất kỳ policy cụ thể nào không
+    for (const [pattern, policyId] of Object.entries(routePolicyMap)) {
+      if (pattern && req.path.startsWith(pattern)) {
+        return policyId;
+      }
+    }
+
+    // Fallback sang policy mặc định
+    return this.config.default_policy_id;
+  }
+
+  /**
+   * Lấy địa chỉ IP thực của client.
+   *
+   * Xử lý trường hợp client nằm sau proxy/load balancer.
+   * Kiểm tra X-Forwarded-For header trước, sau đó fallback sang req.ip.
+   *
+   * @param req Yêu cầu HTTP
+   * @returns Địa chỉ IP
+   */
+  private getClientIp(req: Request): string {
+    // Kiểm tra X-Forwarded-For header (từ proxy)
+    const forwardedFor = req.headers['x-forwarded-for'] as string;
+    if (forwardedFor) {
+      // X-Forwarded-For có thể chứa nhiều IP, lấy IP đầu tiên
+      return forwardedFor.split(',')[0].trim();
+    }
+
+    // Kiểm tra X-Real-IP header
+    const realIp = req.headers['x-real-ip'] as string;
+    if (realIp) {
+      return realIp.trim();
+    }
+
+    // Fallback sang req.ip
+    return req.ip || '0.0.0.0';
+  }
+
+  /**
+   * Thêm các header rate limit vào response.
+   *
+   * Các header tiêu chuẩn:
+   * - X-RateLimit-Limit: Tổng số yêu cầu cho phép
+   * - X-RateLimit-Remaining: Số yêu cầu còn lại
+   * - X-RateLimit-Reset: Thời điểm reset (Unix timestamp)
+   * - Retry-After: Số giây cần chờ (chỉ khi bị chặn)
+   *
+   * @param res Response HTTP
+   * @param result Kết quả kiểm tra rate limit
+   */
+  private setRateLimitHeaders(res: Response, result: any): void {
+    res.set({
+      'X-RateLimit-Limit': String(result.limit),
+      'X-RateLimit-Remaining': String(result.remaining),
+      'X-RateLimit-Reset': String(result.reset_at),
+      'X-RateLimit-Policy': result.policy_id,
+    });
+
+    // Chỉ thêm Retry-After khi bị chặn
+    if (!result.allowed && result.retry_after != null) {
+      res.set('Retry-After', String(result.retry_after));
+    }
+  }
+}

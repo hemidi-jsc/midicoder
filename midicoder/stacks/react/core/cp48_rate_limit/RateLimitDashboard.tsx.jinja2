@@ -1,0 +1,648 @@
+/**
+* RateLimitDashboard — Bảng điều khiển tổng quan Rate Limiting: chính sách, thống kê sử dụng, auto-refresh.
+* Sinh bởi CP48 RateLimitEmitter.
+*
+* Số lượng chính sách: {{ policies | length }}
+* Số lượng quota: {{ quotas | length }}
+* Có chính sách: {{ has_policies | lower }}
+* Có quota: {{ has_quotas | lower }}
+*/
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+
+/* ======================================================================
+* ĐỊNH NGHĨA INTERFACE
+* ====================================================================== */
+
+/**
+* Thông tin sử dụng của một chính sách rate limit
+*/
+interface PolicyUsage {
+/** ID chính sách */
+policy_id: string;
+/** Tên chính sách */
+name: string;
+/** Chiến lược rate limit */
+strategy: string;
+/** Số request tối đa trong cửa sổ */
+max_requests: number;
+/** Cửa sổ thời gian (giây) */
+window_seconds: number;
+/** Số request hiện tại */
+current_usage: number;
+/** Số request còn lại */
+remaining: number;
+/** Tỷ lệ phần trăm đã sử dụng */
+usage_percent: number;
+/** Có đang bị giới hạn không */
+is_limited: boolean;
+/** Thời gian reset (ISO string) */
+reset_at: string;
+/** Đã bật chưa */
+enabled: boolean;
+}
+
+/**
+* Dữ liệu trả về từ API danh sách chính sách
+*/
+interface PoliciesApiResponse {
+policies: Array<{ policy_id: string; name: string; strategy: string; max_requests: number; window_seconds: number;
+    enabled: boolean; }>;
+    usages: Record<string, { current: number; remaining: number; reset_at: string; is_limited: boolean; }>;
+        }
+
+        /* ======================================================================
+        * STYLE OBJECTS — tiền khai báo để tránh conflict double-brace trong JSX
+        * ====================================================================== */
+
+        const sWrap: React.CSSProperties = {
+        padding: '24px',
+        maxWidth: '1200px',
+        margin: '0 auto',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        backgroundColor: '#f9fafb',
+        minHeight: '100vh',
+        };
+
+        const sHeader: React.CSSProperties = {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        gap: '12px',
+        };
+
+        const sHeaderTitle: React.CSSProperties = {
+        margin: 0,
+        fontSize: '24px',
+        fontWeight: 700,
+        color: '#111827',
+        };
+
+        const sHeaderActions: React.CSSProperties = {
+        display: 'flex',
+        gap: '10px',
+        flexWrap: 'wrap',
+        };
+
+        const sBtnBase: React.CSSProperties = {
+        padding: '8px 16px',
+        border: '1px solid #d1d5db',
+        borderRadius: '8px',
+        background: '#fff',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: 500,
+        color: '#374151',
+        transition: 'all 0.15s',
+        };
+
+        const sBtnPrimary: React.CSSProperties = {
+        ...sBtnBase,
+        background: '#6366f1',
+        color: '#fff',
+        border: 'none',
+        boxShadow: '0 1px 2px rgba(99,102,241,0.3)',
+        };
+
+        const sStatsRow: React.CSSProperties = {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '16px',
+        marginBottom: '24px',
+        };
+
+        const sStatCardBase: React.CSSProperties = {
+        background: '#fff',
+        borderRadius: '12px',
+        padding: '20px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+        position: 'relative',
+        overflow: 'hidden',
+        };
+
+        const sStatLabel: React.CSSProperties = {
+        margin: 0,
+        fontSize: '13px',
+        fontWeight: 500,
+        color: '#6b7280',
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+        };
+
+        const sStatValue: React.CSSProperties = {
+        margin: '8px 0 0',
+        fontSize: '36px',
+        fontWeight: 700,
+        lineHeight: 1.1,
+        };
+
+        const sStatBar: React.CSSProperties = {
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: '4px',
+        };
+
+        const sPulseDot: React.CSSProperties = {
+        position: 'absolute',
+        top: '16px',
+        right: '16px',
+        width: '10px',
+        height: '10px',
+        borderRadius: '50%',
+        animation: 'pulse 2s ease-in-out infinite',
+        };
+
+        const sCard: React.CSSProperties = {
+        background: '#fff',
+        borderRadius: '12px',
+        padding: '20px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+        marginBottom: '20px',
+        };
+
+        const sCardTitle: React.CSSProperties = {
+        margin: '0 0 16px',
+        fontSize: '18px',
+        fontWeight: 600,
+        color: '#111827',
+        };
+
+        const sTable: React.CSSProperties = {
+        width: '100%',
+        borderCollapse: 'collapse',
+        };
+
+        const sTh: React.CSSProperties = {
+        padding: '12px 10px',
+        textAlign: 'left',
+        fontSize: '12px',
+        fontWeight: 600,
+        color: '#6b7280',
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+        borderBottom: '2px solid #e5e7eb',
+        whiteSpace: 'nowrap',
+        };
+
+        const sTd: React.CSSProperties = {
+        padding: '12px 10px',
+        fontSize: '14px',
+        borderBottom: '1px solid #f3f4f6',
+        color: '#374151',
+        };
+
+        const sTdCode: React.CSSProperties = {
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: '13px',
+        color: '#6366f1',
+        background: '#eef2ff',
+        padding: '2px 6px',
+        borderRadius: '4px',
+        };
+
+        const sEmptyState: React.CSSProperties = {
+        padding: '48px 20px',
+        textAlign: 'center',
+        color: '#9ca3af',
+        fontSize: '15px',
+        };
+
+        const sLoading: React.CSSProperties = {
+        padding: '48px 20px',
+        textAlign: 'center',
+        color: '#6b7280',
+        fontSize: '15px',
+        };
+
+        const sError: React.CSSProperties = {
+        padding: '16px 20px',
+        background: '#fef2f2',
+        borderRadius: '8px',
+        color: '#991b1b',
+        fontSize: '14px',
+        border: '1px solid #fecaca',
+        marginBottom: '16px',
+        };
+
+        const sBadgeBase: React.CSSProperties = {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        padding: '3px 10px',
+        borderRadius: '12px',
+        fontSize: '12px',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+        };
+
+        const sMetaInfo: React.CSSProperties = {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        marginBottom: '24px',
+        padding: '12px 16px',
+        background: '#f0f9ff',
+        borderRadius: '8px',
+        fontSize: '13px',
+        color: '#0369a1',
+        border: '1px solid #e0f2fe',
+        flexWrap: 'wrap',
+        };
+
+        const sMetaItem: React.CSSProperties = {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        };
+
+        /* Thanh tiến độ */
+        const sProgressTrack: React.CSSProperties = {
+        width: '100%',
+        height: '8px',
+        background: '#e5e7eb',
+        borderRadius: '4px',
+        overflow: 'hidden',
+        minWidth: '100px',
+        };
+
+        const sProgressBarFill: React.CSSProperties = {
+        height: '100%',
+        borderRadius: '4px',
+        transition: 'width 0.3s ease, background-color 0.3s ease',
+        minWidth: '2px',
+        };
+
+        /* Pulse keyframes — inject vào document head */
+        const pulseKeyframes = `
+        @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+        }
+        `;
+
+        /* ======================================================================
+        * HÀM HELPER
+        * ====================================================================== */
+
+        /** Trả về màu thanh tiến độ dựa trên tỷ lệ phần trăm */
+        function progressColor(percent: number): string {
+        if (percent >= 90) return '#ef4444';
+        if (percent >= 70) return '#f59e0b';
+        if (percent >= 50) return '#3b82f6';
+        return '#22c55e';
+        }
+
+        /** Badge style theo chiến lược rate limit */
+        function strategyBadgeStyle(strategy: string): React.CSSProperties {
+        const map: Record<string, { bg: string; color: string }> = {
+            'token_bucket': { bg: '#dbeafe', color: '#1e40af' },
+            'sliding_window': { bg: '#e0e7ff', color: '#3730a3' },
+            'fixed_window': { bg: '#d1fae5', color: '#065f46' },
+            'leaky_bucket': { bg: '#fef3c7', color: '#92400e' },
+            };
+            const c = map[strategy] || { bg: '#f3f4f6', color: '#374151' };
+            return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
+            }
+
+            /** Label chiến lược bằng tiếng Việt */
+            function strategyLabel(strategy: string): string {
+            const map: Record<string, string> = {
+                'token_bucket': 'Bucket mã thông báo',
+                'sliding_window': 'Cửa sổ trượt',
+                'fixed_window': 'Cửa sổ cố định',
+                'leaky_bucket': 'Bucket rò rỉ',
+                };
+                return map[strategy] || strategy;
+                }
+
+                /** Label enabled/disabled */
+                function enabledBadgeStyle(enabled: boolean): React.CSSProperties {
+                const c = enabled
+                ? { bg: '#d1fae5', color: '#065f46' }
+                : { bg: '#f3f4f6', color: '#6b7280' };
+                return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
+                }
+
+                /** Format cửa sổ thời gian từ giây sang chuỗi dễ đọc */
+                function formatWindow(seconds: number): string {
+                if (seconds < 60) return `${seconds}s`; if (seconds < 3600) return `${seconds / 60}m`; if (seconds <
+                    86400) return `${seconds / 3600}h`; return `${seconds / 86400}d`; } /** Format thời gian reset còn
+                    lại */ function formatResetTime(iso: string): string { const d=new Date(iso); const now=new Date();
+                    const diff=d.getTime() - now.getTime(); if (diff <=0) return 'Đã hết hạn' ; if (diff < 60000) return
+                    `${Math.ceil(diff / 1000)}s nữa`; if (diff < 3600000) return `${Math.ceil(diff / 60000)}m nữa`;
+                    return d.toLocaleDateString('vi-VN', { day: '2-digit' , month: '2-digit' , hour: '2-digit' ,
+                    minute: '2-digit' , }); } /*======================================================================*
+                    COMPONENT CON: StatCard *======================================================================*/
+                    const StatCard: React.FC<{ title: string; value: string | number; color: string; pulse?: boolean; }>
+                    = ({ title, value, color, pulse }) => (
+                    <div style={sStatCardBase}>
+                        <div style={{ ...sStatBar, backgroundColor: color }} />
+                        {pulse &&
+                        <div style={{ ...sPulseDot, backgroundColor: color }} />}
+                        <p style={sStatLabel}>{title}</p>
+                        <p style={{ ...sStatValue, color }}>{value}</p>
+                    </div>
+                    );
+
+                    /* ======================================================================
+                    * COMPONENT CON: UsageProgress
+                    * ====================================================================== */
+
+                    const UsageProgress: React.FC<{ percent: number; current: number; max: number; }> = ({ percent,
+                        current, max }) => {
+                        const clamped = Math.max(0, Math.min(100, percent));
+                        const color = progressColor(clamped);
+
+                        return (
+                        <div>
+                            <div style={sProgressTrack}>
+                                <div style={{ ...sProgressBarFill, width: `${clamped}%`, backgroundColor: color, }}
+                                    title={`${clamped}% (${current}/${max})`} />
+                            </div>
+                            <div style={{ display: 'flex' , justifyContent: 'space-between' , marginTop: '4px' ,
+                                fontSize: '11px' , color: '#6b7280' }}>
+                                <span>{current} / {max}</span>
+                                <span>{clamped}%</span>
+                            </div>
+                        </div>
+                        );
+                        };
+
+                        /* ======================================================================
+                        * COMPONENT CHÍNH: RateLimitDashboard
+                        * ====================================================================== */
+
+                        export const RateLimitDashboard: React.FC = () => {
+                        const [policies, setPolicies] = useState<PolicyUsage[]>([]);
+                            const [loading, setLoading] = useState(false);
+                            const [error, setError] = useState<string | null>(null);
+                                const [autoRefresh, setAutoRefresh] = useState(true);
+
+                                /** Làm mới danh sách chính sách và dữ liệu sử dụng */
+                                const refreshPolicies = useCallback(async () => {
+                                setLoading(true);
+                                setError(null);
+                                try {
+                                const response = await fetch('/api/rate-limit/policies');
+                                if (!response.ok) {
+                                throw new Error(`Lấy danh sách chính sách thất bại: ${response.status}
+                                ${response.statusText}`);
+                                }
+                                const data: PoliciesApiResponse = await response.json();
+
+                                /* Ghép dữ liệu chính sách với dữ liệu sử dụng */
+                                const merged: PolicyUsage[] = (data.policies || []).map((policy) => {
+                                const usage = data.usages?.[policy.policy_id];
+                                const current = usage?.current ?? 0;
+                                const remaining = usage?.remaining ?? policy.max_requests;
+                                const percent = policy.max_requests > 0
+                                ? Math.round((current / policy.max_requests) * 100)
+                                : 0;
+
+                                return {
+                                policy_id: policy.policy_id,
+                                name: policy.name,
+                                strategy: policy.strategy,
+                                max_requests: policy.max_requests,
+                                window_seconds: policy.window_seconds,
+                                current_usage: current,
+                                remaining: Math.max(0, remaining),
+                                usage_percent: percent,
+                                is_limited: usage?.is_limited ?? false,
+                                reset_at: usage?.reset_at ?? new Date(Date.now() + policy.window_seconds *
+                                1000).toISOString(),
+                                enabled: policy.enabled,
+                                };
+                                });
+
+                                setPolicies(merged);
+                                } catch (err) {
+                                const message = err instanceof Error ? err.message : 'Tải chính sách rate limit thất
+                                bại';
+                                setError(message);
+                                console.error('[RateLimitDashboard] refreshPolicies:', message);
+                                } finally {
+                                setLoading(false);
+                                }
+                                }, []);
+
+                                /* Tính toán thống kê tổng hợp */
+                                const stats = useMemo(() => ({
+                                total: policies.length,
+                                enabled: policies.filter((p) => p.enabled).length,
+                                limited: policies.filter((p) => p.is_limited).length,
+                                critical: policies.filter((p) => p.usage_percent >= 90).length,
+                                warning: policies.filter((p) => p.usage_percent >= 70 && p.usage_percent < 90).length,
+                                    }), [policies]); /* Auto-refresh khi có chính sách bị giới hạn hoặc gần đạt ngưỡng
+                                    */ useEffect(()=> {
+                                    if (!autoRefresh || (stats.limited === 0 && stats.critical === 0)) return;
+                                    const interval = setInterval(refreshPolicies, 5000);
+                                    return () => clearInterval(interval);
+                                    }, [autoRefresh, stats.limited, stats.critical, refreshPolicies]);
+
+                                    /* Inject pulse animation vào head */
+                                    useEffect(() => {
+                                    const styleId = 'cp48-ratelimit-pulse-style';
+                                    if (!document.getElementById(styleId)) {
+                                    const styleEl = document.createElement('style');
+                                    styleEl.id = styleId;
+                                    styleEl.textContent = pulseKeyframes;
+                                    document.head.appendChild(styleEl);
+                                    }
+                                    }, []);
+
+                                    /* Load dữ liệu ban đầu */
+                                    useEffect(() => {
+                                    refreshPolicies();
+                                    }, [refreshPolicies]);
+
+                                    /* Sắp xếp: chính sách bị giới hạn lên đầu, sau đó theo usage_percent giảm dần */
+                                    const sortedPolicies = useMemo(() => {
+                                    return [...policies].sort((a, b) => {
+                                    if (a.is_limited && !b.is_limited) return -1;
+                                    if (!a.is_limited && b.is_limited) return 1;
+                                    return b.usage_percent - a.usage_percent;
+                                    });
+                                    }, [policies]);
+
+                                    return (
+                                    <div style={sWrap}>
+                                        {/* Header với hành động */}
+                                        <div style={sHeader}>
+                                            <h1 style={sHeaderTitle}>Điều khiển Rate Limiting</h1>
+                                            <div style={sHeaderActions}>
+                                                <button onClick={()=> setAutoRefresh(!autoRefresh)}
+                                                    style={{
+                                                    ...sBtnBase,
+                                                    ...(autoRefresh ? { background: '#ecfdf5', borderColor: '#6ee7b7',
+                                                    color: '#065f46' } : {}),
+                                                    }}
+                                                    title={autoRefresh ? 'Tắt tự động làm mới' : 'Bật tự động làm mới'}
+                                                    >
+                                                    {autoRefresh ? 'Tự động' : 'Thủ công'}
+                                                </button>
+                                                <button onClick={refreshPolicies} style={sBtnPrimary}
+                                                    disabled={loading}>
+                                                    {loading ? 'Đang tải...' : 'Làm mới'}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Hiển thị lỗi từ hook */}
+                                        {error && (
+                                        <div style={sError}>
+                                            <strong>Lỗi:</strong> {error}
+                                        </div>
+                                        )}
+
+                                        {/* Meta info: cấu hình */}
+                                        <div style={sMetaInfo}>
+                                            <span style={sMetaItem}>
+                                                <strong>Chính sách:</strong> {{ policies | length }}
+                                            </span>
+                                            <span style={sMetaItem}>
+                                                <strong>Quota:</strong> {{ quotas | length }}
+                                            </span>
+                                            <span style={sMetaItem}>
+                                                <strong>Có chính sách:</strong> {{ has_policies | lower }}
+                                            </span>
+                                            <span style={sMetaItem}>
+                                                <strong>Có quota:</strong> {{ has_quotas | lower }}
+                                            </span>
+                                        </div>
+
+                                        {/* Stats Cards */}
+                                        <div style={sStatsRow}>
+                                            <StatCard title="Tổng chính sách" value={stats.total} color="#6366f1" />
+                                            <StatCard title="Đang hoạt động" value={stats.enabled} color="#3b82f6" />
+                                            <StatCard title="Bị giới hạn" value={stats.limited} color="#ef4444"
+                                                pulse={stats.limited> 0}
+                                                />
+                                                <StatCard title="Nguy cơ cao" value={stats.critical} color="#f59e0b"
+                                                    pulse={stats.critical> 0}
+                                                    />
+                                                    <StatCard title="Cảnh báo" value={stats.warning} color="#8b5cf6" />
+                                        </div>
+
+                                        {/* Bảng chính sách rate limit */}
+                                        <div style={sCard}>
+                                            <h2 style={sCardTitle}>Chính sách Rate Limit ({sortedPolicies.length})</h2>
+
+                                            {loading && !policies.length ? (
+                                            <div style={sLoading}>Đang tải danh sách chính sách...</div>
+                                            ) : (
+                                            <div style={{ overflowX: 'auto' }}>
+                                                <table style={sTable}>
+                                                    <thead>
+                                                        <tr>
+                                                            <th style={sTh}>Policy ID</th>
+                                                            <th style={sTh}>Tên</th>
+                                                            <th style={sTh}>Chiến lược</th>
+                                                            <th style={sTh}>Cửa sổ</th>
+                                                            <th style={{ ...sTh, minWidth: '200px' }}>Sử dụng</th>
+                                                            <th style={sTh}>Còn lại</th>
+                                                            <th style={sTh}>Trạng thái</th>
+                                                            <th style={sTh}>Hoạt động</th>
+                                                            <th style={sTh}>Reset</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {sortedPolicies.map((policy) => (
+                                                        <tr key={policy.policy_id} style={policy.is_limited ? {
+                                                            background: '#fef2f2' } : undefined}>
+                                                            <td style={sTd}>
+                                                                <span style={sTdCode}>{policy.policy_id}</span>
+                                                            </td>
+                                                            <td style={sTd}>{policy.name}</td>
+                                                            <td style={sTd}>
+                                                                <span style={strategyBadgeStyle(policy.strategy)}>
+                                                                    {strategyLabel(policy.strategy)}
+                                                                </span>
+                                                            </td>
+                                                            <td style={sTd}>{formatWindow(policy.window_seconds)}</td>
+                                                            <td style={{ ...sTd, minWidth: '200px' }}>
+                                                                <UsageProgress percent={policy.usage_percent}
+                                                                    current={policy.current_usage}
+                                                                    max={policy.max_requests} />
+                                                            </td>
+                                                            <td style={{ ...sTd, fontWeight: 600, color:
+                                                                policy.remaining===0 ? '#ef4444' : '#374151' }}>
+                                                                {policy.remaining.toLocaleString('vi-VN')}
+                                                            </td>
+                                                            <td style={sTd}>
+                                                                <span style={policy.is_limited ? { ...sBadgeBase,
+                                                                    backgroundColor: '#fee2e2' , color: '#991b1b' } : {
+                                                                    ...sBadgeBase, backgroundColor: '#d1fae5' ,
+                                                                    color: '#065f46' } }>
+                                                                    {policy.is_limited ? 'Đã đạt giới hạn' : 'Bình
+                                                                    thường'}
+                                                                </span>
+                                                            </td>
+                                                            <td style={sTd}>
+                                                                <span style={enabledBadgeStyle(policy.enabled)}>
+                                                                    {policy.enabled ? 'Đã bật' : 'Đã tắt'}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ ...sTd, fontSize: '12px' ,
+                                                                fontFamily: 'ui-monospace, monospace' }}>
+                                                                {formatResetTime(policy.reset_at)}
+                                                            </td>
+                                                        </tr>
+                                                        ))}
+                                                        {sortedPolicies.length === 0 && (
+                                                        <tr>
+                                                            <td colSpan={9} style={sEmptyState}>
+                                                                Chưa có chính sách rate limit nào.
+                                                            </td>
+                                                        </tr>
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            )}
+                                        </div>
+
+                                        {/* Bảng bypass keys — render từ Jinja2 để tránh conflict với JSX */}
+                                        {% if has_policies %}
+                                        <div style={sCard}>
+                                            <h2 style={sCardTitle}>Bypass Keys</h2>
+                                            <div style={{ overflowX: 'auto' }}>
+                                                <table style={sTable}>
+                                                    <thead>
+                                                        <tr>
+                                                            <th style={sTh}>Policy</th>
+                                                            <th style={sTh}>Bypass Keys</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {% for policy in policies %}
+                                                        <tr>
+                                                            <td style={sTd}>
+                                                                <span style={sTdCode}>{{ policy.policy_id }}</span>
+                                                            </td>
+                                                            <td style={sTd}>
+                                                                {% if policy.bypass_keys and policy.bypass_keys | length
+                                                                > 0 %}
+                                                                {% for bk in policy.bypass_keys %}
+                                                                <span style={sTdCode}>{{ bk }}</span>{% if not loop.last
+                                                                %}, {% endif %}
+                                                                {% endfor %}
+                                                                {% else %}
+                                                                <span style={{ color: '#9ca3af' }}>—</span>
+                                                                {% endif %}
+                                                            </td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    );
+                                    };
+
+                                    export default RateLimitDashboard;

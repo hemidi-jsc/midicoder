@@ -952,21 +952,37 @@ core_packs:
   - id: CP48
     name: API Rate Limiting & Quota Management
     internal_id: cp48_rate_limit
-    phase: P2
-    description: Per-client/per-tier rate limiting, quota enforcement, API throttling
+    phase: P3
+    description: "Comprehensive rate limiting (Fixed Window, Sliding Window, Token Bucket), multi-level quota management (User, Tenant, Endpoint, Global), API throttling"
     definitions_count: 4
     obligations_count: 2
     depends_on:
-      - CP02
-      - CP06
-      - CP36
+      - CP03
     capabilities_provided:
-      - rate_limit
-      - quota_enforce
-      - api_throttle
+      - rate_limiting
+      - quota_management
+      - throttling
+      - rate_limit_middleware
     category: integration
-    status: planned
+    status: stable
     version: 1.0.0
+    error_codes:
+      MDC-CP48-001: "Rate limit policy không tồn tại"
+      MDC-CP48-002: "Rate limit strategy không hợp lệ"
+      MDC-CP48-003: "Quota config không hợp lệ"
+      MDC-CP48-004: "Vượt quá rate limit"
+      MDC-CP48-005: "Vượt quá quota"
+      MDC-CP48-006: "Window size không hợp lệ"
+      MDC-CP48-007: "Redis connection failed"
+      MDC-CP48-008: "Rate limit key rỗng"
+      MDC-CP48-009: "Quota level không hợp lệ"
+      MDC-CP48-010: "Throttling config không hợp lệ"
+    components:
+      - models.py (3 enums, 4 dataclasses, 2 services)
+      - parser.py (RateLimitParser, RateLimitIR)
+      - recipes.py (build_rate_limit_recipe, build_quota_recipe, build_full_recipe)
+      - emitters: FastAPI, NestJS, Angular, React
+      - templates: 16 Jinja2 templates (5+5+3+3)
   - id: CP49
     name: Consent & Preference Management
     internal_id: cp49_consent

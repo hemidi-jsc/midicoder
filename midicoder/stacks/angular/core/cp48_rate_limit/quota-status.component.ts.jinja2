@@ -1,0 +1,944 @@
+/**
+ * Quota Status Component - CP48 Rate Limiting.
+ *
+ * Hiển thị trạng thái quota theo cấp độ (user, tenant, endpoint, global)
+ * với chu kỳ tính toán và cảnh báo khi gần đạt giới hạn.
+ */
+
+import { Component, Input, ChangeDetectionStrategy, OnInit, OnDestroy, inject, signal, computed, effect } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatIconModule } from '@angular/material/icon';
+import { MatDivider } from '@angular/material/divider';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { RateLimitService, QuotaInfo } from './rate-limit.service';
+
+/** Nhãn cấp độ quota tiếng Việt */
+const LEVEL_LABELS: Record<string, string> = {
+  'global': 'Toàn cục',
+  'tenant': 'Tenant',
+  'user': 'Người dùng',
+  'endpoint': 'Endpoint',
+  'api_key': 'API Key',
+  'ip': 'Địa chỉ IP',
+};
+
+/** Nhãn chu kỳ tính toán tiếng Việt */
+const PERIOD_LABELS: Record<string, string> = {
+  'minute': 'Phút',
+  'hour': 'Giờ',
+  'day': 'Ngày',
+  'week': 'Tuần',
+  'month': 'Tháng',
+};
+
+/** Nhãn chu kỳ hiển thị chi tiết */
+const PERIOD_DISPLAY: Record<string, string> = {
+  'minute': 'trong 1 phút',
+  'hour': 'trong 1 giờ',
+  'day': 'trong 1 ngày',
+  'week': 'trong 1 tuần',
+  'month': 'trong 1 tháng',
+};
+
+/**
+ * Dữ liệu hiển thị cho mỗi quota card.
+ *
+ * Kết hợp thông tin quota với mức độ cảnh báo
+ * và phần trăm sử dụng.
+ */
+interface QuotaDisplay {
+  quota: QuotaInfo;
+  percentage: number;
+  warningLevel: 'safe' | 'warning' | 'danger' | 'exceeded';
+  levelLabel: string;
+  periodLabel: string;
+  periodDisplay: string;
+}
+
+/**
+ * QuotaStatusComponent - Hiển thị trạng thái quota.
+ *
+ * Hiển thị:
+ * - Các thẻ quota theo cấp độ (user, tenant, endpoint, global)
+ * - Chu kỳ tính toán (phút/giờ/ngày/tuần/tháng) và số còn lại
+ * - Thanh tiến độ cho mỗi quota
+ * - Chỉ báo cảnh báo khi gần đạt giới hạn
+ *   - Dưới 70%: an toàn (xanh lá)
+ *   - 70-89%: cảnh báo (cam)
+ *   - 90-99%: nguy hiểm (đỏ nhạt)
+ *   - 100%+: đã vượt (đỏ đậm)
+ * - Thời gian reset tiếp theo
+ * - Nút làm mới dữ liệu
+ *
+ * Sử dụng Angular Signals và OnPush change detection.
+ * Auto-refresh mỗi 30 giây để cập nhật quota remaining.
+ */
+@Component({
+  selector: 'app-quota-status',
+  standalone: true,
+  imports: [
+    CommonModule,
+    MatButtonModule,
+    MatCardModule,
+    MatProgressBarModule,
+    MatIconModule,
+    MatDivider,
+    MatChipsModule,
+    MatTooltipModule,
+    MatSnackBarModule,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="quota-status">
+      <!-- Thanh tiêu đề -->
+      <div class="quota-header">
+        <div class="header-left">
+          <h2>Trạng Thái Quota</h2>
+          <p class="subtitle">Giới hạn sử dụng theo cấp độ và chu kỳ</p>
+        </div>
+        <div class="header-right">
+          <span class="last-updated" *ngIf="lastUpdated()">
+            Cập nhật: {{ lastUpdated() | date:'HH:mm:ss' }}
+          </span>
+          <button
+            mat-icon-button
+            (click)="refresh()"
+            [disabled]="loading()"
+            matTooltip="Làm mới quota"
+            aria-label="Làm mới"
+          >
+            <mat-icon [style.transform]="loading() ? 'rotate(360deg)' : 'none'">refresh</mat-icon>
+          </button>
+        </div>
+      </div>
+
+      <!-- Thanh tiến độ loading -->
+      <mat-progress-bar
+        *ngIf="loading()"
+        mode="indeterminate"
+        class="loading-bar"
+      ></mat-progress-bar>
+
+      <!-- Thông báo lỗi -->
+      <div class="error-banner" *ngIf="error()">
+        <mat-icon>error</mat-icon>
+        <span>{{ error() }}</span>
+        <button mat-button (click)="clearError()">Đóng</button>
+      </div>
+
+      <!-- Lọc theo cấp độ -->
+      <div class="filter-chips">
+        <mat-chip-set>
+          <mat-chip
+            *ngFor="let level of availableLevels()"
+            [selected]="selectedLevel() === level"
+            (click)="selectLevel(level)"
+            selectable="false"
+          >
+            {{ getLevelLabel(level) }}
+          </mat-chip>
+        </mat-chip-set>
+      </div>
+
+      <!-- Lưới thẻ quota -->
+      <div class="quota-grid">
+        <mat-card
+          class="quota-card"
+          *ngFor="let display of filteredQuotas()"
+          [class]="getWarningLevelClass(display.warningLevel)"
+        >
+          <!-- Header của card: cấp độ và chu kỳ -->
+          <div class="quota-card-header">
+            <div class="quota-title">
+              <mat-icon [class]="getLevelIconClass(display.quota.level)">
+                {{ getLevelIcon(display.quota.level) }}
+              </mat-icon>
+              <div class="quota-title-text">
+                <span class="level-name">{{ display.levelLabel }}</span>
+                <span class="period-badge">{{ display.periodLabel }}</span>
+              </div>
+            </div>
+            <div class="quota-status-badge">
+              <mat-chip
+                [style.background]="getWarningColor(display.warningLevel)"
+                [style.color]="'white'"
+                disabled
+                size="small"
+              >
+                {{ getWarningLabel(display.warningLevel) }}
+              </mat-chip>
+            </div>
+          </div>
+
+          <mat-divider></mat-divider>
+
+          <!-- Nội dung chính: số liệu và thanh tiến độ -->
+          <div class="quota-card-body">
+            <!-- Số còn lại - hiển thị nổi bật -->
+            <div class="remaining-display">
+              <span class="remaining-value" [class.exceeded]="display.warningLevel === 'exceeded'">
+                {{ display.quota.remaining }}
+              </span>
+              <span class="remaining-label">còn lại</span>
+            </div>
+
+            <!-- Thanh tiến độ -->
+            <div class="progress-section">
+              <div class="progress-header">
+                <span class="used-count">{{ display.quota.current_usage }} / {{ display.quota.max_requests }}</span>
+                <span class="progress-percentage" [class]="getWarningLevelClass(display.warningLevel)">
+                  {{ display.percentage }}%
+                </span>
+              </div>
+              <mat-progress-bar
+                mode="determinate"
+                [value]="display.percentage"
+                class="quota-progress-bar"
+              ></mat-progress-bar>
+            </div>
+
+            <!-- Thông tin chi tiết -->
+            <div class="quota-details">
+              <div class="detail-row">
+                <mat-icon>schedule</mat-icon>
+                <span>Giới hạn {{ display.quota.max_requests }} yêu cầu {{ display.periodDisplay }}</span>
+              </div>
+              <div class="detail-row">
+                <mat-icon>update</mat-icon>
+                <span>Reset: {{ display.quota.reset_at | date:'dd/MM/yyyy HH:mm' }}</span>
+              </div>
+              <!-- Hiển thị tenant_id nếu có -->
+              <div class="detail-row" *ngIf="display.quota.tenant_id">
+                <mat-icon>business</mat-icon>
+                <span>Tenant: {{ display.quota.tenant_id }}</span>
+              </div>
+              <!-- Hiển thị endpoint nếu có -->
+              <div class="detail-row" *ngIf="display.quota.endpoint">
+                <mat-icon>link</mat-icon>
+                <span>Endpoint: {{ display.quota.endpoint }}</span>
+              </div>
+            </div>
+
+            <!-- Cảnh báo khi gần hết quota -->
+            <div class="quota-warning" *ngIf="display.warningLevel === 'warning'">
+              <mat-icon>warning</mat-icon>
+              <span>Quota sắp hết - vui lòng giảm tần suất yêu cầu</span>
+            </div>
+            <div class="quota-warning danger" *ngIf="display.warningLevel === 'danger'">
+              <mat-icon>error</mat-icon>
+              <span>Cảnh báo: Quota gần như đã cạn kiệt</span>
+            </div>
+            <div class="quota-warning exceeded" *ngIf="display.warningLevel === 'exceeded'">
+              <mat-icon>block</mat-icon>
+              <span>Đã vượt quá giới hạn - yêu cầu sẽ bị từ chối đến khi reset</span>
+            </div>
+          </div>
+
+          <!-- Footer: trạng thái bật/tắt -->
+          <div class="quota-card-footer">
+            <mat-chip
+              [style.background]="display.quota.enabled ? '#4caf50' : '#9e9e9e'"
+              [style.color]="'white'"
+              disabled
+              size="small"
+            >
+              {{ display.quota.enabled ? 'Đang hoạt động' : 'Tạm ngưng' }}
+            </mat-chip>
+            <span class="config-id">{{ display.quota.config_id }}</span>
+          </div>
+        </mat-card>
+      </div>
+
+      <!-- Trạng thái rỗng khi không có quotas -->
+{% if has_quotas %}
+      <div class="empty-state" *ngIf="!loading() && quotas().length === 0">
+        <mat-icon>dashboard</mat-icon>
+        <p>Chưa có cấu hình quota nào</p>
+        <p class="empty-hint">Cấu hình quota để giới hạn sử dụng theo cấp độ</p>
+      </div>
+{% else %}
+      <div class="no-quotas-notice">
+        <mat-icon>info</mat-icon>
+        <p>Module quotas chưa được kích hoạt trong cấu hình hiện tại</p>
+      </div>
+{% endif %}
+
+      <!-- Thống kê tổng quan phía dưới -->
+      <div class="quota-summary" *ngIf="quotas().length > 0">
+        <mat-divider></mat-divider>
+        <div class="summary-grid">
+          <div class="summary-item" *ngFor="let s of summaryStats()">
+            <span class="summary-value" [style.color]="s.color">{{ s.value }}</span>
+            <span class="summary-label">{{ s.label }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `,
+  styles: `
+    .quota-status {
+      padding: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .quota-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 24px;
+    }
+
+    .header-left h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .header-left .subtitle {
+      margin: 4px 0 0;
+      color: #666;
+      font-size: 14px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .last-updated {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .loading-bar {
+      margin-bottom: 16px;
+    }
+
+    .error-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #ffebee;
+      color: #c62828;
+      border-radius: 4px;
+      margin-bottom: 16px;
+    }
+
+    .filter-chips {
+      margin-bottom: 20px;
+    }
+
+    .quota-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 20px;
+    }
+
+    @media (max-width: 480px) {
+      .quota-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .quota-card {
+      transition: box-shadow 0.2s;
+      overflow: hidden;
+    }
+
+    .quota-card:hover {
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    }
+
+    .quota-card.warning {
+      border-left: 4px solid #ff9800;
+    }
+
+    .quota-card.danger {
+      border-left: 4px solid #f44336;
+    }
+
+    .quota-card.exceeded {
+      border-left: 4px solid #b71c1c;
+      background: #fff5f5;
+    }
+
+    .quota-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 16px 8px;
+    }
+
+    .quota-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .quota-title mat-icon {
+      font-size: 32px;
+      width: 32px;
+      height: 32px;
+      padding: 4px;
+      border-radius: 8px;
+      background: #f5f5f5;
+    }
+
+    .quota-title-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .level-name {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .period-badge {
+      font-size: 12px;
+      color: #666;
+      background: #f5f5f5;
+      padding: 2px 8px;
+      border-radius: 10px;
+      display: inline-block;
+      width: fit-content;
+      margin-top: 2px;
+    }
+
+    .quota-card-body {
+      padding: 16px;
+    }
+
+    .remaining-display {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .remaining-value {
+      font-size: 40px;
+      font-weight: 700;
+      line-height: 1;
+      color: #1976d2;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .remaining-value.exceeded {
+      color: #c62828;
+    }
+
+    .remaining-label {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .progress-section {
+      margin-bottom: 16px;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .used-count {
+      font-size: 13px;
+      color: #666;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .progress-percentage {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .progress-percentage.safe {
+      color: #4caf50;
+    }
+
+    .progress-percentage.warning {
+      color: #ff9800;
+    }
+
+    .progress-percentage.danger {
+      color: #f44336;
+    }
+
+    .progress-percentage.exceeded {
+      color: #b71c1c;
+    }
+
+    .quota-progress-bar {
+      height: 8px;
+    }
+
+    .quota-details {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .detail-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #666;
+    }
+
+    .detail-row mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+      color: #999;
+    }
+
+    .quota-warning {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #fff3e0;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #e65100;
+      margin-top: 8px;
+    }
+
+    .quota-warning mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+
+    .quota-warning.danger {
+      background: #ffebee;
+      color: #c62828;
+    }
+
+    .quota-warning.exceeded {
+      background: #f5d0d0;
+      color: #b71c1c;
+    }
+
+    .quota-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 16px;
+      background: #fafafa;
+      border-top: 1px solid #eee;
+    }
+
+    .config-id {
+      font-family: monospace;
+      font-size: 11px;
+      color: #999;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 64px 0;
+      color: #666;
+    }
+
+    .empty-state mat-icon {
+      font-size: 64px;
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+      color: #ccc;
+    }
+
+    .empty-hint {
+      font-size: 13px;
+      color: #999;
+    }
+
+    .no-quotas-notice {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 24px;
+      background: #e3f2fd;
+      border-radius: 8px;
+      color: #1565c0;
+      font-size: 14px;
+    }
+
+    .no-quotas-notice mat-icon {
+      font-size: 24px;
+      width: 24px;
+      height: 24px;
+    }
+
+    .quota-summary {
+      margin-top: 24px;
+      padding-top: 20px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    @media (max-width: 768px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .summary-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px;
+    }
+
+    .summary-value {
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .summary-label {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+  `,
+})
+export class QuotaStatusComponent implements OnInit, OnDestroy {
+  private readonly rateLimitService = inject(RateLimitService);
+  private readonly snackBar = inject(MatSnackBar);
+
+  // Private writable signals
+  private _quotas = signal<QuotaInfo[]>([]);
+  private _loading = signal<boolean>(false);
+  private _error = signal<string | null>(null);
+  private _selectedLevel = signal<string>('all');
+  private _lastUpdated = signal<Date | null>(null);
+
+  // Readonly exposed signals
+  quotas = this._quotas.asReadonly();
+  loading = this._loading.asReadonly();
+  error = this._error.asReadonly();
+  selectedLevel = this._selectedLevel.asReadonly();
+  lastUpdated = this._lastUpdated.asReadonly();
+
+  // Interval ID cho auto-refresh
+  private refreshInterval: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Effect: hiển thị snackbar cảnh báo khi có quota vượt hạn.
+   */
+  constructor() {
+    effect(() => {
+      const exceededQuotas = this._quotas().filter(q => q.remaining <= 0);
+      if (exceededQuotas.length > 0) {
+        const names = exceededQuotas.map(q => q.level).join(', ');
+        this.snackBar.open(
+          `Cảnh báo: Quota của ${names} đã vượt quá giới hạn`,
+          'Đóng',
+          { duration: 10000, panelClass: ['quota-warning-snackbar'] }
+        );
+      }
+    });
+  }
+
+  /**
+   * Computed: danh sách các cấp độ duy nhất từ quotas.
+   */
+  availableLevels = computed<string[]>(() => {
+    const levels = this._quotas().map(q => q.level);
+    return ['all', ...[...new Set(levels)].sort()];
+  });
+
+  /**
+   * Computed: danh sách quota display đã lọc theo cấp độ được chọn.
+   */
+  filteredQuotas = computed<QuotaDisplay[]>(() => {
+    const quotasArr = this._quotas();
+    const level = this._selectedLevel();
+
+    const filtered = level === 'all'
+      ? quotasArr
+      : quotasArr.filter(q => q.level === level);
+
+    return filtered.map(quota => {
+      const percentage = this.calculatePercentage(quota);
+      return {
+        quota,
+        percentage,
+        warningLevel: this.getWarningLevelForPercentage(percentage),
+        levelLabel: this.getLevelLabel(quota.level),
+        periodLabel: this.getPeriodLabel(quota.period),
+        periodDisplay: this.getPeriodDisplay(quota.period),
+      };
+    });
+  });
+
+  /**
+   * Computed: thống kê tổng quan.
+   */
+  summaryStats = computed<{ label: string; value: number; color: string }[]>(() => {
+    const quotasArr = this._quotas();
+    const total = quotasArr.length;
+    const active = quotasArr.filter(q => q.enabled).length;
+    const exceeded = quotasArr.filter(q => q.remaining <= 0).length;
+    const low = quotasArr.filter(q => {
+      const pct = this.calculatePercentage(q);
+      return pct >= 80 && q.remaining > 0;
+    }).length;
+
+    return [
+      { label: 'Tổng Quota', value: total, color: '#1976d2' },
+      { label: 'Đang Hoạt Động', value: active, color: '#4caf50' },
+      { label: 'Gần Hết', value: low, color: '#ff9800' },
+      { label: 'Đã Vượt', value: exceeded, color: '#f44336' },
+    ];
+  });
+
+  /**
+   * Khởi tạo: tải quota ban đầu và thiết lập auto-refresh.
+   */
+  ngOnInit(): void {
+    this.loadQuotas();
+    this.startAutoRefresh();
+  }
+
+  /**
+   * Cleanup: dừng auto-refresh khi component bị huỷ.
+   */
+  ngOnDestroy(): void {
+    this.stopAutoRefresh();
+  }
+
+  /**
+   * Tải danh sách quota còn lại từ API.
+   */
+  loadQuotas(): void {
+    this._loading.set(true);
+    this._error.set(null);
+
+    this.rateLimitService.getQuotaRemaining().subscribe({
+      next: (quotasArr: QuotaInfo[]) => {
+        this._quotas.set(quotasArr);
+        this._lastUpdated.set(new Date());
+        this._loading.set(false);
+      },
+      error: (err: unknown) => {
+        this._error.set(this.formatError(err, 'Tải quota thất bại'));
+        this._loading.set(false);
+      },
+    });
+  }
+
+  /**
+   * Làm mới dữ liệu thủ công.
+   */
+  refresh(): void {
+    this.loadQuotas();
+  }
+
+  /**
+   * Xóa thông báo lỗi hiện tại.
+   */
+  clearError(): void {
+    this._error.set(null);
+  }
+
+  /**
+   * Chọn cấp độ để lọc.
+   *
+   * @param level - Cấp độ quota hoặc 'all'
+   */
+  selectLevel(level: string): void {
+    this._selectedLevel.set(level);
+  }
+
+  /**
+   * Tính toán phần trăm sử dụng từ quota info.
+   *
+   * @param quota - QuotaInfo object
+   * @returns Phần trăm số nguyên (0-100), max 100
+   */
+  private calculatePercentage(quota: QuotaInfo): number {
+    if (quota.max_requests === 0) return 0;
+    const pct = Math.round((quota.current_usage / quota.max_requests) * 100);
+    return Math.min(pct, 100);
+  }
+
+  /**
+   * Xác định mức cảnh báo dựa trên phần trăm sử dụng.
+   *
+   * @param percentage - Phần trăm sử dụng (0-100)
+   * @returns Warning level
+   */
+  private getWarningLevelForPercentage(percentage: number): 'safe' | 'warning' | 'danger' | 'exceeded' {
+    if (percentage >= 100) return 'exceeded';
+    if (percentage >= 90) return 'danger';
+    if (percentage >= 70) return 'warning';
+    return 'safe';
+  }
+
+  /**
+   * Lấy nhãn cấp độ tiếng Việt.
+   *
+   * @param level - Tên cấp độ
+   * @returns Label tiếng Việt
+   */
+  getLevelLabel(level: string): string {
+    return LEVEL_LABELS[level] || level;
+  }
+
+  /**
+   * Lấy nhãn chu kỳ tiếng Việt.
+   *
+   * @param period - Tên chu kỳ
+   * @returns Label tiếng Việt
+   */
+  getPeriodLabel(period: string): string {
+    return PERIOD_LABELS[period] || period;
+  }
+
+  /**
+   * Lấy hiển thị chi tiết chu kỳ.
+   *
+   * @param period - Tên chu kỳ
+   * @returns Chuỗi hiển thị
+   */
+  getPeriodDisplay(period: string): string {
+    return PERIOD_DISPLAY[period] || period;
+  }
+
+  /**
+   * Lấy biểu tượng cho cấp độ quota.
+   *
+   * @param level - Tên cấp độ
+   * @returns Material icon name
+   */
+  getLevelIcon(level: string): string {
+    const iconMap: Record<string, string> = {
+      'global': 'public',
+      'tenant': 'business',
+      'user': 'person',
+      'endpoint': 'link',
+      'api_key': 'key',
+      'ip': 'dns',
+    };
+    return iconMap[level] || 'dashboard';
+  }
+
+  /**
+   * Lấy màu biểu tượng cho cấp độ.
+   *
+   * @param level - Tên cấp độ
+   * @returns Màu icon
+   */
+  getLevelIconClass(level: string): string {
+    const classMap: Record<string, string> = {
+      'global': 'icon-global',
+      'tenant': 'icon-tenant',
+      'user': 'icon-user',
+      'endpoint': 'icon-endpoint',
+      'api_key': 'icon-apikey',
+      'ip': 'icon-ip',
+    };
+    return classMap[level] || '';
+  }
+
+  /**
+   * Lấy màu nền cho badge cảnh báo.
+   *
+   * @param level - Warning level
+   * @returns Màu nền CSS
+   */
+  getWarningColor(level: string): string {
+    const colorMap: Record<string, string> = {
+      'safe': '#4caf50',
+      'warning': '#ff9800',
+      'danger': '#f44336',
+      'exceeded': '#b71c1c',
+    };
+    return colorMap[level] || '#9e9e9e';
+  }
+
+  /**
+   * Lấy nhãn cảnh báo tiếng Việt.
+   *
+   * @param level - Warning level
+   * @returns Label tiếng Việt
+   */
+  getWarningLabel(level: string): string {
+    const labelMap: Record<string, string> = {
+      'safe': 'An toàn',
+      'warning': 'Cảnh báo',
+      'danger': 'Nguy hiểm',
+      'exceeded': 'Đã vượt',
+    };
+    return labelMap[level] || level;
+  }
+
+  /**
+   * Lấy CSS class cho card dựa trên mức cảnh báo.
+   *
+   * @param level - Warning level
+   * @returns CSS class name
+   */
+  getWarningLevelClass(level: string): string {
+    return level; // safe, warning, danger, exceeded
+  }
+
+  /**
+   * Bắt đầu auto-refresh interval (30 giây).
+   */
+  private startAutoRefresh(): void {
+    this.stopAutoRefresh();
+    this.refreshInterval = setInterval(() => {
+      this.loadQuotas();
+    }, 30000);
+  }
+
+  /**
+   * Dừng auto-refresh interval.
+   */
+  private stopAutoRefresh(): void {
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+      this.refreshInterval = null;
+    }
+  }
+
+  /**
+   * Format error message.
+   *
+   * @param error - Error object từ HTTP response
+   * @param defaultMessage - Thông báo mặc định
+   * @returns Message string
+   */
+  private formatError(error: unknown, defaultMessage: string): string {
+    if (error instanceof Error) {
+      return error.message || defaultMessage;
+    }
+    if (typeof error === 'string') {
+      return error;
+    }
+    return defaultMessage;
+  }
+}
