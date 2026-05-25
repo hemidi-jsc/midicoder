@@ -1,0 +1,362 @@
+# ----------------------------------------------------------
+# CP49 Consent & Preference Management — SQLAlchemy mô hình dữ liệu
+# ----------------------------------------------------------
+# Sinh bởi CP49ConsentEmitter
+# Mô hình: ConsentRecord, ConsentPolicy, CookiePreference,
+#          ErasureRequest, CommunicationPreference
+# ----------------------------------------------------------
+
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+import sqlalchemy as sa
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    """Cơ sở khai báo cho toàn bộ mô hình SQLAlchemy của hệ thống đồng ý và tùy chọn."""
+    pass
+
+
+class ConsentStatus(str, Enum):
+    """Trạng thái của bản ghi đồng ý."""
+    GRANTED = "granted"
+    REVOKED = "revoked"
+    EXPIRED = "expired"
+    PENDING = "pending"
+    PENDING_RENEWAL = "pending_renewal"
+
+
+class ConsentPurpose(str, Enum):
+    """Mục đích thu thập và xử lý dữ liệu."""
+    ESSENTIAL = "essential"
+    ANALYTICS = "analytics"
+    MARKETING = "marketing"
+    PERSONALIZATION = "personalization"
+    THIRD_PARTY = "third_party"
+
+
+class ConsentCategory(str, Enum):
+    """Danh mục đồng ý."""
+    COOKIE = "cookie"
+    DATA_PROCESSING = "data_processing"
+    COMMUNICATION = "communication"
+    TRACKING = "tracking"
+    SHARING = "sharing"
+
+
+class ErasureStatus(str, Enum):
+    """Trạng thái yêu cầu xóa dữ liệu."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class ErasureScope(str, Enum):
+    """Phạm vi yêu cầu xóa."""
+    ALL = "all"
+    PERSONAL_DATA = "personal_data"
+    CONSENT_RECORDS = "consent_records"
+    COMMUNICATION_PREFS = "communication_prefs"
+    ACTIVITY_LOG = "activity_log"
+    CUSTOM = "custom"
+
+
+class ConsentRecordModel(Base):
+    """
+    Mô hình bản ghi đồng ý — thực thể chính trong quản lý đồng ý.
+
+    Đại diện cho một bản ghi đồng ý của người dùng, bao gồm mục đích,
+    danh mục, trạng thái, và thông tin ngữ cảnh (IP, user agent).
+
+    Trạng thái: granted, revoked, expired, pending, pending_renewal
+    """
+    __tablename__ = "consent_records"
+
+    # Định danh
+    id: Mapped[int] = mapped_column(
+        sa.Integer, primary_key=True, autoincrement=True
+    )
+    record_id: Mapped[str] = mapped_column(
+        sa.String(36), unique=True, nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Mục đích và danh mục
+    purpose: Mapped[str] = mapped_column(
+        sa.String(32), nullable=False, server_default="essential", index=True
+    )
+    category: Mapped[str] = mapped_column(
+        sa.String(32), nullable=False, server_default="cookie", index=True
+    )
+
+    # Trạng thái
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="granted", index=True
+    )
+
+    # Thời gian cấp/hủy
+    granted_at: Mapped[Optional[datetime]] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    # Ngữ cảnh
+    ip_address: Mapped[Optional[str]] = mapped_column(
+        sa.String(45), nullable=True
+    )
+    user_agent: Mapped[Optional[str]] = mapped_column(
+        sa.String(512), nullable=True
+    )
+
+    # Metadata và thời gian
+    metadata_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+
+class ConsentPolicyModel(Base):
+    """
+    Mô hình chính sách đồng ý.
+
+    Xác định các chính sách đồng ý bắt buộc hoặc tùy chọn cho tenant,
+    bao gồm thời hạn hết hạn và nhắc nhở làm mới.
+
+    is_mandatory: True nếu người dùng không thể từ chối
+    """
+    __tablename__ = "consent_policies"
+
+    # Định danh
+    id: Mapped[int] = mapped_column(
+        sa.Integer, primary_key=True, autoincrement=True
+    )
+    policy_id: Mapped[str] = mapped_column(
+        sa.String(36), unique=True, nullable=False, index=True
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Mục đích và danh mục
+    purpose: Mapped[str] = mapped_column(
+        sa.String(32), nullable=False, index=True
+    )
+    category: Mapped[str] = mapped_column(
+        sa.String(32), nullable=False, index=True
+    )
+
+    # Bắt buộc hay không
+    is_mandatory: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default="0", index=True
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        sa.Text, nullable=True
+    )
+
+    # Thời hạn
+    expiry_days: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="365"
+    )
+    renewal_reminder_days: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, server_default="30"
+    )
+
+    # Thời gian
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+
+class CookiePreferenceModel(Base):
+    """
+    Mô hình tùy chọn cookie của người dùng.
+
+    Lưu trữ lựa chọn cookie theo danh mục (necessary, analytics, marketing, ...).
+    Danh mục được lưu dưới dạng JSON object với giá trị boolean.
+
+    Ví dụ: {"necessary": true, "analytics": false, "marketing": true}
+    """
+    __tablename__ = "cookie_preferences"
+
+    # Định danh
+    id: Mapped[int] = mapped_column(
+        sa.Integer, primary_key=True, autoincrement=True
+    )
+    preference_id: Mapped[str] = mapped_column(
+        sa.String(36), unique=True, nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Danh mục cookie (JSON: {"necessary": true, "analytics": false, ...})
+    categories: Mapped[Dict[str, bool]] = mapped_column(
+        sa.JSON, nullable=False, server_default="{}"
+    )
+
+    # Thời gian
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Ràng buộc duy nhất: mỗi user + tenant chỉ có một bản ghi
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "user_id", "tenant_id",
+            name="uq_cookie_preference_user_tenant"
+        ),
+    )
+
+
+class ErasureRequestModel(Base):
+    """
+    Mô hình yêu cầu xóa dữ liệu (Right to be Forgotten).
+
+    Đại diện cho yêu cầu của người dùng để xóa dữ liệu cá nhân,
+    bao gồm phạm vi xóa, trạng thái xử lý, và lý do.
+
+    Trạng thái: pending, approved, rejected, processing, completed, cancelled
+    Phạm vi: all, personal_data, consent_records, communication_prefs, activity_log, custom
+    """
+    __tablename__ = "erasure_requests"
+
+    # Định danh
+    id: Mapped[int] = mapped_column(
+        sa.Integer, primary_key=True, autoincrement=True
+    )
+    request_id: Mapped[str] = mapped_column(
+        sa.String(36), unique=True, nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Phạm vi xóa
+    scope: Mapped[str] = mapped_column(
+        sa.String(32), nullable=False, server_default="all", index=True
+    )
+
+    # Trạng thái
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, server_default="pending", index=True
+    )
+
+    # Thời gian
+    requested_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        index=True,
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+
+    # Lý do và metadata
+    reason: Mapped[Optional[str]] = mapped_column(
+        sa.Text, nullable=True
+    )
+    metadata_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        sa.JSON, nullable=True
+    )
+
+    # Thời gian tạo
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+
+class CommunicationPreferenceModel(Base):
+    """
+    Mô hình tùy chọn liên lạc của người dùng.
+
+    Lưu trữ các kênh liên lạc (email, sms, push, ...) và mục đích
+    mà người dùng đồng ý nhận thông báo.
+
+    Channels (JSON): {"email": true, "sms": false, "push": true, ...}
+    Purposes (JSON): {"newsletters": true, "promotions": false, ...}
+    """
+    __tablename__ = "communication_preferences"
+
+    # Định danh
+    id: Mapped[int] = mapped_column(
+        sa.Integer, primary_key=True, autoincrement=True
+    )
+    preference_id: Mapped[str] = mapped_column(
+        sa.String(36), unique=True, nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        sa.String(64), nullable=False, index=True
+    )
+
+    # Kênh liên lạc (JSON: {"email": true, "sms": false, ...})
+    channels: Mapped[Dict[str, bool]] = mapped_column(
+        sa.JSON, nullable=False, server_default="{}"
+    )
+
+    # Mục đích liên lạc (JSON: {"newsletters": true, "promotions": false, ...})
+    purposes: Mapped[Dict[str, bool]] = mapped_column(
+        sa.JSON, nullable=False, server_default="{}"
+    )
+
+    # Thời gian
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    )
+
+    # Ràng buộc duy nhất: mỗi user + tenant chỉ có một bản ghi
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "user_id", "tenant_id",
+            name="uq_comm_preference_user_tenant"
+        ),
+    )

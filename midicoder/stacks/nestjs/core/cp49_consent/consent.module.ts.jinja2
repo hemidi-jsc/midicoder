@@ -1,0 +1,108 @@
+/**
+ * ConsentModule - NestJS Module cho Consent & Preference Management.
+ *
+ * Khởi tạo và kết nối tất cả các component của hệ thống consent:
+ * - TypeORM entities (ConsentRecord, ConsentPolicy, CookiePreference,
+ *   ErasureRequest, CommunicationPreference)
+ * - CRUD Service (ConsentService)
+ * - REST Controller (ConsentController)
+ * - Erasure Service (ErasureService)
+ * - Consent Guard (ConsentGuard)
+ *
+ * CP49: Consent & Preference Management
+ */
+
+import { Module } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import {
+  ConsentRecord,
+  ConsentPolicy,
+  CookiePreference,
+  ErasureRequest,
+  CommunicationPreference,
+} from "./consent.entity";
+import { ConsentController } from "./consent.controller";
+import { ConsentService } from "./consent.service";
+import { ErasureService } from "./erasure.service";
+import { ConsentGuard } from "./consent.guard";
+
+/**
+ * ConsentModule - module cho Consent & Preference Management.
+ *
+ * Structure:
+ * - Imports:
+ *   - TypeOrmModule.forFeature() - 5 entities cho consent
+ *
+ * - Controllers:
+ *   - ConsentController - REST API cho consent, cookie, comm, erasure
+ *
+ * - Providers:
+ *   - ConsentService - business logic chính
+ *   - ErasureService - xử lý erasure requests
+ *   - ConsentGuard - guard kiểm tra consent
+ *
+ * - Exports:
+ *   - ConsentService - để module khác có thể gọi API consent
+ *   - ErasureService - để module khác có thể trigger erasure
+ *   - ConsentGuard - để module khác có thể dùng guard
+ *
+ * Usage trong AppModule:
+ * @Module({
+ *   imports: [
+ *     ConsentModule,
+ *   ],
+ * })
+ * export class AppModule {}
+ */
+@Module({
+  imports: [
+    // TypeORM - quản lý các entity cho hệ thống consent
+    // - ConsentRecord: bản ghi consent của user
+    // - ConsentPolicy: chính sách consent của tenant
+    // - CookiePreference: sở thích cookie
+    // - ErasureRequest: yêu cầu xóa dữ liệu
+    // - CommunicationPreference: sở thích truyền thông
+    TypeOrmModule.forFeature([
+      ConsentRecord,
+      ConsentPolicy,
+      CookiePreference,
+      ErasureRequest,
+      CommunicationPreference,
+    ]),
+  ],
+  controllers: [
+    // REST Controller cho consent API
+    // - POST /consent/grant - cấp consent
+    // - POST /consent/:id/revoke - rút consent
+    // - GET /consent/user/:userId - list consents
+    // - GET /consent/check - kiểm tra consent
+    // - GET /consent/policies - list policies
+    // - POST /consent/policies - tạo policy (admin)
+    // - PUT /cookie-preferences - cập nhật cookie pref
+    // - GET /cookie-preferences - lấy cookie pref
+    // - PUT /communication-preferences - cập nhật comm pref
+    // - GET /communication-preferences - lấy comm pref
+    // - POST /erasure-requests - tạo erasure request
+    // - GET /erasure-requests/:id - chi tiết erasure
+    // - POST /erasure-requests/:id/process - xử lý erasure
+    // - GET /consent/stats - tenant stats
+    ConsentController,
+  ],
+  providers: [
+    // Service chính - business logic cho quản lý consent
+    ConsentService,
+
+    // Service xử lý erasure requests (GDPR Art.17)
+    ErasureService,
+
+    // Guard kiểm tra consent trước API access
+    ConsentGuard,
+  ],
+  exports: [
+    // Export các service để module khác có thể inject
+    ConsentService,
+    ErasureService,
+    ConsentGuard,
+  ],
+})
+export class ConsentModule {}

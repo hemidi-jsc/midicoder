@@ -1,0 +1,571 @@
+{% raw %}/**
+* PrivacyCenter — Trung tam rieng tu: tab Consents, Cookies, Communication, Erasure.
+* Sinh boi CP49 ConsentEmitter.
+*
+* Hien thi danh sach dong y voi badge trang thai, nut huy dong y, va xac thuc.
+* Su dung Tailwind CSS va React hooks.
+*/
+import React, { useState, useMemo, useCallback } from 'react';
+import { useConsent } from './useConsent';
+
+/* ---- Loai trang thai dong y ---- */
+export type ConsentStatus = 'granted' | 'revoked' | 'expired' | 'pending' | 'pending_renewal';
+
+/* ---- Loai tab ---- */
+export type PrivacyTab = 'consents' | 'cookies' | 'communication' | 'erasure';
+
+/* ---- Interface ban ghi dong y ---- */
+export interface ConsentRecord {
+id: number;
+record_id: string;
+user_id: string;
+tenant_id: string;
+purpose: string;
+category: string;
+status: ConsentStatus;
+granted_at: string | null;
+revoked_at: string | null;
+ip_address: string | null;
+user_agent: string | null;
+metadata: Record<string, unknown> | null;
+    created_at: string;
+    updated_at: string;
+    }
+
+    /* ---- Interface thong ke dong y ---- */
+    export interface ConsentStats {
+    total: number;
+    active: number;
+    revoked: number;
+    expired: number;
+    pending_renewal: number;
+    }
+
+    /* ---- Props ---- */
+    export interface PrivacyCenterProps {
+    userId?: string;
+    tenantId?: string;
+    apiBaseUrl?: string;
+    }
+
+    /* ---- Style objects — de tranh conflict voi double-brace trong JSX ---- */
+    const sWrap: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    height: '100%',
+    minHeight: '100vh',
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    backgroundColor: '#f3f4f6',
+    };
+    const sHeader: React.CSSProperties = {
+    padding: '20px 24px',
+    backgroundColor: '#fff',
+    borderBottom: '1px solid #e5e7eb',
+    };
+    const sHeaderTitle: React.CSSProperties = {
+    fontSize: '22px',
+    fontWeight: 700,
+    margin: 0,
+    color: '#111827',
+    };
+    const sHeaderSub: React.CSSProperties = {
+    fontSize: '13px',
+    color: '#6b7280',
+    marginTop: '2px',
+    };
+
+    /* Tab navigation */
+    const sTabRow: React.CSSProperties = {
+    display: 'flex',
+    gap: '0px',
+    padding: '0 24px',
+    backgroundColor: '#fff',
+    borderBottom: '1px solid #e5e7eb',
+    };
+    const sTabBase: React.CSSProperties = {
+    padding: '12px 20px',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    border: 'none',
+    borderBottom: '2px solid transparent',
+    backgroundColor: 'transparent',
+    color: '#6b7280',
+    transition: 'all 0.15s',
+    };
+    const sTabActive: React.CSSProperties = {
+    ...sTabBase,
+    color: '#6366f1',
+    borderBottomColor: '#6366f1',
+    fontWeight: 600,
+    };
+
+    /* Content area */
+    const sContent: React.CSSProperties = {
+    flex: 1,
+    padding: '24px',
+    overflowY: 'auto' as const,
+    };
+
+    /* Stat cards */
+    const sStatsRow: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gap: '12px',
+    marginBottom: '20px',
+    };
+    const sStatCard: React.CSSProperties = {
+    padding: '16px',
+    borderRadius: '10px',
+    backgroundColor: '#fff',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+    };
+    const sStatNumber: React.CSSProperties = {
+    fontSize: '28px',
+    fontWeight: 700,
+    lineHeight: 1.2,
+    };
+    const sStatLabel: React.CSSProperties = {
+    fontSize: '12px',
+    color: '#6b7280',
+    marginTop: '4px',
+    };
+
+    /* Consent card */
+    const sConsentCard: React.CSSProperties = {
+    padding: '16px',
+    backgroundColor: '#fff',
+    borderRadius: '10px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+    marginBottom: '10px',
+    border: '1px solid #f3f4f6',
+    };
+    const sConsentCardHeader: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '8px',
+    };
+    const sConsentPurpose: React.CSSProperties = {
+    fontSize: '15px',
+    fontWeight: 600,
+    color: '#111827',
+    };
+    const sConsentMeta: React.CSSProperties = {
+    fontSize: '12px',
+    color: '#6b7280',
+    marginBottom: '4px',
+    };
+    const sConsentFooter: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: '12px',
+    paddingTop: '10px',
+    borderTop: '1px solid #f3f4f6',
+    };
+
+    /* Nuth huy dong y */
+    const sRevokeBtn: React.CSSProperties = {
+    padding: '6px 14px',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    border: '1px solid #fecaca',
+    backgroundColor: '#fef2f2',
+    color: '#dc2626',
+    transition: 'all 0.15s',
+    };
+    const sRevokeBtnDisabled: React.CSSProperties = {
+    ...sRevokeBtn,
+    opacity: 0.5,
+    cursor: 'not-allowed',
+    };
+
+    /* Modal xac nhan */
+    const sModalOverlay: React.CSSProperties = {
+    position: 'fixed' as const,
+    inset: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    };
+    const sModalBox: React.CSSProperties = {
+    backgroundColor: '#fff',
+    borderRadius: '14px',
+    padding: '24px',
+    width: '100%',
+    maxWidth: '420px',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+    };
+    const sModalTitle: React.CSSProperties = {
+    fontSize: '18px',
+    fontWeight: 700,
+    margin: '0 0 8px',
+    color: '#111827',
+    };
+    const sModalText: React.CSSProperties = {
+    fontSize: '14px',
+    color: '#374151',
+    margin: '0 0 20px',
+    lineHeight: 1.5,
+    };
+    const sModalActions: React.CSSProperties = {
+    display: 'flex',
+    gap: '10px',
+    justifyContent: 'flex-end',
+    };
+    const sModalCancelBtn: React.CSSProperties = {
+    padding: '8px 18px',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    border: '1px solid #d1d5db',
+    backgroundColor: '#fff',
+    color: '#374151',
+    };
+    const sModalConfirmBtn: React.CSSProperties = {
+    padding: '8px 18px',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    border: 'none',
+    backgroundColor: '#dc2626',
+    color: '#fff',
+    };
+
+    /* Empty state */
+    const sEmptyState: React.CSSProperties = {
+    padding: '48px 20px',
+    textAlign: 'center' as const,
+    color: '#9ca3af',
+    fontSize: '14px',
+    };
+
+    /* Loading */
+    const sLoading: React.CSSProperties = {
+    padding: '48px 20px',
+    textAlign: 'center' as const,
+    color: '#6b7280',
+    fontSize: '14px',
+    };
+
+    /* Error */
+    const sError: React.CSSProperties = {
+    padding: '14px 18px',
+    backgroundColor: '#fef2f2',
+    borderRadius: '8px',
+    color: '#991b1b',
+    fontSize: '13px',
+    border: '1px solid #fecaca',
+    marginBottom: '16px',
+    };
+
+    /* Badge style theo trang thai dong y */
+    function statusBadgeStyle(status: ConsentStatus): React.CSSProperties {
+    const base: React.CSSProperties = {
+    display: 'inline-block',
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: 600,
+    textTransform: 'capitalize' as const,
+    };
+    const map: Record<ConsentStatus, { bg: string; color: string }> = {
+        granted: { bg: '#d1fae5', color: '#065f46' }, /* xanh — active */
+        revoked: { bg: '#fee2e2', color: '#991b1b' }, /* do — revoked */
+        expired: { bg: '#f3f4f6', color: '#4b5563' }, /* xam — expired */
+        pending: { bg: '#fef3c7', color: '#92400e' }, /* vang — pending */
+        pending_renewal: { bg: '#e0e7ff', color: '#3730a3' }, /* xanh duong — pending_renewal */
+        };
+        const c = map[status] || map.pending;
+        return { ...base, backgroundColor: c.bg, color: c.color };
+        }
+
+        /* Mau cho stat number theo loai */
+        function statNumberColor(type: string): string {
+        return ({
+        active: '#22c55e',
+        revoked: '#ef4444',
+        expired: '#9ca3af',
+        renewal: '#6366f1',
+        } as Record<string, string>)[type] || '#3b82f6';
+            }
+
+            /* ---- Utility ---- */
+            function formatDate(iso: string | null): string {
+            if (!iso) return '\u2014';
+            const d = new Date(iso);
+            return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            }
+
+            function formatPurpose(purpose: string): string {
+            const map: Record<string, string> = {
+                essential: 'Co ban',
+                analytics: 'Phan tich',
+                marketing: 'Tiep thi',
+                personalization: 'Ca nhan hoa',
+                third_party: 'Phuong ba',
+                };
+                return map[purpose] || purpose;
+                }
+
+                function formatCategory(category: string): string {
+                const map: Record<string, string> = {
+                    cookie: 'Cookie',
+                    data_processing: 'Xu ly du lieu',
+                    communication: 'Lien lac',
+                    tracking: 'Theo doi',
+                    sharing: 'Chia se',
+                    };
+                    return map[category] || category;
+                    }
+
+                    /* ======================================================================
+                    * COMPONENT CON: ConfirmRevokeModal
+                    * ====================================================================== */
+                    const ConfirmRevokeModal: React.FC<{ record: ConsentRecord; onConfirm: ()=> void;
+                        onCancel: () => void;
+                        }> = ({ record, onConfirm, onCancel }) => (
+                        <div style={sModalOverlay} onClick={onCancel}>
+                            <div style={sModalBox} onClick={(e)=> e.stopPropagation()}>
+                                <h3 style={sModalTitle}>Xac nhan huy dong y</h3>
+                                <p style={sModalText}>
+                                    Ban co chac muon huy dong y cho <strong>{formatPurpose(record.purpose)}</strong>?
+                                    Hanh dong nay khong the hoa loi.
+                                </p>
+                                <div style={sModalActions}>
+                                    <button style={sModalCancelBtn} onClick={onCancel}>
+                                        Huy bo
+                                    </button>
+                                    <button style={sModalConfirmBtn} onClick={onConfirm}>
+                                        Xac nhan huy
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        );
+
+                        /* ======================================================================
+                        * COMPONENT CON: ConsentCardItem
+                        * ====================================================================== */
+                        const ConsentCardItem: React.FC<{ record: ConsentRecord; onRevoke: (recordId: string)=> void;
+                            }> = ({ record, onRevoke }) => {
+                            const [showModal, setShowModal] = useState(false);
+                            const canRevoke = record.status === 'granted';
+
+                            return (
+                            <>
+                                <div style={sConsentCard}>
+                                    <div style={sConsentCardHeader}>
+                                        <div>
+                                            <div style={sConsentPurpose}>{formatPurpose(record.purpose)}</div>
+                                            <div style={sConsentMeta}>{formatCategory(record.category)}</div>
+                                        </div>
+                                        <span style={statusBadgeStyle(record.status)}>{record.status}</span>
+                                    </div>
+                                    <div style={sConsentMeta}>
+                                        Ban ghi: {record.record_id}
+                                    </div>
+                                    {record.granted_at && (
+                                    <div style={sConsentMeta}>Da cap: {formatDate(record.granted_at)}</div>
+                                    )}
+                                    {record.revoked_at && (
+                                    <div style={sConsentMeta}>Da huy: {formatDate(record.revoked_at)}</div>
+                                    )}
+                                    <div style={sConsentFooter}>
+                                        <span style={sConsentMeta}>Cap nhat: {formatDate(record.updated_at)}</span>
+                                        {canRevoke && (
+                                        <button style={sRevokeBtn} onClick={()=> setShowModal(true)}>
+                                            Huy dong y
+                                        </button>
+                                        )}
+                                    </div>
+                                </div>
+                                {showModal && (
+                                <ConfirmRevokeModal record={record} onConfirm={()=> {
+                                    onRevoke(record.record_id);
+                                    setShowModal(false);
+                                    }}
+                                    onCancel={() => setShowModal(false)}
+                                    />
+                                    )}
+                            </>
+                            );
+                            };
+
+                            /* ======================================================================
+                            * COMPONENT CON: Tab placeholder cho cac tab con
+                            * ====================================================================== */
+                            const PlaceholderTab: React.FC<{ tabName: string }> = ({ tabName }) => {
+                                const tabLabels: Record<string, string> = {
+                                    cookies: 'Tuy chon cookie',
+                                    communication: 'Thieu yeu cau xoa',
+                                    erasure: 'Thieu yeu cau xoa',
+                                    };
+                                    return (
+                                    <div style={sEmptyState}>
+                                        <p>{tabLabels[tabName] || 'Chua co du lieu'}</p>
+                                        <p style={{ marginTop: '8px' , fontSize: '12px' }}>
+                                            Sud dung useConsent hook de ket noi voi API.
+                                        </p>
+                                    </div>
+                                    );
+                                    };
+
+                                    /* ======================================================================
+                                    * COMPONENT CHÍNH: PrivacyCenter
+                                    * ====================================================================== */
+                                    export function PrivacyCenter({
+                                    userId = 'user_1',
+                                    tenantId = 'tenant_1',
+                                    apiBaseUrl = '/api',
+                                    }: PrivacyCenterProps) {
+                                    const [activeTab, setActiveTab] = useState<PrivacyTab>('consents');
+                                        const {
+                                        consents,
+                                        stats,
+                                        revokeConsent,
+                                        consentError,
+                                        consentLoading,
+                                        } = useConsent({ userId, tenantId, apiBaseUrl });
+
+                                        /* Lọc dong y theo tab — chi hien thi tab consents chi tiet */
+                                        const displayConsents = useMemo(() => {
+                                        if (activeTab !== 'consents') return [];
+                                        return consents || [];
+                                        }, [consents, activeTab]);
+
+                                        /* Xy ly huy dong y voi xac nhan */
+                                        const handleRevoke = useCallback(
+                                        async (recordId: string) => {
+                                        try {
+                                        await revokeConsent(recordId, {
+                                        user_id: userId,
+                                        tenant_id: tenantId,
+                                        });
+                                        } catch (err) {
+                                        const message = err instanceof Error ? err.message : 'Huy dong y that bai';
+                                        console.error('[PrivacyCenter] revokeConsent:', message);
+                                        }
+                                        },
+                                        [revokeConsent, userId, tenantId],
+                                        );
+
+                                        /* Danh sach tab */
+                                        const tabs: { key: PrivacyTab; label: string; icon: string }[] = [
+                                        { key: 'consents', label: 'Dong y', icon: '\u2705' },
+                                        { key: 'cookies', label: 'Cookie', icon: '\u{1F36A}' },
+                                        { key: 'communication', label: 'Lien lac', icon: '\u2709' },
+                                        { key: 'erasure', label: 'Xoa', icon: '\u{1F5D1}' },
+                                        ];
+
+                                        return (
+                                        <div style={sWrap}>
+                                            {/* Header */}
+                                            <div style={sHeader}>
+                                                <h1 style={sHeaderTitle}>Trung tam rieng tu</h1>
+                                                <div style={sHeaderSub}>
+                                                    Quyen suan dong y, cookie, va yeu cau xoa du lieu cua ban
+                                                </div>
+                                            </div>
+
+                                            {/* Tab navigation */}
+                                            <div style={sTabRow}>
+                                                {tabs.map((tab) => (
+                                                <button key={tab.key} style={activeTab===tab.key ? sTabActive :
+                                                    sTabBase} onClick={()=> setActiveTab(tab.key)}
+                                                    >
+                                                    {tab.icon} {tab.label}
+                                                </button>
+                                                ))}
+                                            </div>
+
+                                            {/* Content area */}
+                                            <div style={sContent}>
+                                                {/* Hien thi loi neu co */}
+                                                {consentError && (
+                                                <div style={sError}>
+                                                    <strong>Loi:</strong> {consentError}
+                                                </div>
+                                                )}
+
+                                                {/* Tab: Consents */}
+                                                {activeTab === 'consents' && (
+                                                <>
+                                                    {/* Thong ke tong quan */}
+                                                    {stats && (
+                                                    <div style={sStatsRow}>
+                                                        <div style={sStatCard}>
+                                                            <div style={{ ...sStatNumber, color:
+                                                                statNumberColor('active') }}>
+                                                                {stats.active}
+                                                            </div>
+                                                            <div style={sStatLabel}>Dang hoat dong</div>
+                                                        </div>
+                                                        <div style={sStatCard}>
+                                                            <div style={{ ...sStatNumber, color:
+                                                                statNumberColor('revoked') }}>
+                                                                {stats.revoked}
+                                                            </div>
+                                                            <div style={sStatLabel}>Da huy</div>
+                                                        </div>
+                                                        <div style={sStatCard}>
+                                                            <div style={{ ...sStatNumber, color:
+                                                                statNumberColor('expired') }}>
+                                                                {stats.expired}
+                                                            </div>
+                                                            <div style={sStatLabel}>Da het han</div>
+                                                        </div>
+                                                        <div style={sStatCard}>
+                                                            <div style={{ ...sStatNumber, color:
+                                                                statNumberColor('renewal') }}>
+                                                                {stats.pending_renewal}
+                                                            </div>
+                                                            <div style={sStatLabel}>Cho lam moi</div>
+                                                        </div>
+                                                    </div>
+                                                    )}
+
+                                                    {/* Danh sach ban ghi dong y */}
+                                                    {consentLoading ? (
+                                                    <div style={sLoading}>Dang tai danh sach dong y...</div>
+                                                    ) : displayConsents.length === 0 ? (
+                                                    <div style={sEmptyState}>
+                                                        <p>Khong co ban ghi dong y nao.</p>
+                                                        <p style={{ marginTop: '8px' , fontSize: '12px' }}>
+                                                            Cac ban ghi dong y se hien thi o day.
+                                                        </p>
+                                                    </div>
+                                                    ) : (
+                                                    displayConsents.map((record) => (
+                                                    <ConsentCardItem key={record.record_id} record={record}
+                                                        onRevoke={handleRevoke} />
+                                                    ))
+                                                    )}
+                                                </>
+                                                )}
+
+                                                {/* Tab: Cookies */}
+                                                {activeTab === 'cookies' &&
+                                                <PlaceholderTab tabName="cookies" />}
+
+                                                {/* Tab: Communication */}
+                                                {activeTab === 'communication' &&
+                                                <PlaceholderTab tabName="communication" />}
+
+                                                {/* Tab: Erasure */}
+                                                {activeTab === 'erasure' &&
+                                                <PlaceholderTab tabName="erasure" />}
+                                            </div>
+                                        </div>
+                                        );
+                                        }
+
+                                        export default PrivacyCenter;
+                                        {% endraw %}

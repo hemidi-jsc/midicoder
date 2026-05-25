@@ -1,0 +1,483 @@
+/**
+ * ConsentController - controller cho API Consent & Preference Management.
+ *
+ * Cung cấp các endpoint REST cho việc quản lý consent và preference:
+ * - POST   /consent/grant                 - Cấp consent mới
+ * - POST   /consent/:recordId/revoke      - Rút consent
+ * - GET    /consent/user/:userId          - Lấy danh sách consents của user
+ * - GET    /consent/check                 - Kiểm tra consent
+ * - GET    /consent/policies              - Lấy danh sách policies
+ * - POST   /consent/policies              - Tạo policy (admin)
+ * - PUT    /cookie-preferences            - Cập nhật cookie preference
+ * - GET    /cookie-preferences            - Lấy cookie preference
+ * - PUT    /communication-preferences     - Cập nhật comm preference
+ * - GET    /communication-preferences     - Lấy comm preference
+ * - POST   /erasure-requests              - Tạo erasure request
+ * - GET    /erasure-requests/:requestId   - Lấy chi tiết erasure request
+ * - POST   /erasure-requests/:requestId/process - Xử lý erasure (admin)
+ * - GET    /consent/stats                 - Tenant consent stats (admin)
+ *
+ * CP49: Consent & Preference Management
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Query,
+  HttpStatus,
+  HttpCode,
+  ParseUUIDPipe,
+  ValidationPipe,
+} from "@nestjs/common";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiParam,
+} from "@nestjs/swagger";
+import { ConsentService, ConsentStats } from "./consent.service";
+import {
+  GrantConsentDto,
+  RevokeConsentDto,
+  CreateConsentPolicyDto,
+  CookiePreferenceDto,
+  CommunicationPreferenceDto,
+  CreateErasureRequestDto,
+  ProcessErasureDto,
+  ConsentStatsDto,
+} from "./consent.dto";
+
+/**
+ * ConsentController - quản lý consent, cookie, communication preferences, và erasure requests.
+ *
+ * API Routes:
+ * - POST   /consent/grant                 - Cấp consent mới
+ * - POST   /consent/:recordId/revoke      - Rút consent (soft revoke)
+ * - GET    /consent/user/:userId          - Danh sách consents của user
+ * - GET    /consent/check                 - Check consent (query: user_id, tenant_id, purpose)
+ * - GET    /consent/policies              - Danh sách policies của tenant
+ * - POST   /consent/policies              - Tạo policy (admin)
+ * - PUT    /cookie-preferences            - Cập nhật cookie preference
+ * - GET    /cookie-preferences            - Lấy cookie preference
+ * - PUT    /communication-preferences     - Cập nhật comm preference
+ * - GET    /communication-preferences     - Lấy comm preference
+ * - POST   /erasure-requests              - Tạo erasure request
+ * - GET    /erasure-requests/:requestId   - Chi tiết erasure request
+ * - POST   /erasure-requests/:requestId/process - Xử lý erasure (admin)
+ * - GET    /consent/stats                 - Tenant consent stats (admin)
+ */
+@ApiTags("Consent")
+@ApiBearerAuth()
+@Controller("consent")
+export class ConsentController {
+  /**
+   * Constructor.
+   *
+   * @param consentService - ConsentService instance
+   */
+  constructor(
+    private readonly consentService: ConsentService,
+  ) {}
+
+  // ========================================================================
+  // Consent Endpoints
+  // ========================================================================
+
+  /**
+   * Cấp consent mới.
+   *
+   * Tạo ConsentRecord mới với trạng thái ACTIVE.
+   *
+   * @param grantDto - GrantConsentDto
+   * @returns ConsentRecord entity vừa tạo
+   */
+  @Post("grant")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Cấp consent mới",
+    description: "Tạo bản ghi consent mới với trạng thái ACTIVE.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Consent đã được cấp",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Dữ liệu không hợp lệ",
+  })
+  async grantConsent(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    grantDto: GrantConsentDto,
+  ): Promise<any> {
+    return this.consentService.grantConsent(grantDto);
+  }
+
+  /**
+   * Rút consent (soft revoke).
+   *
+   * Đánh dấu consent là REVOKED, không xóa bản ghi.
+   * Không thể revoke mandatory consent.
+   *
+   * @param recordId - ID bản ghi consent
+   * @param revokeDto - RevokeConsentDto
+   * @returns ConsentRecord đã revoke
+   */
+  @Post(":recordId/revoke")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Rút consent",
+    description: "Rút consent (soft revoke). Không thể revoke mandatory consent.",
+  })
+  @ApiParam({
+    name: "recordId",
+    description: "ID bản ghi consent",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Consent đã được rút",
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: "Không thể revoke mandatory consent",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy consent record",
+  })
+  async revokeConsent(
+    @Param("recordId") recordId: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    revokeDto?: RevokeConsentDto,
+  ): Promise<any> {
+    return this.consentService.revokeConsent(recordId, revokeDto?.reason);
+  }
+
+  /**
+   * Lấy danh sách consents của user.
+   *
+   * @param userId - ID người dùng
+   * @returns List ConsentRecord
+   */
+  @Get("user/:userId")
+  @ApiOperation({
+    summary: "Lấy danh sách consents của user",
+    description: "Lấy tất cả consent records của user trong tenant scope.",
+  })
+  @ApiParam({
+    name: "userId",
+    description: "ID người dùng",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List consents thành công",
+  })
+  async getUserConsents(
+    @Param("userId") userId: string,
+    @Query("tenantId") tenantId?: string,
+  ): Promise<any[]> {
+    return this.consentService.getUserConsents(userId, tenantId);
+  }
+
+  /**
+   * Kiểm tra user có active consent cho purpose không.
+   *
+   * @param userId - ID người dùng
+   * @param tenantId - ID tenant
+   * @param purpose - Mục đích cần kiểm tra
+   * @returns Object chứa hasConsent (bool)
+   */
+  @Get("check")
+  @ApiOperation({
+    summary: "Kiểm tra consent",
+    description: "Kiểm tra xem user có active consent cho purpose không.",
+  })
+  @ApiQuery({ name: "userId", required: true })
+  @ApiQuery({ name: "tenantId", required: true })
+  @ApiQuery({ name: "purpose", required: true })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Kết quả kiểm tra consent",
+  })
+  async checkConsent(
+    @Query("userId") userId: string,
+    @Query("tenantId") tenantId: string,
+    @Query("purpose") purpose: string,
+  ): Promise<{ hasConsent: boolean }> {
+    const hasConsent = await this.consentService.checkConsent(userId, tenantId, purpose);
+    return { hasConsent };
+  }
+
+  // ========================================================================
+  // Policy Endpoints
+  // ========================================================================
+
+  /**
+   * Lấy danh sách policies của tenant.
+   *
+   * @param tenantId - ID tenant
+   * @returns List ConsentPolicy
+   */
+  @Get("policies")
+  @ApiOperation({
+    summary: "Lấy danh sách policies",
+    description: "Lấy tất cả consent policies của tenant.",
+  })
+  @ApiQuery({ name: "tenantId", required: true })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "List policies thành công",
+  })
+  async getPolicies(
+    @Query("tenantId") tenantId: string,
+  ): Promise<any[]> {
+    return this.consentService.getPolicies(tenantId);
+  }
+
+  /**
+   * Tạo policy mới (admin).
+   *
+   * @param createDto - CreateConsentPolicyDto
+   * @returns ConsentPolicy entity
+   */
+  @Post("policies")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo policy mới (admin)",
+    description: "Tạo consent policy mới cho tenant.",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Policy đã được tạo",
+  })
+  async createPolicy(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    createDto: CreateConsentPolicyDto,
+  ): Promise<any> {
+    return this.consentService.createPolicy(createDto);
+  }
+
+  // ========================================================================
+  // Cookie Preference Endpoints
+  // ========================================================================
+
+  /**
+   * Cập nhật cookie preference.
+   *
+   * @param dto - CookiePreferenceDto
+   * @returns CookiePreference entity
+   */
+  @Put("../cookie-preferences")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Cập nhật cookie preference",
+    description: "Cập nhật sở thích cookie của người dùng.",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Cookie preference đã được cập nhật",
+  })
+  async updateCookiePreference(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: CookiePreferenceDto,
+  ): Promise<any> {
+    return this.consentService.setCookiePreference(dto);
+  }
+
+  /**
+   * Lấy cookie preference.
+   *
+   * @param userId - ID người dùng
+   * @param tenantId - ID tenant
+   * @returns CookiePreference entity
+   */
+  @Get("../cookie-preferences")
+  @ApiOperation({
+    summary: "Lấy cookie preference",
+    description: "Lấy sở thích cookie của người dùng.",
+  })
+  @ApiQuery({ name: "userId", required: true })
+  @ApiQuery({ name: "tenantId", required: true })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Cookie preference",
+  })
+  async getCookiePreference(
+    @Query("userId") userId: string,
+    @Query("tenantId") tenantId: string,
+  ): Promise<any> {
+    return this.consentService.getCookiePreference(userId, tenantId);
+  }
+
+  // ========================================================================
+  // Communication Preference Endpoints
+  // ========================================================================
+
+  /**
+   * Cập nhật communication preference.
+   *
+   * @param dto - CommunicationPreferenceDto
+   * @returns CommunicationPreference entity
+   */
+  @Put("../communication-preferences")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Cập nhật communication preference",
+    description: "Cập nhật sở thích truyền thông của người dùng.",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Communication preference đã được cập nhật",
+  })
+  async updateCommPreference(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: CommunicationPreferenceDto,
+  ): Promise<any> {
+    return this.consentService.setCommunicationPreference(dto);
+  }
+
+  /**
+   * Lấy communication preference.
+   *
+   * @param userId - ID người dùng
+   * @param tenantId - ID tenant
+   * @returns CommunicationPreference entity
+   */
+  @Get("../communication-preferences")
+  @ApiOperation({
+    summary: "Lấy communication preference",
+    description: "Lấy sở thích truyền thông của người dùng.",
+  })
+  @ApiQuery({ name: "userId", required: true })
+  @ApiQuery({ name: "tenantId", required: true })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Communication preference",
+  })
+  async getCommPreference(
+    @Query("userId") userId: string,
+    @Query("tenantId") tenantId: string,
+  ): Promise<any> {
+    return this.consentService.getCommunicationPreference(userId, tenantId);
+  }
+
+  // ========================================================================
+  // Erasure Request Endpoints
+  // ========================================================================
+
+  /**
+   * Tạo erasure request.
+   *
+   * @param dto - CreateErasureRequestDto
+   * @returns ErasureRequest entity
+   */
+  @Post("erasure-requests")
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: "Tạo erasure request",
+    description: "Tạo yêu cầu xóa dữ liệu (GDPR Art.17).",
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: "Erasure request đã được tạo",
+  })
+  async createErasureRequest(
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: CreateErasureRequestDto,
+  ): Promise<any> {
+    return this.consentService.createErasureRequest(dto);
+  }
+
+  /**
+   * Lấy chi tiết erasure request.
+   *
+   * @param requestId - ID yêu cầu xóa
+   * @returns ErasureRequest entity
+   */
+  @Get("erasure-requests/:requestId")
+  @ApiOperation({
+    summary: "Lấy chi tiết erasure request",
+    description: "Lấy thông tin chi tiết của yêu cầu xóa dữ liệu.",
+  })
+  @ApiParam({
+    name: "requestId",
+    description: "ID yêu cầu xóa dữ liệu",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Erasure request details",
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: "Không tìm thấy erasure request",
+  })
+  async getErasureRequest(
+    @Param("requestId") requestId: string,
+  ): Promise<any> {
+    return this.consentService.getErasureRequest(requestId);
+  }
+
+  /**
+   * Xử lý erasure request (admin).
+   *
+   * @param requestId - ID yêu cầu xóa
+   * @param dto - ProcessErasureDto (decision: approve/reject)
+   * @returns ErasureRequest entity đã xử lý
+   */
+  @Post("erasure-requests/:requestId/process")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Xử lý erasure request (admin)",
+    description: "Phê duyệt hoặc từ chối yêu cầu xóa dữ liệu.",
+  })
+  @ApiParam({
+    name: "requestId",
+    description: "ID yêu cầu xóa dữ liệu",
+    type: "string",
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Erasure request đã được xử lý",
+  })
+  async processErasureRequest(
+    @Param("requestId") requestId: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    dto: ProcessErasureDto,
+  ): Promise<any> {
+    return this.consentService.processErasureRequest(requestId, dto.decision);
+  }
+
+  // ========================================================================
+  // Stats Endpoints
+  // ========================================================================
+
+  /**
+   * Lấy thống kê consent của tenant (admin).
+   *
+   * @param tenantId - ID tenant
+   * @returns ConsentStats object
+   */
+  @Get("stats")
+  @ApiOperation({
+    summary: "Lấy thống kê consent của tenant (admin)",
+    description: "Lấy thống kê aggregate của consent records theo tenant.",
+  })
+  @ApiQuery({ name: "tenantId", required: true })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: "Thống kê consent của tenant",
+  })
+  async getConsentStats(
+    @Query("tenantId") tenantId: string,
+  ): Promise<ConsentStatsDto> {
+    return this.consentService.getTenantConsentStats(tenantId);
+  }
+}

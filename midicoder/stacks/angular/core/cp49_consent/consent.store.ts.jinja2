@@ -1,0 +1,581 @@
+{% raw %}/**
+ * CP49 Consent & Preference Management — Signal Store cho trạng thái đồng ý và tùy chọn.
+ *
+ * Sử dụng pattern: BehaviorSubject source + toSignal computed. Quản lý trạng thái
+ * gồm bản ghi đồng ý, tùy chọn cookie, tùy chọn liên lạc, yêu cầu xóa, thống kê,
+ * trạng thái đang tải / lỗi.
+ *
+ * Tạo tự động bởi CP49 — không sửa thủ công.
+ */
+
+import { Injectable, inject } from '@angular/core';
+import { BehaviorSubject, Subject } from 'rxjs';
+import { toSignal } from '@angular/core/rxjs-interop';
+
+import { ConsentService } from './consent.service';
+import {
+  ConsentRecord,
+  ConsentRecordCreateDto,
+  ConsentStatus,
+  ConsentPurpose,
+  ConsentCategory,
+  CookiePreference,
+  CookiePreferenceCreateDto,
+  CommunicationPreference,
+  CommunicationPreferenceCreateDto,
+  ErasureRequest,
+  ErasureRequestCreateDto,
+  ErasureStatus,
+  ErasureScope,
+  ConsentStats,
+  ConsentFilters,
+  ErasureFilters,
+} from './consent-types';
+
+// ===========================================================================
+// Interface nội bộ — trạng thái store
+// ===========================================================================
+
+/**
+ * Toàn bộ trạng thái của ConsentStore.
+ * Không export ra ngoài — chỉ dùng nội bộ để đảm bảo immutability.
+ */
+interface ConsentStoreState {
+  /** Danh sách tất cả bản ghi đồng ý. */
+  consents: ConsentRecord[];
+  /** Tùy chọn cookie hiện tại. */
+  cookiePreferences: CookiePreference | null;
+  /** Tùy chọn liên lạc hiện tại. */
+  commPreferences: CommunicationPreference | null;
+  /** Danh sách yêu cầu xóa dữ liệu. */
+  erasureRequests: ErasureRequest[];
+  /** Thống kê đồng ý của tenant. */
+  stats: ConsentStats | null;
+  /** Cờ đang tải dữ liệu. */
+  loading: boolean;
+  /** Thông báo lỗi cuối cùng (null nếu không có lỗi). */
+  error: string | null;
+}
+
+// ===========================================================================
+// Giá trị mặc định
+// ===========================================================================
+
+/** Trạng thái ban đầu của store. */
+const INITIAL_STATE: ConsentStoreState = {
+  consents: [],
+  cookiePreferences: null,
+  commPreferences: null,
+  erasureRequests: [],
+  stats: null,
+  loading: false,
+  error: null,
+};
+
+/**
+ * ConsentStore — Store quản lý trạng thái đồng ý và tùy chọn.
+ *
+ * Pattern: BehaviorSubject -> toSignal -> computed signals.
+ *
+ * Sử dụng:
+ *   const store = inject(ConsentStore);
+ *   const consents = store.consents();
+ *   store.revokeConsent(recordId);
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class ConsentStore {
+  // ===========================================================================
+  // Inject dependencies
+  // ===========================================================================
+
+  /** Dịch vụ HTTP cho các thao tác đồng ý. */
+  private readonly consentService = inject(ConsentService);
+
+  // ===========================================================================
+  // BehaviorSubject source
+  // ===========================================================================
+
+  /** Nguồn dữ liệu chính — BehaviorSubject giữ toàn bộ state. */
+  private readonly stateSubject = new BehaviorSubject<ConsentStoreState>(INITIAL_STATE);
+
+  /** Subject thông báo khi có bất kỳ action nào (cho debug/logging). */
+  private readonly actionSubject = new Subject<string>();
+
+  // ===========================================================================
+  // Subjects riêng cho từng loại dữ liệu (để toSignal hoạt động đúng)
+  // ===========================================================================
+
+  private readonly consentsSubject = new BehaviorSubject<ConsentRecord[]>(INITIAL_STATE.consents);
+  private readonly cookiePrefsSubject = new BehaviorSubject<CookiePreference | null>(INITIAL_STATE.cookiePreferences);
+  private readonly commPrefsSubject = new BehaviorSubject<CommunicationPreference | null>(INITIAL_STATE.commPreferences);
+  private readonly erasureRequestsSubject = new BehaviorSubject<ErasureRequest[]>(INITIAL_STATE.erasureRequests);
+  private readonly statsSubject = new BehaviorSubject<ConsentStats | null>(INITIAL_STATE.stats);
+  private readonly loadingSubject = new BehaviorSubject<boolean>(INITIAL_STATE.loading);
+  private readonly errorSubject = new BehaviorSubject<string | null>(INITIAL_STATE.error);
+
+  // ===========================================================================
+  // Signals public
+  // ===========================================================================
+
+  /** Danh sách tất cả bản ghi đồng ý (signal). */
+  public readonly consents = toSignal(this.consentsSubject, { requireSync: true });
+
+  /** Tùy chọn cookie hiện tại (signal). */
+  public readonly cookiePreferences = toSignal(this.cookiePrefsSubject, { requireSync: true });
+
+  /** Tùy chọn liên lạc hiện tại (signal). */
+  public readonly commPreferences = toSignal(this.commPrefsSubject, { requireSync: true });
+
+  /** Danh sách yêu cầu xóa dữ liệu (signal). */
+  public readonly erasureRequests = toSignal(this.erasureRequestsSubject, { requireSync: true });
+
+  /** Thống kê đồng ý của tenant (signal). */
+  public readonly stats = toSignal(this.statsSubject, { requireSync: true });
+
+  /** Cờ đang tải dữ liệu (signal). */
+  public readonly loading = toSignal(this.loadingSubject, { requireSync: true });
+
+  /** Thông báo lỗi cuối cùng (signal). */
+  public readonly error = toSignal(this.errorSubject, { requireSync: true });
+
+  // ===========================================================================
+  // Actions — tải dữ liệu từ server
+  // ===========================================================================
+
+  /**
+   * Tải tất cả bản ghi đồng ý của người dùng hiện tại.
+   *
+   * @param filters - Tiêu chí lọc (tùy chọn).
+   */
+  loadConsents(filters?: ConsentFilters): void {
+    this.setLoading(true);
+    this.setError(null);
+
+    this.consentService.getUserConsents(filters).subscribe({
+      next: (consents) => {
+        this.consentsSubject.next([...consents]);
+        this.stateSubject.next({ ...this.stateSubject.value, consents: [...consents] });
+        this.setLoading(false);
+        this.actionSubject.next('loadConsents');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tải danh sách đồng ý');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  /**
+   * Tải tùy chọn cookie của người dùng hiện tại.
+   */
+  loadCookiePreferences(): void {
+    this.setLoading(true);
+    this.setError(null);
+
+    this.consentService.getCookiePreference().subscribe({
+      next: (prefs) => {
+        this.cookiePrefsSubject.next({ ...prefs });
+        this.stateSubject.next({ ...this.stateSubject.value, cookiePreferences: { ...prefs } });
+        this.setLoading(false);
+        this.actionSubject.next('loadCookiePreferences');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tải tùy chọn cookie');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  /**
+   * Tải tùy chọn liên lạc của người dùng hiện tại.
+   */
+  loadCommPreferences(): void {
+    this.setLoading(true);
+    this.setError(null);
+
+    this.consentService.getCommPreference().subscribe({
+      next: (prefs) => {
+        this.commPrefsSubject.next({ ...prefs });
+        this.stateSubject.next({ ...this.stateSubject.value, commPreferences: { ...prefs } });
+        this.setLoading(false);
+        this.actionSubject.next('loadCommPreferences');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tải tùy chọn liên lạc');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  /**
+   * Tải danh sách yêu cầu xóa dữ liệu.
+   *
+   * @param filters - Tiêu chí lọc (tùy chọn).
+   */
+  loadErasureRequests(filters?: ErasureFilters): void {
+    this.setLoading(true);
+    this.setError(null);
+
+    this.consentService.getErasureRequests(filters).subscribe({
+      next: (requests) => {
+        this.erasureRequestsSubject.next([...requests]);
+        this.stateSubject.next({ ...this.stateSubject.value, erasureRequests: [...requests] });
+        this.setLoading(false);
+        this.actionSubject.next('loadErasureRequests');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tải danh sách yêu cầu xóa');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  /**
+   * Tải thống kê đồng ý của tenant.
+   */
+  loadStats(): void {
+    this.setLoading(true);
+    this.setError(null);
+
+    this.consentService.getTenantStats().subscribe({
+      next: (stats) => {
+        this.statsSubject.next({ ...stats });
+        this.stateSubject.next({ ...this.stateSubject.value, stats: { ...stats } });
+        this.setLoading(false);
+        this.actionSubject.next('loadStats');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi tải thống kê đồng ý');
+        this.setLoading(false);
+      },
+    });
+  }
+
+  /**
+   * Tải tất cả dữ liệu ban đầu (dùng trong ngOnInit).
+   */
+  loadAll(): void {
+    this.loadConsents();
+    this.loadCookiePreferences();
+    this.loadCommPreferences();
+    this.loadErasureRequests();
+    this.loadStats();
+  }
+
+  // ===========================================================================
+  // Actions — thao tác với bản ghi đồng ý
+  // ===========================================================================
+
+  /**
+   * Cấp đồng ý mới cho một mục đích và danh mục.
+   *
+   * @param dto - Dữ liệu tạo bản ghi đồng ý.
+   */
+  grantConsent(dto: ConsentRecordCreateDto): void {
+    this.setError(null);
+
+    this.consentService.grantConsent(dto).subscribe({
+      next: (record) => {
+        const current = this.consentsSubject.value;
+        this.consentsSubject.next([...current, record]);
+        this.stateSubject.next({ ...this.stateSubject.value, consents: [...current, record] });
+        this.actionSubject.next('grantConsent');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi cấp đồng ý');
+      },
+    });
+  }
+
+  /**
+   * Hủy đồng ý theo ID bản ghi.
+   *
+   * @param recordId - ID duy nhất của bản ghi đồng ý cần hủy.
+   */
+  revokeConsent(recordId: string): void {
+    this.setError(null);
+
+    this.consentService.revokeConsent(recordId).subscribe({
+      next: (updated) => {
+        const current = this.consentsSubject.value;
+        const updatedList = current.map((r) =>
+          r.recordId === recordId ? updated : r
+        );
+        this.consentsSubject.next(updatedList);
+        this.stateSubject.next({ ...this.stateSubject.value, consents: updatedList });
+        this.actionSubject.next('revokeConsent');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi hủy đồng ý');
+      },
+    });
+  }
+
+  // ===========================================================================
+  // Actions — thao tác với tùy chọn cookie
+  // ===========================================================================
+
+  /**
+   * Đặt tùy chọn cookie mới cho người dùng.
+   *
+   * @param dto - Dữ liệu tùy chọn cookie.
+   */
+  setCookiePreferences(dto: CookiePreferenceCreateDto): void {
+    this.setError(null);
+
+    this.consentService.setCookiePreference(dto).subscribe({
+      next: (prefs) => {
+        this.cookiePrefsSubject.next({ ...prefs });
+        this.stateSubject.next({ ...this.stateSubject.value, cookiePreferences: { ...prefs } });
+        this.actionSubject.next('setCookiePreferences');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi lưu tùy chọn cookie');
+      },
+    });
+  }
+
+  /**
+   * Chấp nhận tất cả cookie.
+   */
+  acceptAllCookies(): void {
+    this.setError(null);
+
+    this.consentService.acceptAllCookies().subscribe({
+      next: (prefs) => {
+        this.cookiePrefsSubject.next({ ...prefs });
+        this.stateSubject.next({ ...this.stateSubject.value, cookiePreferences: { ...prefs } });
+        this.actionSubject.next('acceptAllCookies');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi chấp nhận tất cả cookie');
+      },
+    });
+  }
+
+  /**
+   * Từ chối tất cả cookie không cần thiết.
+   */
+  rejectNonNecessaryCookies(): void {
+    this.setError(null);
+
+    this.consentService.rejectNonNecessaryCookies().subscribe({
+      next: (prefs) => {
+        this.cookiePrefsSubject.next({ ...prefs });
+        this.stateSubject.next({ ...this.stateSubject.value, cookiePreferences: { ...prefs } });
+        this.actionSubject.next('rejectNonNecessaryCookies');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi từ chối cookie không cần thiết');
+      },
+    });
+  }
+
+  // ===========================================================================
+  // Actions — thao tác với tùy chọn liên lạc
+  // ===========================================================================
+
+  /**
+   * Đặt tùy chọn liên lạc mới cho người dùng.
+   *
+   * @param dto - Dữ liệu tùy chọn liên lạc.
+   */
+  setCommPreferences(dto: CommunicationPreferenceCreateDto): void {
+    this.setError(null);
+
+    this.consentService.setCommPreference(dto).subscribe({
+      next: (prefs) => {
+        this.commPrefsSubject.next({ ...prefs });
+        this.stateSubject.next({ ...this.stateSubject.value, commPreferences: { ...prefs } });
+        this.actionSubject.next('setCommPreferences');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi lưu tùy chọn liên lạc');
+      },
+    });
+  }
+
+  // ===========================================================================
+  // Actions — thao tác với yêu cầu xóa dữ liệu
+  // ===========================================================================
+
+  /**
+   * Gửi yêu cầu xóa dữ liệu mới.
+   *
+   * @param dto - Dữ liệu yêu cầu xóa (phạm vi, lý do).
+   */
+  submitErasureRequest(dto: ErasureRequestCreateDto): void {
+    this.setError(null);
+
+    this.consentService.createErasureRequest(dto).subscribe({
+      next: (request) => {
+        const current = this.erasureRequestsSubject.value;
+        this.erasureRequestsSubject.next([...current, request]);
+        this.stateSubject.next({ ...this.stateSubject.value, erasureRequests: [...current, request] });
+        this.actionSubject.next('submitErasureRequest');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi gửi yêu cầu xóa dữ liệu');
+      },
+    });
+  }
+
+  /**
+   * Hủy yêu cầu xóa đang chờ xử lý.
+   *
+   * @param requestId - ID yêu cầu xóa cần hủy.
+   */
+  cancelErasureRequest(requestId: string): void {
+    this.setError(null);
+
+    this.consentService.cancelErasureRequest(requestId).subscribe({
+      next: (updated) => {
+        const current = this.erasureRequestsSubject.value;
+        const updatedList = current.map((r) =>
+          r.requestId === requestId ? updated : r
+        );
+        this.erasureRequestsSubject.next(updatedList);
+        this.stateSubject.next({ ...this.stateSubject.value, erasureRequests: updatedList });
+        this.actionSubject.next('cancelErasureRequest');
+      },
+      error: (err) => {
+        this.setError(err.message ?? 'Lỗi hủy yêu cầu xóa');
+      },
+    });
+  }
+
+  // ===========================================================================
+  // Actions — trạng thái tải và lỗi
+  // ===========================================================================
+
+  /**
+   * Đặt cờ đang tải.
+   *
+   * @param loading - Trạng thái đang tải.
+   */
+  setLoading(loading: boolean): void {
+    this.loadingSubject.next(loading);
+    this.stateSubject.next({ ...this.stateSubject.value, loading });
+  }
+
+  /**
+   * Đặt thông báo lỗi.
+   *
+   * @param error - Thông báo lỗi (null để xóa lỗi).
+   */
+  setError(error: string | null): void {
+    this.errorSubject.next(error);
+    this.stateSubject.next({ ...this.stateSubject.value, error });
+  }
+
+  /**
+   * Xóa thông báo lỗi hiện tại.
+   */
+  clearError(): void {
+    this.setError(null);
+  }
+
+  // ===========================================================================
+  // Tiện ích
+  // ===========================================================================
+
+  /**
+   * Lấy bản ghi đồng ý theo ID.
+   *
+   * @param recordId - ID bản ghi cần tìm.
+   * @returns Bản ghi đồng ý tìm thấy hoặc undefined.
+   */
+  getConsentById(recordId: string): ConsentRecord | undefined {
+    return this.consentsSubject.value.find((r) => r.recordId === recordId);
+  }
+
+  /**
+   * Đếm số bản ghi đồng ý theo trạng thái.
+   *
+   * @param status - Trạng thái cần đếm.
+   * @returns Số lượng bản ghi.
+   */
+  countConsentsByStatus(status: ConsentStatus): number {
+    return this.consentsSubject.value.filter((r) => r.status === status).length;
+  }
+
+  /**
+   * Đếm số bản ghi đồng ý theo mục đích.
+   *
+   * @param purpose - Mục đích cần đếm.
+   * @returns Số lượng bản ghi.
+   */
+  countConsentsByPurpose(purpose: ConsentPurpose): number {
+    return this.consentsSubject.value.filter((r) => r.purpose === purpose).length;
+  }
+
+  /**
+   * Lấy danh sách bản ghi đồng ý đã lọc theo trạng thái.
+   *
+   * @param status - Trạng thái cần lọc.
+   * @returns Danh sách bản ghi đã lọc.
+   */
+  getConsentsByStatus(status: ConsentStatus): ConsentRecord[] {
+    return this.consentsSubject.value.filter((r) => r.status === status);
+  }
+
+  /**
+   * Lấy danh sách bản ghi đồng ý đã lọc theo mục đích.
+   *
+   * @param purpose - Mục đích cần lọc.
+   * @returns Danh sách bản ghi đã lọc.
+   */
+  getConsentsByPurpose(purpose: ConsentPurpose): ConsentRecord[] {
+    return this.consentsSubject.value.filter((r) => r.purpose === purpose);
+  }
+
+  /**
+   * Lấy danh sách yêu cầu xóa đã lọc theo trạng thái.
+   *
+   * @param status - Trạng thái cần lọc.
+   * @returns Danh sách yêu cầu đã lọc.
+   */
+  getErasureRequestsByStatus(status: ErasureStatus): ErasureRequest[] {
+    return this.erasureRequestsSubject.value.filter((r) => r.status === status);
+  }
+
+  /**
+   * Kiểm tra người dùng đã cho đồng ý cho mục đích nào đó chưa.
+   *
+   * @param purpose - Mục đích cần kiểm tra.
+   * @param category - Danh mục cần kiểm tra.
+   * @returns True nếu có đồng ý đang hoạt động (granted).
+   */
+  hasActiveConsent(purpose: ConsentPurpose, category: ConsentCategory): boolean {
+    return this.consentsSubject.value.some(
+      (r) => r.purpose === purpose && r.category === category && r.status === ConsentStatus.GRANTED
+    );
+  }
+
+  /**
+   * Reset toàn bộ store về trạng thái ban đầu.
+   */
+  reset(): void {
+    this.consentsSubject.next([]);
+    this.cookiePrefsSubject.next(null);
+    this.commPrefsSubject.next(null);
+    this.erasureRequestsSubject.next([]);
+    this.statsSubject.next(null);
+    this.loadingSubject.next(false);
+    this.errorSubject.next(null);
+    this.stateSubject.next({ ...INITIAL_STATE });
+    this.actionSubject.next('reset');
+  }
+
+  /**
+   * Lấy trạng thái hiện tại của toàn bộ store (cho debug/testing).
+   *
+   * @returns Snapshot trạng thái hiện tại.
+   */
+  getState(): ConsentStoreState {
+    return { ...this.stateSubject.value };
+  }
+}
+{% endraw %}

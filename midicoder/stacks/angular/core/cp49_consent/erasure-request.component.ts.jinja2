@@ -1,0 +1,261 @@
+{% raw %}/**
+ * CP49 Consent & Preference Management — Erasure Request Component.
+ *
+ * Component cho phép người dùng tạo và theo dõi yêu cầu xóa dữ liệu (GDPR Art.17).
+ * - Tạo yêu cầu xóa với phạm vi và lý do
+ * - Theo dõi trạng thái yêu cầu
+ * - Xem lịch sử yêu cầu
+ *
+ * Sử dụng Signal-based state management và reactive patterns của Angular.
+ *
+ * Tạo tự động bởi CP49 — không sửa thủ công.
+ */
+
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { firstValueFrom } from 'rxjs';
+import { ConsentService } from './consent.service';
+import {
+  ErasureRequest,
+  ErasureStatus,
+  ErasureScope,
+} from './consent-types';
+
+/**
+ * Form dữ liệu cho yêu cầu xóa mới.
+ */
+interface ErasureFormState {
+  /** Phạm vi xóa. */
+  scope: ErasureScope;
+  /** Lý do xóa. */
+  reason: string;
+}
+
+/**
+ * ErasureRequestComponent — Yêu cầu xóa dữ liệu (GDPR Art.17).
+ *
+ * Cung cấp giao diện để người dùng:
+ * - Tạo yêu cầu xóa dữ liệu mới với phạm vi và lý do
+ * - Xem danh sách yêu cầu đang chờ/xã xử lý
+ * - Theo dõi trạng thái của từng yêu cầu
+ */
+@Component({
+  selector: 'app-erasure-request',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './erasure-request.component.html',
+  styleUrl: './erasure-request.component.css',
+})
+export class ErasureRequestComponent implements OnInit {
+  // ===========================================================================
+  // Inject dependencies
+  // ===========================================================================
+
+  /** Dịch vụ HTTP cho consent API. */
+  private readonly consentService = inject(ConsentService);
+
+  // ===========================================================================
+  // Signals
+  // ===========================================================================
+
+  /** Danh sách yêu cầu xóa của người dùng. */
+  readonly erasureRequests = signal<ErasureRequest[]>([]);
+
+  /** Dữ liệu form tạo yêu cầu mới. */
+  readonly form = signal<ErasureFormState>({
+    scope: 'all',
+    reason: '',
+  });
+
+  /** Đang tải dữ liệu. */
+  readonly isLoading = signal<boolean>(false);
+
+  /** Đang gửi yêu cầu. */
+  readonly isSubmitting = signal<boolean>(false);
+
+  /** Thông báo lỗi. */
+  readonly error = signal<string | null>(null);
+
+  /** Thông báo thành công. */
+  readonly success = signal<string | null>(null);
+
+  /** Các tùy chọn phạm vi xóa. */
+  readonly erasureScopes: ErasureScope[] = [
+    'all',
+    'personal_data',
+    'consent_records',
+    'analytics_data',
+    'marketing_data',
+    'account_data',
+  ];
+
+  // ===========================================================================
+  // Lifecycle
+  // ===========================================================================
+
+  /**
+   * Khởi tạo component — tải danh sách yêu cầu xóa.
+   */
+  async ngOnInit(): Promise<void> {
+    await this.loadErasureRequests();
+  }
+
+  // ===========================================================================
+  // Data loading
+  // ===========================================================================
+
+  /**
+   * Tải danh sách yêu cầu xóa của người dùng.
+   */
+  private async loadErasureRequests(): Promise<void> {
+    this.isLoading.set(true);
+    this.error.set(null);
+
+    try {
+      const requests = await firstValueFrom(
+        this.consentService.getErasureRequests()
+      );
+      this.erasureRequests.set(requests);
+    } catch (err: any) {
+      this.error.set(err.message || 'Lỗi khi tải yêu cầu xóa');
+      console.error('[CP49] Lỗi tải erasure requests:', err);
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  // ===========================================================================
+  // Form actions
+  // ===========================================================================
+
+  /**
+   * Cập nhật dữ liệu form.
+   *
+   * @param key - Khóa form.
+   * @param value - Giá trị mới.
+   */
+  updateForm<K extends keyof ErasureFormState>(
+    key: K,
+    value: ErasureFormState[K]
+  ): void {
+    this.form.update((f) => ({ ...f, [key]: value }));
+  }
+
+  /**
+   * Tạo yêu cầu xóa dữ liệu mới.
+   */
+  async submitErasureRequest(): Promise<void> {
+    const formValue = this.form();
+
+    if (!formValue.reason.trim()) {
+      this.error.set('Vui lòng nhập lý do xóa dữ liệu');
+      return;
+    }
+
+    this.isSubmitting.set(true);
+    this.error.set(null);
+    this.success.set(null);
+
+    try {
+      await firstValueFrom(
+        this.consentService.createErasureRequest({
+          scope: formValue.scope,
+          reason: formValue.reason.trim(),
+        })
+      );
+
+      this.success.set('Yêu cầu xóa dữ liệu đã được gửi thành công');
+      this.form.set({ scope: 'all', reason: '' });
+      await this.loadErasureRequests();
+    } catch (err: any) {
+      this.error.set(err.message || 'Lỗi khi tạo yêu cầu xóa');
+    } finally {
+      this.isSubmitting.set(false);
+    }
+  }
+
+  /**
+   * Hủy form.
+   */
+  cancelForm(): void {
+    this.form.set({ scope: 'all', reason: '' });
+    this.error.set(null);
+  }
+
+  /**
+   * Refresh danh sách yêu cầu.
+   */
+  async refresh(): Promise<void> {
+    await this.loadErasureRequests();
+  }
+
+  // ===========================================================================
+  // Utility
+  // ===========================================================================
+
+  /**
+   * Lấy nhãn hiển thị cho phạm vi xóa.
+   *
+   * @param scope - Phạm vi xóa.
+   * @returns Chuỗi nhãn.
+   */
+  getScopeLabel(scope: ErasureScope): string {
+    const labels: Record<string, string> = {
+      all: 'Tất cả dữ liệu',
+      personal_data: 'Dữ liệu cá nhân',
+      consent_records: 'Bản ghi đồng ý',
+      analytics_data: 'Dữ liệu phân tích',
+      marketing_data: 'Dữ liệu tiếp thị',
+      account_data: 'Dữ liệu tài khoản',
+    };
+    return labels[scope] || scope;
+  }
+
+  /**
+   * Lấy nhãn hiển thị cho trạng thái.
+   *
+   * @param status - Trạng thái.
+   * @returns Chuỗi nhãn.
+   */
+  getStatusLabel(status: ErasureStatus): string {
+    const labels: Record<string, string> = {
+      pending: 'Đang chờ',
+      reviewing: 'Đang xem xét',
+      approved: 'Đã phê duyệt',
+      processing: 'Đang xử lý',
+      completed: 'Đã hoàn thành',
+      rejected: 'Bị từ chối',
+    };
+    return labels[status] || status;
+  }
+
+  /**
+   * Lấy màu trạng thái.
+   *
+   * @param status - Trạng thái.
+   * @returns Mã màu CSS.
+   */
+  getStatusColor(status: ErasureStatus): string {
+    const colors: Record<string, string> = {
+      pending: '#6366f1',
+      reviewing: '#3b82f6',
+      approved: '#22c55e',
+      processing: '#f59e0b',
+      completed: '#22c55e',
+      rejected: '#ef4444',
+    };
+    return colors[status] || '#6b7280';
+  }
+
+  /**
+   * Kiểm tra yêu cầu có đang chờ xử lý không.
+   *
+   * @param request - Yêu cầu xóa.
+   * @returns True nếu đang chờ.
+   */
+  isPending(request: ErasureRequest): boolean {
+    return ['pending', 'reviewing', 'approved', 'processing'].includes(request.status);
+  }
+}
+{% endraw %}

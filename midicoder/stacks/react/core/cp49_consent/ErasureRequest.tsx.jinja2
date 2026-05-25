@@ -1,0 +1,690 @@
+{% raw %}/**
+* ErasureRequest — Form yeu cau xoa du lieu (Right to be Forgotten).
+* Sinh boi CP49 ConsentEmitter.
+*
+* Bao gom: selector pham vi (radio), textarea ly do voi character count,
+* nut submit voi loading state, va status tracker cho cac yeu cau da co.
+*/
+import React, { useState, useMemo, useCallback } from 'react';
+
+/* ---- Loai pham vi xoa ---- */
+export type ErasureScope = 'all' | 'personal_data' | 'consent_records' | 'communication_prefs' | 'activity_log' |
+'custom';
+
+/* ---- Loai trang thai yeu cau ---- */
+export type ErasureStatus = 'pending' | 'approved' | 'rejected' | 'processing' | 'completed' | 'cancelled';
+
+/* ---- Interface yeu cau xoa ---- */
+export interface ErasureRequestRecord {
+id: number;
+request_id: string;
+user_id: string;
+tenant_id: string;
+scope: ErasureScope;
+status: ErasureStatus;
+requested_at: string;
+completed_at: string | null;
+reason: string | null;
+metadata: Record<string, unknown> | null;
+    created_at: string;
+    updated_at: string;
+    }
+
+    /* ---- Interface pham vi ---- */
+    export interface ScopeOption {
+    value: ErasureScope;
+    label: string;
+    description: string;
+    icon: string;
+    warning?: string;
+    }
+
+    const SCOPE_OPTIONS: ScopeOption[] = [
+    {
+    value: 'personal_data',
+    label: 'Du lieu ca nhan',
+    description: 'Xoa ho ten, so dien thoai, email, va cac thong tin danh nha',
+    icon: '\u{1F464}',
+    },
+    {
+    value: 'consent_records',
+    label: 'Ban ghi dong y',
+    description: 'Xoa toan bo lich su va ban ghi dong y cua ban',
+    icon: '\u2705',
+    },
+    {
+    value: 'communication_prefs',
+    label: 'Tuy chon lien lac',
+    description: 'Xoa cac tuy chon va thich lien lac da luu tru',
+    icon: '\u2709',
+    },
+    {
+    value: 'activity_log',
+    label: 'Nhat ky hoat dong',
+    description: 'Xoa lich su danh nhap, tim kiem, va hoat dong tren he thong',
+    icon: '\u{1F4CB}',
+    },
+    {
+    value: 'all',
+    label: 'Toan bo du lieu',
+    description: 'Xoa HOAN TOAN tat ca du lieu lien quan den tai khoan cua ban',
+    icon: '\u{1F5D1}',
+    warning: 'Hanh dong nay khong the hoa loi. Toan bo du lieu cua ban se bi xoa va khong the khui lai.',
+    },
+    ];
+
+    /* ---- Props ---- */
+    export interface ErasureRequestComponentProps {
+    userId?: string;
+    tenantId?: string;
+    apiBaseUrl?: string;
+    existingRequests?: ErasureRequestRecord[];
+    onSubmit?: (request: ErasureRequestRecord) => void;
+    onRefresh?: () => void;
+    }
+
+    /* ---- Style objects — de tranh conflict voi double-brace trong JSX ---- */
+    const sWrap: React.CSSProperties = {
+    padding: '24px',
+    maxWidth: '900px',
+    margin: '0 auto',
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    backgroundColor: '#f9fafb',
+    minHeight: '100vh',
+    };
+
+    /* Header */
+    const sHeader: React.CSSProperties = {
+    marginBottom: '24px',
+    };
+    const sHeaderTitle: React.CSSProperties = {
+    margin: 0,
+    fontSize: '22px',
+    fontWeight: 700,
+    color: '#111827',
+    };
+    const sHeaderSub: React.CSSProperties = {
+    fontSize: '14px',
+    color: '#6b7280',
+    marginTop: '4px',
+    lineHeight: 1.5,
+    };
+
+    /* Card */
+    const sCard: React.CSSProperties = {
+    backgroundColor: '#fff',
+    borderRadius: '12px',
+    padding: '24px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+    marginBottom: '20px',
+    };
+    const sCardTitle: React.CSSProperties = {
+    margin: '0 0 16px',
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#111827',
+    };
+
+    /* Warning banner */
+    const sWarningBanner: React.CSSProperties = {
+    padding: '14px 18px',
+    backgroundColor: '#fef3c7',
+    borderRadius: '8px',
+    border: '1px solid #fcd34d',
+    marginBottom: '20px',
+    fontSize: '13px',
+    color: '#92400e',
+    lineHeight: 1.5,
+    };
+    const sWarningIcon: React.CSSProperties = {
+    fontSize: '16px',
+    marginRight: '8px',
+    };
+
+    /* Form elements */
+    const sFormGroup: React.CSSProperties = {
+    marginBottom: '20px',
+    };
+    const sFormLabel: React.CSSProperties = {
+    display: 'block',
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#111827',
+    marginBottom: '8px',
+    };
+    const sFormHint: React.CSSProperties = {
+    fontSize: '12px',
+    color: '#6b7280',
+    marginTop: '4px',
+    };
+
+    /* Radio scope options */
+    const sRadioGrid: React.CSSProperties = {
+    display: 'grid',
+    gap: '10px',
+    };
+    const sRadioItem: React.CSSProperties = {
+    padding: '14px 16px',
+    borderRadius: '8px',
+    border: '1px solid #e5e7eb',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'flex-start',
+    };
+    const sRadioItemSelected: React.CSSProperties = {
+    ...sRadioItem,
+    borderColor: '#6366f1',
+    backgroundColor: '#eef2ff',
+    };
+    const sRadioInput: React.CSSProperties = {
+    marginTop: '2px',
+    accentColor: '#6366f1',
+    };
+    const sRadioContent: React.CSSProperties = {
+    flex: 1,
+    };
+    const sRadioLabel: React.CSSProperties = {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#111827',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    };
+    const sRadioDesc: React.CSSProperties = {
+    fontSize: '12px',
+    color: '#6b7280',
+    marginTop: '2px',
+    };
+    const sRadioWarning: React.CSSProperties = {
+    fontSize: '12px',
+    color: '#dc2626',
+    fontWeight: 600,
+    marginTop: '6px',
+    padding: '6px 10px',
+    backgroundColor: '#fef2f2',
+    borderRadius: '4px',
+    };
+
+    /* Textarea */
+    const sTextarea: React.CSSProperties = {
+    width: '100%',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    border: '1px solid #d1d5db',
+    fontSize: '14px',
+    fontFamily: 'inherit',
+    resize: 'vertical' as const,
+    minHeight: '100px',
+    color: '#374151',
+    boxSizing: 'border-box' as const,
+    };
+    const sTextareaFocus: React.CSSProperties = {
+    ...sTextarea,
+    borderColor: '#6366f1',
+    outline: 'none',
+    boxShadow: '0 0 0 3px rgba(99, 102, 241, 0.1)',
+    };
+    const sCharCount: React.CSSProperties = {
+    fontSize: '12px',
+    color: '#6b7280',
+    textAlign: 'right' as const,
+    marginTop: '4px',
+    };
+    const sCharCountWarning: React.CSSProperties = {
+    ...sCharCount,
+    color: '#dc2626',
+    };
+
+    /* Submit button */
+    const sSubmitBtn: React.CSSProperties = {
+    padding: '12px 24px',
+    borderRadius: '8px',
+    fontSize: '15px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    border: 'none',
+    backgroundColor: '#dc2626',
+    color: '#fff',
+    transition: 'all 0.15s',
+    width: '100%',
+    };
+    const sSubmitBtnDisabled: React.CSSProperties = {
+    ...sSubmitBtn,
+    opacity: 0.5,
+    cursor: 'not-allowed',
+    };
+    const sSubmitBtnLoading: React.CSSProperties = {
+    ...sSubmitBtn,
+    opacity: 0.7,
+    cursor: 'wait',
+    };
+
+    /* Status tracker */
+    const sTrackerCard: React.CSSProperties = {
+    padding: '16px',
+    borderRadius: '10px',
+    backgroundColor: '#fff',
+    border: '1px solid #f3f4f6',
+    marginBottom: '10px',
+    };
+    const sTrackerHeader: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '8px',
+    };
+    const sTrackerId: React.CSSProperties = {
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+    fontSize: '13px',
+    color: '#6366f1',
+    background: '#eef2ff',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    };
+    const sTrackerScope: React.CSSProperties = {
+    fontSize: '13px',
+    color: '#374151',
+    marginBottom: '4px',
+    };
+    const sTrackerDate: React.CSSProperties = {
+    fontSize: '12px',
+    color: '#6b7280',
+    };
+
+    /* Badge trang thai */
+    const sBadgeBase: React.CSSProperties = {
+    display: 'inline-block',
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: 600,
+    textTransform: 'capitalize' as const,
+    };
+
+    /* Progress steps cho status tracker */
+    const sProgressSteps: React.CSSProperties = {
+    display: 'flex',
+    gap: '4px',
+    marginTop: '10px',
+    };
+    const sProgressStep: React.CSSProperties = {
+    flex: 1,
+    height: '4px',
+    borderRadius: '2px',
+    backgroundColor: '#e5e7eb',
+    };
+    const sProgressStepActive: React.CSSProperties = {
+    ...sProgressStep,
+    };
+
+    /* Empty / Loading / Error */
+    const sEmptyState: React.CSSProperties = {
+    padding: '48px 20px',
+    textAlign: 'center' as const,
+    color: '#9ca3af',
+    fontSize: '14px',
+    };
+    const sLoading: React.CSSProperties = {
+    padding: '48px 20px',
+    textAlign: 'center' as const,
+    color: '#6b7280',
+    fontSize: '14px',
+    };
+    const sError: React.CSSProperties = {
+    padding: '14px 18px',
+    backgroundColor: '#fef2f2',
+    borderRadius: '8px',
+    color: '#991b1b',
+    fontSize: '13px',
+    border: '1px solid #fecaca',
+    marginBottom: '16px',
+    };
+
+    /* Success notification */
+    const sSuccessBanner: React.CSSProperties = {
+    padding: '14px 18px',
+    backgroundColor: '#d1fae5',
+    borderRadius: '8px',
+    border: '1px solid #a7f3d0',
+    fontSize: '13px',
+    color: '#065f46',
+    lineHeight: 1.5,
+    marginBottom: '20px',
+    };
+
+    /* ---- Helper functions ---- */
+
+    /* Badge style theo trang thai */
+    function statusBadgeStyle(status: ErasureStatus): React.CSSProperties {
+    const map: Record<ErasureStatus, { bg: string; color: string }> = {
+        pending: { bg: '#fef3c7', color: '#92400e' },
+        approved: { bg: '#dbeafe', color: '#1e40af' },
+        rejected: { bg: '#fee2e2', color: '#991b1b' },
+        processing: { bg: '#e0e7ff', color: '#3730a3' },
+        completed: { bg: '#d1fae5', color: '#065f46' },
+        cancelled: { bg: '#f3f4f6', color: '#4b5563' },
+        };
+        const c = map[status] || map.pending;
+        return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
+        }
+
+        /* Format pham vi */
+        function formatScope(scope: ErasureScope): string {
+        const map: Record<ErasureScope, string> = {
+            all: 'Toan bo du lieu',
+            personal_data: 'Du lieu ca nhan',
+            consent_records: 'Ban ghi dong y',
+            communication_prefs: 'Tuy chon lien lac',
+            activity_log: 'Nhat ky hoat dong',
+            custom: 'Tu chinh',
+            };
+            return map[scope] || scope;
+            }
+
+            /* Format trang thai */
+            function formatStatus(status: ErasureStatus): string {
+            const map: Record<ErasureStatus, string> = {
+                pending: 'Dang cho xu ly',
+                approved: 'Da phe duyet',
+                rejected: 'Bi tu choi',
+                processing: 'Dang xu ly',
+                completed: 'Da hoan thanh',
+                cancelled: 'Da huy',
+                };
+                return map[status] || status;
+                }
+
+                /* Format date */
+                function formatDate(iso: string | null): string {
+                if (!iso) return '\u2014';
+                const d = new Date(iso);
+                return d.toLocaleDateString('vi-VN', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                });
+                }
+
+                /* Tinh so buoc progress theo status */
+                function getStatusSteps(status: ErasureStatus): number {
+                const map: Record<ErasureStatus, number> = {
+                    pending: 1,
+                    approved: 2,
+                    processing: 3,
+                    completed: 4,
+                    rejected: 2,
+                    cancelled: 1,
+                    };
+                    return map[status] || 0;
+                    }
+
+                    /* Dynamic style helper cho progress step */
+                    function activeStepStyle(color: string): React.CSSProperties {
+                    return Object.assign({}, sProgressStepActive, { backgroundColor: color });
+                    }
+
+                    /* Dynamic style helper cho radio item */
+                    function radioItemStyle(selected: boolean): React.CSSProperties {
+                    return selected ? sRadioItemSelected : sRadioItem;
+                    }
+
+                    /* Dynamic style helper cho textarea */
+                    function textareaStyle(focused: boolean): React.CSSProperties {
+                    return focused ? sTextareaFocus : sTextarea;
+                    }
+
+                    /* ======================================================================
+                    * COMPONENT CON: StatusTracker
+                    * ====================================================================== */
+                    const StatusTracker: React.FC<{ request: ErasureRequestRecord }> = ({ request }) => {
+                        const currentStep = getStatusSteps(request.status);
+                        const totalSteps = 4;
+                        const stepColor = request.status === 'completed' ? '#22c55e'
+                        : request.status === 'rejected' ? '#ef4444'
+                        : '#6366f1';
+
+                        return (
+                        <div style={sTrackerCard}>
+                            <div style={sTrackerHeader}>
+                                <div>
+                                    <div style={sTrackerId}>{request.request_id}</div>
+                                </div>
+                                <span style={statusBadgeStyle(request.status)}>{formatStatus(request.status)}</span>
+                            </div>
+                            <div style={sTrackerScope}>
+                                Pham vi: {formatScope(request.scope)}
+                            </div>
+                            {request.reason && (
+                            <div style={{ ...sTrackerDate, fontStyle: 'italic' }}>
+                                Ly do: {request.reason}
+                            </div>
+                            )}
+                            <div style={sTrackerDate}>
+                                Yeu cau: {formatDate(request.requested_at)}
+                                {request.completed_at && ` | Hoan thanh: ${formatDate(request.completed_at)}`}
+                            </div>
+
+                            {/* Progress bar */}
+                            <div style={sProgressSteps}>
+                                {Array.from({ length: totalSteps }, (_, i) => (
+                                <div key={i} style={i < currentStep ? activeStepStyle(stepColor) : sProgressStep}
+                                    title={`Buoc ${i + 1}`} />
+                                ))}
+                            </div>
+                        </div>
+                        );
+                        };
+
+                        /* ======================================================================
+                        * COMPONENT CHÍNH: ErasureRequest
+                        * ====================================================================== */
+                        export function ErasureRequest({
+                        userId = 'user_1',
+                        tenantId = 'tenant_1',
+                        apiBaseUrl = '/api',
+                        existingRequests = [],
+                        onSubmit,
+                        onRefresh,
+                        }: ErasureRequestComponentProps) {
+                        /* Form state */
+                        const [selectedScope, setSelectedScope] = useState<ErasureScope | null>(null);
+                            const [reason, setReason] = useState('');
+                            const [isSubmitting, setIsSubmitting] = useState(false);
+                            const [submitError, setSubmitError] = useState<string | null>(null);
+                                const [submitSuccess, setSubmitSuccess] = useState(false);
+                                const [textareaFocused, setTextareaFocused] = useState(false);
+
+                                /* Character limit */
+                                const MAX_REASON_LENGTH = 4096;
+
+                                /* Kiem tra co warning khong */
+                                const selectedScopeOption = useMemo(
+                                () => SCOPE_OPTIONS.find((opt) => opt.value === selectedScope),
+                                [selectedScope],
+                                );
+
+                                /* Kiem tra co the submit khong */
+                                const canSubmit = selectedScope !== null && !isSubmitting;
+
+                                /* Xy ly submit form */
+                                const handleSubmit = useCallback(
+                                async (e: React.FormEvent) => {
+                                e.preventDefault();
+                                if (!canSubmit || !selectedScope) return;
+
+                                setIsSubmitting(true);
+                                setSubmitError(null);
+                                setSubmitSuccess(false);
+
+                                try {
+                                const response = await fetch(`${apiBaseUrl}/consent/erasure-requests`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                user_id: userId,
+                                tenant_id: tenantId,
+                                scope: selectedScope,
+                                reason: reason || undefined,
+                                }),
+                                });
+
+                                if (!response.ok) {
+                                throw new Error(`Tao yeu cau that bai: ${response.status} ${response.statusText}`);
+                                }
+
+                                const data: ErasureRequestRecord = await response.json();
+                                onSubmit?.(data);
+                                setSubmitSuccess(true);
+                                /* Reset form */
+                                setSelectedScope(null);
+                                setReason('');
+
+                                /* Lam moi danh sach neu co */
+                                onRefresh?.();
+                                } catch (err) {
+                                const message = err instanceof Error ? err.message : 'Tao yeu cau xoa that bai';
+                                setSubmitError(message);
+                                console.error('[ErasureRequest] submit:', message);
+                                } finally {
+                                setIsSubmitting(false);
+                                }
+                                },
+                                [canSubmit, selectedScope, reason, apiBaseUrl, userId, tenantId, onSubmit, onRefresh],
+                                );
+
+                                /* Xy ly chon pham vi */
+                                const handleScopeSelect = useCallback((scope: ErasureScope) => {
+                                setSelectedScope(scope);
+                                }, []);
+
+                                return (
+                                <div style={sWrap}>
+                                    {/* Header */}
+                                    <div style={sHeader}>
+                                        <h1 style={sHeaderTitle}>\u{1F5D1} Yeu cau xoa du lieu</h1>
+                                        <p style={sHeaderSub}>
+                                            Ban co quyen yeu cau xoa toan bo hoac mot phan du lieu ca nhan cua minh
+                                            (theo Dieu 17 GDPR — Right to be Forgotten).
+                                        </p>
+                                    </div>
+
+                                    {/* Warning banner */}
+                                    <div style={sWarningBanner}>
+                                        <span style={sWarningIcon}>\u26A0\uFE0F</span>
+                                        <strong>Luu y:</strong> Yeu cau xoa du lieu se duoc xu ly trong vong 30 ngay.
+                                        Sau khi du lieu duoc xoa, ban khong the khôi phuc lai. Môt so du lieu co the
+                                        duoc giu lai de tuan thu yeu cau phap luat.
+                                    </div>
+
+                                    {/* Error / Success */}
+                                    {submitError && <div style={sError}><strong>Loi:</strong> {submitError}</div>}
+                                    {submitSuccess && (
+                                    <div style={sSuccessBanner}>
+                                        \u2705 <strong>Da gui yeu cau thanh cong!</strong> Yeu cau cua ban se duoc xu ly
+                                        trong vong 30 ngay. Ban se nhan duoc thong bao ket qua.
+                                    </div>
+                                    )}
+
+                                    {/* Form yeu cau moi */}
+                                    <div style={sCard}>
+                                        <h2 style={sCardTitle}>Tao yeu cau moi</h2>
+
+                                        <form onSubmit={handleSubmit}>
+                                            {/* Pham vi xoa */}
+                                            <div style={sFormGroup}>
+                                                <label style={sFormLabel}>Pham vi xoa</label>
+                                                <p style={sFormHint}>Chon loai du lieu ma ban muon xoa:</p>
+                                                <div style={sRadioGrid}>
+                                                    {SCOPE_OPTIONS.map((option) => {
+                                                    const isSelected = selectedScope === option.value;
+                                                    return (
+                                                    <label key={option.value} style={radioItemStyle(isSelected)}>
+                                                        <input type="radio" name="erasure_scope" value={option.value}
+                                                            checked={isSelected} onChange={()=>
+                                                        handleScopeSelect(option.value)}
+                                                        style={sRadioInput}
+                                                        />
+                                                        <div style={sRadioContent}>
+                                                            <div style={sRadioLabel}>
+                                                                <span>{option.icon}</span>
+                                                                {option.label}
+                                                            </div>
+                                                            <div style={sRadioDesc}>{option.description}</div>
+                                                            {option.warning && (
+                                                            <div style={sRadioWarning}>\u26A0\uFE0F {option.warning}
+                                                            </div>
+                                                            )}
+                                                        </div>
+                                                    </label>
+                                                    );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            /* Ly do */
+                                            <div style={sFormGroup}>
+                                                <label style={sFormLabel}>
+                                                    Ly do <span style={{ fontWeight: 400, color: '#6b7280' }}>(tu
+                                                        chon)</span>
+                                                </label>
+                                                <textarea style={textareaStyle(textareaFocused)}
+                                                    placeholder="Mô tả lý do ban yeu cau xoa du lieu (tu chon)..."
+                                                    value={reason} onChange={(e)=> setReason(e.target.value)}
+onFocus={() => setTextareaFocused(true)}
+onBlur={() => setTextareaFocused(false)}
+maxLength={MAX_REASON_LENGTH}
+/>
+<div style={reason.length > MAX_REASON_LENGTH * 0.9 ? sCharCountWarning : sCharCount}>
+{reason.length} / {MAX_REASON_LENGTH} ky tu
+</div>
+</div>
+
+/* Nút submit */
+<button
+type="submit"
+style={
+isSubmitting ? sSubmitBtnLoading
+: canSubmit ? sSubmitBtn
+: sSubmitBtnDisabled
+}
+disabled={!canSubmit}
+>
+{isSubmitting
+? '\u{1F504} Dang gui yeu cau...'
+: '\u{1F5D1} Gui yeu cau xoa du lieu'}
+</button>
+</form>
+</div>
+
+{/* Status tracker cho cac yeu cau da co */}
+{existingRequests.length > 0 && (
+<div style={sCard}>
+<h2 style={sCardTitle}>
+Lich su yeu cau ({existingRequests.length})
+</h2>
+{existingRequests.map((request) => (
+<StatusTracker key={request.request_id} request={request} />
+))}
+</div>
+)}
+
+{/* Khong co yeu cau nao */}
+{existingRequests.length === 0 && !submitSuccess && (
+<div style={sEmptyState}>
+<p>Chua co yeu cau xoa du lieu nao.</p>
+<p style={{ marginTop: '8px', fontSize: '12px' }}>
+Su dung form tren de tao yeu cau moi.
+</p>
+</div>
+)}
+</div>
+);
+}
+
+export default ErasureRequest;
+{% endraw %}

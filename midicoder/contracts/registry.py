@@ -83,6 +83,7 @@ CP_ID_TO_INTERNAL: Final[dict[str, str]] = {
     "CP46": "cp46_mfa",
     "CP47": "cp47_retention",
     "CP48": "cp48_rate_limit",
+    "CP49": "cp49_consent",
     "CP51": "cp51_blueprint",
     "CP52": "cp52_invariant",
     "CP53": "cp53_domain_bridge",

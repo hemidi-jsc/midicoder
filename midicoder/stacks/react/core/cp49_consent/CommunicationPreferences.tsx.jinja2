@@ -1,0 +1,346 @@
+{% raw %}/**
+ * CP49 Consent & Preference Management — CommunicationPreferences Component.
+ *
+ * Component cài đặt sở thích truyền thông của người dùng:
+ * - Bật/tắt email, SMS, push notification, mail
+ * - Tùy chỉnh theo mục đích (marketing, transactional, newsletter)
+ *
+ * Tạo tự động bởi CP49 — không sửa thủ công.
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+
+// ===========================================================================
+// Types
+// ===========================================================================
+
+/** Kênh truyền thông. */
+export type CommChannel = 'email' | 'sms' | 'push' | 'mail';
+
+/** Mục đích truyền thông. */
+export type CommPurpose = 'marketing' | 'transactional' | 'newsletter' | 'security';
+
+/** Cấu hình sở thích truyền thông. */
+export interface CommunicationPreference {
+  /** ID bản ghi. */
+  id: string;
+  /** ID người dùng. */
+  userId: string;
+  /** ID tenant. */
+  tenantId: string;
+  /** Cấu hình theo kênh. */
+  channels: Record<CommChannel, boolean>;
+  /** Cấu hình theo mục đích. */
+  purposes: Record<CommPurpose, boolean>;
+  /** Thời gian tạo. */
+  createdAt: string;
+  /** Thời gian cập nhật. */
+  updatedAt: string;
+}
+
+/** Props cho CommunicationPreferences. */
+export interface CommunicationPreferencesProps {
+  /** API base URL. */
+  apiBaseUrl?: string;
+  /** ID người dùng. */
+  userId: string;
+  /** ID tenant. */
+  tenantId: string;
+  /** Callback khi cập nhật thành công. */
+  onSuccess?: () => void;
+  /** Callback khi có lỗi. */
+  onError?: (error: Error) => void;
+}
+
+// ===========================================================================
+// Channel config
+// ===========================================================================
+
+/** Cấu hình hiển thị kênh truyền thông. */
+const CHANNEL_CONFIG: Record<CommChannel, { label: string; description: string; icon: string }> = {
+  email: {
+    label: 'Email',
+    description: 'Nhận thông báo qua email',
+    icon: '✉️',
+  },
+  sms: {
+    label: 'SMS',
+    description: 'Nhận thông báo qua tin nhắn',
+    icon: '📱',
+  },
+  push: {
+    label: 'Push Notification',
+    description: 'Nhận thông báo push trên trình duyệt',
+    icon: '🔔',
+  },
+  mail: {
+    label: 'Thư điện tử',
+    description: 'Nhận thông báo qua thư bưu điện',
+    icon: '📮',
+  },
+};
+
+/** Cấu hình hiển thị mục đích truyền thông. */
+const PURPOSE_CONFIG: Record<CommPurpose, { label: string; description: string }> = {
+  marketing: {
+    label: 'Tiếp thị',
+    description: 'Nhận thông tin khuyến mãi, sản phẩm mới',
+  },
+  transactional: {
+    label: 'Giao dịch',
+    description: 'Nhận xác nhận đặt hàng, hóa đơn',
+  },
+  newsletter: {
+    label: 'Newsletter',
+    description: 'Nhận bản tin hàng tuần/tháng',
+  },
+  security: {
+    label: 'Bảo mật',
+    description: 'Nhận cảnh báo bảo mật tài khoản',
+  },
+};
+
+// ===========================================================================
+// Component
+// ===========================================================================
+
+/**
+ * CommunicationPreferences — Cài đặt sở thích truyền thông.
+ *
+ * Cho phép người dùng bật/tắt các kênh và mục đích truyền thông.
+ */
+export const CommunicationPreferences: React.FC<CommunicationPreferencesProps> = ({
+  apiBaseUrl = '/api',
+  userId,
+  tenantId,
+  onSuccess,
+  onError,
+}) => {
+  // ===========================================================================
+  // State
+  // ===========================================================================
+
+  const [preference, setPreference] = useState<CommunicationPreference | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // ===========================================================================
+  // Data loading
+  // ===========================================================================
+
+  /**
+   * Tải sở thích truyền thông hiện tại.
+   */
+  const loadPreference = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/communication-preferences?userId=${encodeURIComponent(userId)}&tenantId=${encodeURIComponent(tenantId)}`,
+        { method: 'GET', headers: { 'Content-Type': 'application/json' } }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Lỗi tải sở thích truyền thông: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setPreference(data);
+    } catch (err: any) {
+      setError(err.message || 'Lỗi khi tải dữ liệu');
+      console.error('[CP49] Lỗi tải comm preference:', err);
+      if (onError) onError(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [apiBaseUrl, userId, tenantId, onError]);
+
+  // ===========================================================================
+  // Effects
+  // ===========================================================================
+
+  useEffect(() => {
+    loadPreference();
+  }, [loadPreference]);
+
+  // ===========================================================================
+  // Handlers
+  // ===========================================================================
+
+  /**
+   * Bật/tắt kênh truyền thông.
+   *
+   * @param channel - Kênh cần toggle.
+   */
+  const toggleChannel = (channel: CommChannel) => {
+    setPreference((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        channels: {
+          ...prev.channels,
+          [channel]: !prev.channels[channel],
+        },
+      };
+    });
+  };
+
+  /**
+   * Bật/tắt mục đích truyền thông.
+   *
+   * @param purpose - Mục đích cần toggle.
+   */
+  const togglePurpose = (purpose: CommPurpose) => {
+    setPreference((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        purposes: {
+          ...prev.purposes,
+          [purpose]: !prev.purposes[purpose],
+        },
+      };
+    });
+  };
+
+  /**
+   * Lưu sở thích truyền thông.
+   */
+  const handleSave = async () => {
+    if (!preference) return;
+
+    setIsSaving(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/communication-preferences`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          tenantId,
+          channels: preference.channels,
+          purposes: preference.purposes,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Lỗi lưu sở thích truyền thông: ${response.statusText}`);
+      }
+
+      const updated = await response.json();
+      setPreference(updated);
+      setSuccess('Đã lưu sở thích truyền thông thành công');
+
+      if (onSuccess) onSuccess();
+    } catch (err: any) {
+      setError(err.message || 'Lỗi khi lưu dữ liệu');
+      console.error('[CP49] Lỗi lưu comm preference:', err);
+      if (onError) onError(err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // ===========================================================================
+  // Render
+  // ===========================================================================
+
+  if (isLoading) {
+    return (
+      <div className="communication-preferences loading">
+        <p>Đang tải...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="communication-preferences">
+      <h2>Sở thích Truyền thông</h2>
+
+      {error && (
+        <div className="alert alert-error" role="alert">
+          {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="alert alert-success" role="alert">
+          {success}
+        </div>
+      )}
+
+      {preference && (
+        <>
+          {/* Channels */}
+          <section className="preference-section">
+            <h3>Kênh Truyền thông</h3>
+            <div className="channel-list">
+              {Object.entries(CHANNEL_CONFIG).map(([key, config]) => {
+                const channel = key as CommChannel;
+                const isEnabled = preference.channels[channel];
+                return (
+                  <label key={channel} className="channel-item">
+                    <input
+                      type="checkbox"
+                      checked={isEnabled}
+                      onChange={() => toggleChannel(channel)}
+                    />
+                    <span className="channel-icon">{config.icon}</span>
+                    <span className="channel-info">
+                      <span className="channel-label">{config.label}</span>
+                      <span className="channel-description">{config.description}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Purposes */}
+          <section className="preference-section">
+            <h3>Mục đích Truyền thông</h3>
+            <div className="purpose-list">
+              {Object.entries(PURPOSE_CONFIG).map(([key, config]) => {
+                const purpose = key as CommPurpose;
+                const isEnabled = preference.purposes[purpose];
+                return (
+                  <label key={purpose} className="purpose-item">
+                    <input
+                      type="checkbox"
+                      checked={isEnabled}
+                      onChange={() => togglePurpose(purpose)}
+                    />
+                    <span className="purpose-info">
+                      <span className="purpose-label">{config.label}</span>
+                      <span className="purpose-description">{config.description}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Actions */}
+          <div className="action-bar">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleSave}
+              disabled={isSaving}
+            >
+              {isSaving ? 'Đang lưu...' : 'Lưu'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default CommunicationPreferences;
+{% endraw %}

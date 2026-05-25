@@ -1,0 +1,368 @@
+# ----------------------------------------------------------
+# CP49 Consent & Preference Management — Dịch vụ Cookie Banner
+# ----------------------------------------------------------
+# Sinh bởi CP49ConsentEmitter
+# Class: CookieBannerService với quản lý tùy chọn cookie
+# ----------------------------------------------------------
+
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+
+class CookieBannerService:
+    """
+    Dịch vụ quản lý banner cookie — cung cấp các phương thức để
+    thiết lập và đọc tùy chọn cookie của người dùng.
+
+    Đảm bảo danh mục 'necessary' luôn được bật và không thể tắt.
+    """
+
+    # Danh mục cookie mặc định
+    DEFAULT_CATEGORIES = {
+        "necessary": True,
+        "analytics": False,
+        "marketing": False,
+        "functional": False,
+        "personalization": False,
+        "third_party": False,
+    }
+
+    def __init__(self, session: AsyncSession) -> None:
+        """
+        Khởi tạo dịch vụ với phiên làm việc SQLAlchemy async.
+
+        Tham số:
+            session: Phiên làm việc async để truy cập cơ sở dữ liệu.
+        """
+        self._session = session
+
+    # --------------------------------------------------------------
+    # Lấy tùy chọn cookie hiện tại
+    # --------------------------------------------------------------
+
+    async def get_cookie_preference(
+        self,
+        user_id: str,
+        tenant_id: str,
+    ) -> Optional[Any]:
+        """
+        Lấy tùy chọn cookie hiện tại của người dùng.
+
+        Tham số:
+            user_id: ID người dùng.
+            tenant_id: ID tenant.
+
+        Trả về:
+            Đối tượng CookiePreferenceModel hoặc None nếu chưa có tùy chọn.
+        """
+        preference = await self._find_preference(user_id, tenant_id)
+        return preference
+
+    # --------------------------------------------------------------
+    # Thiết lập tùy chọn cookie
+    # --------------------------------------------------------------
+
+    async def set_cookie_preference(
+        self,
+        user_id: str,
+        tenant_id: str,
+        categories: Dict[str, bool],
+    ) -> Any:
+        """
+        Thiết lập tùy chọn cookie cho người dùng.
+
+        Tự động đảm bảo danh mục 'necessary' luôn được bật.
+        Nếu người dùng đã có tùy chọn, cập nhật bản ghi hiện có.
+
+        Tham số:
+            user_id: ID người dùng.
+            tenant_id: ID tenant.
+            categories: Danh mục cookie với trạng thái bật/tắt.
+
+        Trả về:
+            Đối tượng CookiePreferenceModel đã được tạo hoặc cập nhật.
+        """
+        # Đảm bảo necessary luôn True
+        categories = self._ensure_necessary(categories)
+
+        now = datetime.now(timezone.utc)
+
+        # Tìm bản ghi hiện có
+        preference = await self._find_preference(user_id, tenant_id)
+
+        if preference is not None:
+            # Cập nhật bản ghi hiện có
+            preference.preference_id = str(uuid.uuid4())
+            preference.categories = categories
+            preference.updated_at = now
+        else:
+            # Tạo bản ghi mới
+            preference_id = str(uuid.uuid4())
+            preference = self._model()(
+                preference_id=preference_id,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                categories=categories,
+                updated_at=now,
+            )
+            self._session.add(preference)
+
+        await self._session.commit()
+        await self._session.refresh(preference)
+
+        logger.info(
+            "Da cap nhat tuy chon cookie: user=%s, tenant=%s, so_danh_muc=%d",
+            user_id,
+            tenant_id,
+            len(categories),
+        )
+
+        return preference
+
+    # --------------------------------------------------------------
+    # Chấp nhận tất cả cookie (trừ necessary luôn bật)
+    # --------------------------------------------------------------
+
+    async def accept_all(
+        self,
+        user_id: str,
+        tenant_id: str,
+    ) -> Any:
+        """
+        Chấp nhận tất cả cookie không cần thiết.
+
+        Đặt tất cả danh mục cookie thành True (bao gồm necessary).
+
+        Tham số:
+            user_id: ID người dùng.
+            tenant_id: ID tenant.
+
+        Trả về:
+            Đối tượng CookiePreferenceModel đã được cập nhật.
+        """
+        categories = {k: True for k, v in self.DEFAULT_CATEGORIES.items()}
+
+        return await self.set_cookie_preference(user_id, tenant_id, categories)
+
+    # --------------------------------------------------------------
+    # Từ chối tất cả cookie không cần thiết
+    # --------------------------------------------------------------
+
+    async def reject_non_necessary(
+        self,
+        user_id: str,
+        tenant_id: str,
+    ) -> Any:
+        """
+        Từ chối tất cả cookie ngoại trừ necessary.
+
+        Chỉ giữ 'necessary' = True, tất cả các danh mục khác = False.
+
+        Tham số:
+            user_id: ID người dùng.
+            tenant_id: ID tenant.
+
+        Trả về:
+            Đối tượng CookiePreferenceModel đã được cập nhật.
+        """
+        categories = {
+            "necessary": True,
+            "analytics": False,
+            "marketing": False,
+            "functional": False,
+            "personalization": False,
+            "third_party": False,
+        }
+
+        return await self.set_cookie_preference(user_id, tenant_id, categories)
+
+    # --------------------------------------------------------------
+    # Lấy danh sách danh mục cookie có sẵn
+    # --------------------------------------------------------------
+
+    def get_categories(self) -> List[Dict[str, Any]]:
+        """
+        Trả về danh sách các danh mục cookie có sẵn.
+
+        Mỗi danh mục bao gồm thông tin về tên, mô tả, và trạng thái bắt buộc.
+
+        Trả về:
+            Danh sách dict với các khóa: name, description, is_required.
+        """
+        return [
+            {
+                "name": "necessary",
+                "description": "Cookie can thiet cho hoat dong co ban cua trang web",
+                "is_required": True,
+            },
+            {
+                "name": "analytics",
+                "description": "Cookie phan tich su dung de cai thien kham pha",
+                "is_required": False,
+            },
+            {
+                "name": "marketing",
+                "description": "Cookie qua trinh de hien thi quan ao lien quan",
+                "is_required": False,
+            },
+            {
+                "name": "functional",
+                "description": "Cookie chuc nang ghi nho lua chon cua nguoi dung",
+                "is_required": False,
+            },
+            {
+                "name": "personalization",
+                "description": "Cookie ca nhan hoa trai nghiem theo thoi vi cua nguoi dung",
+                "is_required": False,
+            },
+            {
+                "name": "third_party",
+                "description": "Cookie tu ben thu ba (provider ngoai)",
+                "is_required": False,
+            },
+        ]
+
+    # --------------------------------------------------------------
+    # Lấy tùy chọn liên lạc
+    # --------------------------------------------------------------
+
+    async def get_communication_preference(
+        self,
+        user_id: str,
+        tenant_id: str,
+    ) -> Optional[Any]:
+        """
+        Lay tuy chon lien lac hien tai cua nguoi dung.
+
+        Tham so:
+            user_id: ID nguoi dung.
+            tenant_id: ID tenant.
+
+        Tra ve:
+            Doi tuong CommunicationPreferenceModel hoac None neu chua co.
+        """
+        query = select(self._comm_model()).where(
+            and_(
+                self._comm_model().user_id == user_id,
+                self._comm_model().tenant_id == tenant_id,
+            )
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    # --------------------------------------------------------------
+    # Thiết lập tùy chọn liên lạc
+    # --------------------------------------------------------------
+
+    async def set_communication_preference(
+        self,
+        user_id: str,
+        tenant_id: str,
+        channels: Dict[str, bool],
+        purposes: Dict[str, bool],
+    ) -> Any:
+        """
+        Thiet lap tuy chon lien lac cho nguoi dung.
+
+        Neu nguoi dung da co tuy chon, cap nhat ban ghi hien co.
+
+        Tham so:
+            user_id: ID nguoi dung.
+            tenant_id: ID tenant.
+            channels: Kênh liên lạc với trạng thái bật/tắt.
+            purposes: Mục đích liên lạc với trạng thái bật/tắt.
+
+        Tra ve:
+            Doi tuong CommunicationPreferenceModel da duoc tao hoac cap nhat.
+        """
+        now = datetime.now(timezone.utc)
+
+        # Tìm bản ghi hiện có
+        preference = await self.get_communication_preference(user_id, tenant_id)
+
+        if preference is not None:
+            # Cập nhật bản ghi hiện có
+            preference.preference_id = str(uuid.uuid4())
+            preference.channels = channels
+            preference.purposes = purposes
+            preference.updated_at = now
+        else:
+            # Tạo bản ghi mới
+            preference_id = str(uuid.uuid4())
+            preference = self._comm_model()(
+                preference_id=preference_id,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                channels=channels,
+                purposes=purposes,
+                updated_at=now,
+            )
+            self._session.add(preference)
+
+        await self._session.commit()
+        await self._session.refresh(preference)
+
+        logger.info(
+            "Da cap nhat tuy chon lien lac: user=%s, tenant=%s",
+            user_id,
+            tenant_id,
+        )
+
+        return preference
+
+    # --------------------------------------------------------------
+    # Phương thức nội bộ
+    # --------------------------------------------------------------
+
+    async def _find_preference(
+        self,
+        user_id: str,
+        tenant_id: str,
+    ) -> Optional[Any]:
+        """Tim ban ghi tuy chon cookie theo user va tenant."""
+        query = select(self._model()).where(
+            and_(
+                self._model().user_id == user_id,
+                self._model().tenant_id == tenant_id,
+            )
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    def _ensure_necessary(categories: Dict[str, bool]) -> Dict[str, bool]:
+        """
+        Bam bao danh muc 'necessary' luon bang True.
+
+        Vi cookie can thiet khong the bi tat theo quy dinh GDPR/ePrivacy.
+
+        Tham so:
+            categories: Danh sach danh muc cookie can xu ly.
+
+        Tra ve:
+            Danh sach danh muc da duoc cap nhat voi necessary = True.
+        """
+        categories["necessary"] = True
+        return categories
+
+    # --------------------------------------------------------------
+    # Getter cho mô hình
+    # --------------------------------------------------------------
+
+    def _model(self):
+        """Tra ve model CookiePreferenceModel."""
+        from consent_models import CookiePreferenceModel
+        return CookiePreferenceModel
+
+    def _comm_model(self):
+        """Tra ve model CommunicationPreferenceModel."""
+        from consent_models import CommunicationPreferenceModel
+        return CommunicationPreferenceModel

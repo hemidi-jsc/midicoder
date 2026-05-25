@@ -1,0 +1,799 @@
+{% raw %}/**
+* ConsentManager — Chi tiet ban ghi dong y: bang co the loc, sap xep, huy dong y.
+* Sinh boi CP49 ConsentEmitter.
+*
+* Hien thi toan bo ban ghi dong y voi bo loc theo trang thai, muc dich, pham vi thoi gian.
+* Cols co the sap xep, nut huy dong y voi xac nhan.
+*/
+import React, { useState, useMemo, useCallback } from 'react';
+
+/* ---- Loai trang thai dong y ---- */
+export type ConsentStatus = 'granted' | 'revoked' | 'expired' | 'pending' | 'pending_renewal';
+
+/* ---- Loai sap xep ---- */
+export type SortDirection = 'asc' | 'desc';
+export type SortColumn = 'record_id' | 'purpose' | 'category' | 'status' | 'granted_at' | 'revoked_at' | 'created_at';
+
+/* ---- Interface ban ghi dong y ---- */
+export interface ConsentRecord {
+id: number;
+record_id: string;
+user_id: string;
+tenant_id: string;
+purpose: string;
+category: string;
+status: ConsentStatus;
+granted_at: string | null;
+revoked_at: string | null;
+ip_address: string | null;
+user_agent: string | null;
+metadata: Record<string, unknown> | null;
+    created_at: string;
+    updated_at: string;
+    }
+
+    /* ---- Interface bo loc ---- */
+    export interface ConsentFilter {
+    status: ConsentStatus | 'all';
+    purpose: string | 'all';
+    category: string | 'all';
+    dateFrom: string | '';
+    dateTo: string | '';
+    search: string;
+    }
+
+    /* ---- Props ---- */
+    export interface ConsentManagerProps {
+    consents: ConsentRecord[];
+    userId?: string;
+    tenantId?: string;
+    onRevoke?: (recordId: string) => Promise<void>;
+        loading?: boolean;
+        error?: string | null;
+        onRefresh?: () => void;
+        }
+
+        /* ---- Style objects — de tranh conflict voi double-brace trong JSX ---- */
+        const sWrap: React.CSSProperties = {
+        padding: '24px',
+        maxWidth: '1400px',
+        margin: '0 auto',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        backgroundColor: '#f9fafb',
+        minHeight: '100vh',
+        };
+
+        /* Header */
+        const sHeader: React.CSSProperties = {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '20px',
+        flexWrap: 'wrap' as const,
+        gap: '12px',
+        };
+        const sHeaderTitle: React.CSSProperties = {
+        margin: 0,
+        fontSize: '22px',
+        fontWeight: 700,
+        color: '#111827',
+        };
+        const sRefreshBtn: React.CSSProperties = {
+        padding: '8px 18px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        fontWeight: 500,
+        cursor: 'pointer',
+        border: '1px solid #d1d5db',
+        background: '#fff',
+        color: '#374151',
+        transition: 'all 0.15s',
+        };
+        const sRefreshBtnActive: React.CSSProperties = {
+        ...sRefreshBtn,
+        background: '#6366f1',
+        color: '#fff',
+        border: 'none',
+        };
+
+        /* Filter bar */
+        const sFilterBar: React.CSSProperties = {
+        display: 'flex',
+        gap: '10px',
+        padding: '16px',
+        backgroundColor: '#fff',
+        borderRadius: '10px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        marginBottom: '16px',
+        flexWrap: 'wrap' as const,
+        alignItems: 'center',
+        };
+        const sFilterLabel: React.CSSProperties = {
+        fontSize: '12px',
+        fontWeight: 600,
+        color: '#6b7280',
+        textTransform: 'uppercase' as const,
+        };
+        const sFilterSelect: React.CSSProperties = {
+        padding: '6px 10px',
+        borderRadius: '6px',
+        border: '1px solid #d1d5db',
+        fontSize: '13px',
+        backgroundColor: '#fff',
+        color: '#374151',
+        minWidth: '140px',
+        };
+        const sFilterInput: React.CSSProperties = {
+        padding: '6px 10px',
+        borderRadius: '6px',
+        border: '1px solid #d1d5db',
+        fontSize: '13px',
+        backgroundColor: '#fff',
+        color: '#374151',
+        };
+        const sSearchInput: React.CSSProperties = {
+        ...sFilterInput,
+        flex: '1 1 200px',
+        };
+
+        /* Card bao table */
+        const sTableCard: React.CSSProperties = {
+        backgroundColor: '#fff',
+        borderRadius: '12px',
+        padding: '20px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        };
+
+        /* Table */
+        const sTable: React.CSSProperties = {
+        width: '100%',
+        borderCollapse: 'collapse' as const,
+        };
+        const sTh: React.CSSProperties = {
+        padding: '10px 12px',
+        textAlign: 'left' as const,
+        fontSize: '12px',
+        fontWeight: 600,
+        color: '#6b7280',
+        textTransform: 'uppercase' as const,
+        letterSpacing: '0.05em',
+        borderBottom: '2px solid #e5e7eb',
+        whiteSpace: 'nowrap' as const,
+        cursor: 'pointer',
+        userSelect: 'none' as const,
+        };
+        const sThSorted: React.CSSProperties = {
+        ...sTh,
+        color: '#6366f1',
+        };
+        const sTd: React.CSSProperties = {
+        padding: '10px 12px',
+        fontSize: '13px',
+        borderBottom: '1px solid #f3f4f6',
+        color: '#374151',
+        };
+        const sTdCode: React.CSSProperties = {
+        fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+        fontSize: '12px',
+        color: '#6366f1',
+        background: '#eef2ff',
+        padding: '2px 6px',
+        borderRadius: '4px',
+        };
+
+        /* Badge */
+        const sBadgeBase: React.CSSProperties = {
+        display: 'inline-block',
+        padding: '2px 10px',
+        borderRadius: '12px',
+        fontSize: '11px',
+        fontWeight: 600,
+        textTransform: 'capitalize' as const,
+        whiteSpace: 'nowrap' as const,
+        };
+
+        /* Nút huy */
+        const sRevokeBtn: React.CSSProperties = {
+        padding: '5px 12px',
+        borderRadius: '6px',
+        fontSize: '12px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        border: '1px solid #fecaca',
+        backgroundColor: '#fef2f2',
+        color: '#dc2626',
+        transition: 'all 0.15s',
+        };
+        const sRevokeBtnDisabled: React.CSSProperties = {
+        ...sRevokeBtn,
+        opacity: 0.4,
+        cursor: 'not-allowed',
+        };
+
+        /* Empty state / Loading / Error */
+        const sEmptyState: React.CSSProperties = {
+        padding: '48px 20px',
+        textAlign: 'center' as const,
+        color: '#9ca3af',
+        fontSize: '14px',
+        };
+        const sLoading: React.CSSProperties = {
+        padding: '48px 20px',
+        textAlign: 'center' as const,
+        color: '#6b7280',
+        fontSize: '14px',
+        };
+        const sError: React.CSSProperties = {
+        padding: '14px 18px',
+        backgroundColor: '#fef2f2',
+        borderRadius: '8px',
+        color: '#991b1b',
+        fontSize: '13px',
+        border: '1px solid #fecaca',
+        marginBottom: '16px',
+        };
+
+        /* Modal xác nhận */
+        const sModalOverlay: React.CSSProperties = {
+        position: 'fixed' as const,
+        inset: 0,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        };
+        const sModalBox: React.CSSProperties = {
+        backgroundColor: '#fff',
+        borderRadius: '14px',
+        padding: '24px',
+        width: '100%',
+        maxWidth: '420px',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+        };
+        const sModalTitle: React.CSSProperties = {
+        fontSize: '18px',
+        fontWeight: 700,
+        margin: '0 0 8px',
+        color: '#111827',
+        };
+        const sModalText: React.CSSProperties = {
+        fontSize: '14px',
+        color: '#374151',
+        margin: '0 0 20px',
+        lineHeight: 1.5,
+        };
+        const sModalActions: React.CSSProperties = {
+        display: 'flex',
+        gap: '10px',
+        justifyContent: 'flex-end',
+        };
+        const sModalCancelBtn: React.CSSProperties = {
+        padding: '8px 18px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        fontWeight: 500,
+        cursor: 'pointer',
+        border: '1px solid #d1d5db',
+        backgroundColor: '#fff',
+        color: '#374151',
+        };
+        const sModalConfirmBtn: React.CSSProperties = {
+        padding: '8px 18px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        border: 'none',
+        backgroundColor: '#dc2626',
+        color: '#fff',
+        };
+
+        /* Pagination */
+        const sPagination: React.CSSProperties = {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: '16px',
+        paddingTop: '12px',
+        borderTop: '1px solid #f3f4f6',
+        fontSize: '13px',
+        color: '#6b7280',
+        };
+        const sPageBtn: React.CSSProperties = {
+        padding: '5px 12px',
+        borderRadius: '6px',
+        border: '1px solid #d1d5db',
+        backgroundColor: '#fff',
+        fontSize: '13px',
+        fontWeight: 500,
+        cursor: 'pointer',
+        color: '#374151',
+        };
+        const sPageBtnActive: React.CSSProperties = {
+        ...sPageBtn,
+        background: '#6366f1',
+        color: '#fff',
+        borderColor: '#6366f1',
+        };
+
+        /* ---- Helper functions ---- */
+
+        /* Badge style theo trang thai */
+        function statusBadgeStyle(status: ConsentStatus): React.CSSProperties {
+        const map: Record<ConsentStatus, { bg: string; color: string }> = {
+            granted: { bg: '#d1fae5', color: '#065f46' },
+            revoked: { bg: '#fee2e2', color: '#991b1b' },
+            expired: { bg: '#f3f4f6', color: '#4b5563' },
+            pending: { bg: '#fef3c7', color: '#92400e' },
+            pending_renewal: { bg: '#e0e7ff', color: '#3730a3' },
+            };
+            const c = map[status] || map.pending;
+            return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
+            }
+
+            /* Format date */
+            function formatDate(iso: string | null): string {
+            if (!iso) return '\u2014';
+            const d = new Date(iso);
+            return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            }
+
+            /* Format muc dich */
+            function formatPurpose(purpose: string): string {
+            const map: Record<string, string> = {
+                essential: 'Co ban',
+                analytics: 'Phan tich',
+                marketing: 'Tiep thi',
+                personalization: 'Ca nhan hoa',
+                third_party: 'Phuong ba',
+                };
+                return map[purpose] || purpose;
+                }
+
+                /* Format danh muc */
+                function formatCategory(category: string): string {
+                const map: Record<string, string> = {
+                    cookie: 'Cookie',
+                    data_processing: 'Xu ly du lieu',
+                    communication: 'Lien lac',
+                    tracking: 'Theo doi',
+                    sharing: 'Chia se',
+                    };
+                    return map[category] || category;
+                    }
+
+                    /* Icon sap xep */
+                    function sortIcon(column: SortColumn, activeColumn: SortColumn | null, direction: SortDirection):
+                    string {
+                    if (activeColumn !== column) return ' \u2195';
+                    return direction === 'asc' ? ' \u2191' : ' \u2193';
+                    }
+
+                    /* ---- Options cho filter ---- */
+                    const statusOptions: { value: ConsentStatus | 'all'; label: string }[] = [
+                    { value: 'all', label: 'Tat ca trang thai' },
+                    { value: 'granted', label: 'Da cap' },
+                    { value: 'revoked', label: 'Da huy' },
+                    { value: 'expired', label: 'Het han' },
+                    { value: 'pending', label: 'Dang cho' },
+                    { value: 'pending_renewal', label: 'Cho lam moi' },
+                    ];
+
+                    const purposeOptions: { value: string; label: string }[] = [
+                    { value: 'all', label: 'Tat ca muc dich' },
+                    { value: 'essential', label: 'Co ban' },
+                    { value: 'analytics', label: 'Phan tich' },
+                    { value: 'marketing', label: 'Tiep thi' },
+                    { value: 'personalization', label: 'Ca nhan hoa' },
+                    { value: 'third_party', label: 'Phuong ba' },
+                    ];
+
+                    const categoryOptions: { value: string; label: string }[] = [
+                    { value: 'all', label: 'Tat ca danh muc' },
+                    { value: 'cookie', label: 'Cookie' },
+                    { value: 'data_processing', label: 'Xu ly du lieu' },
+                    { value: 'communication', label: 'Lien lac' },
+                    { value: 'tracking', label: 'Theo doi' },
+                    { value: 'sharing', label: 'Chia se' },
+                    ];
+
+                    /* ======================================================================
+                    * COMPONENT CON: ConfirmRevokeModal
+                    * ====================================================================== */
+                    const ConfirmRevokeModal: React.FC<{ record: ConsentRecord; onConfirm: ()=> void;
+                        onCancel: () => void;
+                        }> = ({ record, onConfirm, onCancel }) => (
+                        <div style={sModalOverlay} onClick={onCancel}>
+                            <div style={sModalBox} onClick={(e)=> e.stopPropagation()}>
+                                <h3 style={sModalTitle}>Xac nhan huy dong y</h3>
+                                <p style={sModalText}>
+                                    Ban co chac muon huy dong y <strong>{formatPurpose(record.purpose)}</strong>
+                                    (ban ghi: {record.record_id})? Hanh dong nay khong the hoa loi.
+                                </p>
+                                <div style={sModalActions}>
+                                    <button style={sModalCancelBtn} onClick={onCancel}>Huy bo</button>
+                                    <button style={sModalConfirmBtn} onClick={onConfirm}>Xac nhan huy</button>
+                                </div>
+                            </div>
+                        </div>
+                        );
+
+                        /* ======================================================================
+                        * COMPONENT CHÍNH: ConsentManager
+                        * ====================================================================== */
+                        export function ConsentManager({
+                        consents,
+                        userId = 'user_1',
+                        tenantId = 'tenant_1',
+                        onRevoke,
+                        loading = false,
+                        error = null,
+                        onRefresh,
+                        }: ConsentManagerProps) {
+                        /* Bo loc */
+                        const [filter, setFilter] = useState<ConsentFilter>({
+                            status: 'all',
+                            purpose: 'all',
+                            category: 'all',
+                            dateFrom: '',
+                            dateTo: '',
+                            search: '',
+                            });
+                            /* Sap xep */
+                            const [sortColumn, setSortColumn] = useState<SortColumn>('created_at');
+                                const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+                                    /* Pagination */
+                                    const [page, setPage] = useState(1);
+                                    const pageSize = 15;
+                                    /* Modal huy */
+                                    const [revokeRecord, setRevokeRecord] = useState<ConsentRecord | null>(null);
+                                        /* Revoke loading */
+                                        const [revokeLoading, setRevokeLoading] = useState(false);
+
+                                        /* Cap nhat bo loc */
+                                        const updateFilter = useCallback(
+                                        <K extends keyof ConsentFilter>(key: K, value: ConsentFilter[K]) => {
+                                            setFilter((prev) => ({ ...prev, [key]: value }));
+                                            setPage(1); /* Reset ve trang 1 khi doi filter */
+                                            },
+                                            [],
+                                            );
+
+                                            /* Xoa bo loc */
+                                            const clearFilters = useCallback(() => {
+                                            setFilter({
+                                            status: 'all',
+                                            purpose: 'all',
+                                            category: 'all',
+                                            dateFrom: '',
+                                            dateTo: '',
+                                            search: '',
+                                            });
+                                            setPage(1);
+                                            }, []);
+
+                                            /* Ap dung filter */
+                                            const filteredConsents = useMemo(() => {
+                                            return consents.filter((record) => {
+                                            /* Loc theo trang thai */
+                                            if (filter.status !== 'all' && record.status !== filter.status) return
+                                            false;
+                                            /* Loc theo muc dich */
+                                            if (filter.purpose !== 'all' && record.purpose !== filter.purpose) return
+                                            false;
+                                            /* Loc theo danh muc */
+                                            if (filter.category !== 'all' && record.category !== filter.category) return
+                                            false;
+                                            /* Loc theo khoang thoi gian (created_at) */
+                                            if (filter.dateFrom) {
+                                            const from = new Date(filter.dateFrom).getTime();
+                                            const created = new Date(record.created_at).getTime();
+                                            if (created < from) return false; } if (filter.dateTo) { const to=new
+                                                Date(filter.dateTo).getTime() + 86400000; /* Them 1 ngay */ const
+                                                created=new Date(record.created_at).getTime(); if (created> to) return
+                                                false;
+                                                }
+                                                /* Tim kiem theo record_id, purpose, category */
+                                                if (filter.search) {
+                                                const search = filter.search.toLowerCase();
+                                                const matchesId = record.record_id.toLowerCase().includes(search);
+                                                const matchesPurpose = record.purpose.toLowerCase().includes(search);
+                                                const matchesCategory = record.category.toLowerCase().includes(search);
+                                                if (!matchesId && !matchesPurpose && !matchesCategory) return false;
+                                                }
+                                                return true;
+                                                });
+                                                }, [consents, filter]);
+
+                                                /* Sap xep danh sach */
+                                                const sortedConsents = useMemo(() => {
+                                                const sorted = [...filteredConsents];
+                                                sorted.sort((a, b) => {
+                                                let comparison = 0;
+                                                const aVal = a[sortColumn];
+                                                const bVal = b[sortColumn];
+
+                                                if (aVal == null && bVal == null) return 0;
+                                                if (aVal == null) return 1;
+                                                if (bVal == null) return -1;
+
+                                                if (typeof aVal === 'string' && typeof bVal === 'string') {
+                                                comparison = aVal.localeCompare(bVal);
+                                                } else if (typeof aVal === 'number' && typeof bVal === 'number') {
+                                                comparison = aVal - bVal;
+                                                }
+
+                                                return sortDirection === 'asc' ? comparison : -comparison;
+                                                });
+                                                return sorted;
+                                                }, [filteredConsents, sortColumn, sortDirection]);
+
+                                                /* Pagination */
+                                                const totalPages = Math.ceil(sortedConsents.length / pageSize);
+                                                const paginatedConsents = useMemo(() => {
+                                                const start = (page - 1) * pageSize;
+                                                return sortedConsents.slice(start, start + pageSize);
+                                                }, [sortedConsents, page]);
+
+                                                /* Xy ly sap xep */
+                                                const handleSort = useCallback(
+                                                (column: SortColumn) => {
+                                                if (sortColumn === column) {
+                                                setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+                                                } else {
+                                                setSortColumn(column);
+                                                setSortDirection('asc');
+                                                }
+                                                },
+                                                [sortColumn],
+                                                );
+
+                                                /* Xy ly huy dong y */
+                                                const handleRevokeClick = useCallback((record: ConsentRecord) => {
+                                                setRevokeRecord(record);
+                                                }, []);
+
+                                                const handleRevokeConfirm = useCallback(async () => {
+                                                if (!revokeRecord) return;
+                                                setRevokeLoading(true);
+                                                try {
+                                                await onRevoke?.(revokeRecord.record_id);
+                                                } catch (err) {
+                                                const message = err instanceof Error ? err.message : 'Huy dong y that
+                                                bai';
+                                                console.error('[ConsentManager] revokeConsent:', message);
+                                                } finally {
+                                                setRevokeLoading(false);
+                                                setRevokeRecord(null);
+                                                }
+                                                }, [revokeRecord, onRevoke]);
+
+                                                /* Them filter co du lieu */
+                                                const hasActiveFilters = filter.status !== 'all' || filter.purpose !==
+                                                'all'
+                                                || filter.category !== 'all' || filter.dateFrom || filter.dateTo ||
+                                                filter.search;
+
+                                                return (
+                                                <div style={sWrap}>
+                                                    {/* Header */}
+                                                    <div style={sHeader}>
+                                                        <h1 style={sHeaderTitle}>Quản ly dong y</h1>
+                                                        {onRefresh && (
+                                                        <button style={sRefreshBtn} onClick={onRefresh}
+                                                            disabled={loading}>
+                                                            {loading ? 'Dang lam moi...' : '\u21bb Lam moi'}
+                                                        </button>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Error */}
+                                                    {error && (
+                                                    <div style={sError}>
+                                                        <strong>Loi:</strong> {error}
+                                                    </div>
+                                                    )}
+
+                                                    {/* Filter bar */}
+                                                    <div style={sFilterBar}>
+                                                        <span style={sFilterLabel}>Loc:</span>
+                                                        <select style={sFilterSelect} value={filter.status}
+                                                            onChange={(e)=> updateFilter('status', e.target.value as
+                                                            ConsentStatus | 'all')}
+                                                            >
+                                                            {statusOptions.map((opt) => (
+                                                            <option key={opt.value} value={opt.value}>{opt.label}
+                                                            </option>
+                                                            ))}
+                                                        </select>
+
+                                                        <select style={sFilterSelect} value={filter.purpose}
+                                                            onChange={(e)=> updateFilter('purpose', e.target.value)}
+                                                            >
+                                                            {purposeOptions.map((opt) => (
+                                                            <option key={opt.value} value={opt.value}>{opt.label}
+                                                            </option>
+                                                            ))}
+                                                        </select>
+
+                                                        <select style={sFilterSelect} value={filter.category}
+                                                            onChange={(e)=> updateFilter('category', e.target.value)}
+                                                            >
+                                                            {categoryOptions.map((opt) => (
+                                                            <option key={opt.value} value={opt.value}>{opt.label}
+                                                            </option>
+                                                            ))}
+                                                        </select>
+
+                                                        <label style={{ ...sFilterLabel, marginLeft: '8px'
+                                                            }}>Tu:</label>
+                                                        <input type="date" style={sFilterInput} value={filter.dateFrom}
+                                                            onChange={(e)=> updateFilter('dateFrom', e.target.value)}
+                                                        />
+
+                                                        <label style={sFilterLabel}>Den:</label>
+                                                        <input type="date" style={sFilterInput} value={filter.dateTo}
+                                                            onChange={(e)=> updateFilter('dateTo', e.target.value)}
+                                                        />
+
+                                                        <input type="text" style={sSearchInput}
+                                                            placeholder="Tim kiem record_id, muc dich, danh muc..."
+                                                            value={filter.search} onChange={(e)=> updateFilter('search',
+                                                        e.target.value)}
+                                                        />
+
+                                                        {hasActiveFilters && (
+                                                        <button style={{ ...sRefreshBtn, fontSize: '12px' }}
+                                                            onClick={clearFilters}>
+                                                            Xoa bo loc
+                                                        </button>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Table card */}
+                                                    <div style={sTableCard}>
+                                                        {loading && !consents.length ? (
+                                                        <div style={sLoading}>Dang tai danh sach dong y...</div>
+                                                        ) : paginatedConsents.length === 0 ? (
+                                                        <div style={sEmptyState}>
+                                                            <p>Khong co ban ghi dong y phu hop voi bo loc.</p>
+                                                        </div>
+                                                        ) : (
+                                                        <div style={{ overflowX: 'auto' }}>
+                                                            <table style={sTable}>
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th style={sortColumn==='record_id' ? sThSorted
+                                                                            : sTh} onClick={()=>
+                                                                            handleSort('record_id')}>
+                                                                            Record ID{sortIcon('record_id', sortColumn,
+                                                                            sortDirection)}
+                                                                        </th>
+                                                                        <th style={sortColumn==='purpose' ? sThSorted :
+                                                                            sTh} onClick={()=> handleSort('purpose')}>
+                                                                            Muc dich{sortIcon('purpose', sortColumn,
+                                                                            sortDirection)}
+                                                                        </th>
+                                                                        <th style={sortColumn==='category' ? sThSorted :
+                                                                            sTh} onClick={()=> handleSort('category')}>
+                                                                            Danh muc{sortIcon('category', sortColumn,
+                                                                            sortDirection)}
+                                                                        </th>
+                                                                        <th style={sortColumn==='status' ? sThSorted :
+                                                                            sTh} onClick={()=> handleSort('status')}>
+                                                                            Trang thai{sortIcon('status', sortColumn,
+                                                                            sortDirection)}
+                                                                        </th>
+                                                                        <th style={sortColumn==='granted_at' ? sThSorted
+                                                                            : sTh} onClick={()=>
+                                                                            handleSort('granted_at')}>
+                                                                            Ngay cap{sortIcon('granted_at', sortColumn,
+                                                                            sortDirection)}
+                                                                        </th>
+                                                                        <th style={sortColumn==='revoked_at' ? sThSorted
+                                                                            : sTh} onClick={()=>
+                                                                            handleSort('revoked_at')}>
+                                                                            Ngay huy{sortIcon('revoked_at', sortColumn,
+                                                                            sortDirection)}
+                                                                        </th>
+                                                                        <th style={sTh}>Han phap</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {paginatedConsents.map((record) => (
+                                                                    <tr key={record.record_id}>
+                                                                        <td style={sTd}>
+                                                                            <span
+                                                                                style={sTdCode}>{record.record_id}</span>
+                                                                        </td>
+                                                                        <td style={sTd}>{formatPurpose(record.purpose)}
+                                                                        </td>
+                                                                        <td style={sTd}>
+                                                                            {formatCategory(record.category)}</td>
+                                                                        <td style={sTd}>
+                                                                            <span
+                                                                                style={statusBadgeStyle(record.status)}>{record.status}</span>
+                                                                        </td>
+                                                                        <td style={sTd}>{formatDate(record.granted_at)}
+                                                                        </td>
+                                                                        <td style={sTd}>{formatDate(record.revoked_at)}
+                                                                        </td>
+                                                                        <td style={sTd}>
+                                                                            {record.status === 'granted' ? (
+                                                                            <button style={sRevokeBtn} onClick={()=>
+                                                                                handleRevokeClick(record)}>
+                                                                                Huy dong y
+                                                                            </button>
+                                                                            ) : (
+                                                                            <button style={sRevokeBtnDisabled} disabled>
+                                                                                Huy dong y
+                                                                            </button>
+                                                                            )}
+                                                                        </td>
+                                                                    </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                        )}
+
+                                                        {/* Pagination */}
+                                                        {totalPages > 1 && (
+                                                        <div style={sPagination}>
+                                                            <span>
+                                                                Trang {page} / {totalPages} ({sortedConsents.length} ban
+                                                                ghi)
+                                                            </span>
+                                                            <div style={{ display: 'flex' , gap: '4px' }}>
+                                                                <button style={sPageBtn} disabled={page <=1}
+                                                                    onClick={()=> setPage((p) => Math.max(1, p - 1))}
+                                                                    >
+                                                                    {\u2190} Truoc
+                                                                </button>
+                                                                {Array.from({ length: Math.min(5, totalPages) }, (_, i)
+                                                                => {
+                                                                let pageNum: number;
+                                                                if (totalPages <= 5) { pageNum=i + 1; } else if (page
+                                                                    <=3) { pageNum=i + 1; } else if (page>= totalPages -
+                                                                    2) {
+                                                                    pageNum = totalPages - 4 + i;
+                                                                    } else {
+                                                                    pageNum = page - 2 + i;
+                                                                    }
+                                                                    return (
+                                                                    <button key={pageNum} style={page===pageNum ?
+                                                                        sPageBtnActive : sPageBtn} onClick={()=>
+                                                                        setPage(pageNum)}
+                                                                        >
+                                                                        {pageNum}
+                                                                    </button>
+                                                                    );
+                                                                    })}
+                                                                    <button style={sPageBtn} disabled={page>=
+                                                                        totalPages}
+                                                                        onClick={() => setPage((p) =>
+                                                                        Math.min(totalPages, p + 1))}
+                                                                        >
+                                                                        Sau {\u2192}
+                                                                    </button>
+                                                            </div>
+                                                        </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Modal xac nhan huy */}
+                                                    {revokeRecord && (
+                                                    <ConfirmRevokeModal record={revokeRecord}
+                                                        onConfirm={handleRevokeConfirm} onCancel={()=> {
+                                                        setRevokeRecord(null);
+                                                        setRevokeLoading(false);
+                                                        }}
+                                                        />
+                                                        )}
+                                                </div>
+                                                );
+                                                }
+
+                                                export default ConsentManager;
+                                                {% endraw %}

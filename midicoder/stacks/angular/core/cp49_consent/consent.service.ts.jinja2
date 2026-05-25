@@ -1,0 +1,470 @@
+{% raw %}/**
+ * CP49 Consent & Preference Management — Dịch vụ HTTP cho quản lý đồng ý và tùy chọn.
+ *
+ * Cung cấp các phương thức HTTP để thao tác với bản ghi đồng ý, tùy chọn cookie,
+ * tùy chọn liên lạc, yêu cầu xóa dữ liệu, và thống kê đồng ý.
+ *
+ * Sử dụng HttpClient và injection hiện đại của Angular.
+ * Tất cả phương thức trả về Observable để store có thể chuyển đổi thành Signal.
+ *
+ * Tạo tự động bởi CP49 — không sửa thủ công.
+ */
+
+import { Injectable, inject } from '@angular/core';
+import {
+  HttpClient,
+  HttpErrorResponse,
+  HttpParams,
+  HttpHeaders,
+} from '@angular/common/http';
+import { Observable, catchError, shareReplay, tap, timeout } from 'rxjs';
+
+import {
+  ConsentRecord,
+  ConsentRecordCreateDto,
+  ConsentRecordUpdateDto,
+  ConsentPurpose,
+  ConsentCategory,
+  ConsentStatus,
+  CookiePreference,
+  CookiePreferenceCreateDto,
+  ErasureRequest,
+  ErasureRequestCreateDto,
+  ErasureStatus,
+  ErasureScope,
+  CommunicationPreference,
+  CommunicationPreferenceCreateDto,
+  ConsentStats,
+  ConsentFilters,
+  ErasureFilters,
+  ApiError,
+  CONSENT_API_BASE,
+  DEFAULT_TIMEOUT_MS,
+} from './consent-types';
+
+// ===========================================================================
+// Helper functions
+// ===========================================================================
+
+/**
+ * Chuyển đổi HttpErrorResponse thành ApiError chuẩn.
+ * Đảm bảo giao diện luôn nhận được định dạng lỗi nhất quán.
+ */
+function toApiError(error: HttpErrorResponse): ApiError {
+  const serverCode = error.status;
+  const message = error.error?.message ?? error.statusText ?? 'Lỗi không xác định';
+  return {
+    code: `HTTP_${serverCode}`,
+    message,
+    details: error.error?.details,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * ConsentService — Dịch vụ trung gian HTTP cho CP49 Consent & Preference Management.
+ *
+ * Tổ chức theo các nhóm phương thức:
+ * - Bản ghi đồng ý (ConsentRecord)
+ * - Tùy chọn cookie (CookiePreference)
+ * - Tùy chọn liên lạc (CommunicationPreference)
+ * - Yêu cầu xóa dữ liệu (ErasureRequest)
+ * - Thống kê đồng ý (ConsentStats)
+ *
+ * Tất cả phương thức trả về Observable; người gọi (Store) sẽ subscribe
+ * và đẩy dữ liệu vào Signal.
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class ConsentService {
+  // ===========================================================================
+  // Inject dependencies
+  // ===========================================================================
+
+  /** HttpClient — inject theo phong cách hiện đại của Angular. */
+  private readonly http = inject(HttpClient);
+
+  // ===========================================================================
+  // Phương thức đồng ý (ConsentRecord)
+  // ===========================================================================
+
+  /**
+   * Lấy tất cả bản ghi đồng ý của người dùng hiện tại.
+   *
+   * @param filters - Tiêu chí lọc (trạng thái, mục đích, danh mục, phân trang).
+   * @returns Observable danh sách bản ghi đồng ý.
+   */
+  getUserConsents(filters?: ConsentFilters): Observable<ConsentRecord[]> {
+    let params = new HttpParams();
+
+    if (filters) {
+      if (filters.status) {
+        params = params.set('status', filters.status);
+      }
+      if (filters.purpose) {
+        params = params.set('purpose', filters.purpose);
+      }
+      if (filters.category) {
+        params = params.set('category', filters.category);
+      }
+      if (filters.page) {
+        params = params.set('page', String(filters.page));
+      }
+      if (filters.pageSize) {
+        params = params.set('pageSize', String(filters.pageSize));
+      }
+    }
+
+    return this.http
+      .get<ConsentRecord[]>(`${CONSENT_API_BASE}/consent`, { params })
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Cấp đồng ý mới cho một mục đích cụ thể.
+   *
+   * @param dto - Dữ liệu tạo bản ghi đồng ý.
+   * @returns Observable bản ghi đồng ý đã tạo.
+   */
+  grantConsent(dto: ConsentRecordCreateDto): Observable<ConsentRecord> {
+    return this.http
+      .post<ConsentRecord>(`${CONSENT_API_BASE}/consent/grant`, dto)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap((record) => {
+          console.log(`[CP49] Đã cấp đồng ý: ${record.recordId} (${dto.purpose}/${dto.category})`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Hủy đồng ý theo ID bản ghi.
+   *
+   * @param recordId - ID duy nhất của bản ghi đồng ý cần hủy.
+   * @returns Observable bản ghi đồng ý đã cập nhật.
+   */
+  revokeConsent(recordId: string): Observable<ConsentRecord> {
+    return this.http
+      .post<ConsentRecord>(`${CONSENT_API_BASE}/consent/${encodeURIComponent(recordId)}/revoke`, {})
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap(() => {
+          console.log(`[CP49] Đã hủy đồng ý: ${recordId}`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Kiểm tra trạng thái đồng ý cho một mục đích và danh mục cụ thể.
+   *
+   * @param purpose - Mục đích đồng ý cần kiểm tra.
+   * @param category - Danh mục đồng ý cần kiểm tra.
+   * @returns Observable trạng thái đồng ý.
+   */
+  checkConsent(purpose: ConsentPurpose, category: ConsentCategory): Observable<{ hasConsent: boolean; status: ConsentStatus; recordId?: string }> {
+    const params = new HttpParams()
+      .set('purpose', purpose)
+      .set('category', category);
+
+    return this.http
+      .get<{ hasConsent: boolean; status: ConsentStatus; recordId?: string }>(
+        `${CONSENT_API_BASE}/consent/check`,
+        { params }
+      )
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Cập nhật thông tin bản ghi đồng ý (partial update).
+   *
+   * @param recordId - ID bản ghi cần cập nhật.
+   * @param dto - Dữ liệu cập nhật.
+   * @returns Observable bản ghi đã cập nhật.
+   */
+  updateConsent(recordId: string, dto: ConsentRecordUpdateDto): Observable<ConsentRecord> {
+    return this.http
+      .patch<ConsentRecord>(`${CONSENT_API_BASE}/consent/${encodeURIComponent(recordId)}`, dto)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        catchError(toApiError),
+      );
+  }
+
+  // ===========================================================================
+  // Tùy chọn cookie (CookiePreference)
+  // ===========================================================================
+
+  /**
+   * Lấy tùy chọn cookie của người dùng hiện tại.
+   *
+   * @returns Observable tùy chọn cookie.
+   */
+  getCookiePreference(): Observable<CookiePreference> {
+    return this.http
+      .get<CookiePreference>(`${CONSENT_API_BASE}/cookie-preference`)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Lưu/ cập nhật tùy chọn cookie của người dùng.
+   *
+   * @param dto - Dữ liệu tùy chọn cookie (các danh mục với trạng thái bật/tắt).
+   * @returns Observable tùy chọn cookie đã cập nhật.
+   */
+  setCookiePreference(dto: CookiePreferenceCreateDto): Observable<CookiePreference> {
+    return this.http
+      .post<CookiePreference>(`${CONSENT_API_BASE}/cookie-preference`, dto)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap(() => {
+          console.log('[CP49] Đã lưu tùy chọn cookie');
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Chấp nhận tất cả cookie (bật mọi danh mục).
+   *
+   * @returns Observable tùy chọn cookie đã cập nhật.
+   */
+  acceptAllCookies(): Observable<CookiePreference> {
+    return this.http
+      .post<CookiePreference>(`${CONSENT_API_BASE}/cookie-preference/accept-all`, {})
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap(() => {
+          console.log('[CP49] Đã chấp nhận tất cả cookie');
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Từ chối tất cả cookie không cần thiết (chỉ giữ danh mục necessary).
+   *
+   * @returns Observable tùy chọn cookie đã cập nhật.
+   */
+  rejectNonNecessaryCookies(): Observable<CookiePreference> {
+    return this.http
+      .post<CookiePreference>(`${CONSENT_API_BASE}/cookie-preference/reject-non-necessary`, {})
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap(() => {
+          console.log('[CP49] Đã từ chối cookie không cần thiết');
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  // ===========================================================================
+  // Tùy chọn liên lạc (CommunicationPreference)
+  // ===========================================================================
+
+  /**
+   * Lấy tùy chọn liên lạc của người dùng hiện tại.
+   *
+   * @returns Observable tùy chọn liên lạc.
+   */
+  getCommPreference(): Observable<CommunicationPreference> {
+    return this.http
+      .get<CommunicationPreference>(`${CONSENT_API_BASE}/comm-preference`)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Lưu/ cập nhật tùy chọn liên lạc của người dùng.
+   *
+   * @param dto - Dữ liệu tùy chọn liên lạc (kênh và mục đích).
+   * @returns Observable tùy chọn liên lạc đã cập nhật.
+   */
+  setCommPreference(dto: CommunicationPreferenceCreateDto): Observable<CommunicationPreference> {
+    return this.http
+      .post<CommunicationPreference>(`${CONSENT_API_BASE}/comm-preference`, dto)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap(() => {
+          console.log('[CP49] Đã lưu tùy chọn liên lạc');
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  // ===========================================================================
+  // Yêu cầu xóa dữ liệu (ErasureRequest)
+  // ===========================================================================
+
+  /**
+   * Tạo yêu cầu xóa dữ liệu mới (Quyền được quên - GDPR).
+   *
+   * @param dto - Dữ liệu yêu cầu xóa (phạm vi, lý do).
+   * @returns Observable yêu cầu xóa đã tạo.
+   */
+  createErasureRequest(dto: ErasureRequestCreateDto): Observable<ErasureRequest> {
+    return this.http
+      .post<ErasureRequest>(`${CONSENT_API_BASE}/erasure`, dto)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap((request) => {
+          console.log(`[CP49] Đã tạo yêu cầu xóa: ${request.requestId} (phạm vi: ${dto.scope})`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Lấy tất cả yêu cầu xóa của người dùng hiện tại.
+   *
+   * @param filters - Tiêu chí lọc (trạng thái, phạm vi).
+   * @returns Observable danh sách yêu cầu xóa.
+   */
+  getErasureRequests(filters?: ErasureFilters): Observable<ErasureRequest[]> {
+    let params = new HttpParams();
+
+    if (filters) {
+      if (filters.status) {
+        params = params.set('status', filters.status);
+      }
+      if (filters.scope) {
+        params = params.set('scope', filters.scope);
+      }
+    }
+
+    return this.http
+      .get<ErasureRequest[]>(`${CONSENT_API_BASE}/erasure`, { params })
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Lấy chi tiết yêu cầu xóa theo ID.
+   *
+   * @param requestId - ID duy nhất của yêu cầu xóa.
+   * @returns Observable yêu cầu xóa.
+   */
+  getErasureRequest(requestId: string): Observable<ErasureRequest> {
+    return this.http
+      .get<ErasureRequest>(`${CONSENT_API_BASE}/erasure/${encodeURIComponent(requestId)}`)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Xử lý/ phê duyệt yêu cầu xóa (admin-only).
+   *
+   * @param requestId - ID yêu cầu xóa.
+   * @param status - Trạng thái mới (approved, rejected, processing, completed).
+   * @returns Observable yêu cầu xóa đã cập nhật.
+   */
+  processErasureRequest(requestId: string, status: ErasureStatus): Observable<ErasureRequest> {
+    return this.http
+      .put<ErasureRequest>(
+        `${CONSENT_API_BASE}/erasure/${encodeURIComponent(requestId)}/process`,
+        { status }
+      )
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        tap(() => {
+          console.log(`[CP49] Đã xử lý yêu cầu xóa ${requestId} → ${status}`);
+        }),
+        catchError(toApiError),
+      );
+  }
+
+  /**
+   * Hủy yêu cầu xóa đang chờ xử lý.
+   *
+   * @param requestId - ID yêu cầu xóa cần hủy.
+   * @returns Observable yêu cầu xóa đã cập nhật.
+   */
+  cancelErasureRequest(requestId: string): Observable<ErasureRequest> {
+    return this.http
+      .post<ErasureRequest>(
+        `${CONSENT_API_BASE}/erasure/${encodeURIComponent(requestId)}/cancel`,
+        {}
+      )
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        catchError(toApiError),
+      );
+  }
+
+  // ===========================================================================
+  // Thống kê đồng ý (ConsentStats)
+  // ===========================================================================
+
+  /**
+   * Lấy thống kê đồng ý tổng quan của tenant.
+   *
+   * Bao gồm: tổng số, đang hoạt động, đã hủy, đã hết hạn, chờ làm mới.
+   *
+   * @returns Observable thống kê đồng ý.
+   */
+  getTenantStats(): Observable<ConsentStats> {
+    return this.http
+      .get<ConsentStats>(`${CONSENT_API_BASE}/stats`)
+      .pipe(
+        timeout(DEFAULT_TIMEOUT_MS),
+        shareReplay(1),
+        catchError(toApiError),
+      );
+  }
+
+  // ===========================================================================
+  // Internal helpers
+  // ===========================================================================
+
+  /**
+   * Xây dựng HttpParams từ bộ lọc đồng ý.
+   *
+   * @param filters - Bộ lọc đồng ý.
+   * @returns HttpParams đã được xây dựng.
+   */
+  private buildConsentParams(filters: ConsentFilters): HttpParams {
+    let params = new HttpParams();
+
+    if (filters.status) {
+      params = params.set('status', filters.status);
+    }
+    if (filters.purpose) {
+      params = params.set('purpose', filters.purpose);
+    }
+    if (filters.category) {
+      params = params.set('category', filters.category);
+    }
+    if (filters.page) {
+      params = params.set('page', String(filters.page));
+    }
+    if (filters.pageSize) {
+      params = params.set('pageSize', String(filters.pageSize));
+    }
+
+    return params;
+  }
+}
+{% endraw %}

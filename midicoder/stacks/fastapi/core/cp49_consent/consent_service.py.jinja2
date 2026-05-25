@@ -1,0 +1,889 @@
+# ----------------------------------------------------------
+# CP49 Consent & Preference Management — Dịch vụ quản lý đồng ý
+# ----------------------------------------------------------
+# Sinh bởi CP49ConsentEmitter
+# Class: ConsentService với CRUD đồng ý, chính sách, yêu cầu xóa
+# ----------------------------------------------------------
+
+import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Sequence
+
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+
+class ConsentService:
+    """
+    Dịch vụ quản lý đồng ý và tùy chọn — thực hiện cấp/hủy đồng ý,
+    kiểm tra chính sách, yêu cầu xóa dữ liệu, và thống kê đồng ý.
+
+    Cách layer: (1) RBAC check trước khi thao tác,
+    (2) Audit log sau khi thay đổi trạng thái,
+    (3) Retention trigger khi phê duyệt yêu cầu xóa.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+{% if use_audit %}
+        _audit_logger=None,
+{% endif %}
+{% if use_retention %}
+        _retention_manager=None,
+{% endif %}
+    ) -> None:
+        """
+        Khoi tao dich vu voi phien lam viec SQLAlchemy async va cac thanh phan tuy chon.
+
+        Tham so:
+            session: Phien lam viec async de truy cap co so du lieu.
+{% if use_audit %}
+            _audit_logger: Audit logger de ghi nhat ky kiem toan (tuy chon).
+{% endif %}
+{% if use_retention %}
+            _retention_manager: Retention manager de xu ly chinh sach luu tru (tuy chon).
+{% endif %}
+        """
+        self._session = session
+{% if use_audit %}
+        self._audit_logger = _audit_logger
+{% else %}
+        self._audit_logger = None
+{% endif %}
+{% if use_retention %}
+        self._retention_manager = _retention_manager
+{% else %}
+        self._retention_manager = None
+{% endif %}
+
+    # --------------------------------------------------------------
+    # Đồng ý — Cấp (Grant)
+    # --------------------------------------------------------------
+
+    async def grant_consent(
+        self,
+        user_id: str,
+        tenant_id: str,
+        purpose: str,
+        category: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """
+        Cap dong y cho nguoi dung.
+
+        Tao ban ghi dong y moi voi trang thai 'granted', kem theo
+        thong tin ngu cảnh (IP, user agent) va metadata.
+
+        Tham so:
+            user_id: ID nguoi dung cap dong y.
+            tenant_id: ID tenant chua ban ghi.
+            purpose: Muc dich dong y (essential, analytics, marketing, ...).
+            category: Danh muc dong y (cookie, data_processing, ...).
+            ip_address: Dia chi IP cua nguoi dung.
+            user_agent: User agent cua trinh duyet.
+            metadata: Du lieu bo sung (JSON).
+
+        Tra ve:
+            Doi tuong ConsentRecordModel moi duoc tao.
+        """
+        record_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        # Kiem tra RBAC — nguoi dung phai co quyen cap dong y
+        await self._check_rbac(user_id, tenant_id)
+
+        record = self._consent_model()(
+            record_id=record_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            purpose=purpose,
+            category=category,
+            status="granted",
+            granted_at=now,
+            revoked_at=None,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            metadata_json=metadata,
+            created_at=now,
+            updated_at=now,
+        )
+
+        self._session.add(record)
+        await self._session.commit()
+        await self._session.refresh(record)
+
+        # Phat audit event neu co audit logger
+{% if use_audit %}
+        await self._audit_log(
+            action="consent.granted",
+            user_id=user_id,
+            tenant_id=tenant_id,
+            resource_id=record_id,
+            details={
+                "purpose": purpose,
+                "category": category,
+                "ip_address": ip_address,
+            },
+        )
+{% endif %}
+
+        logger.info(
+            "Da cap dong y: record_id=%s, user=%s, tenant=%s, purpose=%s, category=%s",
+            record_id,
+            user_id,
+            tenant_id,
+            purpose,
+            category,
+        )
+
+        return record
+
+    # --------------------------------------------------------------
+    # Đồng ý — Hủy (Revoke)
+    # --------------------------------------------------------------
+
+    async def revoke_consent(
+        self,
+        record_id: str,
+        user_id: str,
+        tenant_id: str,
+    ) -> Any:
+        """
+        Huy dong y cua nguoi dung.
+
+        Thuc hien soft revoke: cap nhat trang thai thanh 'revoked'
+        va ghi nhan thoi diem huy. Kiem tra chinh sach bat buoc
+        truoc khi huy.
+
+        Tham so:
+            record_id: ID ban ghi dong y can huy.
+            user_id: ID nguoi dung thuc hien huy.
+            tenant_id: ID tenant.
+
+        Tra ve:
+            Doi tuong ConsentRecordModel da duoc cap nhat.
+
+        Nem ra:
+            ValueError: Neu ban ghi khong ton tai.
+            ValueError: Neu muc dich dong y la bat buoc (khong the huy).
+        """
+        # Tim ban ghi dong y
+        record = await self._get_consent_record(record_id)
+        if record is None:
+            raise ValueError("Khong tim thay ban ghi dong y voi ID: {}".format(record_id))
+
+        # Kiem tra chinh sach bat buoc
+        policy = await self._get_policy_by_purpose_and_category(
+            tenant_id, record.purpose, record.category
+        )
+        if policy and policy.is_mandatory:
+            raise ValueError(
+                "Khong the huy dong y bat buoc: purpose={}, category={}".format(
+                    record.purpose, record.category
+                )
+            )
+
+        now = datetime.now(timezone.utc)
+        record.status = "revoked"
+        record.revoked_at = now
+        record.updated_at = now
+
+        await self._session.commit()
+        await self._session.refresh(record)
+
+        # Phat audit event
+{% if use_audit %}
+        await self._audit_log(
+            action="consent.revoked",
+            user_id=user_id,
+            tenant_id=tenant_id,
+            resource_id=record_id,
+            details={
+                "purpose": record.purpose,
+                "category": record.category,
+                "revoked_at": now.isoformat(),
+            },
+        )
+{% endif %}
+
+        logger.info(
+            "Da huy dong y: record_id=%s, user=%s, tenant=%s",
+            record_id,
+            user_id,
+            tenant_id,
+        )
+
+        return record
+
+    # --------------------------------------------------------------
+    # Đồng ý — Kiểm tra (Check)
+    # --------------------------------------------------------------
+
+    async def check_consent(
+        self,
+        user_id: str,
+        tenant_id: str,
+        purpose: str,
+    ) -> bool:
+        """
+        Kiem tra neu nguoi dung co dong y dang hoat dong cho muc dich.
+
+        Tim ban ghi dong y moi nhat cho user_id, tenant_id, va purpose,
+        tra ve True neu trang thai la 'granted'.
+
+        Tham so:
+            user_id: ID nguoi dung.
+            tenant_id: ID tenant.
+            purpose: Muc dich dong y can kiem tra.
+
+        Tra ve:
+            True neu co dong y dang hoat dong, False neu khong.
+        """
+        record = await self._get_latest_consent(user_id, tenant_id, purpose)
+        if record is None:
+            return False
+        return record.status == "granted"
+
+    # --------------------------------------------------------------
+    # Đồng ý — Danh sách người dùng
+    # --------------------------------------------------------------
+
+    async def get_user_consents(
+        self,
+        user_id: str,
+        tenant_id: str,
+    ) -> Sequence[Any]:
+        """
+        Lay tat ca ban ghi dong y cua nguoi dung.
+
+        Tham so:
+            user_id: ID nguoi dung.
+            tenant_id: ID tenant.
+
+        Tra ve:
+            Danh sach ConsentRecordModel cua nguoi dung.
+        """
+        query = select(self._consent_model()).where(
+            and_(
+                self._consent_model().user_id == user_id,
+                self._consent_model().tenant_id == tenant_id,
+            )
+        ).order_by(self._consent_model().created_at.desc())
+
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    # --------------------------------------------------------------
+    # Chính sách — Lấy theo ID
+    # --------------------------------------------------------------
+
+    async def get_policy(self, policy_id: str) -> Optional[Any]:
+        """
+        Lay chinh sach dong y theo ID.
+
+        Tham so:
+            policy_id: ID chinh sach.
+
+        Tra ve:
+            Doi tuong ConsentPolicyModel hoac None neu khong tim thay.
+        """
+        query = select(self._policy_model()).where(
+            self._policy_model().policy_id == policy_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    # --------------------------------------------------------------
+    # Chính sách — Danh sách tenant
+    # --------------------------------------------------------------
+
+    async def list_policies(
+        self,
+        tenant_id: str,
+    ) -> Sequence[Any]:
+        """
+        Lay tat ca chinh sach dong y cho mot tenant.
+
+        Tham so:
+            tenant_id: ID tenant.
+
+        Tra ve:
+            Danh sach ConsentPolicyModel cua tenant.
+        """
+        query = select(self._policy_model()).where(
+            self._policy_model().tenant_id == tenant_id
+        ).order_by(self._policy_model().created_at.desc())
+
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    # --------------------------------------------------------------
+    # Chính sách — Tạo mới
+    # --------------------------------------------------------------
+
+    async def create_policy(
+        self,
+        tenant_id: str,
+        purpose: str,
+        category: str,
+        is_mandatory: bool = False,
+        description: Optional[str] = None,
+        expiry_days: int = 365,
+        renewal_reminder_days: int = 30,
+    ) -> Any:
+        """
+        Tao chinh sach dong y moi cho tenant.
+
+        Tham so:
+            tenant_id: ID tenant.
+            purpose: Muc dich chinh sach.
+            category: Danh muc chinh sach.
+            is_mandatory: Co bat buoc khong.
+            description: Mo ta chinh sach.
+            expiry_days: So ngay het han.
+            renewal_reminder_days: So ngay nhac lam moi.
+
+        Tra ve:
+            Doi tuong ConsentPolicyModel moi duoc tao.
+        """
+        policy_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        policy = self._policy_model()(
+            policy_id=policy_id,
+            tenant_id=tenant_id,
+            purpose=purpose,
+            category=category,
+            is_mandatory=is_mandatory,
+            description=description,
+            expiry_days=expiry_days,
+            renewal_reminder_days=renewal_reminder_days,
+            created_at=now,
+            updated_at=now,
+        )
+
+        self._session.add(policy)
+        await self._session.commit()
+        await self._session.refresh(policy)
+
+        logger.info(
+            "Da tao chinh sach dong y: policy_id=%s, tenant=%s, purpose=%s",
+            policy_id,
+            tenant_id,
+            purpose,
+        )
+
+        return policy
+
+    # --------------------------------------------------------------
+    # Kiểm tra đồng ý hết hạn
+    # --------------------------------------------------------------
+
+    async def check_expired_consents(
+        self,
+        tenant_id: Optional[str] = None,
+    ) -> List[str]:
+        """
+        Tim va danh dau cac dong y da het han.
+
+        Duot qua tat ca ban ghi dong y dang hoat dong, so sanh
+        voi chinh sach het han cua tenant, va cap nhat trang thai
+        thanh 'expired' neu qua thoi han.
+
+        Tham so:
+            tenant_id: ID tenant (tuy chon, None de kiem tra tat ca).
+
+        Tra ve:
+            Danh sach record_ids da duoc danh dau het han.
+        """
+        now = datetime.now(timezone.utc)
+        expired_records = []
+
+        # Lay tat ca chinh sach co thoi han
+        policy_query = select(self._policy_model())
+        if tenant_id:
+            policy_query = policy_query.where(
+                self._policy_model().tenant_id == tenant_id
+            )
+        policy_result = await self._session.execute(policy_query)
+        policies = list(policy_result.scalars().all())
+
+        # Xay dung anh xa purpose -> expiry_days
+        expiry_map: Dict[str, int] = {}
+        for policy in policies:
+            expiry_map[policy.purpose] = policy.expiry_days
+
+        # Tim cac ban ghi granted het han
+        consent_query = select(self._consent_model()).where(
+            self._consent_model().status == "granted",
+            self._consent_model().granted_at.isnot(None),
+        )
+        if tenant_id:
+            consent_query = consent_query.where(
+                self._consent_model().tenant_id == tenant_id
+            )
+        consent_result = await self._session.execute(consent_query)
+        granted_records = list(consent_result.scalars().all())
+
+        for record in granted_records:
+            expiry_days = expiry_map.get(record.purpose, 365)
+            expiry_date = record.granted_at + timedelta(days=expiry_days)
+
+            if now >= expiry_date:
+                record.status = "expired"
+                record.updated_at = now
+                expired_records.append(record.record_id)
+
+        if expired_records:
+            await self._session.commit()
+
+        logger.info(
+            "Da kiem tra dong y het han: so_ban_gi_het_han=%d",
+            len(expired_records),
+        )
+
+        return expired_records
+
+    # --------------------------------------------------------------
+    # Thống kê đồng ý theo tenant
+    # --------------------------------------------------------------
+
+    async def get_tenant_consent_stats(
+        self,
+        tenant_id: str,
+    ) -> Dict[str, int]:
+        """
+        Lay thong ke tong quan ve dong y cua tenant.
+
+        Tham so:
+            tenant_id: ID tenant.
+
+        Tra ve:
+            Dict voi cac khoa: total, active, revoked, expired, pending_renewal.
+        """
+        model = self._consent_model()
+
+        # Tong so
+        total_query = (
+            select(func.count(model.id)).where(model.tenant_id == tenant_id)
+        )
+        total_result = await self._session.execute(total_query)
+        total = total_result.scalar_one()
+
+        # Dang hoat dong (granted)
+        active_query = (
+            select(func.count(model.id)).where(
+                and_(model.tenant_id == tenant_id, model.status == "granted")
+            )
+        )
+        active_result = await self._session.execute(active_query)
+        active = active_result.scalar_one()
+
+        # Da huy
+        revoked_query = (
+            select(func.count(model.id)).where(
+                and_(model.tenant_id == tenant_id, model.status == "revoked")
+            )
+        )
+        revoked_result = await self._session.execute(revoked_query)
+        revoked = revoked_result.scalar_one()
+
+        # Da het han
+        expired_query = (
+            select(func.count(model.id)).where(
+                and_(model.tenant_id == tenant_id, model.status == "expired")
+            )
+        )
+        expired_result = await self._session.execute(expired_query)
+        expired = expired_result.scalar_one()
+
+        # Cho lam moi
+        renewal_query = (
+            select(func.count(model.id)).where(
+                and_(model.tenant_id == tenant_id, model.status == "pending_renewal")
+            )
+        )
+        renewal_result = await self._session.execute(renewal_query)
+        pending_renewal = renewal_result.scalar_one()
+
+        return {
+            "total": total,
+            "active": active,
+            "revoked": revoked,
+            "expired": expired,
+            "pending_renewal": pending_renewal,
+        }
+
+    # --------------------------------------------------------------
+    # Yêu cầu xóa — Tạo mới
+    # --------------------------------------------------------------
+
+    async def create_erasure_request(
+        self,
+        user_id: str,
+        tenant_id: str,
+        scope: str,
+        reason: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """
+        Tao yeu cau xoa du lieu moi.
+
+        Tham so:
+            user_id: ID nguoi dung yeu cau xoa.
+            tenant_id: ID tenant.
+            scope: Pham vi xoa (all, personal_data, ...).
+            reason: Ly do yeu cau xoa.
+            metadata: Du lieu bo sung.
+
+        Tra ve:
+            Doi tuong ErasureRequestModel moi duoc tao.
+        """
+        request_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        erasure = self._erasure_model()(
+            request_id=request_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            scope=scope,
+            status="pending",
+            requested_at=now,
+            completed_at=None,
+            reason=reason,
+            metadata_json=metadata,
+            created_at=now,
+            updated_at=now,
+        )
+
+        self._session.add(erasure)
+        await self._session.commit()
+        await self._session.refresh(erasure)
+
+        logger.info(
+            "Da tao yeu cau xoa: request_id=%s, user=%s, scope=%s",
+            request_id,
+            user_id,
+            scope,
+        )
+
+        return erasure
+
+    # --------------------------------------------------------------
+    # Yêu cầu xóa — Xử lý (phê duyệt/từ chối)
+    # --------------------------------------------------------------
+
+    async def process_erasure_request(
+        self,
+        request_id: str,
+        action: str,
+        reason: Optional[str] = None,
+    ) -> Any:
+        """
+        Xu ly yeu cau xoa: phe duyet hoac tu choi.
+
+        Neu phe duyet, kich hoat retention manager de thuc hien
+        xoa du lieu theo pham vi da yeu cau.
+
+        Tham so:
+            request_id: ID yeu cau xoa.
+            action: "approve" hoac "reject".
+            reason: Ly do (tuy chon).
+
+        Tra ve:
+            Doi tuong ErasureRequestModel da duoc cap nhat.
+
+        Nem ra:
+            ValueError: Neu yeu cau khong ton tai.
+            ValueError: Neu hanh dong khong hop le.
+        """
+        erasure = await self._get_erasure_request(request_id)
+        if erasure is None:
+            raise ValueError(
+                "Khong tim thay yeu cau xoa voi ID: {}".format(request_id)
+            )
+
+        now = datetime.now(timezone.utc)
+
+        if action == "approve":
+            erasure.status = "processing"
+            erasure.updated_at = now
+            await self._session.commit()
+
+            # Kich hoat retention neu co retention manager
+{% if use_retention %}
+            await self._trigger_retention(erasure)
+{% else %}
+            # Retention manager khong duoc cau hinh — bo qua xoa thuc te
+            logger.warning(
+                "Khong co retention manager — bo qua xoa thuc te: request_id=%s",
+                request_id,
+            )
+{% endif %}
+
+            # Cap nhat trang thai hoan thanh
+            erasure.status = "completed"
+            erasure.completed_at = now
+            erasure.updated_at = now
+
+        elif action == "reject":
+            erasure.status = "rejected"
+            erasure.metadata_json = erasure.metadata_json or {}
+            erasure.metadata_json["rejection_reason"] = reason
+            erasure.updated_at = now
+
+        else:
+            raise ValueError(
+                "action phai la 'approve' hoac 'reject', nhan duoc: {}".format(action)
+            )
+
+        await self._session.commit()
+        await self._session.refresh(erasure)
+
+        # Phat audit event
+{% if use_audit %}
+        await self._audit_log(
+            action="erasure.{}".format(action),
+            user_id=erasure.user_id,
+            tenant_id=erasure.tenant_id,
+            resource_id=request_id,
+            details={
+                "scope": erasure.scope,
+                "reason": reason,
+            },
+        )
+{% endif %}
+
+        logger.info(
+            "Da xu ly yeu cau xoa: request_id=%s, action=%s",
+            request_id,
+            action,
+        )
+
+        return erasure
+
+    # --------------------------------------------------------------
+    # Lấy bản ghi đồng ý theo record_id
+    # --------------------------------------------------------------
+
+    async def _get_consent_record(self, record_id: str) -> Optional[Any]:
+        """Lay ban ghi dong y theo record_id."""
+        query = select(self._consent_model()).where(
+            self._consent_model().record_id == record_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    # --------------------------------------------------------------
+    # Lấy đồng ý mới nhất cho user + purpose
+    # --------------------------------------------------------------
+
+    async def _get_latest_consent(
+        self,
+        user_id: str,
+        tenant_id: str,
+        purpose: str,
+    ) -> Optional[Any]:
+        """Lay ban ghi dong y moi nhat cho user + tenant + purpose."""
+        query = select(self._consent_model()).where(
+            and_(
+                self._consent_model().user_id == user_id,
+                self._consent_model().tenant_id == tenant_id,
+                self._consent_model().purpose == purpose,
+            )
+        ).order_by(self._consent_model().created_at.desc())
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    # --------------------------------------------------------------
+    # Lấy chính sách theo purpose và category
+    # --------------------------------------------------------------
+
+    async def _get_policy_by_purpose_and_category(
+        self,
+        tenant_id: str,
+        purpose: str,
+        category: str,
+    ) -> Optional[Any]:
+        """Lay chinh sach dong y theo tenant, purpose, va category."""
+        query = select(self._policy_model()).where(
+            and_(
+                self._policy_model().tenant_id == tenant_id,
+                self._policy_model().purpose == purpose,
+                self._policy_model().category == category,
+            )
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    # --------------------------------------------------------------
+    # Lấy yêu cầu xóa theo request_id
+    # --------------------------------------------------------------
+
+    async def _get_erasure_request(self, request_id: str) -> Optional[Any]:
+        """Lay yeu cau xoa theo request_id."""
+        query = select(self._erasure_model()).where(
+            self._erasure_model().request_id == request_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    # --------------------------------------------------------------
+    # Kiểm tra RBAC
+    # --------------------------------------------------------------
+
+    async def _check_rbac(
+        self,
+        user_id: str,
+        tenant_id: str,
+    ) -> None:
+        """
+        Kiem tra RBAC truoc khi thao tac.
+
+        Placeholder de tang hop voi CP04 RBAC — trong he thong thuc te,
+        se kiem tra nguoi dung co vai tro hop le de thuc hien thao tac.
+
+        Tham so:
+            user_id: ID nguoi dung can kiem tra.
+            tenant_id: ID tenant.
+
+        Nem ra:
+            ValueError: Neu nguoi dung khong co quyen.
+        """
+        if not user_id or not user_id.strip():
+            raise ValueError("ID nguoi dung khong duoc de trong")
+
+        if not tenant_id or not tenant_id.strip():
+            raise ValueError("ID tenant khong duoc de trong")
+
+    # --------------------------------------------------------------
+    # Phat audit event
+    # --------------------------------------------------------------
+
+{% if use_audit %}
+    async def _audit_log(
+        self,
+        action: str,
+        user_id: str,
+        tenant_id: str,
+        resource_id: str,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Phat audit event neu co audit logger.
+
+        Su dung _audit_logger de ghi nhan cac thao tac quan ly
+        dong y va yeu cau xoa.
+
+        Tham so:
+            action: Thao tac (consent.granted, consent.revoked, ...).
+            user_id: ID nguoi dung thuc hien.
+            tenant_id: ID tenant.
+            resource_id: ID tai nguyen lien quan.
+            details: Chi tiet bo sung.
+        """
+        if self._audit_logger is None:
+            return
+
+        try:
+            event_data = {
+                "action": action,
+                "user_id": user_id,
+                "tenant_id": tenant_id,
+                "resource_id": resource_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            if details:
+                event_data["details"] = details
+
+            await self._audit_logger.log(event_data)
+            logger.debug(
+                "Da ghi audit log: action=%s, resource=%s",
+                action,
+                resource_id,
+            )
+        except Exception as e:
+            logger.error("Loi ghi audit log: %s", str(e))
+
+{% else %}
+    async def _audit_log(
+        self,
+        action: str,
+        user_id: str,
+        tenant_id: str,
+        resource_id: str,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """No-op audit log khi use_audit = False."""
+        pass
+
+{% endif %}
+    # --------------------------------------------------------------
+    # Kich hoat retention
+    # --------------------------------------------------------------
+
+{% if use_retention %}
+    async def _trigger_retention(self, erasure: Any) -> None:
+        """
+        Kich hoat retention manager de xu ly yeu cau xoa du lieu.
+
+        Su dung _retention_manager de thuc hien xoa du lieu theo
+        pham vi da yeu cau.
+
+        Tham so:
+            erasure: DOI tuong ErasureRequestModel.
+        """
+        if self._retention_manager is None:
+            return
+
+        try:
+            await self._retention_manager.erase_data(
+                user_id=erasure.user_id,
+                tenant_id=erasure.tenant_id,
+                scope=erasure.scope,
+            )
+            logger.info(
+                "Da kich hoat retention cho yeu cau xoa: request_id=%s, scope=%s",
+                erasure.request_id,
+                erasure.scope,
+            )
+        except Exception as e:
+            logger.error(
+                "Loi kich hoat retention: %s",
+                str(e),
+            )
+
+{% else %}
+    async def _trigger_retention(self, erasure: Any) -> None:
+        """No-op retention trigger khi use_retention = False."""
+        logger.warning(
+            "Retention manager khong duoc cau hinh — bo qua: request_id=%s",
+            erasure.request_id if hasattr(erasure, 'request_id') else 'unknown',
+        )
+
+{% endif %}
+    # --------------------------------------------------------------
+    # Getter cho mô hình
+    # --------------------------------------------------------------
+
+    def _consent_model(self):
+        """Tra ve model ConsentRecordModel."""
+        from consent_models import ConsentRecordModel
+        return ConsentRecordModel
+
+    def _policy_model(self):
+        """Tra ve model ConsentPolicyModel."""
+        from consent_models import ConsentPolicyModel
+        return ConsentPolicyModel
+
+    def _erasure_model(self):
+        """Tra ve model ErasureRequestModel."""
+        from consent_models import ErasureRequestModel
+        return ErasureRequestModel

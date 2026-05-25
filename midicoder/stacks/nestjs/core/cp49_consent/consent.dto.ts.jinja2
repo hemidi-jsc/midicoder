@@ -1,0 +1,904 @@
+/**
+* Consent DTO — Data Transfer Objects cho Consent & Preference Management.
+*
+* Định nghĩa các DTO với class-validator decorators:
+* - CreateConsentRecordDto, UpdateConsentRecordDto, ConsentRecordResponseDto
+* - CreateConsentPolicyDto, ConsentPolicyResponseDto
+* - CreateCookiePreferenceDto, CookiePreferenceResponseDto
+* - CreateErasureRequestDto, ErasureRequestResponseDto
+* - CreateCommunicationPreferenceDto, CommunicationPreferenceResponseDto
+* - ConsentStatsDto
+*
+* CP49: Consent & Preference Management
+* Tổng số bản ghi mẫu: {{ num_consent_records }}
+* Tổng số chính sách mẫu: {{ num_policies }}
+*/
+
+import {
+IsString,
+IsEnum,
+IsBoolean,
+IsOptional,
+IsObject,
+IsDateString,
+IsNotEmpty,
+IsUUID,
+MaxLength,
+ValidateNested,
+} from "class-validator";
+import { Type } from "class-transformer";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+/**
+* Các trạng thái của bản ghi đồng ý.
+*/
+export const CONSENT_STATUSES = [
+"granted",
+"revoked",
+"expired",
+"pending",
+"pending_renewal",
+];
+
+/**
+* Mục đích thu thập và xử lý dữ liệu.
+*/
+export const CONSENT_PURPOSES = [
+"essential",
+"analytics",
+"marketing",
+"personalization",
+"third_party",
+];
+
+/**
+* Danh mục đồng ý.
+*/
+export const CONSENT_CATEGORIES = [
+"cookie",
+"data_processing",
+"communication",
+"tracking",
+"sharing",
+];
+
+/**
+* Trạng thái yêu cầu xóa.
+*/
+export const ERASURE_STATUSES = [
+"pending",
+"approved",
+"rejected",
+"processing",
+"completed",
+"cancelled",
+];
+
+/**
+* Phạm vi yêu cầu xóa.
+*/
+export const ERASURE_SCOPES = [
+"all",
+"personal_data",
+"consent_records",
+"communication_prefs",
+"activity_log",
+"custom",
+];
+
+// ===========================================================================
+// Consent Record DTOs
+// ===========================================================================
+
+/**
+* DTO cho việc tạo bản ghi đồng ý mới.
+*
+* Trường bắt buộc:
+* - userId: ID người dùng
+* - tenantId: ID tenant
+* - purpose: mục đích đồng ý
+* - category: danh mục đồng ý
+*
+* Trường tùy chọn:
+* - ipAddress: địa chỉ IP
+* - userAgent: trình duyệt
+* - metadata: dữ liệu bổ sung
+*/
+export class CreateConsentRecordDto {
+/**
+* ID người dùng cấp đồng ý.
+*/
+@IsString()
+@IsNotEmpty()
+@MaxLength(64)
+@ApiProperty({
+description: "ID người dùng cấp đồng ý",
+example: "550e8400-e29b-41d4-a716-446655440000",
+})
+userId: string;
+
+/**
+* ID tenant chứa bản ghi.
+*/
+@IsString()
+@IsNotEmpty()
+@MaxLength(64)
+@ApiProperty({
+description: "ID tenant chứa bản ghi",
+example: "tenant-123",
+})
+tenantId: string;
+
+/**
+* Mục đích đồng ý.
+*/
+@IsEnum(CONSENT_PURPOSES)
+@IsNotEmpty()
+@ApiProperty({
+description: "Mục đích đồng ý",
+enum: CONSENT_PURPOSES,
+example: "analytics",
+})
+purpose: string;
+
+/**
+* Danh mục đồng ý.
+*/
+@IsEnum(CONSENT_CATEGORIES)
+@IsNotEmpty()
+@ApiProperty({
+description: "Danh mục đồng ý",
+enum: CONSENT_CATEGORIES,
+example: "cookie",
+})
+category: string;
+
+/**
+* Địa chỉ IP của người dùng.
+*/
+@IsString()
+@IsOptional()
+@MaxLength(64)
+@ApiPropertyOptional({
+description: "Địa chỉ IP của người dùng",
+example: "192.168.1.1",
+})
+ipAddress?: string;
+
+/**
+* User agent của trình duyệt.
+*/
+@IsString()
+@IsOptional()
+@ApiPropertyOptional({
+description: "User agent của trình duyệt",
+example: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+})
+userAgent?: string;
+
+/**
+* Dữ liệu bổ sung.
+*/
+@IsObject()
+@IsOptional()
+@ApiPropertyOptional({
+description: "Dữ liệu bổ sung dạng JSON",
+example: { policy_version: "1.0", banner_type: "cookie" },
+})
+metadata?: Record<string, any>;
+    }
+
+    /**
+    * DTO cho việc cập nhật bản ghi đồng ý.
+    *
+    * Trường tùy chọn:
+    * - status: trạng thái mới
+    * - metadata: dữ liệu bổ sung
+    */
+    export class UpdateConsentRecordDto {
+    /**
+    * Trạng thái mới của bản ghi đồng ý.
+    */
+    @IsEnum(CONSENT_STATUSES)
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "Trạng thái mới của bản ghi đồng ý",
+    enum: CONSENT_STATUSES,
+    example: "revoked",
+    })
+    status?: string;
+
+    /**
+    * Dữ liệu bổ sung.
+    */
+    @IsObject()
+    @IsOptional()
+    @ApiPropertyOptional({
+    description: "Dữ liệu bổ sung dạng JSON",
+    example: { reason: "user_request" },
+    })
+    metadata?: Record<string, any>;
+        }
+
+        /**
+        * DTO trả về thông tin bản ghi đồng ý.
+        */
+        export class ConsentRecordResponseDto {
+        @ApiProperty({ description: "Định danh bản ghi" })
+        recordId: string;
+
+        @ApiProperty({ description: "ID người dùng" })
+        userId: string;
+
+        @ApiProperty({ description: "ID tenant" })
+        tenantId: string;
+
+        @ApiProperty({ description: "Mục đích đồng ý", enum: CONSENT_PURPOSES })
+        purpose: string;
+
+        @ApiProperty({ description: "Danh mục đồng ý", enum: CONSENT_CATEGORIES })
+        category: string;
+
+        @ApiProperty({ description: "Trạng thái", enum: CONSENT_STATUSES })
+        status: string;
+
+        @ApiPropertyOptional({ description: "Thời điểm được cấp" })
+        grantedAt: Date | null;
+
+        @ApiPropertyOptional({ description: "Thời điểm bị thu hồi" })
+        revokedAt: Date | null;
+
+        @ApiPropertyOptional({ description: "Địa chỉ IP" })
+        ipAddress: string | null;
+
+        @ApiPropertyOptional({ description: "User agent" })
+        userAgent: string | null;
+
+        @ApiPropertyOptional({ description: "Dữ liệu bổ sung" })
+        metadata: Record<string, any>;
+
+            @ApiProperty({ description: "Thời điểm tạo" })
+            createdAt: Date;
+
+            @ApiProperty({ description: "Thời điểm cập nhật" })
+            updatedAt: Date;
+            }
+
+            // ===========================================================================
+            // Consent Policy DTOs
+            // ===========================================================================
+
+            /**
+            * DTO cho việc tạo chính sách đồng ý mới.
+            *
+            * Trường bắt buộc:
+            * - title: tiêu đề chính sách
+            * - purpose: mục đích
+            * - category: danh mục
+            * - tenantId: ID tenant
+            *
+            * Trường tùy chọn:
+            * - description: mô tả
+            * - version: phiên bản
+            * - expirationDays: số ngày hết hạn
+            * - requiresExplicitOptIn: yêu cầu đồng ý rõ ràng
+            * - metadata: dữ liệu bổ sung
+            */
+            export class CreateConsentPolicyDto {
+            /**
+            * Tiêu đề chính sách.
+            */
+            @IsString()
+            @IsNotEmpty()
+            @MaxLength(255)
+            @ApiProperty({
+            description: "Tiêu đề chính sách",
+            example: "Chính sách cookie",
+            })
+            title: string;
+
+            /**
+            * Mô tả chi tiết chính sách.
+            */
+            @IsString()
+            @IsOptional()
+            @ApiPropertyOptional({
+            description: "Mô tả chi tiết chính sách",
+            example: "Chính sách sử dụng cookie trên website",
+            })
+            description?: string;
+
+            /**
+            * Phiên bản chính sách.
+            */
+            @IsString()
+            @IsOptional()
+            @MaxLength(16)
+            @ApiPropertyOptional({
+            description: "Phiên bản chính sách",
+            example: "1.0",
+            })
+            version?: string;
+
+            /**
+            * Mục đích của chính sách.
+            */
+            @IsEnum(CONSENT_PURPOSES)
+            @IsNotEmpty()
+            @ApiProperty({
+            description: "Mục đích của chính sách",
+            enum: CONSENT_PURPOSES,
+            example: "analytics",
+            })
+            purpose: string;
+
+            /**
+            * Danh mục của chính sách.
+            */
+            @IsEnum(CONSENT_CATEGORIES)
+            @IsNotEmpty()
+            @ApiProperty({
+            description: "Danh mục của chính sách",
+            enum: CONSENT_CATEGORIES,
+            example: "cookie",
+            })
+            category: string;
+
+            /**
+            * ID tenant áp dụng chính sách.
+            */
+            @IsString()
+            @IsNotEmpty()
+            @MaxLength(64)
+            @ApiProperty({
+            description: "ID tenant áp dụng chính sách",
+            example: "tenant-123",
+            })
+            tenantId: string;
+
+            /**
+            * Số ngày hết hạn của đồng ý.
+            */
+            @IsOptional()
+            @ApiPropertyOptional({
+            description: "Số ngày hết hạn của đồng ý (0 = không giới hạn)",
+            example: 365,
+            })
+            expirationDays?: number;
+
+            /**
+            * Yêu cầu đồng ý rõ ràng (opt-in).
+            */
+            @IsBoolean()
+            @IsOptional()
+            @ApiPropertyOptional({
+            description: "Có yêu cầu đồng ý rõ ràng không",
+            example: true,
+            })
+            requiresExplicitOptIn?: boolean;
+
+            /**
+            * Dữ liệu bổ sung.
+            */
+            @IsObject()
+            @IsOptional()
+            @ApiPropertyOptional({
+            description: "Dữ liệu bổ sung dạng JSON",
+            example: { gdpr_compliant: true },
+            })
+            metadata?: Record<string, any>;
+                }
+
+                /**
+                * DTO trả về thông tin chính sách đồng ý.
+                */
+                export class ConsentPolicyResponseDto {
+                @ApiProperty({ description: "Định danh chính sách" })
+                policyId: string;
+
+                @ApiProperty({ description: "Tiêu đề chính sách" })
+                title: string;
+
+                @ApiProperty({ description: "Mô tả chính sách" })
+                description: string;
+
+                @ApiProperty({ description: "Phiên bản chính sách" })
+                version: string;
+
+                @ApiProperty({ description: "Mục đích", enum: CONSENT_PURPOSES })
+                purpose: string;
+
+                @ApiProperty({ description: "Danh mục", enum: CONSENT_CATEGORIES })
+                category: string;
+
+                @ApiProperty({ description: "ID tenant" })
+                tenantId: string;
+
+                @ApiProperty({ description: "Có đang hoạt động không" })
+                isActive: boolean;
+
+                @ApiProperty({ description: "Số ngày hết hạn" })
+                expirationDays: number;
+
+                @ApiProperty({ description: "Yêu cầu đồng ý rõ ràng" })
+                requiresExplicitOptIn: boolean;
+
+                @ApiPropertyOptional({ description: "Dữ liệu bổ sung" })
+                metadata: Record<string, any>;
+
+                    @ApiProperty({ description: "Thời điểm tạo" })
+                    createdAt: Date;
+
+                    @ApiProperty({ description: "Thời điểm cập nhật" })
+                    updatedAt: Date;
+                    }
+
+                    // ===========================================================================
+                    // Cookie Preference DTOs
+                    // ===========================================================================
+
+                    /**
+                    * DTO cho việc tạo/cập nhật tùy chọn cookie.
+                    *
+                    * Trường bắt buộc:
+                    * - userId: ID người dùng
+                    * - tenantId: ID tenant
+                    *
+                    * Trường tùy chọn:
+                    * - necessaryCookies: cookie thiết yếu (mặc định true)
+                    * - analyticsCookies: cookie phân tích
+                    * - marketingCookies: cookie tiếp thị
+                    * - personalizationCookies: cookie cá nhân hóa
+                    * - thirdPartyCookies: cookie bên thứ ba
+                    */
+                    export class CreateCookiePreferenceDto {
+                    /**
+                    * ID người dùng.
+                    */
+                    @IsString()
+                    @IsNotEmpty()
+                    @MaxLength(64)
+                    @ApiProperty({
+                    description: "ID người dùng",
+                    example: "550e8400-e29b-41d4-a716-446655440000",
+                    })
+                    userId: string;
+
+                    /**
+                    * ID tenant.
+                    */
+                    @IsString()
+                    @IsNotEmpty()
+                    @MaxLength(64)
+                    @ApiProperty({
+                    description: "ID tenant",
+                    example: "tenant-123",
+                    })
+                    tenantId: string;
+
+                    /**
+                    * Cho phép cookie thiết yếu.
+                    */
+                    @IsBoolean()
+                    @IsOptional()
+                    @ApiPropertyOptional({
+                    description: "Cho phép cookie thiết yếu (mặc định true)",
+                    example: true,
+                    })
+                    necessaryCookies?: boolean;
+
+                    /**
+                    * Cho phép cookie phân tích.
+                    */
+                    @IsBoolean()
+                    @IsOptional()
+                    @ApiPropertyOptional({
+                    description: "Cho phép cookie phân tích",
+                    example: false,
+                    })
+                    analyticsCookies?: boolean;
+
+                    /**
+                    * Cho phép cookie tiếp thị.
+                    */
+                    @IsBoolean()
+                    @IsOptional()
+                    @ApiPropertyOptional({
+                    description: "Cho phép cookie tiếp thị",
+                    example: false,
+                    })
+                    marketingCookies?: boolean;
+
+                    /**
+                    * Cho phép cookie cá nhân hóa.
+                    */
+                    @IsBoolean()
+                    @IsOptional()
+                    @ApiPropertyOptional({
+                    description: "Cho phép cookie cá nhân hóa",
+                    example: false,
+                    })
+                    personalizationCookies?: boolean;
+
+                    /**
+                    * Cho phép cookie bên thứ ba.
+                    */
+                    @IsBoolean()
+                    @IsOptional()
+                    @ApiPropertyOptional({
+                    description: "Cho phép cookie bên thứ ba",
+                    example: false,
+                    })
+                    thirdPartyCookies?: boolean;
+
+                    /**
+                    * Dữ liệu bổ sung.
+                    */
+                    @IsObject()
+                    @IsOptional()
+                    @ApiPropertyOptional({
+                    description: "Dữ liệu bổ sung dạng JSON",
+                    example: { last_banner_shown: "2026-05-01" },
+                    })
+                    metadata?: Record<string, any>;
+                        }
+
+                        /**
+                        * DTO trả về thông tin tùy chọn cookie.
+                        */
+                        export class CookiePreferenceResponseDto {
+                        @ApiProperty({ description: "Định danh tùy chọn" })
+                        preferenceId: string;
+
+                        @ApiProperty({ description: "ID người dùng" })
+                        userId: string;
+
+                        @ApiProperty({ description: "ID tenant" })
+                        tenantId: string;
+
+                        @ApiProperty({ description: "Cookie thiết yếu" })
+                        necessaryCookies: boolean;
+
+                        @ApiProperty({ description: "Cookie phân tích" })
+                        analyticsCookies: boolean;
+
+                        @ApiProperty({ description: "Cookie tiếp thị" })
+                        marketingCookies: boolean;
+
+                        @ApiProperty({ description: "Cookie cá nhân hóa" })
+                        personalizationCookies: boolean;
+
+                        @ApiProperty({ description: "Cookie bên thứ ba" })
+                        thirdPartyCookies: boolean;
+
+                        @ApiPropertyOptional({ description: "Dữ liệu bổ sung" })
+                        metadata: Record<string, any>;
+
+                            @ApiProperty({ description: "Thời điểm tạo" })
+                            createdAt: Date;
+
+                            @ApiProperty({ description: "Thời điểm cập nhật" })
+                            updatedAt: Date;
+                            }
+
+                            // ===========================================================================
+                            // Erasure Request DTOs
+                            // ===========================================================================
+
+                            /**
+                            * DTO cho việc tạo yêu cầu xóa dữ liệu mới.
+                            *
+                            * Trường bắt buộc:
+                            * - userId: ID người dùng gửi yêu cầu
+                            * - tenantId: ID tenant
+                            * - scope: phạm vi xóa
+                            *
+                            * Trường tùy chọn:
+                            * - reason: lý do xóa
+                            * - metadata: dữ liệu bổ sung
+                            */
+                            export class CreateErasureRequestDto {
+                            /**
+                            * ID người dùng gửi yêu cầu xóa.
+                            */
+                            @IsString()
+                            @IsNotEmpty()
+                            @MaxLength(64)
+                            @ApiProperty({
+                            description: "ID người dùng gửi yêu cầu xóa",
+                            example: "550e8400-e29b-41d4-a716-446655440000",
+                            })
+                            userId: string;
+
+                            /**
+                            * ID tenant.
+                            */
+                            @IsString()
+                            @IsNotEmpty()
+                            @MaxLength(64)
+                            @ApiProperty({
+                            description: "ID tenant",
+                            example: "tenant-123",
+                            })
+                            tenantId: string;
+
+                            /**
+                            * Phạm vi xóa dữ liệu.
+                            */
+                            @IsEnum(ERASURE_SCOPES)
+                            @IsNotEmpty()
+                            @ApiProperty({
+                            description: "Phạm vi xóa dữ liệu",
+                            enum: ERASURE_SCOPES,
+                            example: "all",
+                            })
+                            scope: string;
+
+                            /**
+                            * Lý do yêu cầu xóa.
+                            */
+                            @IsString()
+                            @IsOptional()
+                            @ApiPropertyOptional({
+                            description: "Lý do yêu cầu xóa",
+                            example: "Yêu cầu xóa theo GDPR Article 17",
+                            })
+                            reason?: string;
+
+                            /**
+                            * Dữ liệu bổ sung.
+                            */
+                            @IsObject()
+                            @IsOptional()
+                            @ApiPropertyOptional({
+                            description: "Dữ liệu bổ sung dạng JSON",
+                            example: { data_types: ["email", "phone"] },
+                            })
+                            metadata?: Record<string, any>;
+                                }
+
+                                /**
+                                * DTO trả về thông tin yêu cầu xóa.
+                                */
+                                export class ErasureRequestResponseDto {
+                                @ApiProperty({ description: "Định danh yêu cầu" })
+                                requestId: string;
+
+                                @ApiProperty({ description: "ID người dùng" })
+                                userId: string;
+
+                                @ApiProperty({ description: "ID tenant" })
+                                tenantId: string;
+
+                                @ApiProperty({ description: "Phạm vi xóa", enum: ERASURE_SCOPES })
+                                scope: string;
+
+                                @ApiProperty({ description: "Trạng thái", enum: ERASURE_STATUSES })
+                                status: string;
+
+                                @ApiProperty({ description: "Lý do" })
+                                reason: string;
+
+                                @ApiPropertyOptional({ description: "ID người phê duyệt" })
+                                approvedBy: string | null;
+
+                                @ApiPropertyOptional({ description: "Thời điểm phê duyệt" })
+                                approvedAt: Date | null;
+
+                                @ApiPropertyOptional({ description: "Thời điểm hoàn tất" })
+                                completedAt: Date | null;
+
+                                @ApiPropertyOptional({ description: "Dữ liệu bổ sung" })
+                                metadata: Record<string, any>;
+
+                                    @ApiProperty({ description: "Thời điểm tạo" })
+                                    createdAt: Date;
+
+                                    @ApiProperty({ description: "Thời điểm cập nhật" })
+                                    updatedAt: Date;
+                                    }
+
+                                    // ===========================================================================
+                                    // Communication Preference DTOs
+                                    // ===========================================================================
+
+                                    /**
+                                    * DTO cho việc tạo/cập nhật tùy chọn liên lạc.
+                                    *
+                                    * Trường bắt buộc:
+                                    * - userId: ID người dùng
+                                    * - tenantId: ID tenant
+                                    *
+                                    * Trường tùy chọn:
+                                    * - emailOptIn: đồng ý nhận email
+                                    * - smsOptIn: đồng ý nhận SMS
+                                    * - pushOptIn: đồng ý nhận push notification
+                                    * - newsletterOptIn: đồng ý nhận tin tức
+                                    * - marketingOptIn: đồng ý nhận thông báo tiếp thị
+                                    * - transactionalOptIn: đồng ý nhận thông báo giao dịch
+                                    */
+                                    export class CreateCommunicationPreferenceDto {
+                                    /**
+                                    * ID người dùng.
+                                    */
+                                    @IsString()
+                                    @IsNotEmpty()
+                                    @MaxLength(64)
+                                    @ApiProperty({
+                                    description: "ID người dùng",
+                                    example: "550e8400-e29b-41d4-a716-446655440000",
+                                    })
+                                    userId: string;
+
+                                    /**
+                                    * ID tenant.
+                                    */
+                                    @IsString()
+                                    @IsNotEmpty()
+                                    @MaxLength(64)
+                                    @ApiProperty({
+                                    description: "ID tenant",
+                                    example: "tenant-123",
+                                    })
+                                    tenantId: string;
+
+                                    /**
+                                    * Đồng ý nhận thông báo qua email.
+                                    */
+                                    @IsBoolean()
+                                    @IsOptional()
+                                    @ApiPropertyOptional({
+                                    description: "Đồng ý nhận thông báo qua email",
+                                    example: true,
+                                    })
+                                    emailOptIn?: boolean;
+
+                                    /**
+                                    * Đồng ý nhận thông báo qua SMS.
+                                    */
+                                    @IsBoolean()
+                                    @IsOptional()
+                                    @ApiPropertyOptional({
+                                    description: "Đồng ý nhận thông báo qua SMS",
+                                    example: false,
+                                    })
+                                    smsOptIn?: boolean;
+
+                                    /**
+                                    * Đồng ý nhận thông báo qua push notification.
+                                    */
+                                    @IsBoolean()
+                                    @IsOptional()
+                                    @ApiPropertyOptional({
+                                    description: "Đồng ý nhận thông báo qua push notification",
+                                    example: true,
+                                    })
+                                    pushOptIn?: boolean;
+
+                                    /**
+                                    * Đồng ý nhận tin tức/bản tin.
+                                    */
+                                    @IsBoolean()
+                                    @IsOptional()
+                                    @ApiPropertyOptional({
+                                    description: "Đồng ý nhận tin tức/bản tin",
+                                    example: false,
+                                    })
+                                    newsletterOptIn?: boolean;
+
+                                    /**
+                                    * Đồng ý nhận thông báo tiếp thị.
+                                    */
+                                    @IsBoolean()
+                                    @IsOptional()
+                                    @ApiPropertyOptional({
+                                    description: "Đồng ý nhận thông báo tiếp thị",
+                                    example: false,
+                                    })
+                                    marketingOptIn?: boolean;
+
+                                    /**
+                                    * Đồng ý nhận thông báo giao dịch.
+                                    */
+                                    @IsBoolean()
+                                    @IsOptional()
+                                    @ApiPropertyOptional({
+                                    description: "Đồng ý nhận thông báo giao dịch (thiết yếu)",
+                                    example: true,
+                                    })
+                                    transactionalOptIn?: boolean;
+
+                                    /**
+                                    * Dữ liệu bổ sung.
+                                    */
+                                    @IsObject()
+                                    @IsOptional()
+                                    @ApiPropertyOptional({
+                                    description: "Dữ liệu bổ sung dạng JSON",
+                                    example: { frequency: "daily", language: "vi" },
+                                    })
+                                    metadata?: Record<string, any>;
+                                        }
+
+                                        /**
+                                        * DTO trả về thông tin tùy chọn liên lạc.
+                                        */
+                                        export class CommunicationPreferenceResponseDto {
+                                        @ApiProperty({ description: "Định danh tùy chọn" })
+                                        preferenceId: string;
+
+                                        @ApiProperty({ description: "ID người dùng" })
+                                        userId: string;
+
+                                        @ApiProperty({ description: "ID tenant" })
+                                        tenantId: string;
+
+                                        @ApiProperty({ description: "Đồng ý nhận email" })
+                                        emailOptIn: boolean;
+
+                                        @ApiProperty({ description: "Đồng ý nhận SMS" })
+                                        smsOptIn: boolean;
+
+                                        @ApiProperty({ description: "Đồng ý nhận push notification" })
+                                        pushOptIn: boolean;
+
+                                        @ApiProperty({ description: "Đồng ý nhận tin tức" })
+                                        newsletterOptIn: boolean;
+
+                                        @ApiProperty({ description: "Đồng ý nhận thông báo tiếp thị" })
+                                        marketingOptIn: boolean;
+
+                                        @ApiProperty({ description: "Đồng ý nhận thông báo giao dịch" })
+                                        transactionalOptIn: boolean;
+
+                                        @ApiPropertyOptional({ description: "Dữ liệu bổ sung" })
+                                        metadata: Record<string, any>;
+
+                                            @ApiProperty({ description: "Thời điểm tạo" })
+                                            createdAt: Date;
+
+                                            @ApiProperty({ description: "Thời điểm cập nhật" })
+                                            updatedAt: Date;
+                                            }
+
+                                            //
+                                            ===========================================================================
+                                            // Stats DTO
+                                            //
+                                            ===========================================================================
+
+                                            /**
+                                            * DTO trả về thống kê đồng ý.
+                                            */
+                                            export class ConsentStatsDto {
+                                            @ApiProperty({ description: "Tổng số bản ghi đồng ý" })
+                                            totalRecords: number;
+
+                                            @ApiProperty({ description: "Số bản ghi đang hoạt động" })
+                                            activeCount: number;
+
+                                            @ApiProperty({ description: "Số bản ghi bị thu hồi" })
+                                            revokedCount: number;
+
+                                            @ApiProperty({ description: "Số bản ghi hết hạn" })
+                                            expiredCount: number;
+
+                                            @ApiProperty({ description: "Số bản ghi đang chờ" })
+                                            pendingCount: number;
+
+                                            @ApiProperty({ description: "Thống kê theo mục đích" })
+                                            byPurpose: Record<string, number>;
+
+                                                @ApiProperty({ description: "Thống kê theo danh mục" })
+                                                byCategory: Record<string, number>;
+
+                                                    @ApiProperty({ description: "Tỷ lệ đồng ý (%)" })
+                                                    consentRate: number;
+
+                                                    @ApiProperty({ description: "ID tenant" })
+                                                    tenantId: string;
+                                                    }

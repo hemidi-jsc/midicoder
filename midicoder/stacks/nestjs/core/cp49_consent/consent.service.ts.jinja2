@@ -1,0 +1,722 @@
+/**
+ * ConsentService — dịch vụ quản lý Consent & Preference Management.
+ *
+ * Cung cấp các phương thức chính:
+ * - grantConsent: cấp đồng ý cho người dùng
+ * - revokeConsent: thu hồi đồng ý
+ * - checkConsent: kiểm tra trạng thái đồng ý
+ * - getUserConsents: lấy danh sách đồng ý của người dùng
+ * - getPolicy: lấy chi tiết chính sách
+ * - listPolicies: lấy danh sách chính sách
+ * - createPolicy: tạo chính sách mới
+ * - checkExpiredConsents: kiểm tra đồng ý hết hạn
+ * - getTenantConsentStats: lấy thống kê đồng ý theo tenant
+ * - setCookiePreference: đặt tùy chọn cookie
+ * - getCookiePreference: lấy tùy chọn cookie
+ * - acceptAllCookies: chấp nhận tất cả cookie
+ * - rejectNonNecessaryCookies: từ chối cookie không thiết yếu
+ * - setCommunicationPreference: đặt tùy chọn liên lạc
+ * - getCommunicationPreference: lấy tùy chọn liên lạc
+ *
+ * CP49: Consent & Preference Management
+ * Tổng số bản ghi mẫu: {{ num_consent_records }}
+ * Tổng số chính sách mẫu: {{ num_policies }}
+ */
+
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { v4 as uuidv4 } from "uuid";
+import {
+  ConsentRecordEntity,
+  ConsentPolicyEntity,
+  CookiePreferenceEntity,
+  ErasureRequestEntity,
+  CommunicationPreferenceEntity,
+  ConsentStatus,
+} from "./consent.entity";
+import {
+  CreateConsentRecordDto,
+  UpdateConsentRecordDto,
+  CreateConsentPolicyDto,
+  CreateCookiePreferenceDto,
+  CreateCommunicationPreferenceDto,
+  ConsentStatsDto,
+  CONSENT_PURPOSES,
+  CONSENT_CATEGORIES,
+} from "./consent.dto";
+
+const logger = new Logger("ConsentService");
+
+// ===========================================================================
+// ConsentService
+// ===========================================================================
+
+/**
+ * ConsentService — quản lý đồng ý, chính sách, cookie, và tùy chọn liên lạc.
+ *
+ * Phương thức chính:
+ * - grantConsent: tạo bản ghi đồng ý mới với trạng thái "granted"
+ * - revokeConsent: thu hồi bản ghi đồng ý (chuyển sang "revoked")
+ * - checkConsent: kiểm tra user có đồng ý active cho mục đích cụ thể
+ * - getUserConsents: lấy tất cả đồng ý của user
+ * - getPolicy/listPolicies/createPolicy: CRUD chính sách
+ * - checkExpiredConsents: tìm đồng ý đã quá thời hạn và đánh dấu "expired"
+ * - getTenantConsentStats: tính thống kê đồng ý theo tenant
+ * - Cookie: set/get/acceptAll/rejectNonNecessary
+ * - Communication: set/get preference
+ * - Audit log: ghi nhật ký kiểm toán (tùy chọn)
+ */
+@Injectable()
+export class ConsentService {
+  /**
+   * Constructor.
+   *
+   * @param consentRecordRepository - Repository cho ConsentRecordEntity
+   * @param consentPolicyRepository - Repository cho ConsentPolicyEntity
+   * @param cookiePreferenceRepository - Repository cho CookiePreferenceEntity
+   * @param erasureRequestRepository - Repository cho ErasureRequestEntity
+   * @param communicationPrefRepository - Repository cho CommunicationPreferenceEntity
+   */
+  constructor(
+    @InjectRepository(ConsentRecordEntity)
+    private readonly consentRecordRepository: Repository<ConsentRecordEntity>,
+    @InjectRepository(ConsentPolicyEntity)
+    private readonly consentPolicyRepository: Repository<ConsentPolicyEntity>,
+    @InjectRepository(CookiePreferenceEntity)
+    private readonly cookiePreferenceRepository: Repository<CookiePreferenceEntity>,
+    @InjectRepository(ErasureRequestEntity)
+    private readonly erasureRequestRepository: Repository<ErasureRequestEntity>,
+    @InjectRepository(CommunicationPreferenceEntity)
+    private readonly communicationPrefRepository: Repository<CommunicationPreferenceEntity>,
+  ) {}
+
+  // ========================================================================
+  // Đồng ý — Cấp (Grant)
+  // ========================================================================
+
+  /**
+   * Cấp đồng ý cho người dùng.
+   *
+   * Tạo bản ghi đồng ý mới với trạng thái "granted", kèm theo
+   * thông tin ngữ cảnh (IP, user agent) và metadata.
+   *
+   * Xác thực:
+   * - purpose và category phải hợp lệ
+   * - userId và tenantId không để trống
+   *
+   * @param createDto - CreateConsentRecordDto
+   * @returns ConsentRecordEntity vừa tạo
+   */
+  async grantConsent(createDto: CreateConsentRecordDto): Promise<ConsentRecordEntity> {
+    // Xác thực mục đích và danh mục
+    if (!CONSENT_PURPOSES.includes(createDto.purpose)) {
+      throw new BadRequestException("Mục đích đồng ý không hợp lệ: " + createDto.purpose);
+    }
+    if (!CONSENT_CATEGORIES.includes(createDto.category)) {
+      throw new BadRequestException("Danh mục đồng ý không hợp lệ: " + createDto.category);
+    }
+
+    const recordId = uuidv4();
+    const now = new Date();
+
+    // Tạo bản ghi đồng ý mới
+    const record = this.consentRecordRepository.create({
+      recordId,
+      userId: createDto.userId,
+      tenantId: createDto.tenantId,
+      purpose: createDto.purpose,
+      category: createDto.category,
+      status: ConsentStatus.GRANTED,
+      grantedAt: now,
+      revokedAt: null,
+      ipAddress: createDto.ipAddress || null,
+      userAgent: createDto.userAgent || null,
+      metadata: createDto.metadata || {},
+    });
+
+    const saved = await this.consentRecordRepository.save(record);
+
+    logger.log(
+      "Cấp đồng ý: recordId=" + recordId + ", userId=" + createDto.userId
+      + ", purpose=" + createDto.purpose + ", category=" + createDto.category,
+    );
+
+{% if use_audit %}
+    // Ghi nhật ký kiểm toán — cấp đồng ý
+    await this.logAuditEvent(
+      createDto.userId,
+      createDto.tenantId,
+      "consent_granted",
+      { recordId, purpose: createDto.purpose, category: createDto.category },
+    );
+{% endif %}
+
+    return saved;
+  }
+
+  // ========================================================================
+  // Đồng ý — Thu hồi (Revoke)
+  // ========================================================================
+
+  /**
+   * Thu hồi đồng ý của người dùng.
+   *
+   * Tìm bản ghi đồng ý theo recordId, cập nhật trạng thái sang "revoked"
+   * và ghi nhận thời điểm thu hồi.
+   *
+   * Xác thực:
+   * - recordId phải tồn tại
+   * - bản ghi chưa bị thu hồi
+   *
+   * @param recordId - ID bản ghi đồng ý
+   * @returns ConsentRecordEntity đã cập nhật
+   */
+  async revokeConsent(recordId: string): Promise<ConsentRecordEntity> {
+    // Tìm bản ghi đồng ý
+    const record = await this.consentRecordRepository.findOne({
+      where: { recordId },
+    });
+
+    if (!record) {
+      throw new NotFoundException("Không tìm thấy bản ghi đồng ý: " + recordId);
+    }
+
+    // Không thể thu hồi đồng ý đã bị thu hồi
+    if (record.status === ConsentStatus.REVOKED) {
+      throw new BadRequestException("Đồng ý đã bị thu hồi: " + recordId);
+    }
+
+    // Cập nhật trạng thái
+    record.status = ConsentStatus.REVOKED;
+    record.revokedAt = new Date();
+
+    const saved = await this.consentRecordRepository.save(record);
+
+    logger.log(
+      "Thu hồi đồng ý: recordId=" + recordId + ", userId=" + record.userId,
+    );
+
+{% if use_audit %}
+    // Ghi nhật ký kiểm toán — thu hồi đồng ý
+    await this.logAuditEvent(
+      record.userId,
+      record.tenantId,
+      "consent_revoked",
+      { recordId, revokedAt: record.revokedAt },
+    );
+{% endif %}
+
+    return saved;
+  }
+
+  // ========================================================================
+  // Đồng ý — Kiểm tra (Check)
+  // ========================================================================
+
+  /**
+   * Kiểm tra người dùng có đồng ý hoạt động cho mục đích cụ thể.
+   *
+   * Tìm bản ghi đồng ý mới nhất cho user và purpose,
+   * trả về true nếu trạng thái là "granted" và chưa hết hạn.
+   *
+   * @param userId - ID người dùng
+   * @param purpose - Mục đích cần kiểm tra
+   * @param category - Danh mục (tùy chọn)
+   * @returns True nếu có đồng ý hoạt động
+   */
+  async checkConsent(
+    userId: string,
+    purpose: string,
+    category?: string,
+  ): Promise<boolean> {
+    const where: any = { userId, purpose, status: ConsentStatus.GRANTED };
+
+    if (category) {
+      where.category = category;
+    }
+
+    const record = await this.consentRecordRepository.findOne({
+      where,
+      order: { createdAt: "DESC" },
+    });
+
+    if (!record) {
+      return false;
+    }
+
+    // Kiểm tra hết hạn từ metadata
+    if (record.metadata && record.metadata.expirationDate) {
+      const expirationDate = new Date(record.metadata.expirationDate);
+      if (expirationDate < new Date()) {
+        // Đánh dấu hết hạn
+        record.status = ConsentStatus.EXPIRED;
+        await this.consentRecordRepository.save(record);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Lấy danh sách tất cả đồng ý của người dùng.
+   *
+   * Sắp xếp theo created_at giảm dần (mới nhất trước).
+   *
+   * @param userId - ID người dùng
+   * @returns List ConsentRecordEntity
+   */
+  async getUserConsents(userId: string): Promise<ConsentRecordEntity[]> {
+    return this.consentRecordRepository.find({
+      where: { userId },
+      order: { createdAt: "DESC" },
+    });
+  }
+
+  // ========================================================================
+  // Chính sách (Policy)
+  // ========================================================================
+
+  /**
+   * Lấy chi tiết chính sách đồng ý theo ID.
+   *
+   * @param policyId - ID chính sách
+   * @returns ConsentPolicyEntity hoặc null
+   */
+  async getPolicy(policyId: string): Promise<ConsentPolicyEntity | null> {
+    return this.consentPolicyRepository.findOne({
+      where: { policyId },
+    });
+  }
+
+  /**
+   * Lấy danh sách chính sách đồng ý.
+   *
+   * Hỗ trợ lọc theo tenantId, purpose, và trạng thái hoạt động.
+   *
+   * @param tenantId - ID tenant (tùy chọn)
+   * @param isActive - Chỉ lấy chính sách đang hoạt động (tùy chọn)
+   * @returns List ConsentPolicyEntity
+   */
+  async listPolicies(
+    tenantId?: string,
+    isActive?: boolean,
+  ): Promise<ConsentPolicyEntity[]> {
+    const where: any = {};
+
+    if (tenantId) {
+      where.tenantId = tenantId;
+    }
+    if (isActive !== undefined) {
+      where.isActive = isActive;
+    }
+
+    return this.consentPolicyRepository.find({
+      where,
+      order: { createdAt: "DESC" },
+    });
+  }
+
+  /**
+   * Tạo chính sách đồng ý mới.
+   *
+   * Tự động sinh policyId dạng UUID.
+   *
+   * @param createDto - CreateConsentPolicyDto
+   * @returns ConsentPolicyEntity vừa tạo
+   */
+  async createPolicy(createDto: CreateConsentPolicyDto): Promise<ConsentPolicyEntity> {
+    const policyId = uuidv4();
+
+    const policy = this.consentPolicyRepository.create({
+      policyId,
+      title: createDto.title,
+      description: createDto.description || "",
+      version: createDto.version || "1.0",
+      purpose: createDto.purpose,
+      category: createDto.category,
+      tenantId: createDto.tenantId,
+      isActive: true,
+      expirationDays: createDto.expirationDays ?? 365,
+      requiresExplicitOptIn: createDto.requiresExplicitOptIn ?? true,
+      metadata: createDto.metadata || {},
+    });
+
+    const saved = await this.consentPolicyRepository.save(policy);
+
+    logger.log(
+      "Tạo chính sách mới: policyId=" + policyId + ", purpose=" + createDto.purpose
+      + ", tenantId=" + createDto.tenantId,
+    );
+
+    return saved;
+  }
+
+  // ========================================================================
+  // Kiểm tra hết hạn
+  // ========================================================================
+
+  /**
+   * Kiểm tra và đánh dấu các đồng ý đã hết hạn.
+   *
+   * Duyệt qua tất cả bản ghi đang "granted", kiểm tra thời hạn
+   * từ metadata.expirationDate hoặc từ chính sách liên quan.
+   * Đánh dấu sang "expired" nếu đã quá thời hạn.
+   *
+   * @returns Số lượng bản ghi đã được đánh dấu hết hạn
+   */
+  async checkExpiredConsents(): Promise<number> {
+    const now = new Date();
+    const grantedRecords = await this.consentRecordRepository.find({
+      where: { status: ConsentStatus.GRANTED },
+    });
+
+    let expiredCount = 0;
+
+    for (const record of grantedRecords) {
+      let isExpired = false;
+
+      // Kiểm tra từ metadata.expirationDate
+      if (record.metadata && record.metadata.expirationDate) {
+        const expirationDate = new Date(record.metadata.expirationDate);
+        if (expirationDate < now) {
+          isExpired = true;
+        }
+      }
+
+      // Kiểm tra từ chính sách liên quan
+      if (!isExpired) {
+        const policy = await this.consentPolicyRepository.findOne({
+          where: { purpose: record.purpose, category: record.category, tenantId: record.tenantId },
+        });
+
+        if (policy && policy.expirationDays > 0) {
+          const expirationDate = new Date(record.grantedAt);
+          expirationDate.setDate(expirationDate.getDate() + policy.expirationDays);
+          if (expirationDate < now) {
+            isExpired = true;
+          }
+        }
+      }
+
+      // Đánh dấu hết hạn
+      if (isExpired) {
+        record.status = ConsentStatus.EXPIRED;
+        await this.consentRecordRepository.save(record);
+        expiredCount++;
+      }
+    }
+
+    logger.log(
+      "Kiểm tra đồng ý hết hạn: " + expiredCount + " bản ghi đã hết hạn",
+    );
+
+    return expiredCount;
+  }
+
+  // ========================================================================
+  // Thống kê
+  // ========================================================================
+
+  /**
+   * Lấy thống kê đồng ý theo tenant.
+   *
+   * Tính toán tổng số bản ghi, số lượng theo từng trạng thái,
+   * theo từng mục đích, theo từng danh mục, và tỷ lệ đồng ý.
+   *
+   * @param tenantId - ID tenant
+   * @returns ConsentStatsDto
+   */
+  async getTenantConsentStats(tenantId: string): Promise<ConsentStatsDto> {
+    const allRecords = await this.consentRecordRepository.find({
+      where: { tenantId },
+    });
+
+    const totalRecords = allRecords.length;
+    const activeCount = allRecords.filter((r) => r.status === ConsentStatus.GRANTED).length;
+    const revokedCount = allRecords.filter((r) => r.status === ConsentStatus.REVOKED).length;
+    const expiredCount = allRecords.filter((r) => r.status === ConsentStatus.EXPIRED).length;
+    const pendingCount = allRecords.filter((r) => r.status === ConsentStatus.PENDING).length;
+
+    // Thống kê theo mục đích
+    const byPurpose: Record<string, number> = {};
+    for (const record of allRecords) {
+      byPurpose[record.purpose] = (byPurpose[record.purpose] || 0) + 1;
+    }
+
+    // Thống kê theo danh mục
+    const byCategory: Record<string, number> = {};
+    for (const record of allRecords) {
+      byCategory[record.category] = (byCategory[record.category] || 0) + 1;
+    }
+
+    // Tỷ lệ đồng ý = (active / total) * 100
+    const consentRate = totalRecords > 0 ? (activeCount / totalRecords) * 100 : 0;
+
+    return {
+      totalRecords,
+      activeCount,
+      revokedCount,
+      expiredCount,
+      pendingCount,
+      byPurpose,
+      byCategory,
+      consentRate,
+      tenantId,
+    };
+  }
+
+  // ========================================================================
+  // Cookie Preferences
+  // ========================================================================
+
+  /**
+   * Đặt tùy chọn cookie cho người dùng.
+   *
+   * Nếu user đã có bản ghi tùy chọn thì cập nhật, ngược lại tạo mới.
+   *
+   * @param createDto - CreateCookiePreferenceDto
+   * @returns CookiePreferenceEntity
+   */
+  async setCookiePreference(
+    createDto: CreateCookiePreferenceDto,
+  ): Promise<CookiePreferenceEntity> {
+    // Tìm bản ghi tùy chọn hiện có
+    let preference = await this.cookiePreferenceRepository.findOne({
+      where: { userId: createDto.userId, tenantId: createDto.tenantId },
+    });
+
+    if (preference) {
+      // Cập nhật bản ghi hiện có
+      preference.necessaryCookies = createDto.necessaryCookies ?? true;
+      preference.analyticsCookies = createDto.analyticsCookies ?? false;
+      preference.marketingCookies = createDto.marketingCookies ?? false;
+      preference.personalizationCookies = createDto.personalizationCookies ?? false;
+      preference.thirdPartyCookies = createDto.thirdPartyCookies ?? false;
+      if (createDto.metadata) {
+        preference.metadata = createDto.metadata;
+      }
+    } else {
+      // Tạo bản ghi mới
+      const preferenceId = uuidv4();
+      preference = this.cookiePreferenceRepository.create({
+        preferenceId,
+        userId: createDto.userId,
+        tenantId: createDto.tenantId,
+        necessaryCookies: true, // cookie thiết yếu luôn bật
+        analyticsCookies: createDto.analyticsCookies ?? false,
+        marketingCookies: createDto.marketingCookies ?? false,
+        personalizationCookies: createDto.personalizationCookies ?? false,
+        thirdPartyCookies: createDto.thirdPartyCookies ?? false,
+        metadata: createDto.metadata || {},
+      });
+    }
+
+    const saved = await this.cookiePreferenceRepository.save(preference);
+
+    logger.log(
+      "Đặt tùy chọn cookie: userId=" + createDto.userId
+      + ", analytics=" + saved.analyticsCookies
+      + ", marketing=" + saved.marketingCookies,
+    );
+
+{% if use_audit %}
+    // Ghi nhật ký kiểm toán — thay đổi tùy chọn cookie
+    await this.logAuditEvent(
+      createDto.userId,
+      createDto.tenantId,
+      "cookie_preference_updated",
+      { preferenceId: saved.preferenceId },
+    );
+{% endif %}
+
+    return saved;
+  }
+
+  /**
+   * Lấy tùy chọn cookie của người dùng.
+   *
+   * @param userId - ID người dùng
+   * @param tenantId - ID tenant
+   * @returns CookiePreferenceEntity hoặc null
+   */
+  async getCookiePreference(
+    userId: string,
+    tenantId: string,
+  ): Promise<CookiePreferenceEntity | null> {
+    return this.cookiePreferenceRepository.findOne({
+      where: { userId, tenantId },
+    });
+  }
+
+  /**
+   * Chấp nhận tất cả cookie cho người dùng.
+   *
+   * Thiết lập tất cả các loại cookie thành true.
+   *
+   * @param userId - ID người dùng
+   * @param tenantId - ID tenant
+   * @returns CookiePreferenceEntity đã cập nhật
+   */
+  async acceptAllCookies(
+    userId: string,
+    tenantId: string,
+  ): Promise<CookiePreferenceEntity> {
+    return this.setCookiePreference({
+      userId,
+      tenantId,
+      necessaryCookies: true,
+      analyticsCookies: true,
+      marketingCookies: true,
+      personalizationCookies: true,
+      thirdPartyCookies: true,
+    });
+  }
+
+  /**
+   * Từ chối tất cả cookie không thiết yếu.
+   *
+   * Chỉ giữ necessaryCookies là true, các loại khác chuyển sang false.
+   *
+   * @param userId - ID người dùng
+   * @param tenantId - ID tenant
+   * @returns CookiePreferenceEntity đã cập nhật
+   */
+  async rejectNonNecessaryCookies(
+    userId: string,
+    tenantId: string,
+  ): Promise<CookiePreferenceEntity> {
+    return this.setCookiePreference({
+      userId,
+      tenantId,
+      necessaryCookies: true,
+      analyticsCookies: false,
+      marketingCookies: false,
+      personalizationCookies: false,
+      thirdPartyCookies: false,
+    });
+  }
+
+  // ========================================================================
+  // Communication Preferences
+  // ========================================================================
+
+  /**
+   * Đặt tùy chọn liên lạc cho người dùng.
+   *
+   * Nếu user đã có bản ghi tùy chọn thì cập nhật, ngược lại tạo mới.
+   *
+   * @param createDto - CreateCommunicationPreferenceDto
+   * @returns CommunicationPreferenceEntity
+   */
+  async setCommunicationPreference(
+    createDto: CreateCommunicationPreferenceDto,
+  ): Promise<CommunicationPreferenceEntity> {
+    // Tìm bản ghi tùy chọn hiện có
+    let preference = await this.communicationPrefRepository.findOne({
+      where: { userId: createDto.userId, tenantId: createDto.tenantId },
+    });
+
+    if (preference) {
+      // Cập nhật bản ghi hiện có
+      preference.emailOptIn = createDto.emailOptIn ?? preference.emailOptIn;
+      preference.smsOptIn = createDto.smsOptIn ?? preference.smsOptIn;
+      preference.pushOptIn = createDto.pushOptIn ?? preference.pushOptIn;
+      preference.newsletterOptIn = createDto.newsletterOptIn ?? preference.newsletterOptIn;
+      preference.marketingOptIn = createDto.marketingOptIn ?? preference.marketingOptIn;
+      preference.transactionalOptIn = createDto.transactionalOptIn ?? true;
+      if (createDto.metadata) {
+        preference.metadata = createDto.metadata;
+      }
+    } else {
+      // Tạo bản ghi mới
+      const preferenceId = uuidv4();
+      preference = this.communicationPrefRepository.create({
+        preferenceId,
+        userId: createDto.userId,
+        tenantId: createDto.tenantId,
+        emailOptIn: createDto.emailOptIn ?? false,
+        smsOptIn: createDto.smsOptIn ?? false,
+        pushOptIn: createDto.pushOptIn ?? false,
+        newsletterOptIn: createDto.newsletterOptIn ?? false,
+        marketingOptIn: createDto.marketingOptIn ?? false,
+        transactionalOptIn: true, // thông báo giao dịch luôn bật
+        metadata: createDto.metadata || {},
+      });
+    }
+
+    const saved = await this.communicationPrefRepository.save(preference);
+
+    logger.log(
+      "Đặt tùy chọn liên lạc: userId=" + createDto.userId
+      + ", email=" + saved.emailOptIn + ", sms=" + saved.smsOptIn,
+    );
+
+{% if use_audit %}
+    // Ghi nhật ký kiểm toán — thay đổi tùy chọn liên lạc
+    await this.logAuditEvent(
+      createDto.userId,
+      createDto.tenantId,
+      "communication_preference_updated",
+      { preferenceId: saved.preferenceId },
+    );
+{% endif %}
+
+    return saved;
+  }
+
+  /**
+   * Lấy tùy chọn liên lạc của người dùng.
+   *
+   * @param userId - ID người dùng
+   * @param tenantId - ID tenant
+   * @returns CommunicationPreferenceEntity hoặc null
+   */
+  async getCommunicationPreference(
+    userId: string,
+    tenantId: string,
+  ): Promise<CommunicationPreferenceEntity | null> {
+    return this.communicationPrefRepository.findOne({
+      where: { userId, tenantId },
+    });
+  }
+
+{% if use_audit %}
+  // ========================================================================
+  // Audit Logging
+  // ========================================================================
+
+  /**
+   * Ghi nhật ký kiểm toán cho sự kiện đồng ý.
+   *
+   * Phương thức này được gọi sau mỗi thao tác thay đổi trạng thái
+   * đồng ý, tùy chọn cookie, hay tùy chọn liên lạc.
+   *
+   * @param userId - ID người dùng
+   * @param tenantId - ID tenant
+   * @param eventType - Loại sự kiện (consent_granted, consent_revoked, ...)
+   * @param details - Chi tiết sự kiện
+   */
+  private async logAuditEvent(
+    userId: string,
+    tenantId: string,
+    eventType: string,
+    details: Record<string, any>,
+  ): Promise<void> {
+    // TODO: Tích hợp với hệ thống audit logging
+    // Ví dụ: gọi AuditService hoặc ghi vào bảng audit_log
+    logger.log(
+      "[Audit] userId=" + userId
+      + ", tenantId=" + tenantId
+      + ", event=" + eventType
+      + ", details=" + JSON.stringify(details),
+    );
+  }
+{% endif %}
+}

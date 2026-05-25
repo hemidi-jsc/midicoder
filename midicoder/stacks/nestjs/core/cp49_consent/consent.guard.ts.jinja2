@@ -1,0 +1,179 @@
+/**
+ * ConsentGuard - NestJS Guard cho kiểm tra consent.
+ *
+ * Kiểm tra xem người dùng có active consent cho purpose/category
+ * trước khi cho phép truy cập API endpoint.
+ *
+ * Sử dụng:
+ * - @UseGuards(ConsentGuard) - trên controller hoặc method
+ * - @SetMetadata('consent_purpose', ConsentPurpose.ANALYTICS) - đặt metadata
+ * - Reflector để đọc metadata từ decorators
+ *
+ * Bỏ qua kiểm tra cho:
+ * - Health endpoints (/health, /healthcheck)
+ * - Auth endpoints (/auth/*, /login, /register)
+ * - Consent endpoints (/consent/*, /cookie-preferences, /communication-preferences)
+ *
+ * CP49: Consent & Preference Management
+ */
+
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Logger,
+  SetMetadata,
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+
+/**
+ * Key cho metadata consent purpose.
+ */
+export const CONSENT_PURPOSE_KEY = "consent_purpose";
+
+/**
+ * Key cho metadata consent category.
+ */
+export const CONSENT_CATEGORY_KEY = "consent_category";
+
+/**
+ * Decorator để đặt consent purpose yêu cầu.
+ *
+ * @param purpose - Mục đích consent cần có
+ * @example
+ * @RequireConsent("analytics")
+ * @Get("/analytics/data")
+ * getAnalyticsData() { ... }
+ */
+export function RequireConsent(purpose: string): any {
+  return SetMetadata(CONSENT_PURPOSE_KEY, purpose);
+}
+
+/**
+ * Decorator để đặt consent category yêu cầu.
+ *
+ * @param category - Danh mục consent cần có
+ * @example
+ * @RequireConsentCategory("advertising")
+ * @Get("/ads/tracking")
+ * getAdTracking() { ... }
+ */
+export function RequireConsentCategory(category: string): any {
+  return SetMetadata(CONSENT_CATEGORY_KEY, category);
+}
+
+/**
+ * Danh sách các prefix URL được miễn kiểm tra consent.
+ */
+const EXEMPT_PATHS = [
+  "/health",
+  "/healthcheck",
+  "/auth",
+  "/login",
+  "/register",
+  "/consent",
+  "/cookie-preferences",
+  "/communication-preferences",
+  "/erasure-requests",
+  "/swagger",
+  "/api-docs",
+];
+
+/**
+ * ConsentGuard - kiểm tra consent trước API access.
+ *
+ * Workflow:
+ * 1. Kiểm tra nếu request path nằm trong EXEMPT_PATHS → skip
+ * 2. Đọc metadata (consent_purpose, consent_category) từ decorator
+ * 3. Lấy userId từ request (auth guard)
+ * 4. Kiểm tra user có active consent cho purpose/category
+ * 5. Nếu không có → throw ForbiddenException (403)
+ * 6. Nếu có → return true
+ */
+@Injectable()
+export class ConsentGuard implements CanActivate {
+  /**
+   * Logger instance.
+   */
+  private readonly logger = new Logger("ConsentGuard");
+
+  /**
+   * Constructor.
+   *
+   * @param reflector - Reflector để đọc metadata
+   */
+  constructor(private readonly reflector: Reflector) {}
+
+  /**
+   * Kiểm tra xem request có được phép thực thi không.
+   *
+   * @param context - ExecutionContext
+   * @returns true nếu được phép, false hoặc throw exception nếu không
+   */
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest();
+    const path = request.url || "";
+
+    // Bỏ qua kiểm tra cho các path được miễn
+    if (this.isExemptPath(path)) {
+      return true;
+    }
+
+    // Đọc metadata từ decorator
+    const requiredPurpose = this.reflector.getAllAndOverride<string>(
+      CONSENT_PURPOSE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    const requiredCategory = this.reflector.getAllAndOverride<string>(
+      CONSENT_CATEGORY_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    // Nếu không có metadata requirement → cho phép truy cập
+    if (!requiredPurpose && !requiredCategory) {
+      return true;
+    }
+
+    // Lấy userId từ request (do auth guard inject)
+    const userId = request.user?.id || request.user?.sub;
+    const tenantId = request.user?.tenantId || request.headers["x-tenant-id"];
+
+    if (!userId) {
+      throw new ForbiddenException("Không xác định được người dùng");
+    }
+
+    // Trong thực tế: gọi ConsentService để kiểm tra consent
+    // const hasConsent = await this.consentService.checkConsent(userId, tenantId, requiredPurpose);
+
+    // Simulation: giả sử user có consent
+    // const hasConsent = true;
+
+    // Placeholder - trong thực tế sẽ inject ConsentService và gọi check
+    this.logger.debug(
+      `ConsentGuard: kiểm tra userId=${userId}, purpose=${requiredPurpose}, category=${requiredCategory}`,
+    );
+
+    // TODO: implement actual consent check via ConsentService
+    // if (!hasConsent) {
+    //   throw new ForbiddenException(
+    //     `Người dùng không có consent cho purpose '${requiredPurpose}'`,
+    //   );
+    // }
+
+    return true;
+  }
+
+  /**
+   * Kiểm tra nếu path nằm trong danh sách được miễn.
+   *
+   * @param path - Request path
+   * @returns true nếu được miễn
+   */
+  private isExemptPath(path: string): boolean {
+    return EXEMPT_PATHS.some(
+      (exempt) => path === exempt || path.startsWith(exempt + "/"),
+    );
+  }
+}

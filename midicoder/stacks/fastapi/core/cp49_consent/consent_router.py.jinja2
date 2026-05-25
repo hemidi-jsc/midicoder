@@ -1,0 +1,663 @@
+# ----------------------------------------------------------
+# CP49 Consent & Preference Management — Router FastAPI cho quản lý đồng ý
+# ----------------------------------------------------------
+# Sinh bởi CP49ConsentEmitter
+# Routes: CRUD đồng ý, chính sách, cookie preference, communication preference,
+#         erasure request, thống kê
+# ----------------------------------------------------------
+
+import logging
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+# Định danh router
+router = APIRouter(prefix="/consent", tags=["consent"])
+
+
+# --------------------------------------------------------------
+# Phụ thuộc — injection
+# --------------------------------------------------------------
+
+def get_consent_service(session: AsyncSession = Depends(lambda: None)) -> "ConsentService":
+    """
+    Cung cấp dịch vụ đồng ý cho các route.
+    Đây là điểm phụ thuộc injection cho ConsentService.
+    """
+    from consent_service import ConsentService
+    return ConsentService(session)
+
+
+def get_cookie_banner_service(session: AsyncSession = Depends(lambda: None)) -> "CookieBannerService":
+    """
+    Cung cấp dịch vụ cookie banner cho các route.
+    """
+    from cookie_banner_service import CookieBannerService
+    return CookieBannerService(session)
+
+
+def get_erasure_service(session: AsyncSession = Depends(lambda: None)) -> "ErasureService":
+    """
+    Cung cấp dịch vụ xóa dữ liệu cho các route.
+    """
+    from erasure_service import ErasureService
+    return ErasureService(session)
+
+
+# --------------------------------------------------------------
+# Route: cấp đồng ý
+# --------------------------------------------------------------
+
+@router.post(
+    "/grant",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Cấp đồng ý",
+    description="Tao ban ghi dong y moi cho nguoi dung.",
+)
+async def grant_consent(
+    payload: Dict[str, Any],
+    service: "ConsentService" = Depends(get_consent_service),
+) -> Dict[str, Any]:
+    """
+    Cấp đồng ý cho người dùng.
+
+    Payload cần bao gồm:
+    - user_id: ID người dùng
+    - tenant_id: ID tenant
+    - purpose: Mục đích đồng ý
+    - category: Danh mục đồng ý
+    - ip_address: Địa chỉ IP (tùy chọn)
+    - user_agent: User agent (tùy chọn)
+    - metadata: Dữ liệu bổ sung (tùy chọn)
+    """
+    # Kiểm tra dữ liệu bắt buộc
+    if not payload.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id la bat buoc",
+        )
+    if not payload.get("tenant_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="tenant_id la bat buoc",
+        )
+    if not payload.get("purpose"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="purpose la bat buoc",
+        )
+    if not payload.get("category"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="category la bat buoc",
+        )
+
+    try:
+        record = await service.grant_consent(
+            user_id=payload["user_id"],
+            tenant_id=payload["tenant_id"],
+            purpose=payload["purpose"],
+            category=payload["category"],
+            ip_address=payload.get("ip_address"),
+            user_agent=payload.get("user_agent"),
+            metadata=payload.get("metadata"),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+    return record.__dict__
+
+
+# --------------------------------------------------------------
+# Route: hủy đồng ý
+# --------------------------------------------------------------
+
+@router.post(
+    "/{record_id}/revoke",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Hủy đồng ý",
+    description="Huy dong y cua nguoi dung cho mot ban ghi cu the.",
+)
+async def revoke_consent(
+    record_id: str,
+    payload: Dict[str, Any],
+    service: "ConsentService" = Depends(get_consent_service),
+) -> Dict[str, Any]:
+    """
+    Hủy đồng ý của người dùng.
+
+    Payload cần bao gồm:
+    - user_id: ID người dùng thực hiện hủy
+    - tenant_id: ID tenant
+    """
+    # Kiểm tra dữ liệu bắt buộc
+    if not payload.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id la bat buoc",
+        )
+    if not payload.get("tenant_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="tenant_id la bat buoc",
+        )
+
+    try:
+        record = await service.revoke_consent(
+            record_id=record_id,
+            user_id=payload["user_id"],
+            tenant_id=payload["tenant_id"],
+        )
+    except ValueError as e:
+        error_msg = str(e)
+        if "Khong tim thay" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        elif "bat buoc" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+
+    return record.__dict__
+
+
+# --------------------------------------------------------------
+# Route: danh sách đồng ý của người dùng
+# --------------------------------------------------------------
+
+@router.get(
+    "/user/{user_id}",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Lấy danh sách đồng ý của người dùng",
+    description="Lay tat ca ban ghi dong y cua mot nguoi dung.",
+)
+async def get_user_consents(
+    user_id: str,
+    tenant_id: str = Query(..., description="ID tenant"),
+    service: "ConsentService" = Depends(get_consent_service),
+) -> List[Dict[str, Any]]:
+    """
+    Lấy tất cả bản ghi đồng ý của người dùng theo tenant.
+    """
+    items = await service.get_user_consents(user_id=user_id, tenant_id=tenant_id)
+    return [item.__dict__ for item in items]
+
+
+# --------------------------------------------------------------
+# Route: kiểm tra đồng ý
+# --------------------------------------------------------------
+
+@router.get(
+    "/check",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Kiểm tra đồng ý",
+    description="Kiem tra neu nguoi dung co dong y dang hoat dong cho muc dich.",
+)
+async def check_consent(
+    user_id: str = Query(..., description="ID người dùng"),
+    tenant_id: str = Query(..., description="ID tenant"),
+    purpose: str = Query(..., description="Mục đích đồng ý cần kiểm tra"),
+    service: "ConsentService" = Depends(get_consent_service),
+) -> Dict[str, Any]:
+    """
+    Kiểm tra nếu người dùng có đồng ý đang hoạt động cho mục đích.
+
+    Trả về True nếu có đồng ý 'granted', False nếu không.
+    """
+    has_consent = await service.check_consent(
+        user_id=user_id,
+        tenant_id=tenant_id,
+        purpose=purpose,
+    )
+
+    return {
+        "user_id": user_id,
+        "tenant_id": tenant_id,
+        "purpose": purpose,
+        "has_consent": has_consent,
+    }
+
+
+# --------------------------------------------------------------
+# Route: danh sách chính sách
+# --------------------------------------------------------------
+
+@router.get(
+    "/policies",
+    response_model=List[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Lấy danh sách chính sách",
+    description="Lay tat ca chinh sach dong y cua mot tenant.",
+)
+async def list_policies(
+    tenant_id: str = Query(..., description="ID tenant"),
+    service: "ConsentService" = Depends(get_consent_service),
+) -> List[Dict[str, Any]]:
+    """
+    Lấy tất cả chính sách đồng ý cho tenant.
+    """
+    items = await service.list_policies(tenant_id=tenant_id)
+    return [item.__dict__ for item in items]
+
+
+# --------------------------------------------------------------
+# Route: tạo chính sách mới (admin)
+# --------------------------------------------------------------
+
+@router.post(
+    "/policies",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Tạo chính sách đồng ý",
+    description="Tao chinh sach dong y moi cho tenant (admin).",
+)
+async def create_policy(
+    payload: Dict[str, Any],
+    service: "ConsentService" = Depends(get_consent_service),
+) -> Dict[str, Any]:
+    """
+    Tạo chính sách đồng ý mới cho tenant.
+
+    Payload cần bao gồm:
+    - tenant_id: ID tenant
+    - purpose: Mục đích chính sách
+    - category: Danh mục chính sách
+    - is_mandatory: Có bắt buộc không (tùy chọn)
+    - description: Mô tả (tùy chọn)
+    - expiry_days: Số ngày hết hạn (tùy chọn, mặc định 365)
+    - renewal_reminder_days: Số ngày nhắc làm mới (tùy chọn, mặc định 30)
+    """
+    # Kiểm tra dữ liệu bắt buộc
+    if not payload.get("tenant_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="tenant_id la bat buoc",
+        )
+    if not payload.get("purpose"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="purpose la bat buoc",
+        )
+    if not payload.get("category"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="category la bat buoc",
+        )
+
+    policy = await service.create_policy(
+        tenant_id=payload["tenant_id"],
+        purpose=payload["purpose"],
+        category=payload["category"],
+        is_mandatory=payload.get("is_mandatory", False),
+        description=payload.get("description"),
+        expiry_days=payload.get("expiry_days", 365),
+        renewal_reminder_days=payload.get("renewal_reminder_days", 30),
+    )
+
+    return policy.__dict__
+
+
+# --------------------------------------------------------------
+# Route: cập nhật cookie preference
+# --------------------------------------------------------------
+
+@router.put(
+    "/cookie-preferences",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Cập nhật tùy chọn cookie",
+    description="Cap nhat tuy chon cookie cua nguoi dung.",
+)
+async def update_cookie_preference(
+    payload: Dict[str, Any],
+    service: "CookieBannerService" = Depends(get_cookie_banner_service),
+) -> Dict[str, Any]:
+    """
+    Cập nhật tùy chọn cookie của người dùng.
+
+    Payload cần bao gồm:
+    - user_id: ID người dùng
+    - tenant_id: ID tenant
+    - categories: Danh mục cookie (JSON object với giá trị boolean)
+    """
+    # Kiểm tra dữ liệu bắt buộc
+    if not payload.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id la bat buoc",
+        )
+    if not payload.get("tenant_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="tenant_id la bat buoc",
+        )
+    if not payload.get("categories"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="categories la bat buoc",
+        )
+
+    preference = await service.set_cookie_preference(
+        user_id=payload["user_id"],
+        tenant_id=payload["tenant_id"],
+        categories=payload["categories"],
+    )
+
+    return preference.__dict__
+
+
+# --------------------------------------------------------------
+# Route: lấy cookie preference
+# --------------------------------------------------------------
+
+@router.get(
+    "/cookie-preferences",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Lấy tùy chọn cookie",
+    description="Lay tuy chon cookie cua nguoi dung.",
+)
+async def get_cookie_preference(
+    user_id: str = Query(..., description="ID người dùng"),
+    tenant_id: str = Query(..., description="ID tenant"),
+    service: "CookieBannerService" = Depends(get_cookie_banner_service),
+) -> Dict[str, Any]:
+    """
+    Lấy tùy chọn cookie của người dùng.
+    """
+    preference = await service.get_cookie_preference(
+        user_id=user_id,
+        tenant_id=tenant_id,
+    )
+
+    if preference is None:
+        return {
+            "user_id": user_id,
+            "tenant_id": tenant_id,
+            "categories": {},
+            "message": "Chua co tuy chon cookie",
+        }
+
+    return preference.__dict__
+
+
+# --------------------------------------------------------------
+# Route: cập nhật communication preference
+# --------------------------------------------------------------
+
+@router.put(
+    "/communication-preferences",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Cập nhật tùy chọn liên lạc",
+    description="Cap nhat tuy chon lien lac cua nguoi dung.",
+)
+async def update_communication_preference(
+    payload: Dict[str, Any],
+    service: "ConsentService" = Depends(get_consent_service),
+) -> Dict[str, Any]:
+    """
+    Cập nhật tùy chọn liên lạc của người dùng.
+
+    Payload cần bao gồm:
+    - user_id: ID người dùng
+    - tenant_id: ID tenant
+    - channels: Kênh liên lạc (JSON: {"email": true, "sms": false, ...})
+    - purposes: Mục đích liên lạc (JSON: {"newsletters": true, ...})
+    """
+    # Kiểm tra dữ liệu bắt buộc
+    if not payload.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id la bat buoc",
+        )
+    if not payload.get("tenant_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="tenant_id la bat buoc",
+        )
+    if not payload.get("channels"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="channels la bat buoc",
+        )
+    if not payload.get("purposes"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="purposes la bat buoc",
+        )
+
+    # Lưu vào cookie_banner_service
+    from cookie_banner_service import CookieBannerService
+    banner_service = CookieBannerService(service._session)
+
+    preference = await banner_service.set_communication_preference(
+        user_id=payload["user_id"],
+        tenant_id=payload["tenant_id"],
+        channels=payload["channels"],
+        purposes=payload["purposes"],
+    )
+
+    return preference.__dict__
+
+
+# --------------------------------------------------------------
+# Route: lấy communication preference
+# --------------------------------------------------------------
+
+@router.get(
+    "/communication-preferences",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Lấy tùy chọn liên lạc",
+    description="Lay tuy chon lien lac cua nguoi dung.",
+)
+async def get_communication_preference(
+    user_id: str = Query(..., description="ID người dùng"),
+    tenant_id: str = Query(..., description="ID tenant"),
+    service: "ConsentService" = Depends(get_consent_service),
+) -> Dict[str, Any]:
+    """
+    Lấy tùy chọn liên lạc của người dùng.
+    """
+    from cookie_banner_service import CookieBannerService
+    banner_service = CookieBannerService(service._session)
+
+    preference = await banner_service.get_communication_preference(
+        user_id=user_id,
+        tenant_id=tenant_id,
+    )
+
+    if preference is None:
+        return {
+            "user_id": user_id,
+            "tenant_id": tenant_id,
+            "channels": {},
+            "purposes": {},
+            "message": "Chua co tuy chon lien lac",
+        }
+
+    return preference.__dict__
+
+
+# --------------------------------------------------------------
+# Route: tạo yêu cầu xóa
+# --------------------------------------------------------------
+
+@router.post(
+    "/erasure-requests",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+    summary="Tạo yêu cầu xóa dữ liệu",
+    description="Tao yeu cau xoa du lieu cua nguoi dung (Right to be Forgotten).",
+)
+async def create_erasure_request(
+    payload: Dict[str, Any],
+    service: "ErasureService" = Depends(get_erasure_service),
+) -> Dict[str, Any]:
+    """
+    Tạo yêu cầu xóa dữ liệu mới.
+
+    Payload cần bao gồm:
+    - user_id: ID người dùng
+    - tenant_id: ID tenant
+    - scope: Phạm vi xóa (all, personal_data, ...)
+    - reason: Lý do (tùy chọn)
+    """
+    # Kiểm tra dữ liệu bắt buộc
+    if not payload.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id la bat buoc",
+        )
+    if not payload.get("tenant_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="tenant_id la bat buoc",
+        )
+    if not payload.get("scope"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="scope la bat buoc",
+        )
+
+    erasure = await service.create_erasure_request(
+        user_id=payload["user_id"],
+        tenant_id=payload["tenant_id"],
+        scope=payload["scope"],
+        reason=payload.get("reason"),
+    )
+
+    return erasure.__dict__
+
+
+# --------------------------------------------------------------
+# Route: lấy yêu cầu xóa
+# --------------------------------------------------------------
+
+@router.get(
+    "/erasure-requests/{request_id}",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Lấy yêu cầu xóa",
+    description="Lay chi tiet yeu cau xoa du lieu theo ID.",
+)
+async def get_erasure_request(
+    request_id: str,
+    service: "ErasureService" = Depends(get_erasure_service),
+) -> Dict[str, Any]:
+    """
+    Lấy chi tiết yêu cầu xóa theo request_id.
+    """
+    erasure = await service.get_erasure_request(request_id)
+
+    if erasure is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Khong tim thay yeu cau xoa voi ID: {}".format(request_id),
+        )
+
+    return erasure.__dict__
+
+
+# --------------------------------------------------------------
+# Route: xử lý yêu cầu xóa (admin)
+# --------------------------------------------------------------
+
+@router.post(
+    "/erasure-requests/{request_id}/process",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Xử lý yêu cầu xóa",
+    description="Phê duyêt hoac tu choi yeu cau xoa du lieu (admin).",
+)
+async def process_erasure_request(
+    request_id: str,
+    payload: Dict[str, Any],
+    service: "ErasureService" = Depends(get_erasure_service),
+) -> Dict[str, Any]:
+    """
+    Xử lý yêu cầu xóa: phê duyệt hoặc từ chối.
+
+    Payload cần bao gồm:
+    - action: "approve" hoặc "reject"
+    - reason: Lý do (tùy chọn, bắt buộc nếu reject)
+    """
+    if not payload.get("action"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="action la bat buoc",
+        )
+    if payload["action"] not in ("approve", "reject"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="action phai la 'approve' hoac 'reject'",
+        )
+
+    try:
+        erasure = await service.process_erasure(
+            request_id=request_id,
+            action=payload["action"],
+            reason=payload.get("reason"),
+        )
+    except ValueError as e:
+        error_msg = str(e)
+        if "Khong tim thay" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+
+    return erasure.__dict__
+
+
+# --------------------------------------------------------------
+# Route: thống kê đồng ý của tenant (admin)
+# --------------------------------------------------------------
+
+@router.get(
+    "/stats",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Thống kê đồng ý của tenant",
+    description="Lay thong ke tong quan ve dong y cua tenant (admin).",
+)
+async def get_consent_stats(
+    tenant_id: str = Query(..., description="ID tenant"),
+    service: "ConsentService" = Depends(get_consent_service),
+) -> Dict[str, Any]:
+    """
+    Lấy thống kê tổng quan về đồng ý của tenant.
+
+    Trả về: total, active, revoked, expired, pending_renewal
+    """
+    stats = await service.get_tenant_consent_stats(tenant_id=tenant_id)
+
+    return {
+        "tenant_id": tenant_id,
+        **stats,
+    }

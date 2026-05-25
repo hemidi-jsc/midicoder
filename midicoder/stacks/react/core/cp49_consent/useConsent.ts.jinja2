@@ -1,0 +1,304 @@
+{% raw %}/**
+ * CP49 Consent & Preference Management — useConsent Hook.
+ *
+ * Custom React hook để quản lý trạng thái consent:
+ * - Kiểm tra user có active consent cho purpose/category
+ * - Lấy danh sách consents của user
+ * - Cấp đồng ý, hủy đồng ý
+ * - Theo dõi cookie preference
+ * - Theo dõi communication preference
+ *
+ * Tạo tự động bởi CP49 — không sửa thủ công.
+ */
+
+import { useState, useEffect, useCallback } from 'react';
+
+// ===========================================================================
+// Types
+// ===========================================================================
+
+/** Trạng thái đồng ý. */
+export type ConsentStatus = 'active' | 'revoked' | 'expired' | 'pending';
+
+/** Mục đích đồng ý. */
+export type ConsentPurpose =
+  | 'essential'
+  | 'analytics'
+  | 'marketing'
+  | 'advertising'
+  | 'personalization'
+  | 'communication';
+
+/** Danh mục đồng ý. */
+export type ConsentCategory =
+  | 'essential'
+  | 'performance'
+  | 'functionality'
+  | 'targeting';
+
+/** Bản ghi đồng ý. */
+export interface ConsentRecord {
+  /** ID duy nhất. */
+  recordId: string;
+  /** ID người dùng. */
+  userId: string;
+  /** ID tenant. */
+  tenantId: string;
+  /** Mục đích. */
+  purpose: ConsentPurpose;
+  /** Danh mục. */
+  category: ConsentCategory;
+  /** Trạng thái. */
+  status: ConsentStatus;
+  /** Thời gian cấp. */
+  grantedAt: string;
+  /** Thời gian hủy (nếu có). */
+  revokedAt?: string;
+  /** Thời gian hết hạn (nếu có). */
+  expiresAt?: string;
+}
+
+/** Kết quả kiểm tra consent. */
+export interface ConsentCheckResult {
+  /** Có active consent không. */
+  hasConsent: boolean;
+  /** Trạng thái. */
+  status: ConsentStatus;
+  /** ID bản ghi (nếu có). */
+  recordId?: string;
+}
+
+/** Options cho useConsent hook. */
+export interface UseConsentOptions {
+  /** API base URL. */
+  apiBaseUrl?: string;
+  /** ID người dùng. */
+  userId: string;
+  /** ID tenant. */
+  tenantId: string;
+  /** Tự động fetch khi mount. */
+  autoFetch?: boolean;
+}
+
+/** Return value của useConsent hook. */
+export interface UseConsentReturn {
+  /** Danh sách consents. */
+  consents: ConsentRecord[];
+  /** Đang tải. */
+  isLoading: boolean;
+  /** Lỗi. */
+  error: string | null;
+  /** Fetch consents. */
+  fetchConsents: () => Promise<void>;
+  /** Kiểm tra consent cho purpose. */
+  checkConsent: (purpose: ConsentPurpose, category: ConsentCategory) => Promise<ConsentCheckResult>;
+  /** Cấp đồng ý mới. */
+  grantConsent: (purpose: ConsentPurpose, category: ConsentCategory) => Promise<ConsentRecord>;
+  /** Hủy đồng ý. */
+  revokeConsent: (recordId: string, reason?: string) => Promise<ConsentRecord>;
+  /** Kiểm tra có active consent cho purpose. */
+  hasActiveConsent: (purpose: ConsentPurpose) => boolean;
+}
+
+// ===========================================================================
+// Hook
+// ===========================================================================
+
+/**
+ * useConsent — Custom hook quản lý trạng thái consent.
+ *
+ * @param options - Options (userId, tenantId, apiBaseUrl).
+ * @returns UseConsentReturn.
+ *
+ * @example
+ * const { consents, checkConsent, hasActiveConsent } = useConsent({
+ *   userId: 'user-123',
+ *   tenantId: 'tenant-456',
+ * });
+ *
+ * if (hasActiveConsent('analytics')) {
+ *   // Tracking enabled
+ * }
+ */
+export function useConsent(options: UseConsentOptions): UseConsentReturn {
+  const {
+    apiBaseUrl = '/api',
+    userId,
+    tenantId,
+    autoFetch = true,
+  } = options;
+
+  const [consents, setConsents] = useState<ConsentRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ===========================================================================
+  // Methods
+  // ===========================================================================
+
+  /**
+   * Fetch danh sách consents của user.
+   */
+  const fetchConsents = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/consent/user/${encodeURIComponent(userId)}?tenantId=${encodeURIComponent(tenantId)}`,
+        { method: 'GET', headers: { 'Content-Type': 'application/json' } }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Lỗi tải consents: ${response.statusText}`);
+      }
+
+      const data: ConsentRecord[] = await response.json();
+      setConsents(data);
+    } catch (err: any) {
+      const message = err.message || 'Lỗi khi tải danh sách đồng ý';
+      setError(message);
+      console.error('[CP49] Lỗi fetchConsents:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [apiBaseUrl, userId, tenantId]);
+
+  /**
+   * Kiểm tra user có active consent cho purpose/category không.
+   *
+   * @param purpose - Mục đích.
+   * @param category - Danh mục.
+   * @returns ConsentCheckResult.
+   */
+  const checkConsent = useCallback(
+    async (purpose: ConsentPurpose, category: ConsentCategory): Promise<ConsentCheckResult> => {
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/consent/check?userId=${encodeURIComponent(userId)}&tenantId=${encodeURIComponent(tenantId)}&purpose=${encodeURIComponent(purpose)}&category=${encodeURIComponent(category)}`,
+          { method: 'GET', headers: { 'Content-Type': 'application/json' } }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Lỗi kiểm tra consent: ${response.statusText}`);
+        }
+
+        return await response.json();
+      } catch (err: any) {
+        console.error('[CP49] Lỗi checkConsent:', err);
+        return { hasConsent: false, status: 'pending' };
+      }
+    },
+    [apiBaseUrl, userId, tenantId]
+  );
+
+  /**
+   * Cấp đồng ý mới.
+   *
+   * @param purpose - Mục đích.
+   * @param category - Danh mục.
+   * @returns ConsentRecord đã tạo.
+   */
+  const grantConsent = useCallback(
+    async (purpose: ConsentPurpose, category: ConsentCategory): Promise<ConsentRecord> => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/consent/grant`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, tenantId, purpose, category }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Lỗi cấp đồng ý: ${response.statusText}`);
+        }
+
+        const record: ConsentRecord = await response.json();
+        setConsents((prev) => [...prev, record]);
+        return record;
+      } catch (err: any) {
+        console.error('[CP49] Lỗi grantConsent:', err);
+        throw err;
+      }
+    },
+    [apiBaseUrl, userId, tenantId]
+  );
+
+  /**
+   * Hủy đồng ý.
+   *
+   * @param recordId - ID bản ghi.
+   * @param reason - Lý do hủy.
+   * @returns ConsentRecord đã cập nhật.
+   */
+  const revokeConsent = useCallback(
+    async (recordId: string, reason?: string): Promise<ConsentRecord> => {
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/consent/${encodeURIComponent(recordId)}/revoke`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason, userId }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Lỗi hủy đồng ý: ${response.statusText}`);
+        }
+
+        const updated: ConsentRecord = await response.json();
+        setConsents((prev) =>
+          prev.map((r) => (r.recordId === recordId ? updated : r))
+        );
+        return updated;
+      } catch (err: any) {
+        console.error('[CP49] Lỗi revokeConsent:', err);
+        throw err;
+      }
+    },
+    [apiBaseUrl, userId]
+  );
+
+  /**
+   * Kiểm tra nhanh từ local state (không gọi API).
+   *
+   * @param purpose - Mục đích.
+   * @returns True nếu có active consent.
+   */
+  const hasActiveConsent = useCallback(
+    (purpose: ConsentPurpose): boolean => {
+      return consents.some(
+        (r) => r.purpose === purpose && r.status === 'active'
+      );
+    },
+    [consents]
+  );
+
+  // ===========================================================================
+  // Effects
+  // ===========================================================================
+
+  useEffect(() => {
+    if (autoFetch) {
+      fetchConsents();
+    }
+  }, [autoFetch, fetchConsents]);
+
+  // ===========================================================================
+  // Return
+  // ===========================================================================
+
+  return {
+    consents,
+    isLoading,
+    error,
+    fetchConsents,
+    checkConsent,
+    grantConsent,
+    revokeConsent,
+    hasActiveConsent,
+  };
+}
+
+export default useConsent;
+{% endraw %}

@@ -1,0 +1,994 @@
+/**
+ * Consent Entity — TypeORM entities cho Consent & Preference Management.
+ *
+ * Định nghĩa các entity:
+ * - ConsentRecordEntity: bản ghi đồng ý của người dùng
+ * - ConsentPolicyEntity: chính sách đồng ý
+ * - CookiePreferenceEntity: tùy chọn cookie
+ * - ErasureRequestEntity: yêu cầu xóa dữ liệu
+ * - CommunicationPreferenceEntity: tùy chọn liên lạc
+ *
+ * Enums:
+ * - ConsentStatus, ConsentPurpose, ConsentCategory
+ * - ErasureStatus, ErasureScope
+ *
+ * CP49: Consent & Preference Management
+ * Tổng số bản ghi mẫu: {{ num_consent_records }}
+ * Tổng số chính sách mẫu: {{ num_policies }}
+ */
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+} from "typeorm";
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+/**
+ * Các trạng thái của bản ghi đồng ý.
+ */
+export enum ConsentStatus {
+  /** Đã được cấp */
+  GRANTED = "granted",
+  /** Đã bị thu hồi */
+  REVOKED = "revoked",
+  /** Đã hết hạn */
+  EXPIRED = "expired",
+  /** Đang chờ xử lý */
+  PENDING = "pending",
+  /** Đang chờ gia hạn */
+  PENDING_RENEWAL = "pending_renewal",
+}
+
+/**
+ * Mục đích thu thập và xử lý dữ liệu.
+ */
+export enum ConsentPurpose {
+  /** Thiết yếu — dữ liệu bắt buộc để vận hành hệ thống */
+  ESSENTIAL = "essential",
+  /** Phân tích — thu thập dữ liệu để cải thiện dịch vụ */
+  ANALYTICS = "analytics",
+  /** Tiếp thị — sử dụng dữ liệu cho mục đích quảng cáo */
+  MARKETING = "marketing",
+  /** Cá nhân hóa — tùy chỉnh trải nghiệm người dùng */
+  PERSONALIZATION = "personalization",
+  /** Bên thứ ba — chia sẻ dữ liệu với bên thứ ba */
+  THIRD_PARTY = "third_party",
+}
+
+/**
+ * Danh mục đồng ý.
+ */
+export enum ConsentCategory {
+  /** Cookie — đồng ý sử dụng cookie */
+  COOKIE = "cookie",
+  /** Xử lý dữ liệu — đồng ý xử lý dữ liệu cá nhân */
+  DATA_PROCESSING = "data_processing",
+  /** Liên lạc — đồng ý nhận thông báo */
+  COMMUNICATION = "communication",
+  /** Theo dõi — đồng ý theo dõi hoạt động */
+  TRACKING = "tracking",
+  /** Chia sẻ — đồng ý chia sẻ dữ liệu */
+  SHARING = "sharing",
+}
+
+/**
+ * Trạng thái yêu cầu xóa dữ liệu.
+ */
+export enum ErasureStatus {
+  /** Đang chờ phê duyệt */
+  PENDING = "pending",
+  /** Đã được phê duyệt */
+  APPROVED = "approved",
+  /** Đã bị từ chối */
+  REJECTED = "rejected",
+  /** Đang xử lý xóa */
+  PROCESSING = "processing",
+  /** Đã xóa hoàn tất */
+  COMPLETED = "completed",
+  /** Đã hủy yêu cầu */
+  CANCELLED = "cancelled",
+}
+
+/**
+ * Phạm vi yêu cầu xóa.
+ */
+export enum ErasureScope {
+  /** Xóa tất cả dữ liệu */
+  ALL = "all",
+  /** Chỉ xóa dữ liệu cá nhân */
+  PERSONAL_DATA = "personal_data",
+  /** Chỉ xóa bản ghi đồng ý */
+  CONSENT_RECORDS = "consent_records",
+  /** Chỉ xóa tùy chọn liên lạc */
+  COMMUNICATION_PREFS = "communication_prefs",
+  /** Chỉ xóa nhật ký hoạt động */
+  ACTIVITY_LOG = "activity_log",
+  /** Phạm vi tùy chỉnh */
+  CUSTOM = "custom",
+}
+
+// ===========================================================================
+// ConsentRecordEntity
+// ===========================================================================
+
+/**
+ * Interface cho ConsentRecordEntity properties.
+ */
+export interface IConsentRecord {
+  recordId: string;
+  userId: string;
+  tenantId: string;
+  purpose: string;
+  category: string;
+  status: string;
+  grantedAt: Date | null;
+  revokedAt: Date | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  metadata: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * ConsentRecordEntity — bản ghi đồng ý của người dùng.
+ *
+ * Đại diện cho một bản ghi đồng ý, bao gồm mục đích, danh mục,
+ * trạng thái, và thông tin ngữ cảnh (địa chỉ IP, user agent).
+ *
+ * Indexes:
+ * - (record_id) unique — định danh bản ghi
+ * - (user_id) — tối ưu tìm theo người dùng
+ * - (tenant_id) — tối ưu lọc theo tenant
+ * - (purpose) — tối ưu lọc theo mục đích
+ * - (status) — tối ưu lọc theo trạng thái
+ * - (user_id, purpose) — tìm đồng ý của user cho mục đích cụ thể
+ */
+@Entity("consent_records")
+@Index("idx_consent_record_id", ["recordId"], { unique: true })
+@Index("idx_consent_user_id", ["userId"])
+@Index("idx_consent_tenant_id", ["tenantId"])
+@Index("idx_consent_purpose", ["purpose"])
+@Index("idx_consent_status", ["status"])
+@Index("idx_consent_user_purpose", ["userId", "purpose"])
+export class ConsentRecordEntity implements IConsentRecord {
+  /**
+   * Định danh bản ghi — UUID duy nhất.
+   */
+  @Column({ name: "record_id", type: "varchar", length: 36 })
+  recordId: string;
+
+  /**
+   * Primary key — tự tăng.
+   */
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  /**
+   * ID người dùng đã cấp đồng ý.
+   */
+  @Column({ name: "user_id", type: "varchar", length: 64 })
+  userId: string;
+
+  /**
+   * ID tenant chứa bản ghi.
+   */
+  @Column({ name: "tenant_id", type: "varchar", length: 64 })
+  tenantId: string;
+
+  /**
+   * Mục đích đồng ý.
+   *
+   * - "essential": dữ liệu bắt buộc để vận hành
+   * - "analytics": thu thập dữ liệu phân tích
+   * - "marketing": sử dụng cho tiếp thị
+   * - "personalization": tùy chỉnh trải nghiệm
+   * - "third_party": chia sẻ với bên thứ ba
+   */
+  @Column({ type: "varchar", length: 32, default: "essential" })
+  purpose: string;
+
+  /**
+   * Danh mục đồng ý.
+   *
+   * - "cookie": đồng ý sử dụng cookie
+   * - "data_processing": xử lý dữ liệu cá nhân
+   * - "communication": nhận thông báo
+   * - "tracking": theo dõi hoạt động
+   * - "sharing": chia sẻ dữ liệu
+   */
+  @Column({ type: "varchar", length: 32, default: "cookie" })
+  category: string;
+
+  /**
+   * Trạng thái hiện tại của bản ghi đồng ý.
+   *
+   * - "granted": đã được cấp
+   * - "revoked": đã bị thu hồi
+   * - "expired": đã hết hạn
+   * - "pending": đang chờ xử lý
+   * - "pending_renewal": đang chờ gia hạn
+   */
+  @Column({ type: "varchar", length: 20, default: "pending" })
+  status: string;
+
+  /**
+   * Thời điểm đồng ý được cấp.
+   *
+   * NULL nếu chưa được cấp.
+   */
+  @Column({ name: "granted_at", type: "timestamptz", nullable: true })
+  grantedAt: Date | null;
+
+  /**
+   * Thời điểm đồng ý bị thu hồi.
+   *
+   * NULL nếu chưa bị thu hồi.
+   */
+  @Column({ name: "revoked_at", type: "timestamptz", nullable: true })
+  revokedAt: Date | null;
+
+  /**
+   * Địa chỉ IP của người dùng khi cấp đồng ý.
+   *
+   * Dùng cho mục đích kiểm toán.
+   */
+  @Column({ name: "ip_address", type: "varchar", length: 64, nullable: true })
+  ipAddress: string | null;
+
+  /**
+   * User agent của trình duyệt khi cấp đồng ý.
+   *
+   * Dùng cho mục đích kiểm toán.
+   */
+  @Column({ name: "user_agent", type: "text", nullable: true })
+  userAgent: string | null;
+
+  /**
+   * Dữ liệu bổ sung dạng JSON.
+   *
+   * Có thể chứa thông tin tùy chỉnh như thời gian hết hạn,
+   * phiên bản chính sách, hay ngữ cảnh bổ sung.
+   */
+  @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  /**
+   * Created at — thời điểm tạo bản ghi.
+   */
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  /**
+   * Updated at — thời điểm cập nhật bản ghi.
+   */
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra bản ghi đồng ý có đang hoạt động không.
+   *
+   * @returns True nếu status là "granted"
+   */
+  isActive(): boolean {
+    return this.status === "granted";
+  }
+
+  /**
+   * Kiểm tra bản ghi đã bị thu hồi chưa.
+   *
+   * @returns True nếu status là "revoked"
+   */
+  isRevoked(): boolean {
+    return this.status === "revoked";
+  }
+
+  /**
+   * Kiểm tra bản ghi đã hết hạn chưa.
+   *
+   * @returns True nếu status là "expired"
+   */
+  isExpired(): boolean {
+    return this.status === "expired";
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string
+   */
+  toString(): string {
+    return "<ConsentRecord(recordId=\"" + this.recordId + "\" , userId=\"" + this.userId
+      + "\" , purpose=\"" + this.purpose + "\" , status=\"" + this.status + "\")>";
+  }
+}
+
+// ===========================================================================
+// ConsentPolicyEntity
+// ===========================================================================
+
+/**
+ * Interface cho ConsentPolicyEntity properties.
+ */
+export interface IConsentPolicy {
+  policyId: string;
+  title: string;
+  description: string;
+  version: string;
+  purpose: string;
+  category: string;
+  tenantId: string;
+  isActive: boolean;
+  expirationDays: number;
+  requiresExplicitOptIn: boolean;
+  metadata: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * ConsentPolicyEntity — chính sách đồng ý.
+ *
+ * Định nghĩa quy tắc và thông tin cho từng loại chính sách đồng ý,
+ * bao gồm thời gian hết hạn, yêu cầu đồng ý rõ ràng, và phiên bản.
+ *
+ * Indexes:
+ * - (policy_id) unique — định danh chính sách
+ * - (tenant_id) — tối ưu tìm theo tenant
+ * - (purpose) — tối ưu lọc theo mục đích
+ * - (is_active) — tối ưu lọc chính sách đang hoạt động
+ */
+@Entity("consent_policies")
+@Index("idx_consent_policy_id", ["policyId"], { unique: true })
+@Index("idx_consent_policy_tenant", ["tenantId"])
+@Index("idx_consent_policy_purpose", ["purpose"])
+@Index("idx_consent_policy_active", ["isActive"])
+export class ConsentPolicyEntity implements IConsentPolicy {
+  /**
+   * Định danh chính sách — UUID duy nhất.
+   */
+  @Column({ name: "policy_id", type: "varchar", length: 36 })
+  policyId: string;
+
+  /**
+   * Primary key — tự tăng.
+   */
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  /**
+   * Tiêu đề chính sách.
+   */
+  @Column({ type: "varchar", length: 255, default: "" })
+  title: string;
+
+  /**
+   * Mô tả chi tiết chính sách.
+   */
+  @Column({ type: "text", default: "" })
+  description: string;
+
+  /**
+   * Phiên bản chính sách (ví dụ: "1.0", "2.1").
+   */
+  @Column({ type: "varchar", length: 16, default: "1.0" })
+  version: string;
+
+  /**
+   * Mục đích của chính sách.
+   */
+  @Column({ type: "varchar", length: 32, default: "essential" })
+  purpose: string;
+
+  /**
+   * Danh mục của chính sách.
+   */
+  @Column({ type: "varchar", length: 32, default: "cookie" })
+  category: string;
+
+  /**
+   * ID tenant áp dụng chính sách.
+   */
+  @Column({ name: "tenant_id", type: "varchar", length: 64 })
+  tenantId: string;
+
+  /**
+   * Chính sách có đang hoạt động không.
+   */
+  @Column({ name: "is_active", type: "boolean", default: true })
+  isActive: boolean;
+
+  /**
+   * Số ngày hết hạn của đồng ý (0 = không giới hạn).
+   *
+   * Mặc định: 365 ngày (1 năm).
+   */
+  @Column({ name: "expiration_days", type: "int", default: 365 })
+  expirationDays: number;
+
+  /**
+   * Có yêu cầu đồng ý rõ ràng không (opt-in).
+   *
+   * True: người dùng phải chủ động chọn đồng ý.
+   * False: mặc định là đồng ý (opt-out).
+   */
+  @Column({ name: "requires_explicit_opt_in", type: "boolean", default: true })
+  requiresExplicitOptIn: boolean;
+
+  /**
+   * Dữ liệu bổ sung dạng JSON.
+   */
+  @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  /**
+   * Created at — thời điểm tạo chính sách.
+   */
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  /**
+   * Updated at — thời điểm cập nhật chính sách.
+   */
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra chính sách có đang hoạt động không.
+   *
+   * @returns True nếu isActive là true
+   */
+  isActivePolicy(): boolean {
+    return this.isActive === true;
+  }
+
+  /**
+   * Kiểm tra chính sách có giới hạn thời hạn không.
+   *
+   * @returns True nếu expirationDays > 0
+   */
+  hasExpiration(): boolean {
+    return this.expirationDays > 0;
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string
+   */
+  toString(): string {
+    return "<ConsentPolicy(policyId=\"" + this.policyId + "\" , purpose=\"" + this.purpose
+      + "\" , version=\"" + this.version + "\" , active=" + this.isActive + ")>";
+  }
+}
+
+// ===========================================================================
+// CookiePreferenceEntity
+// ===========================================================================
+
+/**
+ * Interface cho CookiePreferenceEntity properties.
+ */
+export interface ICookiePreference {
+  preferenceId: string;
+  userId: string;
+  tenantId: string;
+  necessaryCookies: boolean;
+  analyticsCookies: boolean;
+  marketingCookies: boolean;
+  personalizationCookies: boolean;
+  thirdPartyCookies: boolean;
+  metadata: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * CookiePreferenceEntity — tùy chọn cookie của người dùng.
+ *
+ * Lưu trữ các tùy chọn cookie theo từng danh mục,
+ * cho phép người dùng kiểm soát từng loại cookie riêng lẻ.
+ *
+ * Indexes:
+ * - (preference_id) unique — định danh tùy chọn
+ * - (user_id) — tối ưu tìm theo người dùng
+ * - (tenant_id) — tối ưu lọc theo tenant
+ */
+@Entity("cookie_preferences")
+@Index("idx_cookie_pref_id", ["preferenceId"], { unique: true })
+@Index("idx_cookie_pref_user", ["userId"])
+@Index("idx_cookie_pref_tenant", ["tenantId"])
+export class CookiePreferenceEntity implements ICookiePreference {
+  /**
+   * Định danh tùy chọn — UUID duy nhất.
+   */
+  @Column({ name: "preference_id", type: "varchar", length: 36 })
+  preferenceId: string;
+
+  /**
+   * Primary key — tự tăng.
+   */
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  /**
+   * ID người dùng sở hữu tùy chọn.
+   */
+  @Column({ name: "user_id", type: "varchar", length: 64 })
+  userId: string;
+
+  /**
+   * ID tenant chứa tùy chọn.
+   */
+  @Column({ name: "tenant_id", type: "varchar", length: 64 })
+  tenantId: string;
+
+  /**
+   * Cho phép cookie thiết yếu.
+   *
+   * Mặc định: true (không thể tắt — bắt buộc cho vận hành).
+   */
+  @Column({ name: "necessary_cookies", type: "boolean", default: true })
+  necessaryCookies: boolean;
+
+  /**
+   * Cho phép cookie phân tích.
+   *
+   * Mặc định: false.
+   */
+  @Column({ name: "analytics_cookies", type: "boolean", default: false })
+  analyticsCookies: boolean;
+
+  /**
+   * Cho phép cookie tiếp thị.
+   *
+   * Mặc định: false.
+   */
+  @Column({ name: "marketing_cookies", type: "boolean", default: false })
+  marketingCookies: boolean;
+
+  /**
+   * Cho phép cookie cá nhân hóa.
+   *
+   * Mặc định: false.
+   */
+  @Column({ name: "personalization_cookies", type: "boolean", default: false })
+  personalizationCookies: boolean;
+
+  /**
+   * Cho phép cookie bên thứ ba.
+   *
+   * Mặc định: false.
+   */
+  @Column({ name: "third_party_cookies", type: "boolean", default: false })
+  thirdPartyCookies: boolean;
+
+  /**
+   * Dữ liệu bổ sung dạng JSON.
+   */
+  @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  /**
+   * Created at — thời điểm tạo tùy chọn.
+   */
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  /**
+   * Updated at — thời điểm cập nhật tùy chọn.
+   */
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra người dùng đã chấp nhận tất cả cookie chưa.
+   *
+   * @returns True nếu tất cả các loại cookie đều được cho phép
+   */
+  hasAllCookiesAccepted(): boolean {
+    return this.necessaryCookies && this.analyticsCookies && this.marketingCookies
+      && this.personalizationCookies && this.thirdPartyCookies;
+  }
+
+  /**
+   * Kiểm tra chỉ có cookie thiết yếu được cho phép.
+   *
+   * @returns True nếu chỉ necessaryCookies là true
+   */
+  hasOnlyNecessaryCookies(): boolean {
+    return this.necessaryCookies && !this.analyticsCookies && !this.marketingCookies
+      && !this.personalizationCookies && !this.thirdPartyCookies;
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string
+   */
+  toString(): string {
+    return "<CookiePreference(preferenceId=\"" + this.preferenceId + "\" , userId=\"" + this.userId
+      + "\" , necessary=" + this.necessaryCookies + " , analytics=" + this.analyticsCookies + ")>";
+  }
+}
+
+// ===========================================================================
+// ErasureRequestEntity
+// ===========================================================================
+
+/**
+ * Interface cho ErasureRequestEntity properties.
+ */
+export interface IErasureRequest {
+  requestId: string;
+  userId: string;
+  tenantId: string;
+  scope: string;
+  status: string;
+  reason: string;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  completedAt: Date | null;
+  metadata: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * ErasureRequestEntity — yêu cầu xóa dữ liệu.
+ *
+ * Đại diện cho yêu cầu xóa dữ liệu cá nhân của người dùng
+ * theo GDPR Article 17 (quyền được quên).
+ *
+ * Trạng thái: pending, approved, rejected, processing, completed, cancelled
+ * Phạm vi: all, personal_data, consent_records, communication_prefs, activity_log, custom
+ *
+ * Indexes:
+ * - (request_id) unique — định danh yêu cầu
+ * - (user_id) — tối ưu tìm theo người dùng
+ * - (tenant_id) — tối ưu lọc theo tenant
+ * - (status) — tối ưu lọc theo trạng thái
+ * - (scope) — tối ưu lọc theo phạm vi
+ */
+@Entity("erasure_requests")
+@Index("idx_erasure_request_id", ["requestId"], { unique: true })
+@Index("idx_erasure_user_id", ["userId"])
+@Index("idx_erasure_tenant_id", ["tenantId"])
+@Index("idx_erasure_status", ["status"])
+@Index("idx_erasure_scope", ["scope"])
+export class ErasureRequestEntity implements IErasureRequest {
+  /**
+   * Định danh yêu cầu — UUID duy nhất.
+   */
+  @Column({ name: "request_id", type: "varchar", length: 36 })
+  requestId: string;
+
+  /**
+   * Primary key — tự tăng.
+   */
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  /**
+   * ID người dùng gửi yêu cầu xóa.
+   */
+  @Column({ name: "user_id", type: "varchar", length: 64 })
+  userId: string;
+
+  /**
+   * ID tenant chứa yêu cầu.
+   */
+  @Column({ name: "tenant_id", type: "varchar", length: 64 })
+  tenantId: string;
+
+  /**
+   * Phạm vi xóa dữ liệu.
+   *
+   * - "all": xóa tất cả dữ liệu
+   * - "personal_data": chỉ xóa dữ liệu cá nhân
+   * - "consent_records": chỉ xóa bản ghi đồng ý
+   * - "communication_prefs": chỉ xóa tùy chọn liên lạc
+   * - "activity_log": chỉ xóa nhật ký hoạt động
+   * - "custom": phạm vi tùy chỉnh (xem metadata)
+   */
+  @Column({ type: "varchar", length: 32, default: "all" })
+  scope: string;
+
+  /**
+   * Trạng thái hiện tại của yêu cầu.
+   *
+   * - "pending": đang chờ phê duyệt
+   * - "approved": đã được phê duyệt
+   * - "rejected": đã bị từ chối
+   * - "processing": đang xử lý xóa
+   * - "completed": đã xóa hoàn tất
+   * - "cancelled": đã hủy yêu cầu
+   */
+  @Column({ type: "varchar", length: 20, default: "pending" })
+  status: string;
+
+  /**
+   * Lý do yêu cầu xóa.
+   */
+  @Column({ type: "text", default: "" })
+  reason: string;
+
+  /**
+   * ID người phê duyệt yêu cầu.
+   *
+   * NULL nếu chưa được phê duyệt.
+   */
+  @Column({ name: "approved_by", type: "varchar", length: 64, nullable: true })
+  approvedBy: string | null;
+
+  /**
+   * Thời điểm được phê duyệt.
+   *
+   * NULL nếu chưa được phê duyệt.
+   */
+  @Column({ name: "approved_at", type: "timestamptz", nullable: true })
+  approvedAt: Date | null;
+
+  /**
+   * Thời điểm hoàn tất xóa.
+   *
+   * NULL nếu chưa hoàn tất.
+   */
+  @Column({ name: "completed_at", type: "timestamptz", nullable: true })
+  completedAt: Date | null;
+
+  /**
+   * Dữ liệu bổ sung dạng JSON.
+   *
+   * Có thể chứa danh sách các loại dữ liệu cần xóa
+   * khi scope là "custom".
+   */
+  @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  /**
+   * Created at — thời điểm tạo yêu cầu.
+   */
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  /**
+   * Updated at — thời điểm cập nhật yêu cầu.
+   */
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra yêu cầu có đang chờ xử lý không.
+   *
+   * @returns True nếu status là "pending"
+   */
+  isPending(): boolean {
+    return this.status === "pending";
+  }
+
+  /**
+   * Kiểm tra yêu cầu đã được phê duyệt chưa.
+   *
+   * @returns True nếu status là "approved"
+   */
+  isApproved(): boolean {
+    return this.status === "approved";
+  }
+
+  /**
+   * Kiểm tra yêu cầu đã hoàn tất chưa.
+   *
+   * @returns True nếu status là "completed"
+   */
+  isCompleted(): boolean {
+    return this.status === "completed";
+  }
+
+  /**
+   * Kiểm tra yêu cầu có đang trong quá trình xử lý.
+   *
+   * @returns True nếu status là "processing"
+   */
+  isProcessing(): boolean {
+    return this.status === "processing";
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string
+   */
+  toString(): string {
+    return "<ErasureRequest(requestId=\"" + this.requestId + "\" , userId=\"" + this.userId
+      + "\" , scope=\"" + this.scope + "\" , status=\"" + this.status + "\")>";
+  }
+}
+
+// ===========================================================================
+// CommunicationPreferenceEntity
+// ===========================================================================
+
+/**
+ * Interface cho CommunicationPreferenceEntity properties.
+ */
+export interface ICommunicationPreference {
+  preferenceId: string;
+  userId: string;
+  tenantId: string;
+  emailOptIn: boolean;
+  smsOptIn: boolean;
+  pushOptIn: boolean;
+  newsletterOptIn: boolean;
+  marketingOptIn: boolean;
+  transactionalOptIn: boolean;
+  metadata: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * CommunicationPreferenceEntity — tùy chọn liên lạc của người dùng.
+ *
+ * Lưu trữ các tùy chọn liên lạc theo từng kênh,
+ * cho phép người dùng kiểm soát cách thức nhận thông báo.
+ *
+ * Indexes:
+ * - (preference_id) unique — định danh tùy chọn
+ * - (user_id) — tối ưu tìm theo người dùng
+ * - (tenant_id) — tối ưu lọc theo tenant
+ */
+@Entity("communication_preferences")
+@Index("idx_comm_pref_id", ["preferenceId"], { unique: true })
+@Index("idx_comm_pref_user", ["userId"])
+@Index("idx_comm_pref_tenant", ["tenantId"])
+export class CommunicationPreferenceEntity implements ICommunicationPreference {
+  /**
+   * Định danh tùy chọn — UUID duy nhất.
+   */
+  @Column({ name: "preference_id", type: "varchar", length: 36 })
+  preferenceId: string;
+
+  /**
+   * Primary key — tự tăng.
+   */
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  /**
+   * ID người dùng sở hữu tùy chọn.
+   */
+  @Column({ name: "user_id", type: "varchar", length: 64 })
+  userId: string;
+
+  /**
+   * ID tenant chứa tùy chọn.
+   */
+  @Column({ name: "tenant_id", type: "varchar", length: 64 })
+  tenantId: string;
+
+  /**
+   * Đồng ý nhận thông báo qua email.
+   *
+   * Mặc định: false.
+   */
+  @Column({ name: "email_opt_in", type: "boolean", default: false })
+  emailOptIn: boolean;
+
+  /**
+   * Đồng ý nhận thông báo qua SMS.
+   *
+   * Mặc định: false.
+   */
+  @Column({ name: "sms_opt_in", type: "boolean", default: false })
+  smsOptIn: boolean;
+
+  /**
+   * Đồng ý nhận thông báo qua push notification.
+   *
+   * Mặc định: false.
+   */
+  @Column({ name: "push_opt_in", type: "boolean", default: false })
+  pushOptIn: boolean;
+
+  /**
+   * Đồng ý nhận tin tức/bản tin.
+   *
+   * Mặc định: false.
+   */
+  @Column({ name: "newsletter_opt_in", type: "boolean", default: false })
+  newsletterOptIn: boolean;
+
+  /**
+   * Đồng ý nhận thông báo tiếp thị.
+   *
+   * Mặc định: false.
+   */
+  @Column({ name: "marketing_opt_in", type: "boolean", default: false })
+  marketingOptIn: boolean;
+
+  /**
+   * Đồng ý nhận thông báo giao dịch (thiết yếu).
+   *
+   * Mặc định: true (thông báo giao dịch không thể tắt).
+   */
+  @Column({ name: "transactional_opt_in", type: "boolean", default: true })
+  transactionalOptIn: boolean;
+
+  /**
+   * Dữ liệu bổ sung dạng JSON.
+   *
+   * Có thể chứa thông tin về tần suất, múi giờ, hay ngôn ngữ ưu tiên.
+   */
+  @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata: Record<string, any>;
+
+  /**
+   * Created at — thời điểm tạo tùy chọn.
+   */
+  @CreateDateColumn({ name: "created_at" })
+  createdAt: Date;
+
+  /**
+   * Updated at — thời điểm cập nhật tùy chọn.
+   */
+  @UpdateDateColumn({ name: "updated_at" })
+  updatedAt: Date;
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  /**
+   * Kiểm tra người dùng đã đồng ý nhận tất cả thông báo.
+   *
+   * @returns True nếu tất cả các kênh đều opt-in
+   */
+  hasAllOptIn(): boolean {
+    return this.emailOptIn && this.smsOptIn && this.pushOptIn
+      && this.newsletterOptIn && this.marketingOptIn && this.transactionalOptIn;
+  }
+
+  /**
+   * Kiểm tra chỉ có thông báo giao dịch được cho phép.
+   *
+   * @returns True nếu chỉ transactionalOptIn là true
+   */
+  hasOnlyTransactional(): boolean {
+    return this.transactionalOptIn && !this.emailOptIn && !this.smsOptIn
+      && !this.pushOptIn && !this.newsletterOptIn && !this.marketingOptIn;
+  }
+
+  /**
+   * String representation cho debugging.
+   *
+   * @returns Formatted string
+   */
+  toString(): string {
+    return "<CommunicationPreference(preferenceId=\"" + this.preferenceId + "\" , userId=\"" + this.userId
+      + "\" , email=" + this.emailOptIn + " , sms=" + this.smsOptIn + ")>";
+  }
+}

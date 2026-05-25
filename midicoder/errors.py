@@ -1050,6 +1050,20 @@ class ErrorCode(str, Enum):
     CP48_THROTTLING_CONFIG_INVALID = "MDC-CP48-010"
 
     # =========================================================================
+    # CP49: Consent & Preference Management Errors
+    # =========================================================================
+    CP49_CONSENT_RECORD_NOT_FOUND = "MDC-CP49-001"
+    CP49_CONSENT_PURPOSE_INVALID = "MDC-CP49-002"
+    CP49_CONSENT_CATEGORY_INVALID = "MDC-CP49-003"
+    CP49_MANDATORY_CONSENT_CANNOT_REVOKE = "MDC-CP49-004"
+    CP49_ERASURE_REQUEST_NOT_FOUND = "MDC-CP49-005"
+    CP49_ERASURE_SCOPE_INVALID = "MDC-CP49-006"
+    CP49_COMM_CHANNEL_INVALID = "MDC-CP49-007"
+    CP49_TENANT_POLICY_NOT_FOUND = "MDC-CP49-008"
+    CP49_COOKIE_CATEGORY_INVALID = "MDC-CP49-009"
+    CP49_CONSENT_EXPIRED_NEED_RENEW = "MDC-CP49-010"
+
+    # =========================================================================
     # CP53: Domain Pack Runtime Bridge Errors
     # =========================================================================
     CP53_BRIDGE_CAPABILITY_INVALID = "MDC-CP53-001"

@@ -1,0 +1,392 @@
+# ----------------------------------------------------------
+# CP49 Consent & Preference Management — Dịch vụ xóa dữ liệu
+# ----------------------------------------------------------
+# Sinh bởi CP49ConsentEmitter
+# Class: ErasureService với quản lý yêu cầu xóa dữ liệu
+# ----------------------------------------------------------
+
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Sequence
+
+from sqlalchemy import and_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = logging.getLogger(__name__)
+
+
+class ErasureService:
+    """
+    Dịch vụ quản lý yêu cầu xóa dữ liệu — hỗ trợ "Quyền được quên"
+    theo GDPR, bao gồm tạo yêu cầu, phê duyệt, từ chối, và thực thi xóa.
+
+    Cách layer: (1) Audit log khi phê duyệt/từ chối,
+    (2) Retention trigger khi thực thi xóa dữ liệu.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        _retention_manager=None,
+    ) -> None:
+        """
+        Khởi tạo dịch vụ với phiên làm việc SQLAlchemy async và retention manager.
+
+        Tham số:
+            session: Phiên làm việc async để truy cập cơ sở dữ liệu.
+            _retention_manager: Retention manager để xử lý chính sách lưu trữ (tùy chọn).
+        """
+        self._session = session
+        self._retention_manager = _retention_manager
+
+    # --------------------------------------------------------------
+    # Tạo yêu cầu xóa mới
+    # --------------------------------------------------------------
+
+    async def create_erasure_request(
+        self,
+        user_id: str,
+        tenant_id: str,
+        scope: str,
+        reason: Optional[str] = None,
+    ) -> Any:
+        """
+        Tạo yêu cầu xóa dữ liệu mới.
+
+        Tham số:
+            user_id: ID người dùng yêu cầu xóa.
+            tenant_id: ID tenant.
+            scope: Phạm vi xóa (all, personal_data, consent_records, ...).
+            reason: Lý do yêu cầu xóa (tùy chọn).
+
+        Trả về:
+            Đối tượng ErasureRequestModel mới được tạo.
+        """
+        request_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        erasure = self._model()(
+            request_id=request_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            scope=scope,
+            status="pending",
+            requested_at=now,
+            completed_at=None,
+            reason=reason,
+            metadata_json=None,
+            created_at=now,
+            updated_at=now,
+        )
+
+        self._session.add(erasure)
+        await self._session.commit()
+        await self._session.refresh(erasure)
+
+        logger.info(
+            "Da tao yeu cau xoa: request_id=%s, user=%s, scope=%s",
+            request_id,
+            user_id,
+            scope,
+        )
+
+        return erasure
+
+    # --------------------------------------------------------------
+    # Lấy yêu cầu xóa theo ID
+    # --------------------------------------------------------------
+
+    async def get_erasure_request(self, request_id: str) -> Optional[Any]:
+        """
+        Lấy yêu cầu xóa theo request_id.
+
+        Tham số:
+            request_id: ID yêu cầu xóa.
+
+        Trả về:
+            Đối tượng ErasureRequestModel hoặc None nếu không tìm thấy.
+        """
+        query = select(self._model()).where(
+            self._model().request_id == request_id
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    # --------------------------------------------------------------
+    # Danh sách yêu cầu xóa
+    # --------------------------------------------------------------
+
+    async def list_erasure_requests(
+        self,
+        user_id: str,
+        tenant_id: str,
+    ) -> Sequence[Any]:
+        """
+        Lấy tất cả yêu cầu xóa của người dùng trong tenant.
+
+        Tham số:
+            user_id: ID người dùng.
+            tenant_id: ID tenant.
+
+        Trả về:
+            Danh sách ErasureRequestModel sắp xếp theo created_at giảm dần.
+        """
+        query = select(self._model()).where(
+            and_(
+                self._model().user_id == user_id,
+                self._model().tenant_id == tenant_id,
+            )
+        ).order_by(self._model().created_at.desc())
+
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
+    # --------------------------------------------------------------
+    # Phê duyệt yêu cầu xóa
+    # --------------------------------------------------------------
+
+    async def approve_request(self, request_id: str) -> Any:
+        """
+        Phê duyệt yêu cầu xóa — chuyển sang trạng thái 'approved'.
+
+        Tham số:
+            request_id: ID yêu cầu xóa.
+
+        Trả về:
+            Đối tượng ErasureRequestModel đã được cập nhật.
+
+        Ném ra:
+            ValueError: Nếu yêu cầu không tồn tại hoặc không ở trạng thái pending.
+        """
+        erasure = await self.get_erasure_request(request_id)
+        if erasure is None:
+            raise ValueError(
+                "Khong tim thay yeu cau xoa voi ID: {}".format(request_id)
+            )
+
+        if erasure.status != "pending":
+            raise ValueError(
+                "Yeu cau '{}' khong o trang thai pending (trang thai: {})".format(
+                    request_id, erasure.status
+                )
+            )
+
+        erasure.status = "approved"
+        erasure.updated_at = datetime.now(timezone.utc)
+
+        await self._session.commit()
+        await self._session.refresh(erasure)
+
+        logger.info("Da phe duyét yeu cau xoa: request_id=%s", request_id)
+
+        return erasure
+
+    # --------------------------------------------------------------
+    # Từ chối yêu cầu xóa
+    # --------------------------------------------------------------
+
+    async def reject_request(
+        self,
+        request_id: str,
+        reason: str,
+    ) -> Any:
+        """
+        Từ chối yêu cầu xóa — chuyển sang trạng thái 'rejected'.
+
+        Tham số:
+            request_id: ID yêu cầu xóa.
+            reason: Lý do từ chối.
+
+        Trả về:
+            Đối tượng ErasureRequestModel đã được cập nhật.
+
+        Ném ra:
+            ValueError: Nếu yêu cầu không tồn tại hoặc không ở trạng thái pending.
+        """
+        erasure = await self.get_erasure_request(request_id)
+        if erasure is None:
+            raise ValueError(
+                "Khong tim thay yeu cau xoa voi ID: {}".format(request_id)
+            )
+
+        if erasure.status != "pending":
+            raise ValueError(
+                "Yeu cau '{}' khong o trang thai pending (trang thai: {})".format(
+                    request_id, erasure.status
+                )
+            )
+
+        erasure.status = "rejected"
+        erasure.metadata_json = erasure.metadata_json or {}
+        erasure.metadata_json["rejection_reason"] = reason
+        erasure.updated_at = datetime.now(timezone.utc)
+
+        await self._session.commit()
+        await self._session.refresh(erasure)
+
+        logger.info("Da tu choi yeu cau xoa: request_id=%s, ly_do=%s", request_id, reason)
+
+        return erasure
+
+    # --------------------------------------------------------------
+    # Thực thi xóa dữ liệu
+    # --------------------------------------------------------------
+
+    async def process_erasure(self, request_id: str) -> Any:
+        """
+        Thực thi xóa dữ liệu theo yêu cầu đã được phê duyệt.
+
+        Kích hoạt retention manager để xóa dữ liệu thực tế,
+        sau đó cập nhật trạng thái thành 'completed'.
+
+        Tham số:
+            request_id: ID yêu cầu xóa.
+
+        Trả về:
+            Đối tượng ErasureRequestModel đã được cập nhật.
+
+        Ném ra:
+            ValueError: Nếu yêu cầu không tồn tại hoặc không ở trạng thái approved.
+        """
+        erasure = await self.get_erasure_request(request_id)
+        if erasure is None:
+            raise ValueError(
+                "Khong tim thay yeu cau xoa voi ID: {}".format(request_id)
+            )
+
+        if erasure.status != "approved":
+            raise ValueError(
+                "Yeu cau '{}' khong o trang thai approved (trang thai: {})".format(
+                    request_id, erasure.status
+                )
+            )
+
+        now = datetime.now(timezone.utc)
+        erasure.status = "processing"
+        erasure.updated_at = now
+        await self._session.commit()
+
+        # Kích hoạt retention manager để thực thi xóa
+        try:
+            if self._retention_manager is not None:
+                await self._retention_manager.erase_data(
+                    user_id=erasure.user_id,
+                    tenant_id=erasure.tenant_id,
+                    scope=erasure.scope,
+                )
+                logger.info(
+                    "Da thuc thi xoa du lieu: request_id=%s, scope=%s",
+                    request_id,
+                    erasure.scope,
+                )
+            else:
+                logger.warning(
+                    "Khong co retention manager - bo qua xoa thuc te: request_id=%s",
+                    request_id,
+                )
+        except Exception as e:
+            # Nếu lỗi khi xóa, đánh dấu là bị lỗi trong metadata
+            erasure.status = "rejected"
+            erasure.metadata_json = erasure.metadata_json or {}
+            erasure.metadata_json["processing_error"] = str(e)
+            erasure.updated_at = datetime.now(timezone.utc)
+            await self._session.commit()
+            await self._session.refresh(erasure)
+
+            logger.error(
+                "Loi thuc thi xoa du lieu: request_id=%s, error=%s",
+                request_id,
+                str(e),
+            )
+
+            raise ValueError("Loi thuc thi xoa du lieu: {}".format(str(e)))
+
+        # Cập nhật trạng thái hoàn thành
+        erasure.status = "completed"
+        erasure.completed_at = now
+        erasure.updated_at = now
+
+        await self._session.commit()
+        await self._session.refresh(erasure)
+
+        logger.info("Da hoan thanh yeu cau xoa: request_id=%s", request_id)
+
+        return erasure
+
+    # --------------------------------------------------------------
+    # Thống kê yêu cầu xóa theo tenant
+    # --------------------------------------------------------------
+
+    async def get_erasure_stats(self, tenant_id: str) -> Dict[str, int]:
+        """
+        Lấy thống kê yêu cầu xóa theo tenant.
+
+        Tham số:
+            tenant_id: ID tenant.
+
+        Trả về:
+            Dict với các khóa: total, pending, approved, rejected, completed, processing.
+        """
+        model = self._model()
+
+        # Tổng số
+        total_query = select(func.count(model.id)).where(
+            model.tenant_id == tenant_id
+        )
+        total_result = await self._session.execute(total_query)
+        total = total_result.scalar_one()
+
+        # Pending
+        pending_query = select(func.count(model.id)).where(
+            and_(model.tenant_id == tenant_id, model.status == "pending")
+        )
+        pending_result = await self._session.execute(pending_query)
+        pending = pending_result.scalar_one()
+
+        # Approved
+        approved_query = select(func.count(model.id)).where(
+            and_(model.tenant_id == tenant_id, model.status == "approved")
+        )
+        approved_result = await self._session.execute(approved_query)
+        approved = approved_result.scalar_one()
+
+        # Rejected
+        rejected_query = select(func.count(model.id)).where(
+            and_(model.tenant_id == tenant_id, model.status == "rejected")
+        )
+        rejected_result = await self._session.execute(rejected_query)
+        rejected = rejected_result.scalar_one()
+
+        # Completed
+        completed_query = select(func.count(model.id)).where(
+            and_(model.tenant_id == tenant_id, model.status == "completed")
+        )
+        completed_result = await self._session.execute(completed_query)
+        completed = completed_result.scalar_one()
+
+        # Processing
+        processing_query = select(func.count(model.id)).where(
+            and_(model.tenant_id == tenant_id, model.status == "processing")
+        )
+        processing_result = await self._session.execute(processing_query)
+        processing = processing_result.scalar_one()
+
+        return {
+            "total": total,
+            "pending": pending,
+            "approved": approved,
+            "rejected": rejected,
+            "completed": completed,
+            "processing": processing,
+        }
+
+    # --------------------------------------------------------------
+    # Getter cho mô hình
+    # --------------------------------------------------------------
+
+    def _model(self):
+        """Trả về model ErasureRequestModel."""
+        from consent_models import ErasureRequestModel
+        return ErasureRequestModel

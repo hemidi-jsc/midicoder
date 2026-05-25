@@ -1,0 +1,363 @@
+# ----------------------------------------------------------
+# CP49 Consent & Preference Management — Pydantic schemas cho validation
+# ----------------------------------------------------------
+# Sinh bởi CP49ConsentEmitter
+# Schemas: ConsentRecord, ConsentPolicy, CookiePreference,
+#          ErasureRequest, CommunicationPreference, ConsentStats
+# ----------------------------------------------------------
+
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+
+# ====================================================================
+# Enum Definitions
+# ====================================================================
+
+
+class ConsentStatus(str, Enum):
+    """Trang thai cua ban ghi dong y."""
+    GRANTED = "granted"
+    REVOKED = "revoked"
+    EXPIRED = "expired"
+    PENDING = "pending"
+    PENDING_RENEWAL = "pending_renewal"
+
+
+class ConsentPurpose(str, Enum):
+    """Muc dich thu thap va xu ly du lieu."""
+    ESSENTIAL = "essential"
+    ANALYTICS = "analytics"
+    MARKETING = "marketing"
+    PERSONALIZATION = "personalization"
+    THIRD_PARTY = "third_party"
+
+
+class ConsentCategory(str, Enum):
+    """Danh muc dong y."""
+    COOKIE = "cookie"
+    DATA_PROCESSING = "data_processing"
+    COMMUNICATION = "communication"
+    TRACKING = "tracking"
+    SHARING = "sharing"
+
+
+class ErasureStatus(str, Enum):
+    """Trang thai yeu cau xoa du lieu."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class ErasureScope(str, Enum):
+    """Pham vi yeu cau xoa."""
+    ALL = "all"
+    PERSONAL_DATA = "personal_data"
+    CONSENT_RECORDS = "consent_records"
+    COMMUNICATION_PREFS = "communication_prefs"
+    ACTIVITY_LOG = "activity_log"
+    CUSTOM = "custom"
+
+
+# ====================================================================
+# ConsentRecord Schemas
+# ====================================================================
+
+
+class ConsentRecordBase(BaseModel):
+    """Schema co ban cua ban ghi dong y."""
+    user_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID nguoi dung cap dong y"
+    )
+    tenant_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID tenant chua ban ghi"
+    )
+    purpose: ConsentPurpose = Field(
+        ..., description="Muc dich dong y"
+    )
+    category: ConsentCategory = Field(
+        ..., description="Danh muc dong y"
+    )
+    ip_address: Optional[str] = Field(
+        None, max_length=45,
+        description="Dia chi IP cua nguoi dung"
+    )
+    user_agent: Optional[str] = Field(
+        None, max_length=512,
+        description="User agent cua trinh duyet"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None, description="Du lieu bo sung"
+    )
+
+
+class ConsentRecordCreate(ConsentRecordBase):
+    """Schema tao ban ghi dong y moi."""
+    pass
+
+
+class ConsentRecordUpdate(BaseModel):
+    """Schema cap nhat ban ghi dong y (bat chon)."""
+    status: Optional[ConsentStatus] = Field(
+        None, description="Trang thai dong y"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None, description="Du lieu bo sung"
+    )
+
+
+class ConsentRecordResponse(BaseModel):
+    """Schema tra ve ban ghi dong y."""
+    id: int = Field(..., description="ID chinh")
+    record_id: str = Field(..., description="ID duy nhat cua ban ghi")
+    user_id: str = Field(..., description="ID nguoi dung")
+    tenant_id: str = Field(..., description="ID tenant")
+    purpose: str = Field(..., description="Muc dich dong y")
+    category: str = Field(..., description="Danh muc dong y")
+    status: str = Field(..., description="Trang thai dong y")
+    granted_at: Optional[datetime] = Field(None, description="Thoi diem cap dong y")
+    revoked_at: Optional[datetime] = Field(None, description="Thoi diem huy dong y")
+    ip_address: Optional[str] = Field(None, description="Dia chi IP")
+    user_agent: Optional[str] = Field(None, description="User agent")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Du lieu bo sung")
+    created_at: datetime = Field(..., description="Thoi diem tao")
+    updated_at: datetime = Field(..., description="Thoi diem cap nhat cuoi")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# ConsentPolicy Schemas
+# ====================================================================
+
+
+class ConsentPolicyBase(BaseModel):
+    """Schema co ban cua chinh sach dong y."""
+    tenant_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID tenant chua chinh sach"
+    )
+    purpose: ConsentPurpose = Field(
+        ..., description="Muc dich cua chinh sach"
+    )
+    category: ConsentCategory = Field(
+        ..., description="Danh muc cua chinh sach"
+    )
+    is_mandatory: bool = Field(
+        default=False,
+        description="Co bat buoc khong (neu True, khong the tu choi)"
+    )
+    description: Optional[str] = Field(
+        None, max_length=4096,
+        description="Mo ta chi tiet chinh sach"
+    )
+    expiry_days: int = Field(
+        default=365, ge=1, le=3650,
+        description="So ngay het han cua dong y"
+    )
+    renewal_reminder_days: int = Field(
+        default=30, ge=0, le=365,
+        description="So ngay nhac lam moi truoc het han"
+    )
+
+
+class ConsentPolicyCreate(ConsentPolicyBase):
+    """Schema tao chinh sach dong y moi."""
+    pass
+
+
+class ConsentPolicyResponse(BaseModel):
+    """Schema tra ve chinh sach dong y."""
+    id: int = Field(..., description="ID chinh")
+    policy_id: str = Field(..., description="ID duy nhat cua chinh sach")
+    tenant_id: str = Field(..., description="ID tenant")
+    purpose: str = Field(..., description="Muc dich chinh sach")
+    category: str = Field(..., description="Danh muc chinh sach")
+    is_mandatory: bool = Field(..., description="Co bat buoc khong")
+    description: Optional[str] = Field(None, description="Mo ta chinh sach")
+    expiry_days: int = Field(..., description="So ngay het han")
+    renewal_reminder_days: int = Field(..., description="So ngay nhac lam moi")
+    created_at: datetime = Field(..., description="Thoi diem tao")
+    updated_at: datetime = Field(..., description="Thoi diem cap nhat cuoi")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# CookiePreference Schemas
+# ====================================================================
+
+
+class CookiePreferenceBase(BaseModel):
+    """Schema co ban cua tuy chon cookie."""
+    user_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID nguoi dung"
+    )
+    tenant_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID tenant"
+    )
+
+
+class CookiePreferenceCreate(CookiePreferenceBase):
+    """Schema tao cap nhat tuy chon cookie."""
+    categories: Dict[str, bool] = Field(
+        ..., description="Danh muc cookie voi trang thai bat/tat"
+    )
+
+    @field_validator("categories")
+    @classmethod
+    def validate_categories(cls, v: Dict[str, bool]) -> Dict[str, bool]:
+        """Kiem tra danh muc cookie phai co 'necessary' luon bang True."""
+        # Cap nhat necessary luon bang True
+        v["necessary"] = True
+        return v
+
+    @field_validator("categories")
+    @classmethod
+    def validate_categories_not_empty(cls, v: Dict[str, bool]) -> Dict[str, bool]:
+        """Kiem tra danh muc cookie khong duoc de trong."""
+        if not v:
+            raise ValueError("categories khong duoc de trong")
+        return v
+
+
+class CookiePreferenceResponse(BaseModel):
+    """Schema tra ve tuy chon cookie."""
+    id: int = Field(..., description="ID chinh")
+    preference_id: str = Field(..., description="ID duy nhat")
+    user_id: str = Field(..., description="ID nguoi dung")
+    tenant_id: str = Field(..., description="ID tenant")
+    categories: Dict[str, bool] = Field(..., description="Danh muc cookie")
+    updated_at: datetime = Field(..., description="Thoi diem cap nhat cuoi")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# ErasureRequest Schemas
+# ====================================================================
+
+
+class ErasureRequestBase(BaseModel):
+    """Schema co ban cua yeu cau xoa du lieu."""
+    user_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID nguoi dung yeu cau xoa"
+    )
+    tenant_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID tenant"
+    )
+    scope: ErasureScope = Field(
+        ..., description="Pham vi xoa du lieu"
+    )
+    reason: Optional[str] = Field(
+        None, max_length=4096,
+        description="Ly do yeu cau xoa"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None, description="Du lieu bo sung"
+    )
+
+
+class ErasureRequestCreate(ErasureRequestBase):
+    """Schema tao yeu cau xoa du lieu moi."""
+    pass
+
+
+class ErasureRequestResponse(BaseModel):
+    """Schema tra ve yeu cau xoa du lieu."""
+    id: int = Field(..., description="ID chinh")
+    request_id: str = Field(..., description="ID duy nhat cua yeu cau")
+    user_id: str = Field(..., description="ID nguoi dung")
+    tenant_id: str = Field(..., description="ID tenant")
+    scope: str = Field(..., description="Pham vi xoa")
+    status: str = Field(..., description="Trang thai yeu cau")
+    requested_at: datetime = Field(..., description="Thoi diem yeu cau")
+    completed_at: Optional[datetime] = Field(None, description="Thoi diem hoan thanh")
+    reason: Optional[str] = Field(None, description="Ly do yeu cau")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Du lieu bo sung")
+    created_at: datetime = Field(..., description="Thoi diem tao")
+    updated_at: datetime = Field(..., description="Thoi diem cap nhat cuoi")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# CommunicationPreference Schemas
+# ====================================================================
+
+
+class CommunicationPreferenceBase(BaseModel):
+    """Schema co ban cua tuy chon lien lac."""
+    user_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID nguoi dung"
+    )
+    tenant_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="ID tenant"
+    )
+
+
+class CommunicationPreferenceCreate(CommunicationPreferenceBase):
+    """Schema tao cap nhat tuy chon lien lac."""
+    channels: Dict[str, bool] = Field(
+        ..., description="Kenh lien lac voi trang thai bat/tat"
+    )
+    purposes: Dict[str, bool] = Field(
+        ..., description="Muc dich lien lac voi trang thai bat/tat"
+    )
+
+    @field_validator("channels")
+    @classmethod
+    def validate_channels_not_empty(cls, v: Dict[str, bool]) -> Dict[str, bool]:
+        """Kiem tra danh sach kenh lien lac khong duoc de trong."""
+        if not v:
+            raise ValueError("channels khong duoc de trong")
+        return v
+
+    @field_validator("purposes")
+    @classmethod
+    def validate_purposes_not_empty(cls, v: Dict[str, bool]) -> Dict[str, bool]:
+        """Kiem tra danh sach muc dich lien lac khong duoc de trong."""
+        if not v:
+            raise ValueError("purposes khong duoc de trong")
+        return v
+
+
+class CommunicationPreferenceResponse(BaseModel):
+    """Schema tra ve tuy chon lien lac."""
+    id: int = Field(..., description="ID chinh")
+    preference_id: str = Field(..., description="ID duy nhat")
+    user_id: str = Field(..., description="ID nguoi dung")
+    tenant_id: str = Field(..., description="ID tenant")
+    channels: Dict[str, bool] = Field(..., description="Kenh lien lac")
+    purposes: Dict[str, bool] = Field(..., description="Muc dich lien lac")
+    updated_at: datetime = Field(..., description="Thoi diem cap nhat cuoi")
+
+    model_config = {"from_attributes": True}
+
+
+# ====================================================================
+# ConsentStats Schema
+# ====================================================================
+
+
+class ConsentStatsResponse(BaseModel):
+    """Schema tra ve thong ke tong quan ve dong y cua tenant."""
+    total: int = Field(..., description="Tong so ban ghi dong y")
+    active: int = Field(..., description="So ban ghi dang hoat dong (granted)")
+    revoked: int = Field(..., description="So ban ghi da bi huy")
+    expired: int = Field(..., description="So ban ghi da het han")
+    pending_renewal: int = Field(..., description="So ban ghi dang cho lam moi")

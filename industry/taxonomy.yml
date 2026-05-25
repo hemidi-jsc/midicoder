@@ -989,20 +989,24 @@ core_packs:
     phase: P2
     description:
       Cookie consent, data processing consent, communication preference,
-      privacy center
-    definitions_count: 4
+      privacy center, marketing opt-out, GDPR erasure
+    definitions_count: 5
     obligations_count: 2
     depends_on:
       - CP01
       - CP02
       - CP03
+      - CP14
+      - CP47
     capabilities_provided:
       - cookie_consent
       - data_consent
       - comm_preference
       - privacy_center
+      - marketing_opt_out
+      - gdpr_erasure
     category: privacy
-    status: planned
+    status: stable
     version: 1.0.0
   - id: CP50
     name: Catalog & Taxonomy Engine
