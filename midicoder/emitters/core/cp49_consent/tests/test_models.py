@@ -5,16 +5,15 @@ Kiểm tra mô-đun models cho CP49 — Consent & Preference Management.
 Bao gồm các tests cho:
 - Error codes: MDC-CP49-001 đến MDC-CP49-010
 - Enums: ConsentStatus, ConsentPurpose, ConsentCategory, CookieCategory,
-  CommChannel, ErasureStatus, ErasureScope
+  CommChannel
 - ConsentRecord: tạo, validate, to_dict/from_dict
 - ConsentPolicy: tạo, validate, to_dict/from_dict
 - CookiePreference: tạo, validate, to_dict/from_dict
-- ErasureRequest: tạo, validate, to_dict/from_dict
 - CommunicationPreference: tạo, validate, to_dict/from_dict
 - ConsentEngine: grant_consent, revoke_consent, check_consent,
   get_user_consents, set_cookie_preference, get_cookie_preference,
-  set_comm_preference, get_comm_preference, create_erasure_request,
-  process_erasure_request, check_expired_consents, get_tenant_consent_stats
+  set_comm_preference, get_comm_preference, check_expired_consents,
+  get_tenant_consent_stats
 """
 
 from __future__ import annotations
@@ -46,23 +45,17 @@ class TestCP49ErrorCodes:
     def test_cp49_mandatory_consent_cannot_revoke_code(self):
         assert ErrorCode.CP49_MANDATORY_CONSENT_CANNOT_REVOKE == "MDC-CP49-004"
 
-    def test_cp49_erasure_request_not_found_code(self):
-        assert ErrorCode.CP49_ERASURE_REQUEST_NOT_FOUND == "MDC-CP49-005"
-
-    def test_cp49_erasure_scope_invalid_code(self):
-        assert ErrorCode.CP49_ERASURE_SCOPE_INVALID == "MDC-CP49-006"
-
     def test_cp49_comm_channel_invalid_code(self):
-        assert ErrorCode.CP49_COMM_CHANNEL_INVALID == "MDC-CP49-007"
+        assert ErrorCode.CP49_COMM_CHANNEL_INVALID == "MDC-CP49-005"
 
     def test_cp49_tenant_policy_not_found_code(self):
-        assert ErrorCode.CP49_TENANT_POLICY_NOT_FOUND == "MDC-CP49-008"
+        assert ErrorCode.CP49_TENANT_POLICY_NOT_FOUND == "MDC-CP49-006"
 
     def test_cp49_cookie_category_invalid_code(self):
-        assert ErrorCode.CP49_COOKIE_CATEGORY_INVALID == "MDC-CP49-009"
+        assert ErrorCode.CP49_COOKIE_CATEGORY_INVALID == "MDC-CP49-007"
 
     def test_cp49_consent_expired_need_renew_code(self):
-        assert ErrorCode.CP49_CONSENT_EXPIRED_NEED_RENEW == "MDC-CP49-010"
+        assert ErrorCode.CP49_CONSENT_EXPIRED_NEED_RENEW == "MDC-CP49-008"
 
 
 # ===========================================================================
@@ -216,72 +209,6 @@ class TestCommChannel:
     def test_channel_members_count(self):
         from midicoder.emitters.core.cp49_consent.models import CommChannel
         assert len(CommChannel) == 4
-
-
-# ===========================================================================
-# Test ErasureStatus Enum
-# ===========================================================================
-
-
-class TestErasureStatus:
-    """Kiểm tra các giá trị của enum ErasureStatus."""
-
-    def test_erasure_pending_value(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureStatus
-        assert ErasureStatus.PENDING.value == "pending"
-
-    def test_erasure_reviewing_value(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureStatus
-        assert ErasureStatus.REVIEWING.value == "reviewing"
-
-    def test_erasure_approved_value(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureStatus
-        assert ErasureStatus.APPROVED.value == "approved"
-
-    def test_erasure_processing_value(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureStatus
-        assert ErasureStatus.PROCESSING.value == "processing"
-
-    def test_erasure_completed_value(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureStatus
-        assert ErasureStatus.COMPLETED.value == "completed"
-
-    def test_erasure_rejected_value(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureStatus
-        assert ErasureStatus.REJECTED.value == "rejected"
-
-    def test_erasure_members_count(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureStatus
-        assert len(ErasureStatus) == 6
-
-
-# ===========================================================================
-# Test ErasureScope Enum
-# ===========================================================================
-
-
-class TestErasureScope:
-    """Kiểm tra các giá trị của enum ErasureScope."""
-
-    def test_scope_all_personal_data_value(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureScope
-        assert ErasureScope.ALL_PERSONAL_DATA.value == "all_personal_data"
-
-    def test_scope_consent_data_value(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureScope
-        assert ErasureScope.CONSENT_DATA.value == "consent_data"
-
-    def test_scope_communication_data_value(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureScope
-        assert ErasureScope.COMMUNICATION_DATA.value == "communication_data"
-
-    def test_scope_specific_entities_value(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureScope
-        assert ErasureScope.SPECIFIC_ENTITIES.value == "specific_entities"
-
-    def test_scope_members_count(self):
-        from midicoder.emitters.core.cp49_consent.models import ErasureScope
-        assert len(ErasureScope) == 4
 
 
 # ===========================================================================
@@ -908,239 +835,6 @@ class TestCookiePreference:
 
 
 # ===========================================================================
-# Test ErasureRequest
-# ===========================================================================
-
-
-class TestErasureRequest:
-    """Kiểm tra ErasureRequest — tạo, validate, serialize."""
-
-    def test_create_valid_request(self):
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-            ErasureStatus,
-        )
-        req = ErasureRequest(
-            request_id="erase_001",
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.ALL_PERSONAL_DATA,
-            reason="Xóa tất cả dữ liệu cá nhân",
-        )
-        assert req.request_id == "erase_001"
-        assert req.user_id == "user_001"
-        assert req.tenant_id == "tenant_001"
-        assert req.scope == ErasureScope.ALL_PERSONAL_DATA
-        assert req.status == ErasureStatus.PENDING
-        assert req.reason == "Xóa tất cả dữ liệu cá nhân"
-
-    def test_create_request_empty_request_id_raises(self):
-        """Kiểm tra tạo yêu cầu xóa với request_id rỗng sẽ ném lỗi."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-        )
-        with pytest.raises(MidicoderError):
-            ErasureRequest(
-                request_id="",
-                user_id="user_001",
-                tenant_id="tenant_001",
-                scope=ErasureScope.ALL_PERSONAL_DATA,
-            )
-
-    def test_create_request_empty_user_id_raises(self):
-        """Kiểm tra tạo yêu cầu xóa với user_id rỗng sẽ ném lỗi."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-        )
-        with pytest.raises(MidicoderError):
-            ErasureRequest(
-                request_id="erase_001",
-                user_id="",
-                tenant_id="tenant_001",
-                scope=ErasureScope.ALL_PERSONAL_DATA,
-            )
-
-    def test_create_request_empty_tenant_id_raises(self):
-        """Kiểm tra tạo yêu cầu xóa với tenant_id rỗng sẽ ném lỗi."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-        )
-        with pytest.raises(MidicoderError):
-            ErasureRequest(
-                request_id="erase_001",
-                user_id="user_001",
-                tenant_id="",
-                scope=ErasureScope.ALL_PERSONAL_DATA,
-            )
-
-    def test_default_status_is_pending(self):
-        """Kiểm tra trạng thái mặc định là PENDING."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-            ErasureStatus,
-        )
-        req = ErasureRequest(
-            request_id="erase_def",
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.CONSENT_DATA,
-        )
-        assert req.status == ErasureStatus.PENDING
-
-    def test_auto_requested_at(self):
-        """Kiểm tra tự động tạo requested_at khi không cung cấp."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-        )
-        req = ErasureRequest(
-            request_id="erase_ts",
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.COMMUNICATION_DATA,
-        )
-        assert req.requested_at is not None
-
-    def test_completed_status_sets_completed_at(self):
-        """Kiểm tra trạng thái COMPLETED tự động đặt completed_at."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-            ErasureStatus,
-        )
-        req = ErasureRequest(
-            request_id="erase_comp",
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.ALL_PERSONAL_DATA,
-            status=ErasureStatus.COMPLETED,
-        )
-        assert req.completed_at is not None
-
-    def test_default_metadata(self):
-        """Kiểm tra metadata mặc định là dict rỗng."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-        )
-        req = ErasureRequest(
-            request_id="erase_meta",
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.SPECIFIC_ENTITIES,
-        )
-        assert req.metadata == {}
-
-    def test_different_scopes(self):
-        """Kiểm tra các phạm vi xóa dữ liệu khác nhau."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-        )
-        req1 = ErasureRequest(
-            request_id="erase_s1",
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.CONSENT_DATA,
-        )
-        req2 = ErasureRequest(
-            request_id="erase_s2",
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.SPECIFIC_ENTITIES,
-        )
-        assert req1.scope == ErasureScope.CONSENT_DATA
-        assert req2.scope == ErasureScope.SPECIFIC_ENTITIES
-
-    def test_to_dict(self):
-        """Kiểm tra chuyển ErasureRequest sang dict."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-        )
-        req = ErasureRequest(
-            request_id="erase_dict",
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.ALL_PERSONAL_DATA,
-            reason="GDPR quyền bị quên",
-            metadata={"entities": ["orders", "profiles"]},
-        )
-        d = req.to_dict()
-        assert d["request_id"] == "erase_dict"
-        assert d["user_id"] == "user_001"
-        assert d["scope"] == "all_personal_data"
-        assert d["status"] == "pending"
-        assert d["reason"] == "GDPR quyền bị quên"
-        assert d["metadata"] == {"entities": ["orders", "profiles"]}
-        assert d["completed_at"] is None
-        assert "requested_at" in d
-
-    def test_from_dict_roundtrip(self):
-        """Kiểm tra serialize/deserialize ErasureRequest qua to_dict/from_dict."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-            ErasureStatus,
-        )
-        req = ErasureRequest(
-            request_id="erase_rt",
-            user_id="user_rt",
-            tenant_id="tenant_rt",
-            scope=ErasureScope.CONSENT_DATA,
-            status=ErasureStatus.PENDING,
-            reason="Xóa dữ liệu consent",
-        )
-        d = req.to_dict()
-        restored = ErasureRequest.from_dict(d)
-        assert restored.request_id == "erase_rt"
-        assert restored.user_id == "user_rt"
-        assert restored.scope == ErasureScope.CONSENT_DATA
-        assert restored.status == ErasureStatus.PENDING
-        assert restored.reason == "Xóa dữ liệu consent"
-
-    def test_from_dict_without_optional(self):
-        """Kiểm tra từ dict chỉ có các trường tối thiểu vẫn tạo được đối tượng."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-            ErasureStatus,
-        )
-        data = {
-            "request_id": "erase_min",
-            "user_id": "user_min",
-            "tenant_id": "tenant_min",
-        }
-        req = ErasureRequest.from_dict(data)
-        assert req.request_id == "erase_min"
-        assert req.scope == ErasureScope.ALL_PERSONAL_DATA
-        assert req.status == ErasureStatus.PENDING
-
-    def test_with_custom_metadata(self):
-        """Kiểm tra metadata được bảo toàn qua to_dict/from_dict."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ErasureRequest,
-            ErasureScope,
-        )
-        metadata = {"entity_ids": ["e1", "e2"], "admin_note": "đã kiểm tra"}
-        req = ErasureRequest(
-            request_id="erase_cm",
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.SPECIFIC_ENTITIES,
-            metadata=metadata,
-        )
-        d = req.to_dict()
-        restored = ErasureRequest.from_dict(d)
-        assert restored.metadata == metadata
-
-
-# ===========================================================================
 # Test CommunicationPreference
 # ===========================================================================
 
@@ -1324,7 +1018,6 @@ class TestConsentEngine:
         assert engine.policies == {}
         assert engine.cookie_preferences == {}
         assert engine.comm_preferences == {}
-        assert engine.erasure_requests == {}
 
     def test_grant_consent(self):
         """Kiểm tra cấp consent mới cho người dùng."""
@@ -1611,103 +1304,6 @@ class TestConsentEngine:
         pref = engine.get_comm_preference("user_001", "tenant_001")
         assert pref is None
 
-    def test_create_erasure_request(self):
-        """Kiểm tra tạo yêu cầu xóa dữ liệu mới."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ConsentEngine,
-            ErasureScope,
-            ErasureStatus,
-        )
-        engine = ConsentEngine()
-        request = engine.create_erasure_request(
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.ALL_PERSONAL_DATA,
-            reason="Yêu cầu xóa toàn bộ",
-        )
-        assert request.user_id == "user_001"
-        assert request.scope == ErasureScope.ALL_PERSONAL_DATA
-        assert request.status == ErasureStatus.PENDING
-        assert request.reason == "Yêu cầu xóa toàn bộ"
-        assert request.request_id in engine.erasure_requests
-
-    def test_process_erasure_approve(self):
-        """Kiểm tra phê duyệt yêu cầu xóa dữ liệu."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ConsentEngine,
-            ErasureScope,
-            ErasureStatus,
-        )
-        engine = ConsentEngine()
-        request = engine.create_erasure_request(
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.CONSENT_DATA,
-        )
-        result = engine.process_erasure_request(request.request_id, "approve")
-        assert result.status == ErasureStatus.APPROVED
-
-    def test_process_erasure_reject(self):
-        """Kiểm tra từ chối yêu cầu xóa dữ liệu."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ConsentEngine,
-            ErasureScope,
-            ErasureStatus,
-        )
-        engine = ConsentEngine()
-        request = engine.create_erasure_request(
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.COMMUNICATION_DATA,
-        )
-        result = engine.process_erasure_request(request.request_id, "reject")
-        assert result.status == ErasureStatus.REJECTED
-
-    def test_process_erasure_review(self):
-        """Kiểm tra chuyển yêu cầu xóa sang trạng thái đang xem xét."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ConsentEngine,
-            ErasureScope,
-            ErasureStatus,
-        )
-        engine = ConsentEngine()
-        request = engine.create_erasure_request(
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.ALL_PERSONAL_DATA,
-        )
-        result = engine.process_erasure_request(request.request_id, "review")
-        assert result.status == ErasureStatus.REVIEWING
-
-    def test_process_erasure_full_lifecycle(self):
-        """Kiểm tra toàn bộ vòng đời yêu cầu xóa: PENDING -> APPROVED -> PROCESSING -> COMPLETED."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ConsentEngine,
-            ErasureScope,
-            ErasureStatus,
-        )
-        engine = ConsentEngine()
-        request = engine.create_erasure_request(
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.ALL_PERSONAL_DATA,
-        )
-        assert request.status == ErasureStatus.PENDING
-        engine.process_erasure_request(request.request_id, "approve")
-        assert engine.erasure_requests[request.request_id].status == ErasureStatus.APPROVED
-        engine.process_erasure_request(request.request_id, "approve")
-        assert engine.erasure_requests[request.request_id].status == ErasureStatus.PROCESSING
-        engine.process_erasure_request(request.request_id, "complete")
-        assert engine.erasure_requests[request.request_id].status == ErasureStatus.COMPLETED
-        assert engine.erasure_requests[request.request_id].completed_at is not None
-
-    def test_process_erasure_nonexistent_raises(self):
-        """Kiểm tra xử lý yêu cầu xóa không tồn tại sẽ ném lỗi."""
-        from midicoder.emitters.core.cp49_consent.models import ConsentEngine
-        engine = ConsentEngine()
-        with pytest.raises(MidicoderError):
-            engine.process_erasure_request("nonexistent", "approve")
-
     def test_get_tenant_consent_stats(self):
         """Kiểm tra lấy thống kê consent của tenant."""
         from midicoder.emitters.core.cp49_consent.models import (
@@ -1908,24 +1504,3 @@ class TestConsentEngine:
         pref = engine.get_cookie_preference("user_001", "tenant_001")
         assert pref.categories["analytics"] is False
         assert pref.categories["advertising"] is True
-
-    def test_erasure_different_scopes(self):
-        """Kiểm tra tạo nhiều yêu cầu xóa với các phạm vi khác nhau."""
-        from midicoder.emitters.core.cp49_consent.models import (
-            ConsentEngine,
-            ErasureScope,
-        )
-        engine = ConsentEngine()
-        req1 = engine.create_erasure_request(
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.CONSENT_DATA,
-        )
-        req2 = engine.create_erasure_request(
-            user_id="user_001",
-            tenant_id="tenant_001",
-            scope=ErasureScope.SPECIFIC_ENTITIES,
-        )
-        assert req1.scope == ErasureScope.CONSENT_DATA
-        assert req2.scope == ErasureScope.SPECIFIC_ENTITIES
-        assert req1.request_id != req2.request_id

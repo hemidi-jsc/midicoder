@@ -8,14 +8,13 @@ Mô-đun models cho CP49 — Consent & Preference Management.
 - ConsentCategory: Danh mục consent (necessary, functional, analytics, advertising)
 - CookieCategory: Danh mục cookie (necessary, functional, analytics, advertising)
 - CommChannel: Kênh truyền thông (email, sms, push, webhook)
-- ErasureStatus: Trạng thái yêu cầu xóa dữ liệu (pending, reviewing, approved, processing, completed, rejected)
-- ErasureScope: Phạm vi xóa dữ liệu (all_personal_data, consent_data, communication_data, specific_entities)
 - ConsentRecord: Bản ghi consent của người dùng
 - ConsentPolicy: Chính sách consent của tenant
 - CookiePreference: Sở thích cookie của người dùng
-- ErasureRequest: Yêu cầu xóa dữ liệu (GDPR Art.17)
 - CommunicationPreference: Sở thích truyền thông của người dùng
-- ConsentEngine: Engine xử lý toàn bộ vòng đời consent, cookie, truyền thông, và yêu cầu xóa dữ liệu
+- ConsentEngine: Engine xử lý toàn bộ vòng đời consent, cookie, và truyền thông
+
+Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 
 Tác giả: Midicoder Team
 Version: 1.0.0
@@ -109,38 +108,6 @@ class CommChannel(str, Enum):
     SMS = "sms"
     PUSH = "push"
     WEBHOOK = "webhook"
-
-
-class ErasureStatus(str, Enum):
-    """Trạng thái của yêu cầu xóa dữ liệu (GDPR Art.17).
-
-    - PENDING: Đang chờ xem xét
-    - REVIEWING: Đang được kiểm tra bởi admin
-    - APPROVED: Đã được phê duyệt, chờ xử lý
-    - PROCESSING: Đang tiến hành xóa dữ liệu
-    - COMPLETED: Đã xóa xong toàn bộ dữ liệu
-    - REJECTED: Đã bị từ chối
-    """
-    PENDING = "pending"
-    REVIEWING = "reviewing"
-    APPROVED = "approved"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    REJECTED = "rejected"
-
-
-class ErasureScope(str, Enum):
-    """Phạm vi xóa dữ liệu.
-
-    - ALL_PERSONAL_DATA: Tất cả dữ liệu cá nhân
-    - CONSENT_DATA: Chỉ dữ liệu liên quan đến consent
-    - COMMUNICATION_DATA: Chỉ dữ liệu truyền thông
-    - SPECIFIC_ENTITIES: Các thực thể cụ thể được chỉ định
-    """
-    ALL_PERSONAL_DATA = "all_personal_data"
-    CONSENT_DATA = "consent_data"
-    COMMUNICATION_DATA = "communication_data"
-    SPECIFIC_ENTITIES = "specific_entities"
 
 
 # ===========================================================================
@@ -438,103 +405,6 @@ class CookiePreference:
 
 
 # ===========================================================================
-# ErasureRequest
-# ===========================================================================
-
-
-@dataclass
-class ErasureRequest:
-    """Yêu cầu xóa dữ liệu (GDPR Art.17 — Right to be Forgotten).
-
-    Đại diện cho yêu cầu của người dùng muốn xóa toàn bộ hoặc
-    một phần dữ liệu cá nhân, với phạm vi và lý do cụ thể.
-
-    Attributes:
-        request_id: ID duy nhất của yêu cầu xóa
-        user_id: ID người dùng đặt yêu cầu
-        tenant_id: ID tenant scope
-        scope: Phạm vi xóa dữ liệu
-        status: Trạng thái hiện tại của yêu cầu
-        requested_at: Thời điểm đặt yêu cầu
-        completed_at: Thời điểm hoàn tất xóa (nullable)
-        reason: Lý do yêu cầu xóa
-        metadata: Dữ liệu bổ sung (dict tùy chỉnh)
-    """
-    request_id: str
-    user_id: str
-    tenant_id: str
-    scope: ErasureScope
-    status: ErasureStatus = ErasureStatus.PENDING
-    requested_at: datetime | None = None
-    completed_at: datetime | None = None
-    reason: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        """Validate yêu cầu xóa dữ liệu sau khi khởi tạo."""
-        if not self.request_id or not self.request_id.strip():
-            EM.raise_error(
-                ErrorCode.CP49_ERASURE_REQUEST_NOT_FOUND,
-                reason="request_id bắt buộc và không được để trống",
-            )
-
-        if not self.user_id or not self.user_id.strip():
-            EM.raise_error(
-                ErrorCode.CP49_ERASURE_REQUEST_NOT_FOUND,
-                reason="user_id bắt buộc cho yêu cầu xóa dữ liệu",
-            )
-
-        if not self.tenant_id or not self.tenant_id.strip():
-            EM.raise_error(
-                ErrorCode.CP49_TENANT_POLICY_NOT_FOUND,
-                reason="tenant_id bắt buộc cho yêu cầu xóa dữ liệu",
-            )
-
-        if self.scope not in ErasureScope:
-            EM.raise_error(
-                ErrorCode.CP49_ERASURE_SCOPE_INVALID,
-                scope=str(self.scope),
-            )
-
-        now = datetime.now(timezone.utc)
-        if self.requested_at is None:
-            self.requested_at = now
-
-        # Nếu trạng thái COMPLETED nhưng chưa có completed_at
-        if self.status == ErasureStatus.COMPLETED and self.completed_at is None:
-            self.completed_at = now
-
-    def to_dict(self) -> dict[str, Any]:
-        """Chuyển ErasureRequest sang dict."""
-        return {
-            "request_id": self.request_id,
-            "user_id": self.user_id,
-            "tenant_id": self.tenant_id,
-            "scope": self.scope.value,
-            "status": self.status.value,
-            "requested_at": self.requested_at.isoformat() if self.requested_at else None,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "reason": self.reason,
-            "metadata": self.metadata,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ErasureRequest":
-        """Tạo ErasureRequest từ dict."""
-        return cls(
-            request_id=data.get("request_id", ""),
-            user_id=data.get("user_id", ""),
-            tenant_id=data.get("tenant_id", ""),
-            scope=ErasureScope(data.get("scope", "all_personal_data")),
-            status=ErasureStatus(data.get("status", "pending")),
-            requested_at=datetime.fromisoformat(data["requested_at"]) if data.get("requested_at") else None,
-            completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
-            reason=data.get("reason", ""),
-            metadata=data.get("metadata", {}),
-        )
-
-
-# ===========================================================================
 # CommunicationPreference
 # ===========================================================================
 
@@ -623,11 +493,13 @@ class CommunicationPreference:
 
 
 class ConsentEngine:
-    """Engine xử lý toàn bộ vòng đời consent, cookie, truyền thông, và yêu cầu xóa dữ liệu.
+    """Engine xử lý toàn bộ vòng đời consent, cookie, và truyền thông.
 
     In-memory engine cho quản lý consent: cấp và rút consent, kiểm tra
-    trạng thái consent, quản lý sở thích cookie và truyền thông, xử lý
-    yêu cầu xóa dữ liệu (GDPR Art.17), và kiểm tra consent hết hạn.
+    trạng thái consent, quản lý sở thích cookie và truyền thông, và kiểm
+    tra consent hết hạn.
+
+    Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 
     Workflow:
     1. Tenant định nghĩa ConsentPolicy (mục đích, danh mục, thời hạn)
@@ -635,14 +507,12 @@ class ConsentEngine:
     3. User rút consent → soft revoke (status=REVOKED, revoked_at=now)
     4. Engine tự động kiểm tra consent hết hạn theo expiry_days của policy
     5. User quản lý cookie preference, communication preference
-    6. User đặt yêu cầu xóa dữ liệu → ErasureRequest → admin xử lý
 
     Attributes:
         records: Dict record_id → ConsentRecord
         policies: Dict policy_id → ConsentPolicy
         cookie_preferences: Dict key → CookiePreference
         comm_preferences: Dict key → CommunicationPreference
-        erasure_requests: Dict request_id → ErasureRequest
     """
 
     def __init__(self) -> None:
@@ -651,9 +521,7 @@ class ConsentEngine:
         self.policies: dict[str, ConsentPolicy] = {}
         self.cookie_preferences: dict[str, CookiePreference] = {}
         self.comm_preferences: dict[str, CommunicationPreference] = {}
-        self.erasure_requests: dict[str, ErasureRequest] = {}
         self._record_counter = 0
-        self._erasure_counter = 0
 
     def grant_consent(
         self,
@@ -922,103 +790,6 @@ class ConsentEngine:
         """
         key = f"{user_id}:{tenant_id}"
         return self.comm_preferences.get(key)
-
-    def create_erasure_request(
-        self,
-        user_id: str,
-        tenant_id: str,
-        scope: ErasureScope,
-        reason: str = "",
-    ) -> ErasureRequest:
-        """Tạo yêu cầu xóa dữ liệu mới (GDPR Art.17).
-
-        Tạo ErasureRequest với trạng thái PENDING. Validate scope hợp lệ
-        và đảm bảo user_id, tenant_id không để trống.
-
-        Args:
-            user_id: ID người dùng đặt yêu cầu
-            tenant_id: ID tenant scope
-            scope: Phạm vi xóa dữ liệu
-            reason: Lý do yêu cầu xóa (nullable)
-
-        Returns:
-            ErasureRequest đã tạo với trạng thái PENDING
-
-        Raises:
-            MidicoderError: Nếu erasure scope không hợp lệ (MDC-CP49-006)
-        """
-        if scope not in ErasureScope:
-            EM.raise_error(
-                ErrorCode.CP49_ERASURE_SCOPE_INVALID,
-                scope=str(scope),
-            )
-
-        self._erasure_counter += 1
-        request_id = f"erasure_{self._erasure_counter}_{int(time.time() * 1000)}"
-
-        request = ErasureRequest(
-            request_id=request_id,
-            user_id=user_id,
-            tenant_id=tenant_id,
-            scope=scope,
-            status=ErasureStatus.PENDING,
-            reason=reason,
-        )
-
-        self.erasure_requests[request_id] = request
-        return request
-
-    def process_erasure_request(
-        self,
-        request_id: str,
-        decision: str,
-    ) -> ErasureRequest:
-        """Xử lý yêu cầu xóa dữ liệu — phê duyệt hoặc từ chối.
-
-        Cập nhật trạng thái yêu cầu theo decision:
-        - "approve": PENDING/REVIEWING → APPROVED → PROCESSING
-        - "reject": PENDING/REVIEWING → REJECTED
-        - "complete": PROCESSING → COMPLETED
-        - "review": PENDING → REVIEWING
-
-        Args:
-            request_id: ID yêu cầu xóa dữ liệu
-            decision: Quyết định xử lý ("approve", "reject", "complete", "review")
-
-        Returns:
-            ErasureRequest đã cập nhật trạng thái
-
-        Raises:
-            MidicoderError: Nếu erasure request không tồn tại (MDC-CP49-005)
-        """
-        if request_id not in self.erasure_requests:
-            EM.raise_error(
-                ErrorCode.CP49_ERASURE_REQUEST_NOT_FOUND,
-                request_id=request_id,
-            )
-
-        request = self.erasure_requests[request_id]
-
-        if decision == "approve":
-            if request.status in (ErasureStatus.PENDING, ErasureStatus.REVIEWING):
-                request.status = ErasureStatus.APPROVED
-            elif request.status == ErasureStatus.APPROVED:
-                request.status = ErasureStatus.PROCESSING
-
-        elif decision == "reject":
-            if request.status in (ErasureStatus.PENDING, ErasureStatus.REVIEWING):
-                request.status = ErasureStatus.REJECTED
-
-        elif decision == "complete":
-            if request.status == ErasureStatus.PROCESSING:
-                request.status = ErasureStatus.COMPLETED
-                request.completed_at = datetime.now(timezone.utc)
-
-        elif decision == "review":
-            if request.status == ErasureStatus.PENDING:
-                request.status = ErasureStatus.REVIEWING
-
-        return request
 
     def check_expired_consents(self) -> list[ConsentRecord]:
         """Kiểm tra và trả về danh sách consent đã hết hạn.

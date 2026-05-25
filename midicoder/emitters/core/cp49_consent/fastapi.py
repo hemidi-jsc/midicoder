@@ -4,7 +4,9 @@ FastAPI Emitter cho CP49: Consent & Preference Management.
 
 Module này render Jinja2 templates để sinh consent management code
 cho FastAPI stack, bao gồm models, schemas, service, router,
-cookie banner service, erasure service, và consent middleware.
+cookie banner service, và consent middleware.
+
+Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 
 Tác giả: Midicoder Team
 Version: 1.0.0
@@ -83,13 +85,12 @@ class FastAPIConsentEmitter:
     ) -> list[GeneratedFile]:
         """Emit consent management code cho FastAPI.
 
-        Sinh 7 files:
+        Sinh 6 files:
         - consent_models.py
         - consent_schemas.py
         - consent_service.py
         - consent_router.py
         - cookie_banner_service.py
-        - erasure_service.py
         - consent_middleware.py
 
         Args:
@@ -111,7 +112,6 @@ class FastAPIConsentEmitter:
             ("consent_service.py.jinja2", "app/services/consent_service.py"),
             ("consent_router.py.jinja2", "app/api/consent_router.py"),
             ("cookie_banner_service.py.jinja2", "app/services/cookie_banner_service.py"),
-            ("erasure_service.py.jinja2", "app/services/erasure_service.py"),
             ("consent_middleware.py.jinja2", "app/middleware/consent_middleware.py"),
         ]
 
@@ -143,7 +143,6 @@ class FastAPIConsentEmitter:
             "cookie_categories_list": ir.cookie_categories,
             "comm_channels": ir.comm_channels,
             "comm_channels_list": ir.comm_channels,
-            "erasure_config": ir.erasure_config,
             "policy_count": len(ir.policies),
             "consent_count": len(ir.consents),
             "use_audit": ir.use_audit,

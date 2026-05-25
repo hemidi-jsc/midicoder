@@ -4,7 +4,9 @@ NestJS Emitter cho CP49: Consent & Preference Management.
 
 Module này render Jinja2 templates để sinh consent management code
 cho NestJS stack, bao gồm entity, DTO, service, controller,
-module, erasure service, và consent guard.
+module, và consent guard.
+
+Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 
 Tác giả: Midicoder Team
 Version: 1.0.0
@@ -83,13 +85,12 @@ class NestJSConsentEmitter:
     ) -> list[GeneratedFile]:
         """Emit consent management code cho NestJS.
 
-        Sinh 7 files:
+        Sinh 6 files:
         - consent.entity.ts
         - consent.dto.ts
         - consent.service.ts
         - consent.controller.ts
         - consent.module.ts
-        - erasure.service.ts
         - consent.guard.ts
 
         Args:
@@ -111,7 +112,6 @@ class NestJSConsentEmitter:
             ("consent.service.ts.jinja2", "src/consent/consent.service.ts"),
             ("consent.controller.ts.jinja2", "src/consent/consent.controller.ts"),
             ("consent.module.ts.jinja2", "src/consent/consent.module.ts"),
-            ("erasure.service.ts.jinja2", "src/consent/erasure.service.ts"),
             ("consent.guard.ts.jinja2", "src/consent/consent.guard.ts"),
         ]
 
@@ -143,7 +143,6 @@ class NestJSConsentEmitter:
             "cookie_categories_list": ir.cookie_categories,
             "comm_channels": ir.comm_channels,
             "comm_channels_list": ir.comm_channels,
-            "erasure_config": ir.erasure_config,
             "policy_count": len(ir.policies),
             "consent_count": len(ir.consents),
             "use_audit": ir.use_audit,

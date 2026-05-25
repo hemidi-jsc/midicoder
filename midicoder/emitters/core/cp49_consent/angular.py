@@ -7,9 +7,10 @@ cho Angular stack, bao gồm:
 - privacy-center.component.ts: Component chính hiển thị trung tâm quyền riêng tư
 - cookie-banner.component.ts: Banner thông báo và thu thập đồng ý cookie
 - consent-manager.component.ts: Quản lý các bản ghi đồng ý của user
-- erasure-request.component.ts: Component yêu cầu xóa dữ liệu GDPR
 - consent.service.ts: Injectable service gọi API consent
 - consent.store.ts: Store quản lý trạng thái consent
+
+Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 
 Tác giả: Midicoder Team
 Version: 1.0.0
@@ -61,7 +62,6 @@ class AngularConsentEmitter:
         "privacy-center.component.ts.jinja2": "src/consent/privacy-center.component.ts",
         "cookie-banner.component.ts.jinja2": "src/consent/cookie-banner.component.ts",
         "consent-manager.component.ts.jinja2": "src/consent/consent-manager.component.ts",
-        "erasure-request.component.ts.jinja2": "src/consent/erasure-request.component.ts",
         "consent.service.ts.jinja2": "src/consent/consent.service.ts",
         "consent.store.ts.jinja2": "src/consent/consent.store.ts",
     }
@@ -98,11 +98,10 @@ class AngularConsentEmitter:
     ) -> list[GeneratedFile]:
         """Emit consent management infrastructure cho Angular.
 
-        Sinh 6 files:
+        Sinh 5 files:
         - privacy-center.component.ts
         - cookie-banner.component.ts
         - consent-manager.component.ts
-        - erasure-request.component.ts
         - consent.service.ts
         - consent.store.ts
 
@@ -147,7 +146,6 @@ class AngularConsentEmitter:
             "cookie_categories_list": ir.cookie_categories,
             "comm_channels": ir.comm_channels,
             "comm_channels_list": ir.comm_channels,
-            "erasure_config": ir.erasure_config,
             "policy_count": len(ir.policies),
             "consent_count": len(ir.consents),
             "use_audit": ir.use_audit,

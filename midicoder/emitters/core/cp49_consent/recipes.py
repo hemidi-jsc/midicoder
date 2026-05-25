@@ -3,8 +3,9 @@
 Mô-đun recipes cho CP49 — Consent & Preference Management.
 
 Cung cấp các recipe patterns để generate hệ thống quản lý consent với
-chính sách đa mục đích, bản ghi consent, sở thích cookie, sở thích truyền thông,
-và yêu cầu xóa dữ liệu GDPR.
+chính sách đa mục đích, bản ghi consent, sở thích cookie, sở thích truyền thông.
+
+Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 
 Tác giả: Midicoder Team
 Version: 1.0.0
@@ -23,9 +24,6 @@ from midicoder.emitters.core.cp49_consent.models import (
     ConsentStatus,
     CookiePreference,
     CommunicationPreference,
-    ErasureRequest,
-    ErasureScope,
-    ErasureStatus,
 )
 from midicoder.emitters.core.cp49_consent.parser import ConsentIR
 
@@ -48,8 +46,7 @@ def basic_consent_recipe() -> RecipeOutput:
     """Recipe: Quản lý consent cơ bản — 2 chính sách, 1 bản ghi, cookie config cơ bản.
 
     Tạo 2 chính sách consent (analytics, marketing), 1 bản ghi consent ACTIVE,
-    và cấu hình cookie cơ bản với 4 danh mục. Không có erasure request,
-    không có communication preference, use_audit=True, use_retention=True.
+    và cấu hình cookie cơ bản với 4 danh mục. use_audit=True, use_retention=True.
 
     Phù hợp cho môi trường dev/prototyping khi cần consent tối thiểu.
 
@@ -101,7 +98,6 @@ def basic_consent_recipe() -> RecipeOutput:
             consents=consents,
             cookie_categories=["necessary", "functional", "analytics", "advertising"],
             comm_channels=[],
-            erasure_config={},
             use_audit=True,
             use_retention=True,
         ),
@@ -109,12 +105,14 @@ def basic_consent_recipe() -> RecipeOutput:
 
 
 def full_consent_recipe() -> RecipeOutput:
-    """Recipe: Quản lý consent đầy đủ — 5 chính sách, 3 bản ghi, full cookie + comm config, erasure.
+    """Recipe: Quản lý consent đầy đủ — 5 chính sách, 3 bản ghi, full cookie + comm config.
 
     Tạo 5 chính sách consent đa mục đích (essential, analytics, marketing,
     third_party, data_processing), 3 bản ghi consent (ACTIVE, REVOKED, EXPIRED),
     cấu hình cookie đầy đủ với tất cả danh mục, sở thích truyền thông đa kênh,
-    1 yêu cầu xóa dữ liệu GDPR, tích hợp audit và retention.
+    tích hợp audit và retention.
+
+    Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 
     Phù hợp cho môi trường production với đầy đủ tính năng compliance GDPR/CCPA.
 
@@ -214,34 +212,18 @@ def full_consent_recipe() -> RecipeOutput:
         ),
     ]
 
-    erasure_config = {
-        "enabled": True,
-        "auto_approve": False,
-        "retention_days": 90,
-        "max_concurrent_requests": 10,
-        "require_admin_approval": True,
-        "notify_on_completion": True,
-        "integration": {
-            "audit_log": True,
-            "retention_policy": True,
-            "audit_cp": "CP14",
-            "retention_cp": "CP47",
-        },
-    }
-
     return RecipeOutput(
         name="full_consent",
         description=(
             "5 chính sách (essential, analytics, marketing, third_party, data_processing), "
             "3 bản ghi consent (active/revoked/expired), full cookie + comm config, "
-            "1 yêu cầu xóa dữ liệu, tích hợp audit + retention"
+            "tích hợp audit + retention"
         ),
         ir=ConsentIR(
             policies=policies,
             consents=consents,
             cookie_categories=["necessary", "functional", "analytics", "advertising"],
             comm_channels=["email", "sms", "push", "webhook"],
-            erasure_config=erasure_config,
             use_audit=True,
             use_retention=True,
         ),

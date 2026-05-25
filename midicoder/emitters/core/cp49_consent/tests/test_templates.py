@@ -57,7 +57,13 @@ class TestPackManifest:
         assert "comm_preference" in caps
         assert "privacy_center" in caps
         assert "marketing_opt_out" in caps
-        assert "gdpr_erasure" in caps
+
+    def test_pack_no_gdpr_erasure(self):
+        """gdpr_erasure không còn trong capabilities (delegate đến CP47)."""
+        with open(EMITTERS_DIR / "pack.yml", "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        caps = data["pack"]["capabilities_provided"]
+        assert "gdpr_erasure" not in caps
 
     def test_pack_obligations(self):
         """Obligations có TenantIsolation và AuditTrail."""
@@ -80,11 +86,11 @@ class TestPackManifest:
         assert "CP47" in deps
 
     def test_pack_file_contributions_count(self):
-        """Có 26 file contributions cho 4 stacks."""
+        """Có 22 file contributions cho 4 stacks (6+6+5+5)."""
         with open(EMITTERS_DIR / "pack.yml", "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         contributions = data["pack"]["file_contributions"]["infrastructure"]
-        assert len(contributions) == 26  # 7+7+6+6
+        assert len(contributions) == 22  # 6+6+5+5
 
     def test_pack_recipes(self):
         """Recipes đúng."""
@@ -104,7 +110,6 @@ class TestFastAPITemplates:
         "consent_service.py.jinja2",
         "consent_router.py.jinja2",
         "cookie_banner_service.py.jinja2",
-        "erasure_service.py.jinja2",
         "consent_middleware.py.jinja2",
     ]
 
@@ -131,7 +136,6 @@ class TestNestJSTemplates:
         "consent.service.ts.jinja2",
         "consent.controller.ts.jinja2",
         "consent.module.ts.jinja2",
-        "erasure.service.ts.jinja2",
         "consent.guard.ts.jinja2",
     ]
 
@@ -156,7 +160,6 @@ class TestAngularTemplates:
         "privacy-center.component.ts.jinja2",
         "cookie-banner.component.ts.jinja2",
         "consent-manager.component.ts.jinja2",
-        "erasure-request.component.ts.jinja2",
         "consent.service.ts.jinja2",
         "consent.store.ts.jinja2",
     ]
@@ -182,7 +185,6 @@ class TestReactTemplates:
         "PrivacyCenter.tsx.jinja2",
         "CookieBanner.tsx.jinja2",
         "ConsentManager.tsx.jinja2",
-        "ErasureRequest.tsx.jinja2",
         "CommunicationPreferences.tsx.jinja2",
         "useConsent.ts.jinja2",
     ]
@@ -224,14 +226,12 @@ class TestInitModule:
             ConsentRecord,
             ConsentPolicy,
             CookiePreference,
-            ErasureRequest,
             CommunicationPreference,
             ConsentEngine,
         )
         assert ConsentRecord is not None
         assert ConsentPolicy is not None
         assert CookiePreference is not None
-        assert ErasureRequest is not None
         assert CommunicationPreference is not None
         assert ConsentEngine is not None
 

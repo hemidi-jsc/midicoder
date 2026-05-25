@@ -70,13 +70,13 @@ class TestFastAPIConsentEmitter:
         assert emitter.template_dir == FASTAPI_STACK_DIR
 
     def test_emit_returns_minimum_files(self, tmp_path: Path):
-        """Kiểm tra emit trả về ít nhất 7 files."""
+        """Kiểm tra emit trả về ít nhất 6 files."""
         from midicoder.emitters.core.cp49_consent.fastapi import (
             FastAPIConsentEmitter,
         )
         emitter = FastAPIConsentEmitter(stack_dir=str(FASTAPI_STACK_DIR))
         files = emitter.emit(_make_ir(), tmp_path)
-        assert len(files) >= 7
+        assert len(files) >= 6
 
     def test_emit_returns_correct_paths(self, tmp_path: Path):
         """Kiểm tra emit trả về các đường dẫn đúng."""
@@ -91,7 +91,6 @@ class TestFastAPIConsentEmitter:
         assert "app/services/consent_service.py" in paths
         assert "app/api/consent_router.py" in paths
         assert "app/services/cookie_banner_service.py" in paths
-        assert "app/services/erasure_service.py" in paths
         assert "app/middleware/consent_middleware.py" in paths
 
     def test_emit_files_have_nonempty_content(self, tmp_path: Path):
@@ -115,7 +114,6 @@ class TestFastAPIConsentEmitter:
         assert "consent_records" in ctx
         assert "cookie_categories" in ctx
         assert "comm_channels" in ctx
-        assert "erasure_config" in ctx
         assert "use_audit" in ctx
         assert "use_retention" in ctx
 
@@ -178,13 +176,13 @@ class TestNestJSConsentEmitter:
         assert emitter.template_dir == NESTJS_STACK_DIR
 
     def test_emit_returns_minimum_files(self, tmp_path: Path):
-        """Kiểm tra emit trả về ít nhất 7 files."""
+        """Kiểm tra emit trả về ít nhất 6 files."""
         from midicoder.emitters.core.cp49_consent.nestjs import (
             NestJSConsentEmitter,
         )
         emitter = NestJSConsentEmitter(stack_dir=str(NESTJS_STACK_DIR))
         files = emitter.emit(_make_ir(), tmp_path)
-        assert len(files) >= 7
+        assert len(files) >= 6
 
     def test_emit_returns_correct_paths(self, tmp_path: Path):
         """Kiểm tra emit trả về các đường dẫn đúng cho NestJS."""
@@ -199,7 +197,6 @@ class TestNestJSConsentEmitter:
         assert "src/consent/consent.service.ts" in paths
         assert "src/consent/consent.controller.ts" in paths
         assert "src/consent/consent.module.ts" in paths
-        assert "src/consent/erasure.service.ts" in paths
         assert "src/consent/consent.guard.ts" in paths
 
     def test_emit_files_have_nonempty_content(self, tmp_path: Path):
@@ -223,7 +220,6 @@ class TestNestJSConsentEmitter:
         assert "consent_records" in ctx
         assert "cookie_categories" in ctx
         assert "comm_channels" in ctx
-        assert "erasure_config" in ctx
         assert "use_audit" in ctx
         assert "use_retention" in ctx
 
@@ -286,13 +282,13 @@ class TestAngularConsentEmitter:
         assert emitter.template_dir == ANGULAR_STACK_DIR
 
     def test_emit_returns_minimum_files(self, tmp_path: Path):
-        """Kiểm tra emit trả về ít nhất 6 files."""
+        """Kiểm tra emit trả về ít nhất 5 files."""
         from midicoder.emitters.core.cp49_consent.angular import (
             AngularConsentEmitter,
         )
         emitter = AngularConsentEmitter(stack_dir=str(ANGULAR_STACK_DIR))
         files = emitter.emit(_make_ir(), tmp_path)
-        assert len(files) >= 6
+        assert len(files) >= 5
 
     def test_emit_returns_correct_paths(self, tmp_path: Path):
         """Kiểm tra emit trả về các đường dẫn đúng cho Angular."""
@@ -305,7 +301,6 @@ class TestAngularConsentEmitter:
         assert "src/consent/privacy-center.component.ts" in paths
         assert "src/consent/cookie-banner.component.ts" in paths
         assert "src/consent/consent-manager.component.ts" in paths
-        assert "src/consent/erasure-request.component.ts" in paths
         assert "src/consent/consent.service.ts" in paths
         assert "src/consent/consent.store.ts" in paths
 
@@ -330,16 +325,15 @@ class TestAngularConsentEmitter:
         assert "consent_records" in ctx
         assert "cookie_categories" in ctx
         assert "comm_channels" in ctx
-        assert "erasure_config" in ctx
         assert "use_audit" in ctx
         assert "use_retention" in ctx
 
-    def test_template_map_has_6_entries(self):
-        """Kiểm tra _TEMPLATE_MAP có đúng 6 entries."""
+    def test_template_map_has_5_entries(self):
+        """Kiểm tra _TEMPLATE_MAP có đúng 5 entries."""
         from midicoder.emitters.core.cp49_consent.angular import (
             AngularConsentEmitter,
         )
-        assert len(AngularConsentEmitter._TEMPLATE_MAP) == 6
+        assert len(AngularConsentEmitter._TEMPLATE_MAP) == 5
 
     def test_template_exists_true(self):
         """Kiểm tra _template_exists trả về True với template có thật."""
@@ -400,13 +394,13 @@ class TestReactConsentEmitter:
         assert emitter.template_dir == REACT_STACK_DIR
 
     def test_emit_returns_minimum_files(self):
-        """Kiểm tra emit trả về ít nhất 6 files."""
+        """Kiểm tra emit trả về ít nhất 5 files."""
         from midicoder.emitters.core.cp49_consent.react import (
             ReactConsentEmitter,
         )
         emitter = ReactConsentEmitter(stack_dir=str(REACT_STACK_DIR))
         files = emitter.emit(_make_ir())
-        assert len(files) >= 6
+        assert len(files) >= 5
 
     def test_emit_returns_correct_paths(self):
         """Kiểm tra emit trả về các đường dẫn đúng cho React."""
@@ -419,7 +413,6 @@ class TestReactConsentEmitter:
         assert "src/consent/PrivacyCenter.tsx" in paths
         assert "src/consent/CookieBanner.tsx" in paths
         assert "src/consent/ConsentManager.tsx" in paths
-        assert "src/consent/ErasureRequest.tsx" in paths
         assert "src/consent/CommunicationPreferences.tsx" in paths
         assert "src/consent/hooks/useConsent.ts" in paths
 

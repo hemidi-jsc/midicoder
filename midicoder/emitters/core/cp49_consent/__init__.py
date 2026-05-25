@@ -19,9 +19,6 @@ from midicoder.emitters.core.cp49_consent.models import (
     ConsentStatus,
     CookieCategory,
     CookiePreference,
-    ErasureRequest,
-    ErasureScope,
-    ErasureStatus,
 )
 from midicoder.emitters.core.cp49_consent.parser import (
     ConsentIR,
@@ -29,7 +26,6 @@ from midicoder.emitters.core.cp49_consent.parser import (
     parse_consent_policies,
     parse_consent_records,
     parse_cookie_config,
-    parse_erasure_config,
     parse_to_ir,
 )
 from midicoder.emitters.core.cp49_consent.recipes import (
@@ -57,14 +53,11 @@ __all__ = [
     "ConsentCategory",
     "CookieCategory",
     "CommChannel",
-    "ErasureStatus",
-    "ErasureScope",
     # Models - Core
     "ConsentRecord",
     "ConsentPolicy",
     "CookiePreference",
     "CommunicationPreference",
-    "ErasureRequest",
     # Models - Engine
     "ConsentEngine",
     # Parser
@@ -73,7 +66,6 @@ __all__ = [
     "parse_consent_records",
     "parse_cookie_config",
     "parse_comm_config",
-    "parse_erasure_config",
     "parse_to_ir",
     # Recipes
     "RecipeOutput",

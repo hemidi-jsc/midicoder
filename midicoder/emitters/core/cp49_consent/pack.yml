@@ -9,7 +9,8 @@
 # - comm_preference: Sở thích truyền thông marketing
 # - privacy_center: Trung tâm quyền riêng tư
 # - marketing_opt_out: Từ chối marketing
-# - gdpr_erasure: Yêu cầu xóa dữ liệu GDPR
+#
+# Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management)
 #
 # Storage: SQLite + Redis pub/sub
 # ===========================================================================
@@ -22,18 +23,17 @@ pack:
   status: "stable"
   category: "privacy"
   depends_on: ["CP01", "CP02", "CP03", "CP14", "CP47"]
-  definitions_count: 5
+  definitions_count: 4
   obligations_count: 2
   error_codes:
     prefix: "MDC-CP49"
-    range: "MDC-CP49-001 to MDC-CP49-010"
+    range: "MDC-CP49-001 to MDC-CP49-008"
   capabilities_provided:
     - cookie_consent
     - data_consent
     - comm_preference
     - privacy_center
     - marketing_opt_out
-    - gdpr_erasure
   capabilities:
     - id: "cookie_consent"
       emitter: "fastapi, nestjs, angular, react"
@@ -45,8 +45,6 @@ pack:
       emitter: "angular, react"
     - id: "marketing_opt_out"
       emitter: "fastapi, nestjs, angular, react"
-    - id: "gdpr_erasure"
-      emitter: "fastapi, nestjs, angular, react"
   definitions:
     - name: "ConsentRecord"
       description: "Bản ghi consent của user"
@@ -56,8 +54,6 @@ pack:
       description: "Sở thích cookie của user"
     - name: "CommunicationPreference"
       description: "Sở thích truyền thông của user"
-    - name: "ErasureRequest"
-      description: "Yêu cầu xóa dữ liệu GDPR"
   obligations:
     - name: "AuditTrail"
       description: "Ghi audit log cho mọi consent action (CP14)"
@@ -98,12 +94,6 @@ pack:
         stacks: ["fastapi"]
         pack_emitter: null
         context_keys: ["cookie_categories"]
-      - path: "app/consent/services/erasure_service.py"
-        file_type: "erasure_service"
-        template: "cp49_consent/erasure_service.py.jinja2"
-        stacks: ["fastapi"]
-        pack_emitter: null
-        context_keys: ["erasure_config"]
       - path: "app/consent/middleware/consent_middleware.py"
         file_type: "consent_middleware"
         template: "cp49_consent/consent_middleware.py.jinja2"
@@ -143,12 +133,6 @@ pack:
         stacks: ["nestjs"]
         pack_emitter: null
         context_keys: []
-      - path: "src/consent/services/erasure.service.ts"
-        file_type: "erasure_service"
-        template: "cp49_consent/erasure.service.ts.jinja2"
-        stacks: ["nestjs"]
-        pack_emitter: null
-        context_keys: ["erasure_config"]
       - path: "src/consent/consent.guard.ts"
         file_type: "consent_guard"
         template: "cp49_consent/consent.guard.ts.jinja2"
@@ -176,12 +160,6 @@ pack:
         stacks: ["angular"]
         pack_emitter: null
         context_keys: ["consent_records"]
-      - path: "src/app/consent/components/erasure-request.component.ts"
-        file_type: "erasure_request"
-        template: "cp49_consent/erasure-request.component.ts.jinja2"
-        stacks: ["angular"]
-        pack_emitter: null
-        context_keys: ["erasure_config"]
       - path: "src/app/core/consent/consent.service.ts"
         file_type: "consent_service"
         template: "cp49_consent/consent.service.ts.jinja2"
@@ -215,12 +193,6 @@ pack:
         stacks: ["react"]
         pack_emitter: null
         context_keys: ["consent_records"]
-      - path: "src/consent/components/ErasureRequest.tsx"
-        file_type: "erasure_request"
-        template: "cp49_consent/ErasureRequest.tsx.jinja2"
-        stacks: ["react"]
-        pack_emitter: null
-        context_keys: ["erasure_config"]
       - path: "src/consent/components/CommunicationPreferences.tsx"
         file_type: "communication_preferences"
         template: "cp49_consent/CommunicationPreferences.tsx.jinja2"
@@ -238,7 +210,6 @@ pack:
       - PrivacyCenter
       - CookieBanner
       - ConsentManager
-      - ErasureRequest
       - CommunicationPreferences
     angular:
       - PrivacyCenterComponent

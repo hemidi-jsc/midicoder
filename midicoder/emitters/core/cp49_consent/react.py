@@ -7,9 +7,10 @@ cho React stack, bao gồm:
 - PrivacyCenter.tsx: Component chính hiển thị trung tâm quyền riêng tư
 - CookieBanner.tsx: Banner thông báo và thu thập đồng ý cookie
 - ConsentManager.tsx: Quản lý các bản ghi đồng ý của user
-- ErasureRequest.tsx: Component yêu cầu xóa dữ liệu GDPR
 - CommunicationPreferences.tsx: Cài đặt sở thích truyền thông
 - useConsent.ts: Custom hook để quản lý trạng thái consent
+
+Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 
 Tác giả: Midicoder Team
 Version: 1.0.0
@@ -47,7 +48,6 @@ class ReactConsentEmitter:
         "PrivacyCenter.tsx.jinja2": "src/consent/PrivacyCenter.tsx",
         "CookieBanner.tsx.jinja2": "src/consent/CookieBanner.tsx",
         "ConsentManager.tsx.jinja2": "src/consent/ConsentManager.tsx",
-        "ErasureRequest.tsx.jinja2": "src/consent/ErasureRequest.tsx",
         "CommunicationPreferences.tsx.jinja2": "src/consent/CommunicationPreferences.tsx",
         "useConsent.ts.jinja2": "src/consent/hooks/useConsent.ts",
     }
@@ -80,11 +80,10 @@ class ReactConsentEmitter:
     def emit(self, ir: ConsentIR, context: dict[str, Any] | None = None) -> list[dict[str, str]]:
         """Emit consent management infrastructure cho React.
 
-        Sinh 6 files:
+        Sinh 5 files:
         - PrivacyCenter.tsx
         - CookieBanner.tsx
         - ConsentManager.tsx
-        - ErasureRequest.tsx
         - CommunicationPreferences.tsx
         - useConsent.ts
 
@@ -109,7 +108,6 @@ class ReactConsentEmitter:
             "cookie_categories_list": ir.cookie_categories,
             "comm_channels": ir.comm_channels,
             "comm_channels_list": ir.comm_channels,
-            "erasure_config": ir.erasure_config,
             "policy_count": len(ir.policies),
             "consent_count": len(ir.consents),
             "use_audit": ir.use_audit,

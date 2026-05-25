@@ -3,8 +3,9 @@
 Mô-đun parser cho CP49 — Consent & Preference Management.
 
 Parse DSL dict (từ contract YAML) sang ConsentIR — Intermediate Representation
-cho các chính sách consent, bản ghi consent, cấu hình cookie, sở thích truyền thông,
-và cấu hình xóa dữ liệu.
+cho các chính sách consent, bản ghi consent, cấu hình cookie, sở thích truyền thông.
+
+Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 
 Tác giả: Midicoder Team
 Version: 1.0.0
@@ -25,9 +26,6 @@ from midicoder.emitters.core.cp49_consent.models import (
     CookiePreference,
     CommChannel,
     CommunicationPreference,
-    ErasureRequest,
-    ErasureScope,
-    ErasureStatus,
 )
 
 
@@ -37,14 +35,15 @@ class ConsentIR:
 
     Gom tập tất cả cấu hình quản lý consent từ DSL, bao gồm
     các chính sách consent, bản ghi consent, cấu hình cookie,
-    sở thích truyền thông, và cấu hình xóa dữ liệu.
+    và sở thích truyền thông.
+
+    Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 
     Attributes:
         policies: Danh sách chính sách consent
         consents: Danh sách bản ghi consent
         cookie_categories: Danh sách danh mục cookie
         comm_channels: Danh sách kênh truyền thông
-        erasure_config: Cấu hình xóa dữ liệu
         use_audit: Có sử dụng tích hợp audit (CP14) không
         use_retention: Có sử dụng tích hợp retention (CP47) không
     """
@@ -52,7 +51,6 @@ class ConsentIR:
     consents: list[ConsentRecord] = field(default_factory=list)
     cookie_categories: list[str] = field(default_factory=list)
     comm_channels: list[str] = field(default_factory=list)
-    erasure_config: dict = field(default_factory=dict)
     use_audit: bool = True
     use_retention: bool = True
 
@@ -63,7 +61,6 @@ class ConsentIR:
             "consents": [c.to_dict() for c in self.consents],
             "cookie_categories": self.cookie_categories,
             "comm_channels": self.comm_channels,
-            "erasure_config": self.erasure_config,
             "use_audit": self.use_audit,
             "use_retention": self.use_retention,
         }
@@ -78,7 +75,6 @@ class ConsentIR:
             consents=consents,
             cookie_categories=data.get("cookie_categories", []),
             comm_channels=data.get("comm_channels", []),
-            erasure_config=data.get("erasure_config", {}),
             use_audit=data.get("use_audit", True),
             use_retention=data.get("use_retention", True),
         )
@@ -183,45 +179,17 @@ def parse_comm_config(data: dict[str, Any]) -> list[str]:
     return []
 
 
-def parse_erasure_config(data: dict[str, Any]) -> dict[str, Any]:
-    """Parse cấu hình xóa dữ liệu từ DSL dict.
-
-    Args:
-        data: DSL dict với key 'erasure_config' hoặc 'erasure'
-
-    Returns:
-        Dict cấu hình xóa dữ liệu
-    """
-    raw = data.get("erasure_config", data.get("erasure", {}))
-
-    if isinstance(raw, dict):
-        return raw
-
-    if isinstance(raw, list):
-        # Chuyển danh sách yêu cầu sang cấu hình
-        return {
-            "requests": raw,
-            "enabled": True,
-            "auto_approve": False,
-            "retention_days": 90,
-        }
-
-    return {
-        "enabled": False,
-        "auto_approve": False,
-        "retention_days": 90,
-    }
-
-
 def parse_to_ir(data: dict[str, Any]) -> ConsentIR:
     """Parse DSL dict thành ConsentIR.
 
     Gom tập tất cả các thành phần: policies, records, cookie config,
-    comm config, erasure config, và các flags tích hợp audit/retention.
+    comm config, và các flags tích hợp audit/retention.
+
+    Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 
     Args:
         data: DSL dict với consent_policies, consent_records, cookie_config,
-            communication_preferences, erasure_config
+            communication_preferences
 
     Returns:
         ConsentIR gom tập tất cả parsed data
@@ -230,14 +198,12 @@ def parse_to_ir(data: dict[str, Any]) -> ConsentIR:
     consents = parse_consent_records(data)
     cookie_categories = parse_cookie_config(data)
     comm_channels = parse_comm_config(data)
-    erasure_config = parse_erasure_config(data)
 
     return ConsentIR(
         policies=policies,
         consents=consents,
         cookie_categories=cookie_categories,
         comm_channels=comm_channels,
-        erasure_config=erasure_config,
         use_audit=data.get("use_audit", True),
         use_retention=data.get("use_retention", True),
     )
@@ -249,6 +215,5 @@ __all__ = [
     "parse_consent_records",
     "parse_cookie_config",
     "parse_comm_config",
-    "parse_erasure_config",
     "parse_to_ir",
 ]

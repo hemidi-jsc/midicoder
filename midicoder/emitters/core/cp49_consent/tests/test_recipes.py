@@ -5,10 +5,12 @@ Kiểm tra mô-đun recipes cho CP49 — Consent & Preference Management.
 Bao gồm các tests cho:
 - RecipeOutput: tạo, fields, loại IR
 - basic_consent_recipe: tên, mô tả, 2 policies, 1 consent, cookie_categories,
-  comm_channels rỗng, erasure_config rỗng, use_audit/retention True
+  comm_channels rỗng, use_audit/retention True
 - full_consent_recipe: tên, mô tả, 5 policies, 3 consents (active/revoked/expired),
-  cookie_categories, comm_channels 4 kênh, erasure_config đầy đủ
+  cookie_categories, comm_channels 4 kênh
 - to_dict roundtrip
+
+Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 """
 
 from __future__ import annotations
@@ -137,11 +139,6 @@ class TestBasicConsentRecipe:
         output = basic_consent_recipe()
         assert output.ir.comm_channels == []
 
-    def test_erasure_config_is_empty(self):
-        """Kiểm tra erasure_config là dict rỗng."""
-        output = basic_consent_recipe()
-        assert output.ir.erasure_config == {}
-
     def test_use_audit_is_true(self):
         """Kiểm tra use_audit là True."""
         output = basic_consent_recipe()
@@ -171,7 +168,7 @@ class TestBasicConsentRecipe:
 
 
 class TestFullConsentRecipe:
-    """Kiểm tra full_consent_recipe — 5 policies, 3 consents, full config, erasure."""
+    """Kiểm tra full_consent_recipe — 5 policies, 3 consents, full config."""
 
     def test_name_is_full_consent(self):
         """Kiểm tra tên recipe là full_consent."""
@@ -298,42 +295,6 @@ class TestFullConsentRecipe:
         assert "push" in output.ir.comm_channels
         assert "webhook" in output.ir.comm_channels
 
-    def test_erasure_config_not_empty(self):
-        """Kiểm tra erasure_config không rỗng."""
-        output = full_consent_recipe()
-        assert output.ir.erasure_config
-        assert len(output.ir.erasure_config) > 0
-
-    def test_erasure_config_has_required_keys(self):
-        """Kiểm tra erasure_config có các khóa bắt buộc."""
-        output = full_consent_recipe()
-        ec = output.ir.erasure_config
-        assert "enabled" in ec
-        assert "auto_approve" in ec
-        assert "retention_days" in ec
-        assert "max_concurrent_requests" in ec
-        assert "require_admin_approval" in ec
-        assert "notify_on_completion" in ec
-
-    def test_erasure_config_values(self):
-        """Kiểm tra giá trị erasure_config."""
-        output = full_consent_recipe()
-        ec = output.ir.erasure_config
-        assert ec["enabled"] is True
-        assert ec["auto_approve"] is False
-        assert ec["retention_days"] == 90
-
-    def test_erasure_config_has_integration(self):
-        """Kiểm tra erasure_config có integration nested dict."""
-        output = full_consent_recipe()
-        ec = output.ir.erasure_config
-        assert "integration" in ec
-        integration = ec["integration"]
-        assert "audit_log" in integration
-        assert "retention_policy" in integration
-        assert "audit_cp" in integration
-        assert "retention_cp" in integration
-
     def test_use_audit_is_true(self):
         """Kiểm tra use_audit là True."""
         output = full_consent_recipe()
@@ -394,13 +355,11 @@ class TestRecipeToDict:
         assert "consents" in d
         assert "cookie_categories" in d
         assert "comm_channels" in d
-        assert "erasure_config" in d
         assert "use_audit" in d
         assert "use_retention" in d
         assert len(d["policies"]) == 2
         assert len(d["consents"]) == 1
         assert d["comm_channels"] == []
-        assert d["erasure_config"] == {}
 
     def test_basic_recipe_ir_from_dict_roundtrip(self):
         """Kiểm tra basic recipe roundtrip to_dict -> from_dict giữ nguyên dữ liệu."""
@@ -422,7 +381,6 @@ class TestRecipeToDict:
         assert len(d["consents"]) == 3
         assert len(d["cookie_categories"]) == 4
         assert len(d["comm_channels"]) == 4
-        assert d["erasure_config"]["enabled"] is True
         assert d["use_audit"] is True
         assert d["use_retention"] is True
 
@@ -469,12 +427,3 @@ class TestRecipeToDict:
         assert restored.cookie_categories == ["necessary", "functional", "analytics", "advertising"]
         assert restored.comm_channels == ["email", "sms", "push", "webhook"]
 
-    def test_roundtrip_preserves_erasure_config(self):
-        """Kiểm tra roundtrip giữ nguyên erasure_config."""
-        output = full_consent_recipe()
-        d = output.ir.to_dict()
-        restored = ConsentIR.from_dict(d)
-        assert restored.erasure_config["enabled"] is True
-        assert restored.erasure_config["auto_approve"] is False
-        assert restored.erasure_config["retention_days"] == 90
-        assert "integration" in restored.erasure_config

@@ -8,8 +8,9 @@ Bao gồm các tests cho:
 - parse_consent_records: từ key 'consent_records', từ key 'consents', empty, alias
 - parse_cookie_config: từ key 'cookie_config', từ key 'cookies', list, dict
 - parse_comm_config: từ key 'communication_preferences', từ key 'comm_config', list, dict
-- parse_erasure_config: từ key 'erasure_config', từ key 'erasure', dict, list, empty
 - parse_to_ir: full data, empty data, partial data, defaults
+
+Lưu ý: gdpr_erasure delegate đến CP47 (Data Retention & Lifecycle Management).
 """
 
 from __future__ import annotations
@@ -22,7 +23,6 @@ from midicoder.emitters.core.cp49_consent.parser import (
     parse_consent_records,
     parse_cookie_config,
     parse_comm_config,
-    parse_erasure_config,
     parse_to_ir,
 )
 from midicoder.emitters.core.cp49_consent.models import (
@@ -49,7 +49,6 @@ class TestConsentIR:
         assert len(ir.consents) == 0
         assert len(ir.cookie_categories) == 0
         assert len(ir.comm_channels) == 0
-        assert ir.erasure_config == {}
         assert ir.use_audit is True
         assert ir.use_retention is True
 
@@ -61,7 +60,6 @@ class TestConsentIR:
         assert d["consents"] == []
         assert d["cookie_categories"] == []
         assert d["comm_channels"] == []
-        assert d["erasure_config"] == {}
         assert d["use_audit"] is True
         assert d["use_retention"] is True
 
@@ -89,7 +87,6 @@ class TestConsentIR:
             consents=[record],
             cookie_categories=["necessary", "functional"],
             comm_channels=["email", "sms"],
-            erasure_config={"enabled": True, "auto_approve": False},
             use_audit=False,
             use_retention=False,
         )
@@ -97,7 +94,6 @@ class TestConsentIR:
         assert len(ir.consents) == 1
         assert ir.cookie_categories == ["necessary", "functional"]
         assert ir.comm_channels == ["email", "sms"]
-        assert ir.erasure_config == {"enabled": True, "auto_approve": False}
         assert ir.use_audit is False
         assert ir.use_retention is False
 
@@ -121,7 +117,6 @@ class TestConsentIR:
             consents=[record],
             cookie_categories=["analytics"],
             comm_channels=["push"],
-            erasure_config={"retention_days": 30},
             use_audit=True,
             use_retention=False,
         )
@@ -132,7 +127,6 @@ class TestConsentIR:
         assert d["consents"][0]["record_id"] == "rec_dict"
         assert d["cookie_categories"] == ["analytics"]
         assert d["comm_channels"] == ["push"]
-        assert d["erasure_config"] == {"retention_days": 30}
         assert d["use_audit"] is True
         assert d["use_retention"] is False
 
@@ -159,7 +153,6 @@ class TestConsentIR:
             consents=[record],
             cookie_categories=["necessary", "advertising"],
             comm_channels=["email", "webhook"],
-            erasure_config={"enabled": True, "auto_approve": True, "retention_days": 60},
             use_audit=False,
             use_retention=True,
         )
@@ -171,7 +164,6 @@ class TestConsentIR:
         assert restored.consents[0].record_id == "rec_rt"
         assert restored.cookie_categories == ["necessary", "advertising"]
         assert restored.comm_channels == ["email", "webhook"]
-        assert restored.erasure_config == {"enabled": True, "auto_approve": True, "retention_days": 60}
         assert restored.use_audit is False
         assert restored.use_retention is True
 
@@ -651,79 +643,6 @@ class TestParseCommConfig:
 
 
 # ===========================================================================
-# Test parse_erasure_config
-# ===========================================================================
-
-
-class TestParseErasureConfig:
-    """Kiểm tra parse_erasure_config — dict, list, rỗng."""
-
-    def test_parse_from_erasure_config_key(self):
-        """Kiểm tra parse từ key chính 'erasure_config'."""
-        data = {
-            "erasure_config": {
-                "enabled": True,
-                "auto_approve": True,
-                "retention_days": 45,
-            }
-        }
-        result = parse_erasure_config(data)
-        assert result["enabled"] is True
-        assert result["auto_approve"] is True
-        assert result["retention_days"] == 45
-
-    def test_parse_from_erasure_alias_key(self):
-        """Kiểm tra parse từ key alias 'erasure'."""
-        data = {
-            "erasure": {
-                "enabled": False,
-                "auto_approve": False,
-                "retention_days": 120,
-            }
-        }
-        result = parse_erasure_config(data)
-        assert result["enabled"] is False
-        assert result["auto_approve"] is False
-        assert result["retention_days"] == 120
-
-    def test_parse_empty(self):
-        """Kiểm tra parse dữ liệu rỗng trả về dict rỗng."""
-        data = {}
-        result = parse_erasure_config(data)
-        assert result == {}
-
-    def test_parse_dict_with_extra_fields(self):
-        """Kiểm tra parse dict giữ nguyên các trường bổ sung."""
-        data = {
-            "erasure_config": {
-                "enabled": True,
-                "auto_approve": False,
-                "retention_days": 60,
-                "notification_email": "admin@example.com",
-                "max_requests_per_day": 10,
-            }
-        }
-        result = parse_erasure_config(data)
-        assert result["enabled"] is True
-        assert result["notification_email"] == "admin@example.com"
-        assert result["max_requests_per_day"] == 10
-
-    def test_parse_list_input(self):
-        """Kiểm tra parse đầu vào là danh sách chuyển sang cấu hình."""
-        data = {
-            "erasure_config": [
-                {"request_id": "req_001", "user_id": "u_001"},
-                {"request_id": "req_002", "user_id": "u_002"},
-            ]
-        }
-        result = parse_erasure_config(data)
-        assert result["enabled"] is True
-        assert result["auto_approve"] is False
-        assert result["retention_days"] == 90
-        assert len(result["requests"]) == 2
-
-
-# ===========================================================================
 # Test parse_to_ir
 # ===========================================================================
 
@@ -758,11 +677,6 @@ class TestParseToIR:
                 "email": True,
                 "sms": False,
             },
-            "erasure_config": {
-                "enabled": True,
-                "auto_approve": False,
-                "retention_days": 45,
-            },
             "use_audit": True,
             "use_retention": False,
         }
@@ -773,8 +687,6 @@ class TestParseToIR:
         assert len(ir.comm_channels) == 2
         assert ir.policies[0].policy_id == "pol_ir"
         assert ir.consents[0].record_id == "rec_ir"
-        assert ir.erasure_config["enabled"] is True
-        assert ir.erasure_config["retention_days"] == 45
         assert ir.use_audit is True
         assert ir.use_retention is False
 
@@ -786,7 +698,6 @@ class TestParseToIR:
         assert len(ir.consents) == 0
         assert len(ir.cookie_categories) == 0
         assert len(ir.comm_channels) == 0
-        assert ir.erasure_config == {}
         assert ir.use_audit is True
         assert ir.use_retention is True
 
@@ -856,17 +767,12 @@ class TestParseToIR:
             "comm_config": {
                 "email": True,
             },
-            "erasure": {
-                "enabled": True,
-                "retention_days": 30,
-            },
         }
         ir = parse_to_ir(data)
         assert len(ir.policies) == 1
         assert len(ir.consents) == 1
         assert len(ir.cookie_categories) == 1
         assert len(ir.comm_channels) == 1
-        assert ir.erasure_config["enabled"] is True
 
     def test_parse_defaults_audit_retention(self):
         """Kiểm tra use_audit và use_retention mặc định là True khi không khai báo."""
