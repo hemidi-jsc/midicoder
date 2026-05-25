@@ -7,6 +7,7 @@ Production-level validation constraints for all DSL components.
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -2138,6 +2139,477 @@ class CircularDependencyConstraint(BaseConstraint):
 
 
 # ============================================================================
+# P2: Advanced Constraints C051–C060
+# ============================================================================
+
+class PluginSlotIdUnique(BaseConstraint):
+    """
+    C051: Plugin slot IDs must be unique across the tree.
+
+    CP27: PLUGIN_SLOT, PLUGIN_CONTRACT, PLUGIN_POLICY — each slot ID must
+    appear exactly once.  Duplicates cause ambiguous plugin resolution.
+    """
+    id = "C051"
+    description = "Plugin slot IDs must be unique"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.PLUGIN_SLOT:
+            return []
+
+        # Only run once (on the first PLUGIN_SLOT encountered)
+        if getattr(tree, "_c051_check_done", False):
+            return []
+        tree._c051_check_done = True
+
+        results = []
+        slot_ids = [n.id for n in tree.get_nodes_by_kind(NodeKind.PLUGIN_SLOT)]
+        seen = set()
+        for sid in slot_ids:
+            if sid in seen:
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"Duplicate plugin slot ID '{sid}'",
+                    node_id=sid,
+                    field="id",
+                    expected="unique slot ID",
+                    actual=sid,
+                ))
+            seen.add(sid)
+
+        return results
+
+
+class CalendarScheduleCronValid(BaseConstraint):
+    """
+    C052: Calendar schedule must have a valid cron expression in recurrence_rule.
+
+    CP31: CALENDAR_SCHEDULE — ``recurrence_rule`` (if present) must be a
+    5-field cron string (minute hour dom month dow).
+    """
+    id = "C052"
+    description = "Calendar schedule cron expression must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.CALENDAR_SCHEDULE:
+            return []
+
+        results = []
+        cron = node.params.get("recurrence_rule")
+        if not cron:
+            return []
+
+        if not isinstance(cron, str) or len(cron.split()) != 5:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Invalid cron expression '{cron}' — expected 5 fields",
+                node_id=node.id,
+                field="recurrence_rule",
+                expected="minute hour dom month dow",
+                actual=cron,
+            ))
+
+        return results
+
+
+class GeneralLedgerDoubleEntryValid(BaseConstraint):
+    """
+    C053: General ledger entries must balance (double-entry bookkeeping).
+
+    CP33: GENERAL_LEDGER, FINANCIAL_INSTRUMENT, CURRENCY_EXCHANGE, TAX_RULE,
+    SUBLEDGER — the sum of debit amounts must equal the sum of credit amounts
+    within each ledger entry.
+    """
+    id = "C053"
+    description = "General ledger entries must balance (double-entry)"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind not in (NodeKind.GENERAL_LEDGER, NodeKind.SUBLEDGER):
+            return []
+
+        results = []
+        entries = node.params.get("entries", [])
+
+        for entry in entries:
+            debits = sum(float(e.get("amount", 0)) for e in entry.get("debits", []))
+            credits = sum(float(e.get("amount", 0)) for e in entry.get("credits", []))
+
+            if abs(debits - credits) > 1e-9 and debits > 0:
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"Ledger entry '{entry.get('id')}' does not balance: debits={debits}, credits={credits}",
+                    node_id=node.id,
+                    field="entries",
+                    expected="debits == credits",
+                    actual=f"{debits} != {credits}",
+                ))
+
+        return results
+
+
+class ReportEntityReferenceExists(BaseConstraint):
+    """
+    C054: Report data sources must reference existing entities.
+
+    CP34: REPORT, DASHBOARD, EXPORT, SCHEDULED_REPORT — every ID in
+    ``data_sources`` (or ``source_id``) must match an ENTITY or a
+    pre-existing REPORT / DASHBOARD node.
+    """
+    id = "C054"
+    description = "Report entity references must exist"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind not in (NodeKind.REPORT, NodeKind.DASHBOARD, NodeKind.EXPORT, NodeKind.SCHEDULED_REPORT):
+            return []
+
+        results = []
+        known_ids = {n.id for n in tree.get_nodes_by_kind(NodeKind.ENTITY)}
+        known_ids.update(n.id for n in tree.get_nodes_by_kind(NodeKind.REPORT))
+        known_ids.update(n.id for n in tree.get_nodes_by_kind(NodeKind.DASHBOARD))
+
+        # REPORT, DASHBOARD, EXPORT — check data_sources
+        data_sources = node.params.get("data_sources", [])
+        for ref in data_sources:
+            if ref not in known_ids:
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"Report references non-existent entity '{ref}'",
+                    node_id=node.id,
+                    field="data_sources",
+                    expected=f"one of: {', '.join(sorted(known_ids))}",
+                    actual=ref,
+                ))
+
+        # EXPORT — check source_id
+        source_id = node.params.get("source_id")
+        if source_id and source_id not in known_ids:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Export references non-existent source '{source_id}'",
+                node_id=node.id,
+                field="source_id",
+                expected=f"one of: {', '.join(sorted(known_ids))}",
+                actual=source_id,
+            ))
+
+        # SCHEDULED_REPORT — check report_id
+        report_id = node.params.get("report_id")
+        if report_id and report_id not in known_ids:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Scheduled report references non-existent report '{report_id}'",
+                node_id=node.id,
+                field="report_id",
+                expected=f"one of: {', '.join(sorted(known_ids))}",
+                actual=report_id,
+            ))
+
+        return results
+
+
+class GeofenceCoordinateRangeValid(BaseConstraint):
+    """
+    C055: Geofence coordinates must be within valid ranges.
+
+    CP35: GEO_SEARCH_INDEX — latitude must be in [-90, 90], longitude in
+    [-180, 180].
+    """
+    id = "C055"
+    description = "Geofence coordinates must be within valid ranges"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.GEO_SEARCH_INDEX:
+            return []
+
+        results = []
+        geofences = node.params.get("geofences", [])
+
+        for gf in geofences:
+            lat = gf.get("latitude")
+            lon = gf.get("longitude")
+
+            if lat is not None and not (-90 <= lat <= 90):
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"Latitude {lat} out of range [-90, 90]",
+                    node_id=node.id,
+                    field="geofences.latitude",
+                    expected="-90..90",
+                    actual=str(lat),
+                ))
+
+            if lon is not None and not (-180 <= lon <= 180):
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"Longitude {lon} out of range [-180, 180]",
+                    node_id=node.id,
+                    field="geofences.longitude",
+                    expected="-180..180",
+                    actual=str(lon),
+                ))
+
+        return results
+
+
+class ETLStepHasExtractAndLoad(BaseConstraint):
+    """
+    C056: ETL migration batch job must have both extract and load steps.
+
+    CP38: DATA_MIGRATION, BATCH_JOB — a valid ETL pipeline requires at
+    least one ``extract`` step and at least one ``load`` step.
+    """
+    id = "C056"
+    description = "ETL step must have extract and load"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind not in (NodeKind.DATA_MIGRATION, NodeKind.BATCH_JOB):
+            return []
+
+        results = []
+        steps = node.params.get("steps", node.params.get("mapping_rules", []))
+
+        step_types = {s.get("type", "") for s in steps if isinstance(s, dict)}
+
+        if "extract" not in step_types and steps:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message="ETL pipeline missing 'extract' step",
+                node_id=node.id,
+                field="steps",
+                expected="at least one step with type='extract'",
+                actual=", ".join(sorted(step_types)),
+            ))
+
+        if "load" not in step_types and steps:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message="ETL pipeline missing 'load' step",
+                node_id=node.id,
+                field="steps",
+                expected="at least one step with type='load'",
+                actual=", ".join(sorted(step_types)),
+            ))
+
+        return results
+
+
+class LocalizationLocaleBCP47(BaseConstraint):
+    """
+    C057: Localization locale codes must follow BCP 47 format.
+
+    CP39: LOCALIZATION — each locale in ``locales`` must match the
+    simplified BCP 47 pattern ``language`` or ``language-Script-Region``
+    (e.g. ``en``, ``en-US``, ``zh-Hant-TW``).
+    """
+    id = "C057"
+    description = "Localization locale code must follow BCP 47 format"
+    level = ConstraintLevel.ERROR
+
+    # Simplified BCP 47 regex: 2-3 letter language, optional script/region
+    _BCP47_PATTERN = re.compile(r"^[a-zA-Z]{2,3}(-[a-zA-Z]{4})?(-[a-zA-Z]{2})?(-[a-zA-Z0-9]{1,8})?$")
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.LOCALIZATION:
+            return []
+
+        results = []
+        locales = node.params.get("locales", [])
+
+        for locale in locales:
+            if not self._BCP47_PATTERN.match(locale):
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"Invalid BCP 47 locale code '{locale}'",
+                    node_id=node.id,
+                    field="locales",
+                    expected="e.g. en, en-US, zh-Hant-TW",
+                    actual=locale,
+                ))
+
+        return results
+
+
+class APIVersionSemanticVersion(BaseConstraint):
+    """
+    C058: API version string must follow semantic versioning (MAJOR.MINOR.PATCH).
+
+    CP43: API_VERSION, DEPRECATION_NOTICE, PAGINATION_SPEC — ``version``
+    must be a valid semver string (e.g. ``1.0.0``, ``2.3.1``).
+    """
+    id = "C058"
+    description = "API version must follow semantic versioning"
+    level = ConstraintLevel.ERROR
+
+    _SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.API_VERSION:
+            return []
+
+        results = []
+        version = node.params.get("version")
+
+        if version and not self._SEMVER_PATTERN.match(version):
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Invalid semantic version '{version}'",
+                node_id=node.id,
+                field="version",
+                expected="MAJOR.MINOR.PATCH (e.g. 1.0.0)",
+                actual=version,
+            ))
+
+        return results
+
+
+class PaymentGatewayEndpointsValid(BaseConstraint):
+    """
+    C059: Payment gateway configuration must have valid endpoint URLs.
+
+    CP45: PAYMENT_GATEWAY — ``webhook_url`` (if present) must be a valid
+    HTTP(S) URL.
+    """
+    id = "C059"
+    description = "Payment gateway must have valid endpoint URLs"
+    level = ConstraintLevel.ERROR
+
+    _URL_PATTERN = re.compile(r"^https?://[^\s/$.?#]+\.?[^\s]*")
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.PAYMENT_GATEWAY:
+            return []
+
+        results = []
+        webhook_url = node.params.get("webhook_url")
+
+        if webhook_url and not self._URL_PATTERN.match(webhook_url):
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Invalid webhook URL '{webhook_url}'",
+                node_id=node.id,
+                field="webhook_url",
+                expected="valid HTTP(S) URL",
+                actual=webhook_url,
+            ))
+
+        return results
+
+
+class ProductCatalogUniqueSKU(BaseConstraint):
+    """
+    C060: Product catalog must have unique SKU within each category.
+
+    CP50: PRODUCT_CATALOG, FACETED_SEARCH_INDEX — every product in the
+    same category must have a distinct SKU.
+    """
+    id = "C060"
+    description = "Product catalog SKUs must be unique per category"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.PRODUCT_CATALOG:
+            return []
+
+        results = []
+        products = node.params.get("products", [])
+
+        # Group by category, then check SKU uniqueness within each group
+        category_skus: dict[str, list[str]] = {}
+        for product in products:
+            if not isinstance(product, dict):
+                continue
+            category = product.get("category", "default")
+            sku = product.get("sku")
+            if sku:
+                category_skus.setdefault(category, []).append(sku)
+
+        for category, skus in category_skus.items():
+            seen = set()
+            for sku in skus:
+                if sku in seen:
+                    results.append(ConstraintResult(
+                        constraint_id=self.id,
+                        level=self.level,
+                        message=f"Duplicate SKU '{sku}' in category '{category}'",
+                        node_id=node.id,
+                        field="products.sku",
+                        expected="unique SKU per category",
+                        actual=f"{sku} (category: {category})",
+                    ))
+                seen.add(sku)
+
+        return results
+
+
+# ============================================================================
 # Constraint Registry
 # ============================================================================
 
@@ -2232,6 +2704,17 @@ for cls in [
     LogFormatValid,
     AlertSeverityValid,
     TraceExporterValid,
+    # Advanced C051-C060
+    PluginSlotIdUnique,
+    CalendarScheduleCronValid,
+    GeneralLedgerDoubleEntryValid,
+    ReportEntityReferenceExists,
+    GeofenceCoordinateRangeValid,
+    ETLStepHasExtractAndLoad,
+    LocalizationLocaleBCP47,
+    APIVersionSemanticVersion,
+    PaymentGatewayEndpointsValid,
+    ProductCatalogUniqueSKU,
 ]:
     default_registry.register(cls())
 
