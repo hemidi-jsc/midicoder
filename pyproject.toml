@@ -33,3 +33,17 @@ packages = ["midicoder"]
 
 [tool.black]
 target-version = ["py311"]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "midicoder/tests",
+    "midicoder/emitters/core",
+]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--import-mode=importlib",
+    "-q",
+]
+asyncio_mode = "auto"
