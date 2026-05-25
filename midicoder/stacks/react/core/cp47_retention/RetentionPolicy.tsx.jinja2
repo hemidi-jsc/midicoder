@@ -1,8 +1,23 @@
 {% raw %}/**
- * RetentionPolicy — Thành phần quản lý chính sách lưu trữ: danh sách chính sách,
- * tạo/sửa/xóa chính sách, xác thực biểu mẫu, thông báo trạng thái.
- * Sinh bởi CP47 Data Retention & Lifecycle Management.
- */
+* UI Framework: {{{ ui_framework }}}
+* RetentionPolicy — Thành phần quản lý chính sách lưu trữ: danh sách chính sách,
+* tạo/sửa/xóa chính sách, xác thực biểu mẫu, thông báo trạng thái.
+* Sinh bởi CP47 Data Retention & Lifecycle Management.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { Button, Card, Table, TableBody, TableCell, TableHead, TableRow, Chip, Dialog, DialogTitle, DialogContent,
+DialogActions, TextField, Select, MenuItem } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng Tailwind CSS utility classes inline — không cần import thành phần UI
+{% elif ui_framework == "bootstrap" %}
+import { Button, Card, Table, Badge, Modal, Form } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Card, Table, Tag, Modal, Input, Select, Form } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, Modal, TextInput, Select, ComboBox } from '@carbon/react';
+{% endif %}
+{% raw %}
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 
 /* ---- Interface dữ liệu ---- */
@@ -18,801 +33,973 @@ export type ExpiryAction = 'archive' | 'erase' | 'anonymize';
 
 /** Một chính sách lưu trữ */
 export interface RetentionPolicy {
-    id: string;
-    name: string;
-    description: string;
-    data_type: DataType;
-    retention_days: number;
-    archive_after_days: number | null;
-    action_after_expiry: ExpiryAction;
-    status: RetentionPolicyStatus;
-    applied_count: number;
-    created_at: string;
-    updated_at: string;
-    created_by?: string;
+id: string;
+name: string;
+description: string;
+data_type: DataType;
+retention_days: number;
+archive_after_days: number | null;
+action_after_expiry: ExpiryAction;
+status: RetentionPolicyStatus;
+applied_count: number;
+created_at: string;
+updated_at: string;
+created_by?: string;
 }
 
 /** Dữ liệu biểu mẫu chính sách (có thể trống khi tạo mới) */
 export interface PolicyFormData {
-    name: string;
-    description: string;
-    data_type: DataType | '';
-    retention_days: string;
-    archive_after_days: string;
-    action_after_expiry: ExpiryAction | '';
-    status: RetentionPolicyStatus | '';
+name: string;
+description: string;
+data_type: DataType | '';
+retention_days: string;
+archive_after_days: string;
+action_after_expiry: ExpiryAction | '';
+status: RetentionPolicyStatus | '';
 }
 
 /** Thông báo lỗi biểu mẫu */
 export interface PolicyFormErrors {
-    name?: string;
-    description?: string;
-    data_type?: string;
-    retention_days?: string;
-    archive_after_days?: string;
-    action_after_expiry?: string;
-    status?: string;
-    general?: string;
+name?: string;
+description?: string;
+data_type?: string;
+retention_days?: string;
+archive_after_days?: string;
+action_after_expiry?: string;
+status?: string;
+general?: string;
 }
 
 /** Props của component */
 export interface RetentionPolicyProps {
-    /** URL API cơ sở */
-    apiBase?: string;
-    /** Callback khi chính sách được tạo/cập nhật/xóa */
-    onPolicyChange?: () => void;
-    /** Chỉ đọc — ẩn các nút chỉnh sửa */
-    readOnly?: boolean;
+/** URL API cơ sở */
+apiBase?: string;
+/** Callback khi chính sách được tạo/cập nhật/xóa */
+onPolicyChange?: () => void;
+/** Chỉ đọc — ẩn các nút chỉnh sửa */
+readOnly?: boolean;
 }
 
 /* ---- Giá trị mặc định cho biểu mẫu ---- */
 
 const emptyForm: PolicyFormData = {
-    name: '',
-    description: '',
-    data_type: '',
-    retention_days: '',
-    archive_after_days: '',
-    action_after_expiry: '',
-    status: '',
+name: '',
+description: '',
+data_type: '',
+retention_days: '',
+archive_after_days: '',
+action_after_expiry: '',
+status: '',
 };
 
 /* ---- Style objects ---- */
 
 const sWrap: React.CSSProperties = {
-    padding: '24px',
-    maxWidth: '1400px',
-    margin: '0 auto',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
-    backgroundColor: '#f8fafc',
-    minHeight: '100vh',
+padding: '24px',
+maxWidth: '1400px',
+margin: '0 auto',
+fontFamily: 'system-ui, -apple-system, sans-serif',
+backgroundColor: '#f8fafc',
+minHeight: '100vh',
 };
 
 const sHeader: React.CSSProperties = {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '24px',
-    flexWrap: 'wrap',
-    gap: '12px',
+display: 'flex',
+justifyContent: 'space-between',
+alignItems: 'center',
+marginBottom: '24px',
+flexWrap: 'wrap',
+gap: '12px',
 };
 
 const sHeaderTitle: React.CSSProperties = {
-    margin: 0,
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#0f172a',
+margin: 0,
+fontSize: '24px',
+fontWeight: 700,
+color: '#0f172a',
 };
 
 const sBtnBase: React.CSSProperties = {
-    padding: '9px 18px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    background: '#fff',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#334155',
-    transition: 'all 0.15s',
+padding: '9px 18px',
+border: '1px solid #e2e8f0',
+borderRadius: '8px',
+background: '#fff',
+cursor: 'pointer',
+fontSize: '14px',
+fontWeight: 500,
+color: '#334155',
+transition: 'all 0.15s',
 };
 
 const sBtnPrimary: React.CSSProperties = {
-    ...sBtnBase,
-    background: '#6366f1',
-    color: '#fff',
-    border: 'none',
+...sBtnBase,
+background: '#6366f1',
+color: '#fff',
+border: 'none',
 };
 
 const sBtnDanger: React.CSSProperties = {
-    ...sBtnBase,
-    background: '#ef4444',
-    color: '#fff',
-    border: 'none',
+...sBtnBase,
+background: '#ef4444',
+color: '#fff',
+border: 'none',
 };
 
 const sBtnSuccess: React.CSSProperties = {
-    ...sBtnBase,
-    background: '#22c55e',
-    color: '#fff',
-    border: 'none',
+...sBtnBase,
+background: '#22c55e',
+color: '#fff',
+border: 'none',
 };
 
 const sBtnSmall: React.CSSProperties = {
-    ...sBtnBase,
-    padding: '5px 12px',
-    fontSize: '13px',
+...sBtnBase,
+padding: '5px 12px',
+fontSize: '13px',
 };
 
 const sCard: React.CSSProperties = {
-    background: '#fff',
-    borderRadius: '12px',
-    padding: '20px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
-    marginBottom: '20px',
+background: '#fff',
+borderRadius: '12px',
+padding: '20px',
+boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+marginBottom: '20px',
 };
 
 const sTable: React.CSSProperties = {
-    width: '100%',
-    borderCollapse: 'collapse',
+width: '100%',
+borderCollapse: 'collapse',
 };
 
 const sTh: React.CSSProperties = {
-    padding: '12px 10px',
-    textAlign: 'left',
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#64748b',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    borderBottom: '2px solid #e2e8f0',
-    whiteSpace: 'nowrap',
+padding: '12px 10px',
+textAlign: 'left',
+fontSize: '12px',
+fontWeight: 600,
+color: '#64748b',
+textTransform: 'uppercase',
+letterSpacing: '0.05em',
+borderBottom: '2px solid #e2e8f0',
+whiteSpace: 'nowrap',
 };
 
 const sTd: React.CSSProperties = {
-    padding: '12px 10px',
-    fontSize: '14px',
-    borderBottom: '1px solid #f1f5f9',
-    color: '#334155',
+padding: '12px 10px',
+fontSize: '14px',
+borderBottom: '1px solid #f1f5f9',
+color: '#334155',
 };
 
 const sTdCode: React.CSSProperties = {
-    fontFamily: 'ui-monospace, monospace',
-    fontSize: '13px',
-    color: '#6366f1',
-    background: '#eef2ff',
-    padding: '2px 6px',
-    borderRadius: '4px',
+fontFamily: 'ui-monospace, monospace',
+fontSize: '13px',
+color: '#6366f1',
+background: '#eef2ff',
+padding: '2px 6px',
+borderRadius: '4px',
 };
 
 const sEmptyState: React.CSSProperties = {
-    padding: '48px 20px',
-    textAlign: 'center',
-    color: '#94a3b8',
-    fontSize: '15px',
+padding: '48px 20px',
+textAlign: 'center',
+color: '#94a3b8',
+fontSize: '15px',
 };
 
 const sLoading: React.CSSProperties = {
-    padding: '48px 20px',
-    textAlign: 'center',
-    color: '#64748b',
-    fontSize: '15px',
+padding: '48px 20px',
+textAlign: 'center',
+color: '#64748b',
+fontSize: '15px',
 };
 
 const sError: React.CSSProperties = {
-    padding: '14px 18px',
-    background: '#fef2f2',
-    borderRadius: '8px',
-    color: '#991b1b',
-    fontSize: '14px',
-    border: '1px solid #fecaca',
-    marginBottom: '16px',
+padding: '14px 18px',
+background: '#fef2f2',
+borderRadius: '8px',
+color: '#991b1b',
+fontSize: '14px',
+border: '1px solid #fecaca',
+marginBottom: '16px',
 };
 
 const sSuccess: React.CSSProperties = {
-    padding: '14px 18px',
-    background: '#f0fdf4',
-    borderRadius: '8px',
-    color: '#166534',
-    fontSize: '14px',
-    border: '1px solid #bbf7d0',
-    marginBottom: '16px',
+padding: '14px 18px',
+background: '#f0fdf4',
+borderRadius: '8px',
+color: '#166534',
+fontSize: '14px',
+border: '1px solid #bbf7d0',
+marginBottom: '16px',
 };
 
 const sBadgeBase: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    padding: '3px 10px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontWeight: 600,
-    whiteSpace: 'nowrap',
+display: 'inline-flex',
+alignItems: 'center',
+padding: '3px 10px',
+borderRadius: '12px',
+fontSize: '12px',
+fontWeight: 600,
+whiteSpace: 'nowrap',
 };
 
 /* Modal / Form overlay */
 const sOverlay: React.CSSProperties = {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0,0,0,0.4)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
+position: 'fixed',
+inset: 0,
+background: 'rgba(0,0,0,0.4)',
+display: 'flex',
+alignItems: 'center',
+justifyContent: 'center',
+zIndex: 1000,
 };
 
 const sModal: React.CSSProperties = {
-    background: '#fff',
-    borderRadius: '16px',
-    padding: '28px',
-    width: '100%',
-    maxWidth: '600px',
-    maxHeight: '90vh',
-    overflowY: 'auto',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
+background: '#fff',
+borderRadius: '16px',
+padding: '28px',
+width: '100%',
+maxWidth: '600px',
+maxHeight: '90vh',
+overflowY: 'auto',
+boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
 };
 
 const sModalTitle: React.CSSProperties = {
-    margin: '0 0 20px',
-    fontSize: '20px',
-    fontWeight: 600,
-    color: '#0f172a',
+margin: '0 0 20px',
+fontSize: '20px',
+fontWeight: 600,
+color: '#0f172a',
 };
 
 const sFormField: React.CSSProperties = {
-    marginBottom: '16px',
+marginBottom: '16px',
 };
 
 const sFormLabel: React.CSSProperties = {
-    display: 'block',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#334155',
-    marginBottom: '6px',
+display: 'block',
+fontSize: '13px',
+fontWeight: 600,
+color: '#334155',
+marginBottom: '6px',
 };
 
 const sFormInput: React.CSSProperties = {
-    width: '100%',
-    padding: '10px 12px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    fontSize: '14px',
-    color: '#334155',
-    outline: 'none',
-    boxSizing: 'border-box',
-    transition: 'border-color 0.15s',
+width: '100%',
+padding: '10px 12px',
+border: '1px solid #e2e8f0',
+borderRadius: '8px',
+fontSize: '14px',
+color: '#334155',
+outline: 'none',
+boxSizing: 'border-box',
+transition: 'border-color 0.15s',
 };
 
 const sFormInputError: React.CSSProperties = {
-    ...sFormInput,
-    borderColor: '#ef4444',
-    backgroundColor: '#fef2f2',
+...sFormInput,
+borderColor: '#ef4444',
+backgroundColor: '#fef2f2',
 };
 
 const sFormSelect: React.CSSProperties = {
-    ...sFormInput,
-    appearance: 'auto' as const,
+...sFormInput,
+appearance: 'auto' as const,
 };
 
 const sFormTextarea: React.CSSProperties = {
-    ...sFormInput,
-    minHeight: '80px',
-    resize: 'vertical' as const,
-    fontFamily: 'inherit',
+...sFormInput,
+minHeight: '80px',
+resize: 'vertical' as const,
+fontFamily: 'inherit',
 };
 
 const sFormErrorText: React.CSSProperties = {
-    fontSize: '12px',
-    color: '#dc2626',
-    marginTop: '4px',
+fontSize: '12px',
+color: '#dc2626',
+marginTop: '4px',
 };
 
 const sFormActions: React.CSSProperties = {
-    display: 'flex',
-    gap: '10px',
-    justifyContent: 'flex-end',
-    marginTop: '20px',
-    paddingTop: '16px',
-    borderTop: '1px solid #e2e8f0',
+display: 'flex',
+gap: '10px',
+justifyContent: 'flex-end',
+marginTop: '20px',
+paddingTop: '16px',
+borderTop: '1px solid #e2e8f0',
 };
 
 const sFilterBar: React.CSSProperties = {
-    display: 'flex',
-    gap: '12px',
-    marginBottom: '16px',
-    flexWrap: 'wrap',
-    alignItems: 'center',
+display: 'flex',
+gap: '12px',
+marginBottom: '16px',
+flexWrap: 'wrap',
+alignItems: 'center',
 };
 
 /* ---- Helper functions ---- */
 
 /** Nhãn loại dữ liệu */
 const dataTypeLabels: Record<DataType, string> = {
-    user_data:       'Dữ liệu người dùng',
-    log_data:        'Nhật ký hệ thống',
-    session_data:    'Dữ liệu phiên',
-    audit_trail:     'Dấu vết kiểm toán',
+    user_data: 'Dữ liệu người dùng',
+    log_data: 'Nhật ký hệ thống',
+    session_data: 'Dữ liệu phiên',
+    audit_trail: 'Dấu vết kiểm toán',
     file_attachment: 'Tập tin đính kèm',
-    analytics:       'Dữ liệu phân tích',
-};
+    analytics: 'Dữ liệu phân tích',
+    };
 
-const dataTypeOptions: { value: DataType; label: string }[] = Object.entries(dataTypeLabels).map(
+    const dataTypeOptions: { value: DataType; label: string }[] = Object.entries(dataTypeLabels).map(
     ([value, label]) => ({ value: value as DataType, label })
-);
+    );
 
-/** Nhãn hành động */
-const actionLabels: Record<ExpiryAction, string> = {
-    archive:    'Lưu trữ',
-    erase:      'Xóa vĩnh viễn',
-    anonymize:  'Ẩn danh hóa',
-};
+    /** Nhãn hành động */
+    const actionLabels: Record<ExpiryAction, string> = {
+        archive: 'Lưu trữ',
+        erase: 'Xóa vĩnh viễn',
+        anonymize: 'Ẩn danh hóa',
+        };
 
-const actionOptions: { value: ExpiryAction; label: string }[] = Object.entries(actionLabels).map(
-    ([value, label]) => ({ value: value as ExpiryAction, label })
-);
+        const actionOptions: { value: ExpiryAction; label: string }[] = Object.entries(actionLabels).map(
+        ([value, label]) => ({ value: value as ExpiryAction, label })
+        );
 
-/** Nhãn trạng thái */
-const statusLabels: Record<RetentionPolicyStatus, string> = {
-    active:   'Đang hoạt động',
-    inactive: 'Không hoạt động',
-    expired:  'Đã hết hạn',
-    draft:    'Bản nháp',
-};
-
-const statusColors: Record<RetentionPolicyStatus, { bg: string; color: string }> = {
-    active:   { bg: '#d1fae5', color: '#065f46' },
-    inactive: { bg: '#f1f5f9', color: '#475569' },
-    expired:  { bg: '#fee2e2', color: '#991b1b' },
-    draft:    { bg: '#fef3c7', color: '#92400e' },
-};
-
-const statusOptions: { value: RetentionPolicyStatus; label: string }[] = Object.entries(statusLabels).map(
-    ([value, label]) => ({ value: value as RetentionPolicyStatus, label })
-);
-
-function policyStatusBadgeStyle(status: RetentionPolicyStatus): React.CSSProperties {
-    const c = statusColors[status] || { bg: '#f1f5f9', color: '#475569' };
-    return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
-}
-
-function formatDateTime(iso: string | null | undefined): string {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleDateString('vi-VN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-}
-
-/* ---- Xác thực biểu mẫu ---- */
-
-function validateForm(data: PolicyFormData): PolicyFormErrors {
-    const errors: PolicyFormErrors = {};
-
-    if (!data.name.trim()) {
-        errors.name = 'Tên chính sách không được để trống';
-    } else if (data.name.trim().length < 3) {
-        errors.name = 'Tên chính sách cần ít nhất 3 ký tự';
-    } else if (data.name.trim().length > 200) {
-        errors.name = 'Tên chính sách không được vượt quá 200 ký tự';
-    }
-
-    if (!data.description.trim()) {
-        errors.description = 'Mô tả không được để trống';
-    }
-
-    if (!data.data_type) {
-        errors.data_type = 'Vui lòng chọn loại dữ liệu';
-    }
-
-    const retention = parseInt(data.retention_days, 10);
-    if (!data.retention_days || isNaN(retention) || retention < 1) {
-        errors.retention_days = 'Số ngày lưu trữ phải là số nguyên dương';
-    } else if (retention > 99999) {
-        errors.retention_days = 'Số ngày lưu trữ không hợp lệ';
-    }
-
-    if (data.archive_after_days) {
-        const archive = parseInt(data.archive_after_days, 10);
-        if (isNaN(archive) || archive < 0) {
-            errors.archive_after_days = 'Số ngày lưu trữ phải là số không âm';
-        } else if (retention > 0 && archive >= retention) {
-            errors.archive_after_days = 'Phải nhỏ hơn số ngày lưu trữ';
-        }
-    }
-
-    if (!data.action_after_expiry) {
-        errors.action_after_expiry = 'Vui lòng chọn hành động sau khi hết hạn';
-    }
-
-    if (!data.status) {
-        errors.status = 'Vui lòng chọn trạng thái';
-    }
-
-    return errors;
-}
-
-/* ---- Component chính ---- */
-
-export const RetentionPolicy: React.FC<RetentionPolicyProps> = ({
-    apiBase,
-    onPolicyChange,
-    readOnly = false,
-}) => {
-    const baseUrl = apiBase || '/api';
-
-    const [policies, setPolicies] = useState<RetentionPolicy[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState<string | null>(null);
-
-    /* Bộ lọc */
-    const [filterStatus, setFilterStatus] = useState<RetentionPolicyStatus | 'all'>('all');
-    const [filterType, setFilterType] = useState<DataType | 'all'>('all');
-    const [searchQuery, setSearchQuery] = useState('');
-
-    /* Modal tạo/sửa */
-    const [showForm, setShowForm] = useState(false);
-    const [editingPolicy, setEditingPolicy] = useState<RetentionPolicy | null>(null);
-    const [formData, setFormData] = useState<PolicyFormData>({ ...emptyForm });
-    const [formErrors, setFormErrors] = useState<PolicyFormErrors>({});
-    const [submitting, setSubmitting] = useState(false);
-
-    /* Xác nhận xóa */
-    const [deletingId, setDeletingId] = useState<string | null>(null);
-
-    /* Tải danh sách chính sách */
-    const loadPolicies = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const params = new URLSearchParams();
-            if (filterStatus !== 'all') params.set('status', filterStatus);
-            if (filterType !== 'all') params.set('data_type', filterType);
-            if (searchQuery.trim()) params.set('q', searchQuery.trim());
-
-            const res = await fetch(`${baseUrl}/api/retention/policies?${params.toString()}`);
-            const data = await res.json();
-            setPolicies(data || []);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Không thể tải danh sách chính sách');
-        } finally {
-            setLoading(false);
-        }
-    }, [baseUrl, filterStatus, filterType, searchQuery]);
-
-    useEffect(() => {
-        loadPolicies();
-    }, [loadPolicies]);
-
-    /* Lọc và tìm kiếm tại client */
-    const filteredPolicies = useMemo(() => {
-        let result = policies;
-        if (filterStatus !== 'all') {
-            result = result.filter((p) => p.status === filterStatus);
-        }
-        if (filterType !== 'all') {
-            result = result.filter((p) => p.data_type === filterType);
-        }
-        if (searchQuery.trim()) {
-            const q = searchQuery.toLowerCase();
-            result = result.filter(
-                (p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)
-            );
-        }
-        return result;
-    }, [policies, filterStatus, filterType, searchQuery]);
-
-    /* Mở form tạo mới */
-    const openCreateForm = useCallback(() => {
-        setEditingPolicy(null);
-        setFormData({ ...emptyForm, status: 'draft' });
-        setFormErrors({});
-        setShowForm(true);
-    }, []);
-
-    /* Mở form sửa */
-    const openEditForm = useCallback((policy: RetentionPolicy) => {
-        setEditingPolicy(policy);
-        setFormData({
-            name: policy.name,
-            description: policy.description,
-            data_type: policy.data_type,
-            retention_days: String(policy.retention_days),
-            archive_after_days: policy.archive_after_days != null ? String(policy.archive_after_days) : '',
-            action_after_expiry: policy.action_after_expiry,
-            status: policy.status,
-        });
-        setFormErrors({});
-        setShowForm(true);
-    }, []);
-
-    /* Đóng form */
-    const closeForm = useCallback(() => {
-        setShowForm(false);
-        setEditingPolicy(null);
-        setFormErrors({});
-    }, []);
-
-    /* Cập nhật trường biểu mẫu */
-    const updateField = useCallback(<K extends keyof PolicyFormData>(field: K, value: PolicyFormData[K]) => {
-        setFormData((prev) => ({ ...prev, [field]: value }));
-        // Xóa lỗi của trường này khi người dùng nhập
-        setFormErrors((prev) => {
-            const next = { ...prev };
-            delete next[field];
-            return next;
-        });
-    }, []);
-
-    /* Gửi biểu mẫu */
-    const handleSubmit = useCallback(async () => {
-        const errors = validateForm(formData);
-        if (Object.keys(errors).length > 0) {
-            setFormErrors(errors);
-            return;
-        }
-
-        setSubmitting(true);
-        setError(null);
-        setSuccess(null);
-
-        try {
-            const payload: Record<string, any> = {
-                name: formData.name.trim(),
-                description: formData.description.trim(),
-                data_type: formData.data_type,
-                retention_days: parseInt(formData.retention_days, 10),
-                archive_after_days: formData.archive_after_days ? parseInt(formData.archive_after_days, 10) : null,
-                action_after_expiry: formData.action_after_expiry,
-                status: formData.status,
+        /** Nhãn trạng thái */
+        const statusLabels: Record<RetentionPolicyStatus, string> = {
+            active: 'Đang hoạt động',
+            inactive: 'Không hoạt động',
+            expired: 'Đã hết hạn',
+            draft: 'Bản nháp',
             };
 
-            const url = editingPolicy
-                ? `${baseUrl}/api/retention/policies/${editingPolicy.id}`
-                : `${baseUrl}/api/retention/policies`;
-            const method = editingPolicy ? 'PUT' : 'POST';
+            const statusColors: Record<RetentionPolicyStatus, { bg: string; color: string }> = {
+                active: { bg: '#d1fae5', color: '#065f46' },
+                inactive: { bg: '#f1f5f9', color: '#475569' },
+                expired: { bg: '#fee2e2', color: '#991b1b' },
+                draft: { bg: '#fef3c7', color: '#92400e' },
+                };
 
-            const res = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
+                const statusOptions: { value: RetentionPolicyStatus; label: string }[] =
+                Object.entries(statusLabels).map(
+                ([value, label]) => ({ value: value as RetentionPolicyStatus, label })
+                );
 
-            if (!res.ok) {
-                const errBody = await res.json().catch(() => null);
-                throw new Error(errBody?.detail || errBody?.message || `Lỗi ${method} (${res.status})`);
-            }
+                function policyStatusBadgeStyle(status: RetentionPolicyStatus): React.CSSProperties {
+                const c = statusColors[status] || { bg: '#f1f5f9', color: '#475569' };
+                return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
+                }
 
-            const message = editingPolicy ? 'Cập nhật chính sách thành công' : 'Tạo chính sách mới thành công';
-            setSuccess(message);
-            closeForm();
-            await loadPolicies();
-            onPolicyChange?.();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Không thể lưu chính sách');
-        } finally {
-            setSubmitting(false);
-        }
-    }, [formData, editingPolicy, baseUrl, closeForm, loadPolicies, onPolicyChange]);
+                function formatDateTime(iso: string | null | undefined): string {
+                if (!iso) return '—';
+                return new Date(iso).toLocaleDateString('vi-VN', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                });
+                }
 
-    /* Xóa chính sách */
-    const handleDelete = useCallback(async () => {
-        if (!deletingId) return;
-        try {
-            const res = await fetch(`${baseUrl}/api/retention/policies/${deletingId}`, { method: 'DELETE' });
-            if (!res.ok) {
-                const errBody = await res.json().catch(() => null);
-                throw new Error(errBody?.detail || errBody?.message || `Lỗi DELETE (${res.status})`);
-            }
-            setSuccess('Xóa chính sách thành công');
-            setDeletingId(null);
-            await loadPolicies();
-            onPolicyChange?.();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Không thể xóa chính sách');
-            setDeletingId(null);
-        }
-    }, [deletingId, baseUrl, loadPolicies, onPolicyChange]);
+                /* ---- Xác thực biểu mẫu ---- */
 
-    /* Chuyển đổi trạng thái (active/inactive) */
-    const toggleStatus = useCallback(async (policy: RetentionPolicy) => {
-        const newStatus = policy.status === 'active' ? 'inactive' : 'active';
-        try {
-            const res = await fetch(`${baseUrl}/api/retention/policies/${policy.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus }),
-            });
-            if (!res.ok) throw new Error('Không thể chuyển đổi trạng thái');
-            setSuccess(`Đã ${newStatus === 'active' ? 'kích hoạt' : 'tắt'} chính sách`);
-            await loadPolicies();
-            onPolicyChange?.();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Lỗi khi chuyển đổi trạng thái');
-        }
-    }, [baseUrl, loadPolicies, onPolicyChange]);
+                function validateForm(data: PolicyFormData): PolicyFormErrors {
+                const errors: PolicyFormErrors = {};
 
-    /* Chạy chính sách ngay lập tức */
-    const triggerPolicy = useCallback(async (policy: RetentionPolicy) => {
-        try {
-            const res = await fetch(`${baseUrl}/api/retention/policies/${policy.id}/trigger`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-            });
-            if (!res.ok) throw new Error('Không thể kích hoạt chính sách');
-            setSuccess('Đã tạo công việc xử lý chính sách');
-            onPolicyChange?.();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Lỗi khi chạy chính sách');
-        }
-    }, [baseUrl, onPolicyChange]);
+                if (!data.name.trim()) {
+                errors.name = 'Tên chính sách không được để trống';
+                } else if (data.name.trim().length < 3) { errors.name='Tên chính sách cần ít nhất 3 ký tự' ; } else if
+                    (data.name.trim().length> 200) {
+                    errors.name = 'Tên chính sách không được vượt quá 200 ký tự';
+                    }
 
-    return (
-        <div style={sWrap}>
-            {/* Header */}
-            <div style={sHeader}>
-                <h1 style={sHeaderTitle}>Quản lý chính sách lưu trữ</h1>
-                {!readOnly && (
-                    <button onClick={openCreateForm} style={sBtnPrimary}>
-                        + Tạo chính sách mới
-                    </button>
-                )}
-            </div>
+                    if (!data.description.trim()) {
+                    errors.description = 'Mô tả không được để trống';
+                    }
 
-            {/* Thông báo lỗi/Thành công */}
-            {error && <div style={sError}><strong>Lỗi:</strong> {error}</div>}
-            {success && <div style={sSuccess}><strong>Thành công:</strong> {success}</div>}
+                    if (!data.data_type) {
+                    errors.data_type = 'Vui lòng chọn loại dữ liệu';
+                    }
 
-            {/* Bộ lọc */}
-            <div style={sCard}>
-                <div style={sFilterBar}>
-                    <input
-                        type="text"
-                        placeholder="Tìm kiếm chính sách..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        style={{ ...sFormInput, width: '260px' }}
-                    />
-                    <select
-                        value={filterStatus}
-                        onChange={(e) => setFilterStatus(e.target.value as RetentionPolicyStatus | 'all')}
-                        style={sFormSelect}
-                    >
-                        <option value="all">Tất cả trạng thái</option>
-                        {statusOptions.map((s) => (
-                            <option key={s.value} value={s.value}>{s.label}</option>
-                        ))}
-                    </select>
-                    <select
-                        value={filterType}
-                        onChange={(e) => setFilterType(e.target.value as DataType | 'all')}
-                        style={sFormSelect}
-                    >
-                        <option value="all">Tất cả loại dữ liệu</option>
-                        {dataTypeOptions.map((t) => (
-                            <option key={t.value} value={t.value}>{t.label}</option>
-                        ))}
-                    </select>
-                    <button onClick={loadPolicies} style={sBtnSuccess}>
-                        Áp dụng bộ lọc
-                    </button>
-                </div>
+                    const retention = parseInt(data.retention_days, 10);
+                    if (!data.retention_days || isNaN(retention) || retention < 1) {
+                        errors.retention_days='Số ngày lưu trữ phải là số nguyên dương' ; } else if (retention> 99999) {
+                        errors.retention_days = 'Số ngày lưu trữ không hợp lệ';
+                        }
 
-                {/* Bảng chính sách */}
-                {loading ? (
-                    <div style={sLoading}>Đang tải chính sách...</div>
-                ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                        <table style={sTable}>
-                            <thead>
-                                <tr>
-                                    <th style={sTh}>ID</th>
-                                    <th style={sTh}>Tên</th>
-                                    <th style={sTh}>Loại dữ liệu</th>
-                                    <th style={sTh}>Ngày giữ</th>
-                                    <th style={sTh}>Lưu trữ sau</th>
-                                    <th style={sTh}>Hành động hết hạn</th>
-                                    <th style={sTh}>Đã áp dụng</th>
-                                    <th style={sTh}>Trạng thái</th>
-                                    <th style={sTh}>Cập nhật</th>
-                                    {!readOnly && <th style={sTh}>Thao tác</th>}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredPolicies.map((p) => (
-                                    <tr key={p.id}>
-                                        <td style={sTd}>
-                                            <span style={sTdCode}>{p.id.slice(0, 12)}</span>
-                                        </td>
-                                        <td style={sTd}>
-                                            <div>
-                                                <div style={{ fontWeight: 600 }}>{p.name}</div>
-                                                <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                                    {p.description.slice(0, 60)}
-                                                    {p.description.length > 60 ? '...' : ''}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td style={sTd}>{dataTypeLabels[p.data_type] || p.data_type}</td>
-                                        <td style={sTd}>{p.retention_days} ngày</td>
-                                        <td style={sTd}>{p.archive_after_days ? `${p.archive_after_days} ngày` : '—'}</td>
-                                        <td style={sTd}>{actionLabels[p.action_after_expiry] || p.action_after_expiry}</td>
-                                        <td style={sTd}>{p.applied_count.toLocaleString('vi-VN')}</td>
-                                        <td style={sTd}>
-                                            <span style={policyStatusBadgeStyle(p.status)}>
-                                                {statusLabels[p.status]}
-                                            </span>
-                                        </td>
-                                        <td style={sTd}>{formatDateTime(p.updated_at)}</td>
-                                        {!readOnly && (
-                                            <td style={{ ...sTd, whiteSpace: 'nowrap' }}>
-                                                <button
-                                                    onClick={() => openEditForm(p)}
-                                                    style={{ ...sBtnSmall, marginRight: '6px' }}
-                                                >
-                                                    Sửa
-                                                </button>
-                                                <button
-                                                    onClick={() => toggleStatus(p)}
-                                                    style={{ ...sBtnSmall, marginRight: '6px', color: p.status === 'active' ? '#dc2626' : '#16a34a' }}
-                                                >
-                                                    {p.status === 'active' ? 'Tắt' : 'Bật'}
-                                                </button>
-                                                <button
-                                                    onClick={() => triggerPolicy(p)}
-                                                    style={{ ...sBtnSmall, marginRight: '6px', background: '#3b82f6', color: '#fff', border: 'none' }}
-                                                >
-                                                    Chạy
-                                                </button>
-                                                <button
-                                                    onClick={() => setDeletingId(p.id)}
-                                                    style={{ ...sBtnSmall, ...sBtnDanger }}
-                                                >
-                                                    Xóa
-                                                </button>
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))}
-                                {!filteredPolicies.length && (
-                                    <tr>
-                                        <td colSpan={!readOnly ? 10 : 9} style={sEmptyState}>
-                                            Không tìm thấy chính sách nào khớp với bộ lọc.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
+                        if (data.archive_after_days) {
+                        const archive = parseInt(data.archive_after_days, 10);
+                        if (isNaN(archive) || archive < 0) {
+                            errors.archive_after_days='Số ngày lưu trữ phải là số không âm' ; } else if (retention> 0 &&
+                            archive >= retention) {
+                            errors.archive_after_days = 'Phải nhỏ hơn số ngày lưu trữ';
+                            }
+                            }
 
-            {/* Modal tạo/sửa chính sách */}
-            {showForm && (
-                <div style={sOverlay} onClick={closeForm}>
-                    <div style={sModal} onClick={(e) => e.stopPropagation()}>
-                        <h2 style={sModalTitle}>
-                            {editingPolicy ? 'Sửa chính sách' : 'Tạo chính sách mới'}
-                        </h2>
+                            if (!data.action_after_expiry) {
+                            errors.action_after_expiry = 'Vui lòng chọn hành động sau khi hết hạn';
+                            }
 
-                        <div style={sFormField}>
-                            <label style={sFormLabel}>Tên chính sách *</label>
-                            <input
-                                type="text"
-                                value={formData.name}
-                                onChange={(e) => updateField('name', e.target.value)}
-                                style={formErrors.name ? sFormInputError : sFormInput}
-                                placeholder="VD: Chính sách lưu trữ nhật ký 90 ngày"
-                            />
-                            {formErrors.name && <div style={sFormErrorText}>{formErrors.name}</div>}
-                        </div>
+                            if (!data.status) {
+                            errors.status = 'Vui lòng chọn trạng thái';
+                            }
 
-                        <div style={sFormField}>
-                            <label style={sFormLabel}>Mô tả *</label>
-                            <textarea
-                                value={formData.description}
-                                onChange={(e) => updateField('description', e.target.value)}
+                            return errors;
+                            }
+
+                            /* ---- Component chính ---- */
+
+                            export const RetentionPolicy: React.FC<RetentionPolicyProps> = ({
+                                apiBase,
+                                onPolicyChange,
+                                readOnly = false,
+                                }) => {
+                                const baseUrl = apiBase || '/api';
+
+                                const [policies, setPolicies] = useState<RetentionPolicy[]>([]);
+                                    const [loading, setLoading] = useState(true);
+                                    const [error, setError] = useState<string | null>(null);
+                                        const [success, setSuccess] = useState<string | null>(null);
+
+                                            /* Bộ lọc */
+                                            const [filterStatus, setFilterStatus] = useState<RetentionPolicyStatus
+                                                | 'all'>('all');
+                                                const [filterType, setFilterType] = useState<DataType | 'all'>('all');
+                                                    const [searchQuery, setSearchQuery] = useState('');
+
+                                                    /* Modal tạo/sửa */
+                                                    const [showForm, setShowForm] = useState(false);
+                                                    const [editingPolicy, setEditingPolicy] = useState<RetentionPolicy |
+                                                        null>(null);
+                                                        const [formData, setFormData] = useState<PolicyFormData>({
+                                                            ...emptyForm });
+                                                            const [formErrors, setFormErrors] = useState
+                                                            <PolicyFormErrors>({});
+                                                                const [submitting, setSubmitting] = useState(false);
+
+                                                                /* Xác nhận xóa */
+                                                                const [deletingId, setDeletingId] = useState<string |
+                                                                    null>(null);
+
+                                                                    /* Tải danh sách chính sách */
+                                                                    const loadPolicies = useCallback(async () => {
+                                                                    setLoading(true);
+                                                                    setError(null);
+                                                                    try {
+                                                                    const params = new URLSearchParams();
+                                                                    if (filterStatus !== 'all') params.set('status',
+                                                                    filterStatus);
+                                                                    if (filterType !== 'all') params.set('data_type',
+                                                                    filterType);
+                                                                    if (searchQuery.trim()) params.set('q',
+                                                                    searchQuery.trim());
+
+                                                                    const res = await
+                                                                    fetch(`${baseUrl}/api/retention/policies?${params.toString()}`);
+                                                                    const data = await res.json();
+                                                                    setPolicies(data || []);
+                                                                    } catch (err) {
+                                                                    setError(err instanceof Error ? err.message : 'Không
+                                                                    thể tải danh sách chính sách');
+                                                                    } finally {
+                                                                    setLoading(false);
+                                                                    }
+                                                                    }, [baseUrl, filterStatus, filterType,
+                                                                    searchQuery]);
+
+                                                                    useEffect(() => {
+                                                                    loadPolicies();
+                                                                    }, [loadPolicies]);
+
+                                                                    /* Lọc và tìm kiếm tại client */
+                                                                    const filteredPolicies = useMemo(() => {
+                                                                    let result = policies;
+                                                                    if (filterStatus !== 'all') {
+                                                                    result = result.filter((p) => p.status ===
+                                                                    filterStatus);
+                                                                    }
+                                                                    if (filterType !== 'all') {
+                                                                    result = result.filter((p) => p.data_type ===
+                                                                    filterType);
+                                                                    }
+                                                                    if (searchQuery.trim()) {
+                                                                    const q = searchQuery.toLowerCase();
+                                                                    result = result.filter(
+                                                                    (p) => p.name.toLowerCase().includes(q) ||
+                                                                    p.description.toLowerCase().includes(q)
+                                                                    );
+                                                                    }
+                                                                    return result;
+                                                                    }, [policies, filterStatus, filterType,
+                                                                    searchQuery]);
+
+                                                                    /* Mở form tạo mới */
+                                                                    const openCreateForm = useCallback(() => {
+                                                                    setEditingPolicy(null);
+                                                                    setFormData({ ...emptyForm, status: 'draft' });
+                                                                    setFormErrors({});
+                                                                    setShowForm(true);
+                                                                    }, []);
+
+                                                                    /* Mở form sửa */
+                                                                    const openEditForm = useCallback((policy:
+                                                                    RetentionPolicy) => {
+                                                                    setEditingPolicy(policy);
+                                                                    setFormData({
+                                                                    name: policy.name,
+                                                                    description: policy.description,
+                                                                    data_type: policy.data_type,
+                                                                    retention_days: String(policy.retention_days),
+                                                                    archive_after_days: policy.archive_after_days !=
+                                                                    null ? String(policy.archive_after_days) : '',
+                                                                    action_after_expiry: policy.action_after_expiry,
+                                                                    status: policy.status,
+                                                                    });
+                                                                    setFormErrors({});
+                                                                    setShowForm(true);
+                                                                    }, []);
+
+                                                                    /* Đóng form */
+                                                                    const closeForm = useCallback(() => {
+                                                                    setShowForm(false);
+                                                                    setEditingPolicy(null);
+                                                                    setFormErrors({});
+                                                                    }, []);
+
+                                                                    /* Cập nhật trường biểu mẫu */
+                                                                    const updateField = useCallback(<K extends keyof
+                                                                        PolicyFormData>(field: K, value:
+                                                                        PolicyFormData[K]) => {
+                                                                        setFormData((prev) => ({ ...prev, [field]: value
+                                                                        }));
+                                                                        // Xóa lỗi của trường này khi người dùng nhập
+                                                                        setFormErrors((prev) => {
+                                                                        const next = { ...prev };
+                                                                        delete next[field];
+                                                                        return next;
+                                                                        });
+                                                                        }, []);
+
+                                                                        /* Gửi biểu mẫu */
+                                                                        const handleSubmit = useCallback(async () => {
+                                                                        const errors = validateForm(formData);
+                                                                        if (Object.keys(errors).length > 0) {
+                                                                        setFormErrors(errors);
+                                                                        return;
+                                                                        }
+
+                                                                        setSubmitting(true);
+                                                                        setError(null);
+                                                                        setSuccess(null);
+
+                                                                        try {
+                                                                        const payload: Record<string, any> = {
+                                                                            name: formData.name.trim(),
+                                                                            description: formData.description.trim(),
+                                                                            data_type: formData.data_type,
+                                                                            retention_days:
+                                                                            parseInt(formData.retention_days, 10),
+                                                                            archive_after_days:
+                                                                            formData.archive_after_days ?
+                                                                            parseInt(formData.archive_after_days, 10) :
+                                                                            null,
+                                                                            action_after_expiry:
+                                                                            formData.action_after_expiry,
+                                                                            status: formData.status,
+                                                                            };
+
+                                                                            const url = editingPolicy
+                                                                            ?
+                                                                            `${baseUrl}/api/retention/policies/${editingPolicy.id}`
+                                                                            : `${baseUrl}/api/retention/policies`;
+                                                                            const method = editingPolicy ? 'PUT' :
+                                                                            'POST';
+
+                                                                            const res = await fetch(url, {
+                                                                            method,
+                                                                            headers: { 'Content-Type':
+                                                                            'application/json' },
+                                                                            body: JSON.stringify(payload),
+                                                                            });
+
+                                                                            if (!res.ok) {
+                                                                            const errBody = await res.json().catch(() =>
+                                                                            null);
+                                                                            throw new Error(errBody?.detail ||
+                                                                            errBody?.message || `Lỗi ${method}
+                                                                            (${res.status})`);
+                                                                            }
+
+                                                                            const message = editingPolicy ? 'Cập nhật
+                                                                            chính sách thành công' : 'Tạo chính sách mới
+                                                                            thành công';
+                                                                            setSuccess(message);
+                                                                            closeForm();
+                                                                            await loadPolicies();
+                                                                            onPolicyChange?.();
+                                                                            } catch (err) {
+                                                                            setError(err instanceof Error ? err.message
+                                                                            : 'Không thể lưu chính sách');
+                                                                            } finally {
+                                                                            setSubmitting(false);
+                                                                            }
+                                                                            }, [formData, editingPolicy, baseUrl,
+                                                                            closeForm, loadPolicies, onPolicyChange]);
+
+                                                                            /* Xóa chính sách */
+                                                                            const handleDelete = useCallback(async () =>
+                                                                            {
+                                                                            if (!deletingId) return;
+                                                                            try {
+                                                                            const res = await
+                                                                            fetch(`${baseUrl}/api/retention/policies/${deletingId}`,
+                                                                            { method: 'DELETE' });
+                                                                            if (!res.ok) {
+                                                                            const errBody = await res.json().catch(() =>
+                                                                            null);
+                                                                            throw new Error(errBody?.detail ||
+                                                                            errBody?.message || `Lỗi DELETE
+                                                                            (${res.status})`);
+                                                                            }
+                                                                            setSuccess('Xóa chính sách thành công');
+                                                                            setDeletingId(null);
+                                                                            await loadPolicies();
+                                                                            onPolicyChange?.();
+                                                                            } catch (err) {
+                                                                            setError(err instanceof Error ? err.message
+                                                                            : 'Không thể xóa chính sách');
+                                                                            setDeletingId(null);
+                                                                            }
+                                                                            }, [deletingId, baseUrl, loadPolicies,
+                                                                            onPolicyChange]);
+
+                                                                            /* Chuyển đổi trạng thái (active/inactive)
+                                                                            */
+                                                                            const toggleStatus = useCallback(async
+                                                                            (policy: RetentionPolicy) => {
+                                                                            const newStatus = policy.status === 'active'
+                                                                            ? 'inactive' : 'active';
+                                                                            try {
+                                                                            const res = await
+                                                                            fetch(`${baseUrl}/api/retention/policies/${policy.id}`,
+                                                                            {
+                                                                            method: 'PATCH',
+                                                                            headers: { 'Content-Type':
+                                                                            'application/json' },
+                                                                            body: JSON.stringify({ status: newStatus }),
+                                                                            });
+                                                                            if (!res.ok) throw new Error('Không thể
+                                                                            chuyển đổi trạng thái');
+                                                                            setSuccess(`Đã ${newStatus === 'active' ?
+                                                                            'kích hoạt' : 'tắt'} chính sách`);
+                                                                            await loadPolicies();
+                                                                            onPolicyChange?.();
+                                                                            } catch (err) {
+                                                                            setError(err instanceof Error ? err.message
+                                                                            : 'Lỗi khi chuyển đổi trạng thái');
+                                                                            }
+                                                                            }, [baseUrl, loadPolicies, onPolicyChange]);
+
+                                                                            /* Chạy chính sách ngay lập tức */
+                                                                            const triggerPolicy = useCallback(async
+                                                                            (policy: RetentionPolicy) => {
+                                                                            try {
+                                                                            const res = await
+                                                                            fetch(`${baseUrl}/api/retention/policies/${policy.id}/trigger`,
+                                                                            {
+                                                                            method: 'POST',
+                                                                            headers: { 'Content-Type':
+                                                                            'application/json' },
+                                                                            });
+                                                                            if (!res.ok) throw new Error('Không thể kích
+                                                                            hoạt chính sách');
+                                                                            setSuccess('Đã tạo công việc xử lý chính
+                                                                            sách');
+                                                                            onPolicyChange?.();
+                                                                            } catch (err) {
+                                                                            setError(err instanceof Error ? err.message
+                                                                            : 'Lỗi khi chạy chính sách');
+                                                                            }
+                                                                            }, [baseUrl, onPolicyChange]);
+
+                                                                            return (
+                                                                            <div style={sWrap}>
+                                                                                {/* Header */}
+                                                                                <div style={sHeader}>
+                                                                                    <h1 style={sHeaderTitle}>Quản lý
+                                                                                        chính sách lưu trữ</h1>
+                                                                                    {!readOnly && (
+                                                                                    <button onClick={openCreateForm}
+                                                                                        style={sBtnPrimary}>
+                                                                                        + Tạo chính sách mới
+                                                                                    </button>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                {/* Thông báo lỗi/Thành công */}
+                                                                                {error && <div style={sError}>
+                                                                                    <strong>Lỗi:</strong> {error}</div>}
+                                                                                {success && <div style={sSuccess}>
+                                                                                    <strong>Thành công:</strong>
+                                                                                    {success}</div>}
+
+                                                                                {/* Bộ lọc */}
+                                                                                <div style={sCard}>
+                                                                                    <div style={sFilterBar}>
+                                                                                        <input type="text"
+                                                                                            placeholder="Tìm kiếm chính sách..."
+                                                                                            value={searchQuery}
+                                                                                            onChange={(e)=>
+                                                                                        setSearchQuery(e.target.value)}
+                                                                                        style={{ ...sFormInput, width:
+                                                                                        '260px' }}
+                                                                                        />
+                                                                                        <select value={filterStatus}
+                                                                                            onChange={(e)=>
+                                                                                            setFilterStatus(e.target.value
+                                                                                            as RetentionPolicyStatus |
+                                                                                            'all')}
+                                                                                            style={sFormSelect}
+                                                                                            >
+                                                                                            <option value="all">Tất cả
+                                                                                                trạng thái</option>
+                                                                                            {statusOptions.map((s) => (
+                                                                                            <option key={s.value}
+                                                                                                value={s.value}>
+                                                                                                {s.label}</option>
+                                                                                            ))}
+                                                                                        </select>
+                                                                                        <select value={filterType}
+                                                                                            onChange={(e)=>
+                                                                                            setFilterType(e.target.value
+                                                                                            as DataType | 'all')}
+                                                                                            style={sFormSelect}
+                                                                                            >
+                                                                                            <option value="all">Tất cả
+                                                                                                loại dữ liệu</option>
+                                                                                            {dataTypeOptions.map((t) =>
+                                                                                            (
+                                                                                            <option key={t.value}
+                                                                                                value={t.value}>
+                                                                                                {t.label}</option>
+                                                                                            ))}
+                                                                                        </select>
+                                                                                        <button onClick={loadPolicies}
+                                                                                            style={sBtnSuccess}>
+                                                                                            Áp dụng bộ lọc
+                                                                                        </button>
+                                                                                    </div>
+
+                                                                                    {/* Bảng chính sách */}
+                                                                                    {loading ? (
+                                                                                    <div style={sLoading}>Đang tải chính
+                                                                                        sách...</div>
+                                                                                    ) : (
+                                                                                    <div style={{ overflowX: 'auto' }}>
+                                                                                        <table style={sTable}>
+                                                                                            <thead>
+                                                                                                <tr>
+                                                                                                    <th style={sTh}>ID
+                                                                                                    </th>
+                                                                                                    <th style={sTh}>Tên
+                                                                                                    </th>
+                                                                                                    <th style={sTh}>Loại
+                                                                                                        dữ liệu</th>
+                                                                                                    <th style={sTh}>Ngày
+                                                                                                        giữ</th>
+                                                                                                    <th style={sTh}>Lưu
+                                                                                                        trữ sau</th>
+                                                                                                    <th style={sTh}>Hành
+                                                                                                        động hết hạn
+                                                                                                    </th>
+                                                                                                    <th style={sTh}>Đã
+                                                                                                        áp dụng</th>
+                                                                                                    <th style={sTh}>
+                                                                                                        Trạng thái</th>
+                                                                                                    <th style={sTh}>Cập
+                                                                                                        nhật</th>
+                                                                                                    {!readOnly && <th
+                                                                                                        style={sTh}>Thao
+                                                                                                        tác</th>}
+                                                                                                </tr>
+                                                                                            </thead>
+                                                                                            <tbody>
+                                                                                                {filteredPolicies.map((p)
+                                                                                                => (
+                                                                                                <tr key={p.id}>
+                                                                                                    <td style={sTd}>
+                                                                                                        <span
+                                                                                                            style={sTdCode}>{p.id.slice(0,
+                                                                                                            12)}</span>
+                                                                                                    </td>
+                                                                                                    <td style={sTd}>
+                                                                                                        <div>
+                                                                                                            <div style={{
+                                                                                                                fontWeight:
+                                                                                                                600 }}>
+                                                                                                                {p.name}
+                                                                                                            </div>
+                                                                                                            <div style={{
+                                                                                                                fontSize: '12px'
+                                                                                                                ,
+                                                                                                                color: '#64748b'
+                                                                                                                }}>
+                                                                                                                {p.description.slice(0,
+                                                                                                                60)}
+                                                                                                                {p.description.length
+                                                                                                                > 60 ?
+                                                                                                                '...' :
+                                                                                                                ''}
+                                                                                                            </div>
+                                                                                                        </div>
+                                                                                                    </td>
+                                                                                                    <td style={sTd}>
+                                                                                                        {dataTypeLabels[p.data_type]
+                                                                                                        || p.data_type}
+                                                                                                    </td>
+                                                                                                    <td style={sTd}>
+                                                                                                        {p.retention_days}
+                                                                                                        ngày</td>
+                                                                                                    <td style={sTd}>
+                                                                                                        {p.archive_after_days
+                                                                                                        ?
+                                                                                                        `${p.archive_after_days}
+                                                                                                        ngày` : '—'}
+                                                                                                    </td>
+                                                                                                    <td style={sTd}>
+                                                                                                        {actionLabels[p.action_after_expiry]
+                                                                                                        ||
+                                                                                                        p.action_after_expiry}
+                                                                                                    </td>
+                                                                                                    <td style={sTd}>
+                                                                                                        {p.applied_count.toLocaleString('vi-VN')}
+                                                                                                    </td>
+                                                                                                    <td style={sTd}>
+                                                                                                        <span
+                                                                                                            style={policyStatusBadgeStyle(p.status)}>
+                                                                                                            {statusLabels[p.status]}
+                                                                                                        </span>
+                                                                                                    </td>
+                                                                                                    <td style={sTd}>
+                                                                                                        {formatDateTime(p.updated_at)}
+                                                                                                    </td>
+                                                                                                    {!readOnly && (
+                                                                                                    <td style={{ ...sTd,
+                                                                                                        whiteSpace: 'nowrap'
+                                                                                                        }}>
+                                                                                                        <button
+                                                                                                            onClick={()=>
+                                                                                                            openEditForm(p)}
+                                                                                                            style={{
+                                                                                                            ...sBtnSmall,
+                                                                                                            marginRight:
+                                                                                                            '6px' }}
+                                                                                                            >
+                                                                                                            Sửa
+                                                                                                        </button>
+                                                                                                        <button
+                                                                                                            onClick={()=>
+                                                                                                            toggleStatus(p)}
+                                                                                                            style={{
+                                                                                                            ...sBtnSmall,
+                                                                                                            marginRight:
+                                                                                                            '6px',
+                                                                                                            color:
+                                                                                                            p.status ===
+                                                                                                            'active' ?
+                                                                                                            '#dc2626' :
+                                                                                                            '#16a34a' }}
+                                                                                                            >
+                                                                                                            {p.status
+                                                                                                            === 'active'
+                                                                                                            ? 'Tắt' :
+                                                                                                            'Bật'}
+                                                                                                        </button>
+                                                                                                        <button
+                                                                                                            onClick={()=>
+                                                                                                            triggerPolicy(p)}
+                                                                                                            style={{
+                                                                                                            ...sBtnSmall,
+                                                                                                            marginRight:
+                                                                                                            '6px',
+                                                                                                            background:
+                                                                                                            '#3b82f6',
+                                                                                                            color:
+                                                                                                            '#fff',
+                                                                                                            border:
+                                                                                                            'none' }}
+                                                                                                            >
+                                                                                                            Chạy
+                                                                                                        </button>
+                                                                                                        <button
+                                                                                                            onClick={()=>
+                                                                                                            setDeletingId(p.id)}
+                                                                                                            style={{
+                                                                                                            ...sBtnSmall,
+                                                                                                            ...sBtnDanger
+                                                                                                            }}
+                                                                                                            >
+                                                                                                            Xóa
+                                                                                                        </button>
+                                                                                                    </td>
+                                                                                                    )}
+                                                                                                </tr>
+                                                                                                ))}
+                                                                                                {!filteredPolicies.length
+                                                                                                && (
+                                                                                                <tr>
+                                                                                                    <td colSpan={!readOnly
+                                                                                                        ? 10 : 9}
+                                                                                                        style={sEmptyState}>
+                                                                                                        Không tìm thấy
+                                                                                                        chính sách nào
+                                                                                                        khớp với bộ lọc.
+                                                                                                    </td>
+                                                                                                </tr>
+                                                                                                )}
+                                                                                            </tbody>
+                                                                                        </table>
+                                                                                    </div>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                {/* Modal tạo/sửa chính sách */}
+                                                                                {showForm && (
+                                                                                <div style={sOverlay}
+                                                                                    onClick={closeForm}>
+                                                                                    <div style={sModal} onClick={(e)=>
+                                                                                        e.stopPropagation()}>
+                                                                                        <h2 style={sModalTitle}>
+                                                                                            {editingPolicy ? 'Sửa chính
+                                                                                            sách' : 'Tạo chính sách
+                                                                                            mới'}
+                                                                                        </h2>
+
+                                                                                        <div style={sFormField}>
+                                                                                            <label
+                                                                                                style={sFormLabel}>Tên
+                                                                                                chính sách *</label>
+                                                                                            <input type="text"
+                                                                                                value={formData.name}
+                                                                                                onChange={(e)=>
+                                                                                            updateField('name',
+                                                                                            e.target.value)}
+                                                                                            style={formErrors.name ?
+                                                                                            sFormInputError :
+                                                                                            sFormInput}
+                                                                                            placeholder="VD: Chính sách
+                                                                                            lưu trữ nhật ký 90 ngày"
+                                                                                            />
+                                                                                            {formErrors.name && <div
+                                                                                                style={sFormErrorText}>
+                                                                                                {formErrors.name}</div>}
+                                                                                        </div>
+
+                                                                                        <div style={sFormField}>
+                                                                                            <label style={sFormLabel}>Mô
+                                                                                                tả *</label>
+                                                                                            <textarea
+                                                                                                value={formData.description}
+                                                                                                onChange={(e)=> updateField('description', e.target.value)}
                                 style={formErrors.description ? sFormTextarea : sFormTextarea}
                                 placeholder="Mô tả mục đích và phạm vi áp dụng..."
                             />

@@ -1,10 +1,22 @@
 /**
+* UI Framework: {% raw %}{{{ ui_framework }}}{% endraw %}
 * CookieBanner — Banner cookie dong y: hien thi fixed, glassmorphism, toggle danh muc.
 * Sinh boi CP49 ConsentEmitter.
 *
 * Luu tuy chon cookie vao localStorage, co the Accept All / Reject All / Customize.
 * Danh muc "necessary" luon on va khong the tat.
 */
+{% if ui_framework == "material" %}
+import { Snackbar, Button, Switch, FormControlLabel, Paper, Divider, Typography } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind CSS utility classes inline — khong can import thanh phan UI
+{% elif ui_framework == "bootstrap" %}
+import { Button, Form, Card } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Switch, Divider, Typography } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Toggle, Layer } from '@carbon/react';
+{% endif %}
 import React, { useState, useEffect, useCallback } from 'react';
 
 /* ---- Danh muc cookie mac dinh ---- */
@@ -50,473 +62,447 @@ description: 'Ho tro cac chuc nang khong can thiet nhu nhud video nhugung.',
 interface StoredCookiePreferences {
 accepted: boolean;
 categories: Record<string, boolean>;
-timestamp: string;
-}
+    timestamp: string;
+    }
 
-/* ---- Props ---- */
-export interface CookieBannerProps {
-userId?: string;
-tenantId?: string;
-apiBaseUrl?: string;
-storageKey?: string;
-expiresDays?: number;
-onAccept?: (categories: Record<string, boolean>) => void;
-onReject?: () => void;
-}
+    /* ---- Props ---- */
+    export interface CookieBannerProps {
+    userId?: string;
+    tenantId?: string;
+    apiBaseUrl?: string;
+    storageKey?: string;
+    expiresDays?: number;
+    onAccept?: (categories: Record<string, boolean>) => void;
+        onReject?: () => void;
+        }
 
-/* ---- Style objects — de tranh conflict voi double-brace trong JSX ---- */
+        /* ---- Style objects — de tranh conflict voi double-brace trong JSX ---- */
 
-/* Banner chinh */
-const sBanner: React.CSSProperties = {
-position: 'fixed' as const,
-bottom: 0,
-left: 0,
-right: 0,
-zIndex: 9999,
-padding: '0',
-fontFamily: 'system-ui, -apple-system, sans-serif',
-};
+        /* Banner chinh */
+        const sBanner: React.CSSProperties = {
+        position: 'fixed' as const,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 9999,
+        padding: '0',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        };
 
-/* Glassmorphism container */
-const sGlassContainer: React.CSSProperties = {
-background: 'rgba(255, 255, 255, 0.85)',
-backdropFilter: 'blur(12px)',
-WebkitBackdropFilter: 'blur(12px)',
-borderTop: '1px solid rgba(255, 255, 255, 0.3)',
-boxShadow: '0 -4px 30px rgba(0, 0, 0, 0.1)',
-};
+        /* Glassmorphism container */
+        const sGlassContainer: React.CSSProperties = {
+        background: 'rgba(255, 255, 255, 0.85)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        borderTop: '1px solid rgba(255, 255, 255, 0.3)',
+        boxShadow: '0 -4px 30px rgba(0, 0, 0, 0.1)',
+        };
 
-/* Header */
-const sBannerHeader: React.CSSProperties = {
-padding: '20px 24px',
-display: 'flex',
-alignItems: 'center',
-justifyContent: 'space-between',
-gap: '16px',
-};
-const sBannerTitle: React.CSSProperties = {
-fontSize: '18px',
-fontWeight: 700,
-color: '#111827',
-margin: 0,
-flex: 1,
-};
-const sBannerCloseBtn: React.CSSProperties = {
-width: '32px',
-height: '32px',
-borderRadius: '50%',
-border: 'none',
-background: '#f3f4f6',
-cursor: 'pointer',
-fontSize: '16px',
-display: 'flex',
-alignItems: 'center',
-justifyContent: 'center',
-color: '#6b7280',
-};
+        /* Header */
+        const sBannerHeader: React.CSSProperties = {
+        padding: '20px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '16px',
+        };
+        const sBannerTitle: React.CSSProperties = {
+        fontSize: '18px',
+        fontWeight: 700,
+        color: '#111827',
+        margin: 0,
+        flex: 1,
+        };
+        const sBannerCloseBtn: React.CSSProperties = {
+        width: '32px',
+        height: '32px',
+        borderRadius: '50%',
+        border: 'none',
+        background: '#f3f4f6',
+        cursor: 'pointer',
+        fontSize: '16px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#6b7280',
+        };
 
-/* Noidung */
-const sBannerContent: React.CSSProperties = {
-padding: '0 24px 16px',
-};
-const sBannerText: React.CSSProperties = {
-fontSize: '14px',
-color: '#374151',
-lineHeight: 1.6,
-margin: '0 0 16px',
-};
-const sBannerLink: React.CSSProperties = {
-color: '#6366f1',
-textDecoration: 'underline',
-cursor: 'pointer',
-};
+        /* Noidung */
+        const sBannerContent: React.CSSProperties = {
+        padding: '0 24px 16px',
+        };
+        const sBannerText: React.CSSProperties = {
+        fontSize: '14px',
+        color: '#374151',
+        lineHeight: 1.6,
+        margin: '0 0 16px',
+        };
+        const sBannerLink: React.CSSProperties = {
+        color: '#6366f1',
+        textDecoration: 'underline',
+        cursor: 'pointer',
+        };
 
-/* Nút hành động */
-const sActionsRow: React.CSSProperties = {
-display: 'flex',
-gap: '10px',
-padding: '0 24px 20px',
-flexWrap: 'wrap' as const,
-justifyContent: 'center',
-};
-const sBtnBase: React.CSSProperties = {
-padding: '10px 24px',
-borderRadius: '8px',
-fontSize: '14px',
-fontWeight: 600,
-cursor: 'pointer',
-border: 'none',
-transition: 'all 0.15s',
-};
-const sBtnAcceptAll: React.CSSProperties = {
-...sBtnBase,
-background: '#6366f1',
-color: '#fff',
-boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
-};
-const sBtnRejectAll: React.CSSProperties = {
-...sBtnBase,
-background: '#fff',
-color: '#374151',
-border: '1px solid #d1d5db',
-};
-const sBtnCustomize: React.CSSProperties = {
-...sBtnBase,
-background: 'transparent',
-color: '#6366f1',
-border: '1px solid #6366f1',
-};
+        /* Nút hành động */
+        const sActionsRow: React.CSSProperties = {
+        display: 'flex',
+        gap: '10px',
+        padding: '0 24px 20px',
+        flexWrap: 'wrap' as const,
+        justifyContent: 'center',
+        };
+        const sBtnBase: React.CSSProperties = {
+        padding: '10px 24px',
+        borderRadius: '8px',
+        fontSize: '14px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        border: 'none',
+        transition: 'all 0.15s',
+        };
+        const sBtnAcceptAll: React.CSSProperties = {
+        ...sBtnBase,
+        background: '#6366f1',
+        color: '#fff',
+        boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+        };
+        const sBtnRejectAll: React.CSSProperties = {
+        ...sBtnBase,
+        background: '#fff',
+        color: '#374151',
+        border: '1px solid #d1d5db',
+        };
+        const sBtnCustomize: React.CSSProperties = {
+        ...sBtnBase,
+        background: 'transparent',
+        color: '#6366f1',
+        border: '1px solid #6366f1',
+        };
 
-/* Toggle danh muc */
-const sToggleSection: React.CSSProperties = {
-padding: '16px 24px',
-borderTop: '1px solid rgba(0, 0, 0, 0.05)',
-};
-const sToggleSectionTitle: React.CSSProperties = {
-fontSize: '14px',
-fontWeight: 600,
-color: '#111827',
-margin: '0 0 12px',
-};
+        /* Toggle danh muc */
+        const sToggleSection: React.CSSProperties = {
+        padding: '16px 24px',
+        borderTop: '1px solid rgba(0, 0, 0, 0.05)',
+        };
+        const sToggleSectionTitle: React.CSSProperties = {
+        fontSize: '14px',
+        fontWeight: 600,
+        color: '#111827',
+        margin: '0 0 12px',
+        };
 
-/* Item toggle */
-const sToggleItem: React.CSSProperties = {
-padding: '12px 16px',
-borderRadius: '8px',
-backgroundColor: 'rgba(0, 0, 0, 0.02)',
-marginBottom: '8px',
-border: '1px solid rgba(0, 0, 0, 0.05)',
-};
-const sToggleHeader: React.CSSProperties = {
-display: 'flex',
-justifyContent: 'space-between',
-alignItems: 'center',
-marginBottom: '4px',
-};
-const sToggleLabel: React.CSSProperties = {
-fontSize: '14px',
-fontWeight: 600,
-color: '#111827',
-};
-const sToggleDesc: React.CSSProperties = {
-fontSize: '12px',
-color: '#6b7280',
-margin: '0 0 8px',
-};
+        /* Item toggle */
+        const sToggleItem: React.CSSProperties = {
+        padding: '12px 16px',
+        borderRadius: '8px',
+        backgroundColor: 'rgba(0, 0, 0, 0.02)',
+        marginBottom: '8px',
+        border: '1px solid rgba(0, 0, 0, 0.05)',
+        };
+        const sToggleHeader: React.CSSProperties = {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '4px',
+        };
+        const sToggleLabel: React.CSSProperties = {
+        fontSize: '14px',
+        fontWeight: 600,
+        color: '#111827',
+        };
+        const sToggleDesc: React.CSSProperties = {
+        fontSize: '12px',
+        color: '#6b7280',
+        margin: '0 0 8px',
+        };
 
-/* Switch toggle */
-const sSwitchTrack: React.CSSProperties = {
-width: '44px',
-height: '24px',
-borderRadius: '12px',
-cursor: 'pointer',
-transition: 'background-color 0.2s',
-position: 'relative' as const,
-};
-const sSwitchThumb: React.CSSProperties = {
-width: '20px',
-height: '20px',
-borderRadius: '50%',
-backgroundColor: '#fff',
-position: 'absolute' as const,
-top: '2px',
-transition: 'left 0.2s',
-boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
-};
+        /* Switch toggle */
+        const sSwitchTrack: React.CSSProperties = {
+        width: '44px',
+        height: '24px',
+        borderRadius: '12px',
+        cursor: 'pointer',
+        transition: 'background-color 0.2s',
+        position: 'relative' as const,
+        };
+        const sSwitchThumb: React.CSSProperties = {
+        width: '20px',
+        height: '20px',
+        borderRadius: '50%',
+        backgroundColor: '#fff',
+        position: 'absolute' as const,
+        top: '2px',
+        transition: 'left 0.2s',
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)',
+        };
 
-/* Mandatory badge */
-const sMandatoryBadge: React.CSSProperties = {
-fontSize: '10px',
-fontWeight: 600,
-padding: '2px 6px',
-borderRadius: '4px',
-backgroundColor: '#d1fae5',
-color: '#065f46',
-marginLeft: '8px',
-};
+        /* Mandatory badge */
+        const sMandatoryBadge: React.CSSProperties = {
+        fontSize: '10px',
+        fontWeight: 600,
+        padding: '2px 6px',
+        borderRadius: '4px',
+        backgroundColor: '#d1fae5',
+        color: '#065f46',
+        marginLeft: '8px',
+        };
 
-/* Footer */
-const sBannerFooter: React.CSSProperties = {
-padding: '12px 24px',
-borderTop: '1px solid rgba(0, 0, 0, 0.05)',
-textAlign: 'center' as const,
-fontSize: '12px',
-color: '#9ca3af',
-};
+        /* Footer */
+        const sBannerFooter: React.CSSProperties = {
+        padding: '12px 24px',
+        borderTop: '1px solid rgba(0, 0, 0, 0.05)',
+        textAlign: 'center' as const,
+        fontSize: '12px',
+        color: '#9ca3af',
+        };
 
-/* Dynamic style helper — tránh inline double-brace */
-function switchTrackStyle(enabled: boolean): React.CSSProperties {
-return Object.assign({}, sSwitchTrack, {
-backgroundColor: enabled ? '#6366f1' : '#d1d5db',
-});
-}
+        /* Dynamic style helper — tránh inline double-brace */
+        function switchTrackStyle(enabled: boolean): React.CSSProperties {
+        return Object.assign({}, sSwitchTrack, {
+        backgroundColor: enabled ? '#6366f1' : '#d1d5db',
+        });
+        }
 
-function switchThumbStyle(enabled: boolean): React.CSSProperties {
-return Object.assign({}, sSwitchThumb, {
-left: enabled ? '22px' : '2px',
-});
-}
+        function switchThumbStyle(enabled: boolean): React.CSSProperties {
+        return Object.assign({}, sSwitchThumb, {
+        left: enabled ? '22px' : '2px',
+        });
+        }
 
-/* ---- Component con: CookieToggleSwitch ---- */
-const CookieToggleSwitch: React.FC<{
-category: CookieCategoryDef;
-enabled: boolean;
-onChange: (key: CookieCategory, value: boolean) => void;
-}> = ({ category, enabled, onChange }) => {
-const isMandatory = category.mandatory === true;
-const disabled = isMandatory;
+        /* ---- Component con: CookieToggleSwitch ---- */
+        const CookieToggleSwitch: React.FC<{ category: CookieCategoryDef; enabled: boolean; onChange: (key:
+            CookieCategory, value: boolean)=> void;
+            }> = ({ category, enabled, onChange }) => {
+            const isMandatory = category.mandatory === true;
+            const disabled = isMandatory;
 
-const handleToggle = useCallback(() => {
-if (disabled) return;
-onChange(category.key, !enabled);
-}, [category.key, enabled, disabled, onChange]);
+            const handleToggle = useCallback(() => {
+            if (disabled) return;
+            onChange(category.key, !enabled);
+            }, [category.key, enabled, disabled, onChange]);
 
-return (
-<div style={sToggleItem}>
-<div style={sToggleHeader}>
-<span style={sToggleLabel}>
-{category.label}
-{isMandatory && <span style={sMandatoryBadge}>Bat buoc</span>}
-</span>
-<div
-style={switchTrackStyle(enabled)}
-onClick={handleToggle}
-role="switch"
-aria-checked={enabled}
-aria-label={category.label}
-tabIndex={disabled ? -1 : 0}
->
-<div style={switchThumbStyle(enabled)} />
-</div>
-</div>
-<p style={sToggleDesc}>{category.description}</p>
-</div>
-);
-};
+            return (
+            <div style={sToggleItem}>
+                <div style={sToggleHeader}>
+                    <span style={sToggleLabel}>
+                        {category.label}
+                        {isMandatory && <span style={sMandatoryBadge}>Bat buoc</span>}
+                    </span>
+                    <div style={switchTrackStyle(enabled)} onClick={handleToggle} role="switch" aria-checked={enabled}
+                        aria-label={category.label} tabIndex={disabled ? -1 : 0}>
+                        <div style={switchThumbStyle(enabled)} />
+                    </div>
+                </div>
+                <p style={sToggleDesc}>{category.description}</p>
+            </div>
+            );
+            };
 
-/* ======================================================================
-* COMPONENT CHÍNH: CookieBanner
-* ====================================================================== */
-export function CookieBanner({
-userId = 'user_1',
-tenantId = 'tenant_1',
-apiBaseUrl = '/api',
-storageKey = 'cp49_cookie_consent',
-expiresDays = 365,
-onAccept,
-onReject,
-}: CookieBannerProps) {
-/* Trạng thái: banner có hiển thị không */
-const [isVisible, setIsVisible] = useState(false);
-/* Chế độ customize: đang xem toggle danh muc */
-const [isCustomizing, setIsCustomizing] = useState(false);
-/* Trạng thái toggle cho từng danh muc */
-const [categories, setCategories] = useState<Record<string, boolean>>({
-necessary: true,
-analytics: false,
-marketing: false,
-preferences: false,
-functional: false,
-});
+            /* ======================================================================
+            * COMPONENT CHÍNH: CookieBanner
+            * ====================================================================== */
+            export function CookieBanner({
+            userId = 'user_1',
+            tenantId = 'tenant_1',
+            apiBaseUrl = '/api',
+            storageKey = 'cp49_cookie_consent',
+            expiresDays = 365,
+            onAccept,
+            onReject,
+            }: CookieBannerProps) {
+            /* Trạng thái: banner có hiển thị không */
+            const [isVisible, setIsVisible] = useState(false);
+            /* Chế độ customize: đang xem toggle danh muc */
+            const [isCustomizing, setIsCustomizing] = useState(false);
+            /* Trạng thái toggle cho từng danh muc */
+            const [categories, setCategories] = useState<Record<string, boolean>>({
+                necessary: true,
+                analytics: false,
+                marketing: false,
+                preferences: false,
+                functional: false,
+                });
 
-/* Kiểm tra localStorage xem người dùng đã chấp nhận chưa */
-useEffect(() => {
-try {
-const stored = localStorage.getItem(storageKey);
-if (stored) {
-const parsed: StoredCookiePreferences = JSON.parse(stored);
-/* Kiểm tra xem cookie preference đã hết hạn chưa */
-const timestamp = new Date(parsed.timestamp).getTime();
-const now = Date.now();
-const expiresMs = expiresDays * 24 * 60 * 60 * 1000;
+                /* Kiểm tra localStorage xem người dùng đã chấp nhận chưa */
+                useEffect(() => {
+                try {
+                const stored = localStorage.getItem(storageKey);
+                if (stored) {
+                const parsed: StoredCookiePreferences = JSON.parse(stored);
+                /* Kiểm tra xem cookie preference đã hết hạn chưa */
+                const timestamp = new Date(parsed.timestamp).getTime();
+                const now = Date.now();
+                const expiresMs = expiresDays * 24 * 60 * 60 * 1000;
 
-if (now - timestamp < expiresMs && parsed.accepted) {
-/* Đã chấp nhận và chưa hết hạn — không hiển thị banner */
-setIsVisible(false);
-/* Phục hồi trạng thái categories */
-setCategories(parsed.categories);
-return;
-}
-}
-} catch {
-/* Lỗi đọc localStorage — hiển thị banner */
-}
-/* Hiển thị banner */
-setIsVisible(true);
-}, [storageKey, expiresDays]);
+                if (now - timestamp < expiresMs && parsed.accepted) { /* Đã chấp nhận và chưa hết hạn — không hiển thị
+                    banner */ setIsVisible(false); /* Phục hồi trạng thái categories */
+                    setCategories(parsed.categories); return; } } } catch { /* Lỗi đọc localStorage — hiển thị banner */
+                    } /* Hiển thị banner */ setIsVisible(true); }, [storageKey, expiresDays]); /* Lưu preference vào
+                    localStorage */ const saveToLocalStorage=useCallback( (accepted: boolean, cats: Record<string,
+                    boolean>) => {
+                    try {
+                    const data: StoredCookiePreferences = {
+                    accepted,
+                    categories: cats,
+                    timestamp: new Date().toISOString(),
+                    };
+                    localStorage.setItem(storageKey, JSON.stringify(data));
+                    } catch {
+                    console.warn('[CookieBanner] Khong the ghi vao localStorage');
+                    }
+                    },
+                    [storageKey],
+                    );
 
-/* Lưu preference vào localStorage */
-const saveToLocalStorage = useCallback(
-(accepted: boolean, cats: Record<string, boolean>) => {
-try {
-const data: StoredCookiePreferences = {
-accepted,
-categories: cats,
-timestamp: new Date().toISOString(),
-};
-localStorage.setItem(storageKey, JSON.stringify(data));
-} catch {
-console.warn('[CookieBanner] Khong the ghi vao localStorage');
-}
-},
-[storageKey],
-);
+                    /* Gửi preference lên API */
+                    const sendToApi = useCallback(
+                    async (cats: Record<string, boolean>) => {
+                        try {
+                        const response = await fetch(`${apiBaseUrl}/consent/cookie-preferences`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                        user_id: userId,
+                        tenant_id: tenantId,
+                        categories: cats,
+                        }),
+                        });
+                        if (!response.ok) {
+                        console.error('[CookieBanner] API loi:', response.status);
+                        }
+                        } catch (err) {
+                        const message = err instanceof Error ? err.message : 'Loi ket noi API';
+                        console.error('[CookieBanner] API error:', message);
+                        }
+                        },
+                        [apiBaseUrl, userId, tenantId],
+                        );
 
-/* Gửi preference lên API */
-const sendToApi = useCallback(
-async (cats: Record<string, boolean>) => {
-try {
-const response = await fetch(`${apiBaseUrl}/consent/cookie-preferences`, {
-method: 'PUT',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({
-user_id: userId,
-tenant_id: tenantId,
-categories: cats,
-}),
-});
-if (!response.ok) {
-console.error('[CookieBanner] API loi:', response.status);
-}
-} catch (err) {
-const message = err instanceof Error ? err.message : 'Loi ket noi API';
-console.error('[CookieBanner] API error:', message);
-}
-},
-[apiBaseUrl, userId, tenantId],
-);
+                        /* Toggle danh muc */
+                        const handleToggleCategory = useCallback(
+                        (key: CookieCategory, value: boolean) => {
+                        setCategories((prev) => ({ ...prev, [key]: value }));
+                        },
+                        [],
+                        );
 
-/* Toggle danh muc */
-const handleToggleCategory = useCallback(
-(key: CookieCategory, value: boolean) => {
-setCategories((prev) => ({ ...prev, [key]: value }));
-},
-[],
-);
+                        /* Hide banner */
+                        const handleDismiss = useCallback(() => {
+                        setIsVisible(false);
+                        }, []);
 
-/* Hide banner */
-const handleDismiss = useCallback(() => {
-setIsVisible(false);
-}, []);
+                        /* Accept All — bật tất cả danh muc */
+                        const handleAcceptAll = useCallback(() => {
+                        const allAccepted: Record<string, boolean> = {};
+                            COOKIE_CATEGORIES.forEach((cat) => {
+                            allAccepted[cat.key] = true;
+                            });
+                            setCategories(allAccepted);
+                            saveToLocalStorage(true, allAccepted);
+                            sendToApi(allAccepted);
+                            onAccept?.(allAccepted);
+                            setIsVisible(false);
+                            }, [saveToLocalStorage, sendToApi, onAccept]);
 
-/* Accept All — bật tất cả danh muc */
-const handleAcceptAll = useCallback(() => {
-const allAccepted: Record<string, boolean> = {};
-COOKIE_CATEGORIES.forEach((cat) => {
-allAccepted[cat.key] = true;
-});
-setCategories(allAccepted);
-saveToLocalStorage(true, allAccepted);
-sendToApi(allAccepted);
-onAccept?.(allAccepted);
-setIsVisible(false);
-}, [saveToLocalStorage, sendToApi, onAccept]);
+                            /* Reject All — chỉ giữ necessary */
+                            const handleRejectAll = useCallback(() => {
+                            const minimal: Record<string, boolean> = {};
+                                COOKIE_CATEGORIES.forEach((cat) => {
+                                minimal[cat.key] = cat.mandatory === true;
+                                });
+                                setCategories(minimal);
+                                saveToLocalStorage(true, minimal);
+                                sendToApi(minimal);
+                                onReject?.();
+                                setIsVisible(false);
+                                }, [saveToLocalStorage, sendToApi, onReject]);
 
-/* Reject All — chỉ giữ necessary */
-const handleRejectAll = useCallback(() => {
-const minimal: Record<string, boolean> = {};
-COOKIE_CATEGORIES.forEach((cat) => {
-minimal[cat.key] = cat.mandatory === true;
-});
-setCategories(minimal);
-saveToLocalStorage(true, minimal);
-sendToApi(minimal);
-onReject?.();
-setIsVisible(false);
-}, [saveToLocalStorage, sendToApi, onReject]);
+                                /* Save Customize — lưu trạng thái toggle hiện tại */
+                                const handleSaveCustomize = useCallback(() => {
+                                saveToLocalStorage(true, categories);
+                                sendToApi(categories);
+                                onAccept?.(categories);
+                                setIsCustomizing(false);
+                                setIsVisible(false);
+                                }, [categories, saveToLocalStorage, sendToApi, onAccept]);
 
-/* Save Customize — lưu trạng thái toggle hiện tại */
-const handleSaveCustomize = useCallback(() => {
-saveToLocalStorage(true, categories);
-sendToApi(categories);
-onAccept?.(categories);
-setIsCustomizing(false);
-setIsVisible(false);
-}, [categories, saveToLocalStorage, sendToApi, onAccept]);
+                                /* Toggle chế độ customize */
+                                const handleCustomize = useCallback(() => {
+                                setIsCustomizing((prev) => !prev);
+                                }, []);
 
-/* Toggle chế độ customize */
-const handleCustomize = useCallback(() => {
-setIsCustomizing((prev) => !prev);
-}, []);
+                                /* Không hiển thị nếu đã chấp nhận */
+                                if (!isVisible) {
+                                return null;
+                                }
 
-/* Không hiển thị nếu đã chấp nhận */
-if (!isVisible) {
-return null;
-}
+                                return (
+                                <div style={sBanner}>
+                                    <div style={sGlassContainer}>
+                                        {/* Header */}
+                                        <div style={sBannerHeader}>
+                                            <h2 style={sBannerTitle}>\u{1F36A} Ching moi ban ve cookie</h2>
+                                            <button style={sBannerCloseBtn} onClick={handleDismiss} title="Dong banner"
+                                                aria-label="Dong banner">
+                                                \u2715
+                                            </button>
+                                        </div>
 
-return (
-<div style={sBanner}>
-<div style={sGlassContainer}>
-{/* Header */}
-<div style={sBannerHeader}>
-<h2 style={sBannerTitle}>\u{1F36A} Ching moi ban ve cookie</h2>
-<button
-style={sBannerCloseBtn}
-onClick={handleDismiss}
-title="Dong banner"
-aria-label="Dong banner"
->
-\u2715
-</button>
-</div>
+                                        {/* Nội dung chính */}
+                                        <div style={sBannerContent}>
+                                            <p style={sBannerText}>
+                                                Chung toi su dung cookie de tang cuong trai ng dung cua ban. Ban co the
+                                                chon danh muc cookie ma ban muon cho phep. Tim hieu them{' '}
+                                                <span style={sBannerLink}>chinh sach cookie</span>.
+                                            </p>
+                                        </div>
 
-{/* Nội dung chính */}
-<div style={sBannerContent}>
-<p style={sBannerText}>
-Chung toi su dung cookie de tang cuong trai ng dung cua ban. Ban co the
-chon danh muc cookie ma ban muon cho phep. Tim hieu them{' '}
-<span style={sBannerLink}>chinh sach cookie</span>.
-</p>
-</div>
+                                        {/* Các toggle danh muc khi ở chế độ customize */}
+                                        {isCustomizing && (
+                                        <div style={sToggleSection}>
+                                            <h3 style={sToggleSectionTitle}>Tuy chon danh muc cookie</h3>
+                                            {COOKIE_CATEGORIES.map((cat) => (
+                                            <CookieToggleSwitch key={cat.key} category={cat}
+                                                enabled={categories[cat.key] ?? false}
+                                                onChange={handleToggleCategory} />
+                                            ))}
+                                        </div>
+                                        )}
 
-{/* Các toggle danh muc khi ở chế độ customize */}
-{isCustomizing && (
-<div style={sToggleSection}>
-<h3 style={sToggleSectionTitle}>Tuy chon danh muc cookie</h3>
-{COOKIE_CATEGORIES.map((cat) => (
-<CookieToggleSwitch
-key={cat.key}
-category={cat}
-enabled={categories[cat.key] ?? false}
-onChange={handleToggleCategory}
-/>
-))}
-</div>
-)}
+                                        {/* Nút hành động */}
+                                        <div style={sActionsRow}>
+                                            {!isCustomizing ? (
+                                            <>
+                                                <button style={sBtnAcceptAll} onClick={handleAcceptAll}>
+                                                    Chap nhan tat ca
+                                                </button>
+                                                <button style={sBtnRejectAll} onClick={handleRejectAll}>
+                                                    Tu choi tat ca
+                                                </button>
+                                                <button style={sBtnCustomize} onClick={handleCustomize}>
+                                                    Tuy chon
+                                                </button>
+                                            </>
+                                            ) : (
+                                            <>
+                                                <button style={sBtnAcceptAll} onClick={handleSaveCustomize}>
+                                                    Luu tuy chon
+                                                </button>
+                                                <button style={sBtnRejectAll} onClick={handleCustomize}>
+                                                    Quay lai
+                                                </button>
+                                            </>
+                                            )}
+                                        </div>
 
-{/* Nút hành động */}
-<div style={sActionsRow}>
-{!isCustomizing ? (
-<>
-<button style={sBtnAcceptAll} onClick={handleAcceptAll}>
-Chap nhan tat ca
-</button>
-<button style={sBtnRejectAll} onClick={handleRejectAll}>
-Tu choi tat ca
-</button>
-<button style={sBtnCustomize} onClick={handleCustomize}>
-Tuy chon
-</button>
-</>
-) : (
-<>
-<button style={sBtnAcceptAll} onClick={handleSaveCustomize}>
-Luu tuy chon
-</button>
-<button style={sBtnRejectAll} onClick={handleCustomize}>
-Quay lai
-</button>
-</>
-)}
-</div>
+                                        {/* Footer */}
+                                        <div style={sBannerFooter}>
+                                            Bang viec tiep tuc su dung website, ban cho phep chung toi su dung cookie
+                                            theo chinh sach hien hanh.
+                                        </div>
+                                    </div>
+                                </div>
+                                );
+                                }
 
-{/* Footer */}
-<div style={sBannerFooter}>
-Bang viec tiep tuc su dung website, ban cho phep chung toi su dung cookie theo chinh sach hien hanh.
-</div>
-</div>
-</div>
-);
-}
-
-export default CookieBanner;
+                                export default CookieBanner;

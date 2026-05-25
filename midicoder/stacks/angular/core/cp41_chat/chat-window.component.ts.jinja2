@@ -1,27 +1,28 @@
 /**
- * ChatWindowComponent — Cửa sổ chat chính.
- *
- * Hiển thị tiêu đề hội thoại, danh sách tin nhắn, và khu vực nhập tin nhắn.
- * Tích hợp WebSocket cho tin nhắn realtime. Tự động cuộn xuống cuối khi có
- * tin nhắn mới. Hiển thị xác nhận đọc (read receipts) cho từng tin nhắn.
- *
- * Tạo tự động bởi CP41 — không sửa thủ công.
- */
+* ChatWindowComponent — Cua so chat chinh.
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
+*
+* Hien thi tieu de hoi thoai, danh sach tin nhan, va khu vuc nhap tin nhan.
+* Tich hop WebSocket cho tin nhan realtime. Tu dong cuon xuong cuoi khi co
+* tin nhan moi. Hien thi xac nhan doc (read receipts) cho tung tin nhan.
+*
+* Tao tu dong boi CP41 — khong sua thuc cong.
+*/
 
 import {
-  Component,
-  OnInit,
-  OnDestroy,
-  ViewChild,
-  ViewChildren,
-  QueryList,
-  ElementRef,
-  AfterViewChecked,
-  ChangeDetectionStrategy,
-  inject,
-  signal,
-  computed,
-  effect
+Component,
+OnInit,
+OnDestroy,
+ViewChild,
+ViewChildren,
+QueryList,
+ElementRef,
+AfterViewChecked,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed,
+effect
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -30,535 +31,503 @@ import { takeUntil } from 'rxjs/operators';
 import { ChatService } from './chat.service';
 import { ChatStore } from './chat.store';
 import {
-  Message,
-  MessageStatus,
-  MessageType,
-  ConversationType,
-  ConnectionStatus
+Message,
+MessageStatus,
+MessageType,
+ConversationType,
+ConnectionStatus
 } from './chat-types';
 
 // ===========================================================================
-// Cấu hình từ template
+// Cau hinh tu template
 // ===========================================================================
 
-/** Cờ bật/tắt WebSocket. */
+/** Co bat/tat WebSocket. */
 const WS_ENABLED: boolean = {{ 'true' if use_websocket else 'false' }};
 
 /** URL WebSocket. */
 const WS_URL: string = '{{ redis_url }}';
 
 /**
- * ChatWindowComponent — Cửa sổ chat chính.
- *
- * Sử dụng:
- *   <app-chat-window [conversationId]="'conv_123'"></app-chat-window>
- */
+* ChatWindowComponent — Cua so chat chinh.
+*
+* Sử dụng:
+* <app-chat-window [conversationId]="'conv_123'"></app-chat-window>
+*/
 @Component({
-  selector: 'app-chat-window',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  changeDetection: ChangeDetectionStrategy.OnPush,
+selector: 'app-chat-window',
+standalone: true,
+imports: [CommonModule, FormsModule],
+changeDetection: ChangeDetectionStrategy.OnPush,
 {% raw %}
-  template: `
-    <div class="chat-window" [class.no-conversation]="!hasActiveConversation()">
-      <!-- Trường hợp chưa chọn hội thoại -->
-      <div class="empty-chat" *ngIf="!hasActiveConversation()">
+template: `
+<div class="chat-window" [class.no-conversation]="!hasActiveConversation()">
+    <!-- Trường hợp chưa chọn hội thoại -->
+    <div class="empty-chat" *ngIf="!hasActiveConversation()">
         <div class="empty-icon">💬</div>
         <h2>Chọn một hội thoại để bắt đầu</h2>
         <p>Chọn hội thoại từ danh sách bên trái để xem và gửi tin nhắn</p>
-      </div>
+    </div>
 
-      <!-- Giao diện chat chính -->
-      <ng-container *ngIf="hasActiveConversation()">
+    <!-- Giao diện chat chính -->
+    <ng-container *ngIf="hasActiveConversation()">
         <!-- Tiêu đề hội thoại -->
         <header class="chat-header">
-          <div class="header-info">
-            <h3 class="conversation-name">{{ activeConversation()?.name || 'Hội thoại' }}</h3>
-            <span class="conversation-type-badge" [class]="getConversationTypeClass()">
-              {{ getConversationTypeLabel() }}
-            </span>
-          </div>
-          <div class="header-status">
-            <!-- Trạng thái kết nối -->
-            <span class="connection-status" [class]="getConnectionStatusClass()">
-              {{ getConnectionStatusLabel() }}
-            </span>
-            <!-- Người tham gia -->
-            <span class="participant-count">
-              {{ activeConversation()?.participants.length || 0 }} thành viên
-            </span>
-          </div>
+            <div class="header-info">
+                <h3 class="conversation-name">{{ activeConversation()?.name || 'Hội thoại' }}</h3>
+                <span class="conversation-type-badge" [class]="getConversationTypeClass()">
+                    {{ getConversationTypeLabel() }}
+                </span>
+            </div>
+            <div class="header-status">
+                <!-- Trạng thái kết nối -->
+                <span class="connection-status" [class]="getConnectionStatusClass()">
+                    {{ getConnectionStatusLabel() }}
+                </span>
+                <!-- Người tham gia -->
+                <span class="participant-count">
+                    {{ activeConversation()?.participants.length || 0 }} thành viên
+                </span>
+            </div>
         </header>
 
         <!-- Danh sách tin nhắn -->
         <div class="message-list" #messageList>
-          <div
-            class="message-item"
-            [class.own]="isOwnMessage(message)"
-            [class.reply]="message.replyTo"
-            *ngFor="let message of activeMessages(); let i = index"
-            #messageElements
-            [attr.data-message-id]="message.messageId"
-          >
-            <!-- Tin nhắn được trả lời (nếu có) -->
-            <div class="reply-preview" *ngIf="message.replyToMessage">
-              <span class="reply-label">Trả lời</span>
-              <span class="reply-sender">{{ message.replyToMessage.senderName || 'Người gửi' }}</span>
-              <span class="reply-content">{{ message.replyToMessage.content | slice:0:60 }}</span>
+            <div class="message-item" [class.own]="isOwnMessage(message)" [class.reply]="message.replyTo"
+                *ngFor="let message of activeMessages(); let i = index" #messageElements
+                [attr.data-message-id]="message.messageId">
+                <!-- Tin nhắn được trả lời (nếu có) -->
+                <div class="reply-preview" *ngIf="message.replyToMessage">
+                    <span class="reply-label">Trả lời</span>
+                    <span class="reply-sender">{{ message.replyToMessage.senderName || 'Người gửi' }}</span>
+                    <span class="reply-content">{{ message.replyToMessage.content | slice:0:60 }}</span>
+                </div>
+
+                <!-- Bubble tin nhắn -->
+                <div class="message-bubble">
+                    <!-- Tin nhắn văn bản -->
+                    <div class="message-content" *ngIf="message.messageType === 'text'">
+                        {{ message.content }}
+                    </div>
+
+                    <!-- Tin nhắn ảnh -->
+                    <div class="message-content message-image" *ngIf="message.messageType === 'image'">
+                        <img [src]="message.attachments[0]?.url || ''" [alt]="message.content" />
+                    </div>
+
+                    <!-- Tin nhắn hệ thống -->
+                    <div class="message-content message-system" *ngIf="message.messageType === 'system'">
+                        <span class="system-icon">ℹ️</span>
+                        {{ message.content }}
+                    </div>
+
+                    <!-- Tin nhắn file -->
+                    <div class="message-content message-file" *ngIf="message.messageType === 'file'">
+                        <a [href]="message.attachments[0]?.url || '#'" target="_blank" download>
+                            📎 {{ message.attachments[0]?.filename || 'Tệp đính kèm' }}
+                        </a>
+                    </div>
+
+                    <!-- Reactions -->
+                    <div class="message-reactions" *ngIf="message.reactions?.length">
+                        <span class="reaction-badge" *ngFor="let reaction of message.reactions"
+                            [title]="reaction.userIds.join(', ')">
+                            {{ reaction.emoji }} {{ reaction.userIds.length }}
+                        </span>
+                    </div>
+
+                    <!-- Footer tin nhắn -->
+                    <div class="message-footer">
+                        <span class="message-time">{{ message.createdAt | date:'HH:mm' }}</span>
+                        <!-- Xác nhận đọc (chỉ cho tin nhắn của mình) -->
+                        <span class="read-receipt" *ngIf="isOwnMessage(message)">
+                            <span *ngIf="message.status === 'pending'" class="status-icon" title="Đang gửi">⏳</span>
+                            <span *ngIf="message.status === 'sent'" class="status-icon" title="Đã gửi">✓</span>
+                            <span *ngIf="message.status === 'delivered'" class="status-icon" title="Đã nhận">✓✓</span>
+                            <span *ngIf="message.status === 'read'" class="status-icon read" title="Đã đọc">✓✓</span>
+                            <span *ngIf="message.status === 'failed'" class="status-icon error"
+                                title="Thất bại">✗</span>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Tên người gửi (cho tin nhắn không phải của mình) -->
+                <div class="message-sender" *ngIf="!isOwnMessage(message)">
+                    <span class="sender-avatar">{{ (message.senderName || '?')[0] }}</span>
+                    <span class="sender-name">{{ message.senderName || 'Người gửi' }}</span>
+                </div>
             </div>
 
-            <!-- Bubble tin nhắn -->
-            <div class="message-bubble">
-              <!-- Tin nhắn văn bản -->
-              <div class="message-content" *ngIf="message.messageType === 'text'">
-                {{ message.content }}
-              </div>
-
-              <!-- Tin nhắn ảnh -->
-              <div class="message-content message-image" *ngIf="message.messageType === 'image'">
-                <img [src]="message.attachments[0]?.url || ''" [alt]="message.content" />
-              </div>
-
-              <!-- Tin nhắn hệ thống -->
-              <div class="message-content message-system" *ngIf="message.messageType === 'system'">
-                <span class="system-icon">ℹ️</span>
-                {{ message.content }}
-              </div>
-
-              <!-- Tin nhắn file -->
-              <div class="message-content message-file" *ngIf="message.messageType === 'file'">
-                <a [href]="message.attachments[0]?.url || '#'" target="_blank" download>
-                  📎 {{ message.attachments[0]?.filename || 'Tệp đính kèm' }}
-                </a>
-              </div>
-
-              <!-- Reactions -->
-              <div class="message-reactions" *ngIf="message.reactions?.length">
-                <span
-                  class="reaction-badge"
-                  *ngFor="let reaction of message.reactions"
-                  [title]="reaction.userIds.join(', ')"
-                >
-                  {{ reaction.emoji }} {{ reaction.userIds.length }}
-                </span>
-              </div>
-
-              <!-- Footer tin nhắn -->
-              <div class="message-footer">
-                <span class="message-time">{{ message.createdAt | date:'HH:mm' }}</span>
-                <!-- Xác nhận đọc (chỉ cho tin nhắn của mình) -->
-                <span class="read-receipt" *ngIf="isOwnMessage(message)">
-                  <span *ngIf="message.status === 'pending'" class="status-icon" title="Đang gửi">⏳</span>
-                  <span *ngIf="message.status === 'sent'" class="status-icon" title="Đã gửi">✓</span>
-                  <span *ngIf="message.status === 'delivered'" class="status-icon" title="Đã nhận">✓✓</span>
-                  <span *ngIf="message.status === 'read'" class="status-icon read" title="Đã đọc">✓✓</span>
-                  <span *ngIf="message.status === 'failed'" class="status-icon error" title="Thất bại">✗</span>
-                </span>
-              </div>
+            <!-- Trạng thái trống -->
+            <div class="empty-messages" *ngIf="!activeMessages()?.length">
+                <p>Chưa có tin nhắn nào. Hãy gửi tin nhắn đầu tiên!</p>
             </div>
-
-            <!-- Tên người gửi (cho tin nhắn không phải của mình) -->
-            <div class="message-sender" *ngIf="!isOwnMessage(message)">
-              <span class="sender-avatar">{{ (message.senderName || '?')[0] }}</span>
-              <span class="sender-name">{{ message.senderName || 'Người gửi' }}</span>
-            </div>
-          </div>
-
-          <!-- Trạng thái trống -->
-          <div class="empty-messages" *ngIf="!activeMessages()?.length">
-            <p>Chưa có tin nhắn nào. Hãy gửi tin nhắn đầu tiên!</p>
-          </div>
         </div>
 
         <!-- Typing indicator -->
         <div class="typing-indicator" *ngIf="typingUsers().length">
-          <span class="typing-dots">
-            {{ getTypingText() }}
-          </span>
+            <span class="typing-dots">
+                {{ getTypingText() }}
+            </span>
         </div>
 
         <!-- Khu vực nhập tin nhắn -->
         <footer class="chat-input-area">
-          <div class="input-wrapper">
-            <!-- Nút đính kèm file -->
-            <button
-              class="btn-attach"
-              (click)="fileInput.click()"
-              title="Đính kèm file"
-            >
-              📎
-            </button>
-            <input
-              #fileInput
-              type="file"
-              class="hidden-input"
-              (change)="onFileSelected($event)"
-              multiple
-            />
+            <div class="input-wrapper">
+                <!-- Nút đính kèm file -->
+                <button class="btn-attach" (click)="fileInput.click()" title="Đính kèm file">
+                    📎
+                </button>
+                <input #fileInput type="file" class="hidden-input" (change)="onFileSelected($event)" multiple />
 
-            <!-- Ô nhập tin nhắn -->
-            <textarea
-              #messageInput
-              class="message-input"
-              placeholder="Nhập tin nhắn..."
-              [(ngModel)]="newMessageContent"
-              (keydown.enter)="onKeyDown($event)"
-              (input)="onTyping()"
-              rows="1"
-              [disabled]="!hasActiveConversation() || isConnectionError()"
-            ></textarea>
+                <!-- Ô nhập tin nhắn -->
+                <textarea #messageInput class="message-input" placeholder="Nhập tin nhắn..."
+                    [(ngModel)]="newMessageContent" (keydown.enter)="onKeyDown($event)" (input)="onTyping()" rows="1"
+                    [disabled]="!hasActiveConversation() || isConnectionError()"></textarea>
 
-            <!-- Nút trả lời (hiển thị khi đang trả lời) -->
-            <button
-              *ngIf="replyingToMessage()"
-              class="btn-cancel-reply"
-              (click)="cancelReply()"
-              title="Hủy trả lời"
-            >
-              ✕
-            </button>
+                <!-- Nút trả lời (hiển thị khi đang trả lời) -->
+                <button *ngIf="replyingToMessage()" class="btn-cancel-reply" (click)="cancelReply()"
+                    title="Hủy trả lời">
+                    ✕
+                </button>
 
-            <!-- Nút gửi -->
-            <button
-              class="btn-send"
-              (click)="sendMessage()"
-              [disabled]="!newMessageContent.trim() || !hasActiveConversation()"
-              title="Gửi tin nhắn"
-            >
-              ➤
-            </button>
-          </div>
+                <!-- Nút gửi -->
+                <button class="btn-send" (click)="sendMessage()"
+                    [disabled]="!newMessageContent.trim() || !hasActiveConversation()" title="Gửi tin nhắn">
+                    ➤
+                </button>
+            </div>
 
-          <!-- Thanh trả lời (khi đang trả lời tin nhắn) -->
-          <div class="reply-bar" *ngIf="replyingToMessage()">
-            <span class="reply-label">Đang trả lời:</span>
-            <span class="reply-sender">{{ replyingToMessage()?.senderName }}</span>
-            <span class="reply-content">{{ replyingToMessage()?.content | slice:0:50 }}</span>
-          </div>
+            <!-- Thanh trả lời (khi đang trả lời tin nhắn) -->
+            <div class="reply-bar" *ngIf="replyingToMessage()">
+                <span class="reply-label">Đang trả lời:</span>
+                <span class="reply-sender">{{ replyingToMessage()?.senderName }}</span>
+                <span class="reply-content">{{ replyingToMessage()?.content | slice:0:50 }}</span>
+            </div>
         </footer>
-      </ng-container>
-    </div>
-  `
+    </ng-container>
+</div>
+`
 {% endraw %}
 })
 export class ChatWindowComponent implements OnInit, OnDestroy, AfterViewChecked {
-  // ===========================================================================
-  // Inject dependencies
-  // ===========================================================================
+// ===========================================================================
+// Inject dependencies
+// ===========================================================================
 
-  private readonly chatService = inject(ChatService);
-  private readonly chatStore = inject(ChatStore);
+private readonly chatService = inject(ChatService);
+private readonly chatStore = inject(ChatStore);
 
-  // ===========================================================================
-  // Template references
-  // ===========================================================================
+// ===========================================================================
+// Template references
+// ===========================================================================
 
-  @ViewChild('messageList') messageListRef?: ElementRef<HTMLElement>;
-  @ViewChildren('messageElements') messageElementsRef?: QueryList<ElementRef<HTMLElement>>;
+@ViewChild('messageList') messageListRef?: ElementRef<HTMLElement>;
+    @ViewChildren('messageElements') messageElementsRef?: QueryList<ElementRef<HTMLElement>>;
 
-  // ===========================================================================
-  // Local state
-  // ===========================================================================
+        // ===========================================================================
+        // Local state
+        // ===========================================================================
 
-  /** Nội dung tin nhắn mới đang nhập. */
-  public newMessageContent: string = '';
+        /** Nội dung tin nhắn mới đang nhập. */
+        public newMessageContent: string = '';
 
-  /** Tin nhắn đang trả lời (nullable). */
-  public readonly replyingToMessage = signal<Message | null>(null);
+        /** Tin nhắn đang trả lời (nullable). */
+        public readonly replyingToMessage = signal<Message | null>(null);
 
-  /** Cờ cuộn tự động — tắt khi người dùng cuộn lên. */
-  private autoScroll: boolean = true;
+            /** Cờ cuộn tự động — tắt khi người dùng cuộn lên. */
+            private autoScroll: boolean = true;
 
-  /** Timer debounce cho typing indicator. */
-  private typingTimer: ReturnType<typeof setTimeout> | null = null;
+            /** Timer debounce cho typing indicator. */
+            private typingTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // ===========================================================================
-  // Computed từ store
-  // ===========================================================================
+                // ===========================================================================
+                // Computed từ store
+                // ===========================================================================
 
-  /** Hội thoại đang mở. */
-  public readonly activeConversation = this.chatStore.activeConversation;
+                /** Hội thoại đang mở. */
+                public readonly activeConversation = this.chatStore.activeConversation;
 
-  /** Tin nhắn của hội thoại đang mở. */
-  public readonly activeMessages = this.chatStore.activeMessages;
+                /** Tin nhắn của hội thoại đang mở. */
+                public readonly activeMessages = this.chatStore.activeMessages;
 
-  /** Người dùng hiện tại. */
-  public readonly currentUser = this.chatStore.currentUser;
+                /** Người dùng hiện tại. */
+                public readonly currentUser = this.chatStore.currentUser;
 
-  /** Người dùng đang gõ. */
-  public readonly typingUsers = this.chatStore.activeTypingUsers;
+                /** Người dùng đang gõ. */
+                public readonly typingUsers = this.chatStore.activeTypingUsers;
 
-  /** Trạng thái kết nối. */
-  public readonly connectionStatus = this.chatStore.connectionStatus;
+                /** Trạng thái kết nối. */
+                public readonly connectionStatus = this.chatStore.connectionStatus;
 
-  /** Có đang mở hội thoại không. */
-  public readonly hasActiveConversation = computed<boolean>(() => {
-    return this.activeConversation() !== null;
-  });
+                /** Có đang mở hội thoại không. */
+                public readonly hasActiveConversation = computed<boolean>(() => {
+                    return this.activeConversation() !== null;
+                    });
 
-  /** Kết nối có bị lỗi không. */
-  public readonly isConnectionError = computed<boolean>(() => {
-    return this.connectionStatus().status === 'error';
-  });
+                    /** Kết nối có bị lỗi không. */
+                    public readonly isConnectionError = computed<boolean>(() => {
+                        return this.connectionStatus().status === 'error';
+                        });
 
-  // ===========================================================================
-  // Lifecycle
-  // ===========================================================================
+                        // ===========================================================================
+                        // Lifecycle
+                        // ===========================================================================
 
-  ngOnInit(): void {
-    // Đăng ký lắng nghe tin nhắn realtime từ service.
-    this.chatService.messages$.pipe(takeUntil(this.chatStore as any)).subscribe(message => {
-      this.chatStore.addMessage(message);
-    });
+                        ngOnInit(): void {
+                        // Đăng ký lắng nghe tin nhắn realtime từ service.
+                        this.chatService.messages$.pipe(takeUntil(this.chatStore as any)).subscribe(message => {
+                        this.chatStore.addMessage(message);
+                        });
 
-    // Lắng nghe xác nhận đọc.
-    this.chatService.receipts$.subscribe(receipt => {
-      const convId = receipt.conversationId || this.chatStore.activeConversationId();
-      if (convId) {
-        this.chatStore.addReadReceipt(convId, receipt.messageId || '', receipt);
-      }
-    });
+                        // Lắng nghe xác nhận đọc.
+                        this.chatService.receipts$.subscribe(receipt => {
+                        const convId = receipt.conversationId || this.chatStore.activeConversationId();
+                        if (convId) {
+                        this.chatStore.addReadReceipt(convId, receipt.messageId || '', receipt);
+                        }
+                        });
 
-    // Lắng nghe typing indicators.
-    this.chatService.typing$.subscribe(indicator => {
-      this.chatStore.setTypingIndicator(indicator);
-    });
+                        // Lắng nghe typing indicators.
+                        this.chatService.typing$.subscribe(indicator => {
+                        this.chatStore.setTypingIndicator(indicator);
+                        });
 
-    // Lắng nghe trạng thái kết nối.
-    this.chatService.connectionStatus$.subscribe(status => {
-      this.chatStore.setConnectionStatus(status);
-    });
-  }
+                        // Lắng nghe trạng thái kết nối.
+                        this.chatService.connectionStatus$.subscribe(status => {
+                        this.chatStore.setConnectionStatus(status);
+                        });
+                        }
 
-  /**
-   * Tự động cuộn xuống cuối khi có tin nhắn mới.
-   */
-  ngAfterViewChecked(): void {
-    if (this.autoScroll && this.messageListRef) {
-      const el = this.messageListRef.nativeElement;
-      el.scrollTop = el.scrollHeight;
-    }
-  }
+                        /**
+                        * Tự động cuộn xuống cuối khi có tin nhắn mới.
+                        */
+                        ngAfterViewChecked(): void {
+                        if (this.autoScroll && this.messageListRef) {
+                        const el = this.messageListRef.nativeElement;
+                        el.scrollTop = el.scrollHeight;
+                        }
+                        }
 
-  ngOnDestroy(): void {
-    // Dọn dẹp typing timer.
-    if (this.typingTimer) {
-      clearTimeout(this.typingTimer);
-      this.typingTimer = null;
-    }
+                        ngOnDestroy(): void {
+                        // Dọn dẹp typing timer.
+                        if (this.typingTimer) {
+                        clearTimeout(this.typingTimer);
+                        this.typingTimer = null;
+                        }
 
-    // Hủy trạng thái trả lời.
-    this.replyingToMessage.set(null);
-  }
+                        // Hủy trạng thái trả lời.
+                        this.replyingToMessage.set(null);
+                        }
 
-  // ===========================================================================
-  // Gửi tin nhắn
-  // ===========================================================================
+                        // ===========================================================================
+                        // Gửi tin nhắn
+                        // ===========================================================================
 
-  /**
-   * Gửi tin nhắn mới.
-   */
-  sendMessage(): void {
-    const content = this.newMessageContent.trim();
-    if (!content) return;
+                        /**
+                        * Gửi tin nhắn mới.
+                        */
+                        sendMessage(): void {
+                        const content = this.newMessageContent.trim();
+                        if (!content) return;
 
-    const convId = this.chatStore.activeConversationId();
-    if (!convId) return;
+                        const convId = this.chatStore.activeConversationId();
+                        if (!convId) return;
 
-    // Tạo tin nhắn tạm thời (optimistic update).
-    const tempMessage: Message = {
-      messageId: 'temp_' + Date.now(),
-      conversationId: convId,
-      senderId: this.currentUser()?.userId || 'unknown',
-      senderName: this.currentUser()?.displayName,
-      messageType: MessageType.TEXT,
-      content,
-      attachments: [],
-      reactions: [],
-      status: MessageStatus.PENDING,
-      readReceipts: [],
-      createdAt: new Date().toISOString()
-    };
+                        // Tạo tin nhắn tạm thời (optimistic update).
+                        const tempMessage: Message = {
+                        messageId: 'temp_' + Date.now(),
+                        conversationId: convId,
+                        senderId: this.currentUser()?.userId || 'unknown',
+                        senderName: this.currentUser()?.displayName,
+                        messageType: MessageType.TEXT,
+                        content,
+                        attachments: [],
+                        reactions: [],
+                        status: MessageStatus.PENDING,
+                        readReceipts: [],
+                        createdAt: new Date().toISOString()
+                        };
 
-    // Nếu đang trả lời.
-    if (this.replyingToMessage()) {
-      tempMessage.replyTo = this.replyingToMessage()!.messageId;
-      tempMessage.replyToMessage = this.replyingToMessage()!;
-      tempMessage.messageType = MessageType.REPLY;
-    }
+                        // Nếu đang trả lời.
+                        if (this.replyingToMessage()) {
+                        tempMessage.replyTo = this.replyingToMessage()!.messageId;
+                        tempMessage.replyToMessage = this.replyingToMessage()!;
+                        tempMessage.messageType = MessageType.REPLY;
+                        }
 
-    // Thêm vào store (optimistic).
-    this.chatStore.addMessage(tempMessage);
+                        // Thêm vào store (optimistic).
+                        this.chatStore.addMessage(tempMessage);
 
-    // Gửi qua HTTP (hoặc WebSocket nếu bật).
-    const replyTo = this.replyingToMessage()?.messageId;
-    this.chatService.sendMessage(convId, content, tempMessage.messageType, replyTo).subscribe({
-      next: (serverMessage) => {
-        // Thay thế tin nhắn tạm bằng tin nhắn từ server.
-        this.chatStore.updateMessage(convId, tempMessage.messageId, serverMessage);
-      },
-      error: () => {
-        // Đánh dấu thất bại nếu gửi lỗi.
-        this.chatStore.updateMessage(convId, tempMessage.messageId, {
-          status: MessageStatus.FAILED
-        });
-      }
-    });
+                        // Gửi qua HTTP (hoặc WebSocket nếu bật).
+                        const replyTo = this.replyingToMessage()?.messageId;
+                        this.chatService.sendMessage(convId, content, tempMessage.messageType, replyTo).subscribe({
+                        next: (serverMessage) => {
+                        // Thay thế tin nhắn tạm bằng tin nhắn từ server.
+                        this.chatStore.updateMessage(convId, tempMessage.messageId, serverMessage);
+                        },
+                        error: () => {
+                        // Đánh dấu thất bại nếu gửi lỗi.
+                        this.chatStore.updateMessage(convId, tempMessage.messageId, {
+                        status: MessageStatus.FAILED
+                        });
+                        }
+                        });
 
-    // Gửi typing indicator: dừng gõ.
-    this.chatService.sendTypingIndicator(convId, false);
+                        // Gửi typing indicator: dừng gõ.
+                        this.chatService.sendTypingIndicator(convId, false);
 
-    // Reset.
-    this.newMessageContent = '';
-    this.cancelReply();
-  }
+                        // Reset.
+                        this.newMessageContent = '';
+                        this.cancelReply();
+                        }
 
-  /**
-   * Xử lý phím Enter khi nhập tin nhắn.
-   */
-  onKeyDown(event: KeyboardEvent): void {
-    // Enter không Shift: gửi tin nhắn.
-    // Shift+Enter: xuống dòng.
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      this.sendMessage();
-    }
-  }
+                        /**
+                        * Xử lý phím Enter khi nhập tin nhắn.
+                        */
+                        onKeyDown(event: KeyboardEvent): void {
+                        // Enter không Shift: gửi tin nhắn.
+                        // Shift+Enter: xuống dòng.
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        this.sendMessage();
+                        }
+                        }
 
-  // ===========================================================================
-  // Typing indicator
-  // ===========================================================================
+                        // ===========================================================================
+                        // Typing indicator
+                        // ===========================================================================
 
-  /**
-   * Xử lý khi người dùng đang nhập tin nhắn.
-   */
-  onTyping(): void {
-    const convId = this.chatStore.activeConversationId();
-    if (!convId) return;
+                        /**
+                        * Xử lý khi người dùng đang nhập tin nhắn.
+                        */
+                        onTyping(): void {
+                        const convId = this.chatStore.activeConversationId();
+                        if (!convId) return;
 
-    // Gửi typing indicator.
-    this.chatService.sendTypingIndicator(convId, true);
+                        // Gửi typing indicator.
+                        this.chatService.sendTypingIndicator(convId, true);
 
-    // Debounce: gửi stopped sau 2s không gõ.
-    if (this.typingTimer) {
-      clearTimeout(this.typingTimer);
-    }
-    this.typingTimer = setTimeout(() => {
-      this.chatService.sendTypingIndicator(convId, false);
-      this.typingTimer = null;
-    }, 2000);
-  }
+                        // Debounce: gửi stopped sau 2s không gõ.
+                        if (this.typingTimer) {
+                        clearTimeout(this.typingTimer);
+                        }
+                        this.typingTimer = setTimeout(() => {
+                        this.chatService.sendTypingIndicator(convId, false);
+                        this.typingTimer = null;
+                        }, 2000);
+                        }
 
-  // ===========================================================================
-  // Trả lời tin nhắn
-  // ===========================================================================
+                        // ===========================================================================
+                        // Trả lời tin nhắn
+                        // ===========================================================================
 
-  /**
-   * Bắt đầu trả lời một tin nhắn.
-   */
-  startReply(message: Message): void {
-    this.replyingToMessage.set(message);
-  }
+                        /**
+                        * Bắt đầu trả lời một tin nhắn.
+                        */
+                        startReply(message: Message): void {
+                        this.replyingToMessage.set(message);
+                        }
 
-  /**
-   * Hủy trả lời.
-   */
-  cancelReply(): void {
-    this.replyingToMessage.set(null);
-  }
+                        /**
+                        * Hủy trả lời.
+                        */
+                        cancelReply(): void {
+                        this.replyingToMessage.set(null);
+                        }
 
-  // ===========================================================================
-  // File đính kèm
-  // ===========================================================================
+                        // ===========================================================================
+                        // File đính kèm
+                        // ===========================================================================
 
-  /**
-   * Xử lý khi chọn file đính kèm.
-   */
-  onFileSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    if (!input?.files?.length) return;
+                        /**
+                        * Xử lý khi chọn file đính kèm.
+                        */
+                        onFileSelected(event: Event): void {
+                        const input = event.target as HTMLInputElement;
+                        if (!input?.files?.length) return;
 
-    // TODO: Xử lý upload file — phụ thuộc vào backend.
-    const files = Array.from(input.files);
-    console.info('[ChatWindow] File đã chọn:', files.map(f => f.name).join(', '));
-    input.value = '';
-  }
+                        // TODO: Xử lý upload file — phụ thuộc vào backend.
+                        const files = Array.from(input.files);
+                        console.info('[ChatWindow] File đã chọn:', files.map(f => f.name).join(', '));
+                        input.value = '';
+                        }
 
-  // ===========================================================================
-  // Helper methods
-  // ===========================================================================
+                        // ===========================================================================
+                        // Helper methods
+                        // ===========================================================================
 
-  /**
-   * Kiểm tra tin nhắn có phải của người dùng hiện tại không.
-   */
-  isOwnMessage(message: Message): boolean {
-    const user = this.currentUser();
-    return user ? message.senderId === user.userId : false;
-  }
+                        /**
+                        * Kiểm tra tin nhắn có phải của người dùng hiện tại không.
+                        */
+                        isOwnMessage(message: Message): boolean {
+                        const user = this.currentUser();
+                        return user ? message.senderId === user.userId : false;
+                        }
 
-  /**
-   * Lấy class CSS cho loại hội thoại.
-   */
-  getConversationTypeClass(): string {
-    const conv = this.activeConversation();
-    if (!conv) return '';
-    const classMap: Record<string, string> = {
-      'direct': 'type-direct',
-      'group': 'type-group',
-      'support': 'type-support',
-      'broadcast': 'type-broadcast'
-    };
-    return classMap[conv.conversationType] || '';
-  }
+                        /**
+                        * Lấy class CSS cho loại hội thoại.
+                        */
+                        getConversationTypeClass(): string {
+                        const conv = this.activeConversation();
+                        if (!conv) return '';
+                        const classMap: Record<string, string> = {
+                            'direct': 'type-direct',
+                            'group': 'type-group',
+                            'support': 'type-support',
+                            'broadcast': 'type-broadcast'
+                            };
+                            return classMap[conv.conversationType] || '';
+                            }
 
-  /**
-   * Lấy nhãn tiếng Việt cho loại hội thoại.
-   */
-  getConversationTypeLabel(): string {
-    const conv = this.activeConversation();
-    if (!conv) return '';
-    const labelMap: Record<string, string> = {
-      'direct': 'Trực tiếp',
-      'group': 'Nhóm',
-      'support': 'Hỗ trợ',
-      'broadcast': 'Phát sóng'
-    };
-    return labelMap[conv.conversationType] || conv.conversationType;
-  }
+                            /**
+                            * Lấy nhãn tiếng Việt cho loại hội thoại.
+                            */
+                            getConversationTypeLabel(): string {
+                            const conv = this.activeConversation();
+                            if (!conv) return '';
+                            const labelMap: Record<string, string> = {
+                                'direct': 'Trực tiếp',
+                                'group': 'Nhóm',
+                                'support': 'Hỗ trợ',
+                                'broadcast': 'Phát sóng'
+                                };
+                                return labelMap[conv.conversationType] || conv.conversationType;
+                                }
 
-  /**
-   * Lấy class CSS cho trạng thái kết nối.
-   */
-  getConnectionStatusClass(): string {
-    const status = this.connectionStatus().status;
-    return 'connection-' + status;
-  }
+                                /**
+                                * Lấy class CSS cho trạng thái kết nối.
+                                */
+                                getConnectionStatusClass(): string {
+                                const status = this.connectionStatus().status;
+                                return 'connection-' + status;
+                                }
 
-  /**
-   * Lấy nhãn tiếng Việt cho trạng thái kết nối.
-   */
-  getConnectionStatusLabel(): string {
-    const labelMap: Record<string, string> = {
-      'connected': '● Đã kết nối',
-      'disconnected': '○ Tắt kết nối',
-      'reconnecting': '◐ Đang kết nối lại...',
-      'error': '✕ Lỗi kết nối'
-    };
-    return labelMap[this.connectionStatus().status] || 'Không rõ';
-  }
+                                /**
+                                * Lấy nhãn tiếng Việt cho trạng thái kết nối.
+                                */
+                                getConnectionStatusLabel(): string {
+                                const labelMap: Record<string, string> = {
+                                    'connected': '● Đã kết nối',
+                                    'disconnected': '○ Tắt kết nối',
+                                    'reconnecting': '◐ Đang kết nối lại...',
+                                    'error': '✕ Lỗi kết nối'
+                                    };
+                                    return labelMap[this.connectionStatus().status] || 'Không rõ';
+                                    }
 
-  /**
-   * Lấy văn bản hiển thị người đang gõ.
-   */
-  getTypingText(): string {
-    const users = this.typingUsers();
-    if (!users.length) return '';
-    if (users.length === 1) {
-      return users[0] + ' đang gõ...';
-    }
-    if (users.length === 2) {
-      return users.join(' và ') + ' đang gõ...';
-    }
-    return users.length + ' người đang gõ...';
-  }
-}
+                                    /**
+                                    * Lấy văn bản hiển thị người đang gõ.
+                                    */
+                                    getTypingText(): string {
+                                    const users = this.typingUsers();
+                                    if (!users.length) return '';
+                                    if (users.length === 1) {
+                                    return users[0] + ' đang gõ...';
+                                    }
+                                    if (users.length === 2) {
+                                    return users.join(' và ') + ' đang gõ...';
+                                    }
+                                    return users.length + ' người đang gõ...';
+                                    }
+                                    }

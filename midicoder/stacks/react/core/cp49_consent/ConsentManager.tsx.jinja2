@@ -1,10 +1,25 @@
 {% raw %}/**
+* UI Framework: {{{ ui_framework }}}
 * ConsentManager — Chi tiet ban ghi dong y: bang co the loc, sap xep, huy dong y.
 * Sinh boi CP49 ConsentEmitter.
 *
 * Hien thi toan bo ban ghi dong y voi bo loc theo trang thai, muc dich, pham vi thoi gian.
 * Cols co the sap xep, nut huy dong y voi xac nhan.
 */
+{% endraw %}
+{% if ui_framework == "material" %}
+import { Button, Table, TableBody, TableCell, TableHead, TableRow, TablePagination, Chip, Dialog, DialogTitle,
+DialogContent, DialogActions } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind CSS utility classes inline — khong can import thanh phan UI
+{% elif ui_framework == "bootstrap" %}
+import { Button, Table, Pagination, Badge, Modal } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Table, Tag, Modal, Pagination } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, DataTable, DataTableBody, DataTableRow, Tag, Modal } from '@carbon/react';
+{% endif %}
+{% raw %}
 import React, { useState, useMemo, useCallback } from 'react';
 
 /* ---- Loai trang thai dong y ---- */

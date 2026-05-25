@@ -1,680 +1,588 @@
 {% raw %}
 /**
- * CP50 Catalog & Taxonomy Engine — Bộ lọc tìm kiếm có phân loại (Faceted Search)
- *
- * Hiển thị các nhóm bộ lọc (facets) bao gồm: khoảng giá, danh mục,
- * thương hiệu, thẻ, và thuộc tính tùy chỉnh. Người dùng có thể
- * chọn/bỏ chọn các giá trị, và các bộ lọc đang active sẽ hiển thị
- * dưới dạng chip dễ dàng xoá.
- */
+* UI Framework: {{{ ui_framework }}}
+* CP50 Catalog & Taxonomy Engine — Bộ lọc tìm kiếm có phân loại (Faceted Search)
+*
+* Hiển thị các nhóm bộ lọc (facets) bao gồm: khoảng giá, danh mục,
+* thương hiệu, thẻ, và thuộc tính tùy chỉnh. Người dùng có thể
+* chọn/bỏ chọn các giá trị, và các bộ lọc đang active sẽ hiển thị
+* dưới dạng chip dễ dàng xoá.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { Chip, FormControl, FormControlLabel, Checkbox, TextField, Collapse } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Su? dung Tailwind CSS utility classes inline — kh?ong ca?n import thanh pha?n UI
+{% elif ui_framework == "bootstrap" %}
+import { Badge, Form, Accordion } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Tag, Checkbox, Input, Collapse } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Tag, Checkbox, TextInput, Accordion, AccordionItem } from '@carbon/react';
+{% endif %}
+{% raw %}
 import React, { useState, useMemo, useCallback } from 'react';
 
 /* ========================================================================
-   Kiểu dữ liệu
-   ======================================================================== */
+Kiểu dữ liệu
+======================================================================== */
 
 /** Định nghĩa thuộc tính dùng cho bộ lọc */
 export interface AttributeDefinition {
-  attribute_id: string;
-  name: string;
-  key: string;
-  attribute_type: 'text' | 'number' | 'select' | 'boolean' | 'date';
-  is_required: boolean;
-  options: string[];
-  unit: string | null;
-  is_filterable: boolean;
+attribute_id: string;
+name: string;
+key: string;
+attribute_type: 'text' | 'number' | 'select' | 'boolean' | 'date';
+is_required: boolean;
+options: string[];
+unit: string | null;
+is_filterable: boolean;
 }
 
 /* ========================================================================
-   Props
-   ======================================================================== */
+Props
+======================================================================== */
 
 export interface FacetFilterProps {
-  /** Danh sách định nghĩa thuộc tính */
-  attributes: AttributeDefinition[];
-  /** Bản đồ bộ lọc hiện tại */
-  filters: Record<string, any>;
-  /** Hàm gọi khi bộ lọc thay đổi */
-  onFilterChange: (filters: Record<string, any>) => void;
-  /** Danh sách danh mục để lọc (tùy chọn) */
-  categories?: Array<{ value: string; label: string }>;
-  /** Danh sách thương hiệu để lọc (tùy chọn) */
-  brands?: Array<{ value: string; label: string }>;
-  /** Danh sách thẻ để lọc (tùy chọn) */
-  tags?: string[];
-  /** Tiêu đề hiển thị */
-  title?: string;
-}
+/** Danh sách định nghĩa thuộc tính */
+attributes: AttributeDefinition[];
+/** Bản đồ bộ lọc hiện tại */
+filters: Record<string, any>;
+    /** Hàm gọi khi bộ lọc thay đổi */
+    onFilterChange: (filters: Record<string, any>) => void;
+        /** Danh sách danh mục để lọc (tùy chọn) */
+        categories?: Array<{ value: string; label: string }>;
+            /** Danh sách thương hiệu để lọc (tùy chọn) */
+            brands?: Array<{ value: string; label: string }>;
+                /** Danh sách thẻ để lọc (tùy chọn) */
+                tags?: string[];
+                /** Tiêu đề hiển thị */
+                title?: string;
+                }
 
-/* ========================================================================
-   Thành phần: Chip bộ lọc đang active
-   ======================================================================== */
+                /* ========================================================================
+                Thành phần: Chip bộ lọc đang active
+                ======================================================================== */
 
-/**
- * Chip nhỏ hiển thị một bộ lọc đang active.
- * Nhấp vào chip để xoá bộ lọc đó.
- */
-function ActiveFilterChip({
-  label,
-  onRemove,
-}: {
-  label: string;
-  onRemove: () => void;
-}) {
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '4px',
-        padding: '4px 10px',
-        borderRadius: '9999px',
-        backgroundColor: '#dbeafe',
-        color: '#1d4ed8',
-        fontSize: '12px',
-        fontWeight: 500,
-      }}
-    >
-      <span>{label}</span>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
-        }}
-        aria-label={`Xóa bộ lọc: ${label}`}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '16px',
-          height: '16px',
-          border: 'none',
-          borderRadius: '50%',
-          backgroundColor: 'rgba(29, 78, 216, 0.15)',
-          color: '#1d4ed8',
-          fontSize: '11px',
-          cursor: 'pointer',
-          padding: 0,
-          lineHeight: 1,
-        }}
-      >
-        ×
-      </button>
-    </span>
-  );
-}
+                /**
+                * Chip nhỏ hiển thị một bộ lọc đang active.
+                * Nhấp vào chip để xoá bộ lọc đó.
+                */
+                function ActiveFilterChip({
+                label,
+                onRemove,
+                }: {
+                label: string;
+                onRemove: () => void;
+                }) {
+                return (
+                <span style={{ display: 'inline-flex' , alignItems: 'center' , gap: '4px' , padding: '4px 10px' ,
+                    borderRadius: '9999px' , backgroundColor: '#dbeafe' , color: '#1d4ed8' , fontSize: '12px' ,
+                    fontWeight: 500, }}>
+                    <span>{label}</span>
+                    <button onClick={(e)=> {
+                        e.stopPropagation();
+                        onRemove();
+                        }}
+                        aria-label={`Xóa bộ lọc: ${label}`}
+                        style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '16px',
+                        height: '16px',
+                        border: 'none',
+                        borderRadius: '50%',
+                        backgroundColor: 'rgba(29, 78, 216, 0.15)',
+                        color: '#1d4ed8',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        padding: 0,
+                        lineHeight: 1,
+                        }}
+                        >
+                        ×
+                    </button>
+                </span>
+                );
+                }
 
-/* ========================================================================
-   Thành phần: Mục chọn giá trị (dùng cho danh mục, thương hiệu, thuộc tính)
-   ======================================================================== */
+                /* ========================================================================
+                Thành phần: Mục chọn giá trị (dùng cho danh mục, thương hiệu, thuộc tính)
+                ======================================================================== */
 
-/**
- * Một dòng chọn giá trị: checkbox + nhãn + (tùy chọn) số lượng.
- */
-function FacetOption({
-  value,
-  label,
-  count,
-  isChecked,
-  onChange,
-}: {
-  value: string;
-  label: string;
-  count?: number;
-  isChecked: boolean;
-  onChange: (value: string, checked: boolean) => void;
-}) {
-  return (
-    <label
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '4px 0',
-        cursor: 'pointer',
-        fontSize: '13px',
-        color: isChecked ? '#1d4ed8' : '#4b5563',
-      }}
-    >
-      <input
-        type="checkbox"
-        checked={isChecked}
-        onChange={(e) => onChange(value, e.target.checked)}
-        style={{
-          width: '16px',
-          height: '16px',
-          accentColor: '#3b82f6',
-          cursor: 'pointer',
-        }}
-      />
-      <span style={{ flex: 1 }}>{label}</span>
-      {count !== undefined && (
-        <span
-          style={{
-            fontSize: '12px',
-            color: '#94a3b8',
-          }}
-        >
-          {count}
-        </span>
-      )}
-    </label>
-  );
-}
-
-/* ========================================================================
-   Thành phần: Nhóm bộ lọc có thể thu gọn
-   ======================================================================== */
-
-/**
- * Một phần bộ lọc (facet group) với tiêu đề có thể nhấp để mở/đóng.
- */
-function FacetGroup({
-  title,
-  children,
-  defaultExpanded = true,
-}: {
-  title: string;
-  children: React.ReactNode;
-  defaultExpanded?: boolean;
-}) {
-  const [expanded, setExpanded] = useState<boolean>(defaultExpanded);
-
-  return (
-    <div
-      style={{
-        borderBottom: '1px solid #f1f5f9',
-      }}
-    >
-      <button
-        onClick={() => setExpanded((prev) => !prev)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          width: '100%',
-          padding: '12px 0',
-          border: 'none',
-          background: 'none',
-          cursor: 'pointer',
-          fontSize: '14px',
-          fontWeight: 600,
-          color: '#374151',
-        }}
-      >
-        {title}
-        <span
-          style={{
-            fontSize: '11px',
-            color: '#94a3b8',
-            transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 0.15s',
-          }}
-        >
-          ▼
-        </span>
-      </button>
-      {expanded && <div style={{ paddingBottom: '12px' }}>{children}</div>}
-    </div>
-  );
-}
-
-/* ========================================================================
-   Thành phần: Bộ lọc khoảng giá
-   ======================================================================== */
-
-/**
- * Hai ô nhập số để xác định khoảng giá từ-đến.
- */
-function PriceRangeFilter({
-  min,
-  max,
-  onChange,
-}: {
-  min: number | string | undefined;
-  max: number | string | undefined;
-  onChange: (min: number | '', max: number | '') => void;
-}) {
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '8px 10px',
-    border: '1px solid #d1d5db',
-    borderRadius: '8px',
-    fontSize: '13px',
-    outline: 'none',
-    boxSizing: 'border-box',
-  };
-
-  return (
-    <div>
-      <div style={{ marginBottom: '8px' }}>
-        <label
-          style={{
-            fontSize: '12px',
-            color: '#64748b',
-            marginBottom: '4px',
-            display: 'block',
-          }}
-        >
-          Giá tối thiểu (₫)
-        </label>
-        <input
-          type="number"
-          min={0}
-          placeholder="0"
-          value={min ?? ''}
-          onChange={(e) =>
-            onChange(
-              e.target.value ? Number(e.target.value) : '',
-              max ?? ''
-            )
-          }
-          style={inputStyle}
-        />
-      </div>
-      <div>
-        <label
-          style={{
-            fontSize: '12px',
-            color: '#64748b',
-            marginBottom: '4px',
-            display: 'block',
-          }}
-        >
-          Giá tối đa (₫)
-        </label>
-        <input
-          type="number"
-          min={0}
-          placeholder="Không giới hạn"
-          value={max ?? ''}
-          onChange={(e) =>
-            onChange(
-              min ?? '',
-              e.target.value ? Number(e.target.value) : ''
-            )
-          }
-          style={inputStyle}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* ========================================================================
-   Thành phần chính: Bộ lọc phân loại
-   ======================================================================== */
-
-/**
- * Thanh bộ lọc phân loại chính.
- *
- * Hiển thị các nhóm bộ lọc (khoảng giá, danh mục, thương hiệu, thẻ,
- * thuộc tính tùy chỉnh). Các bộ lọc đang active hiển thị ở đầu dưới
- * dạng chips có thể xoá, kèm nút "Xóa tất cả".
- */
-export function FacetFilter({
-  attributes,
-  filters,
-  onFilterChange,
-  categories,
-  brands,
-  tags,
-  title = 'Bộ lọc',
-}: FacetFilterProps) {
-  /* --- Trạng thái bộ lọc giá --- */
-  const [priceMin, setPriceMin] = useState<number | ''](filters.priceMin ?? '');
-  const [priceMax, setPriceMax] = useState<number | ''](filters.priceMax ?? '');
-
-  /* --- Trạng thái chọn cho từng facet --- */
-  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(
-    new Set(filters.categories ?? [])
-  );
-  const [selectedBrands, setSelectedBrands] = useState<Set<string>>(
-    new Set(filters.brands ?? [])
-  );
-  const [selectedTags, setSelectedTags] = useState<Set<string>>(
-    new Set(filters.tags ?? [])
-  );
-  /* Thuộc tính tùy chỉnh: key -> Set<value> */
-  const [selectedAttributes, setSelectedAttributes] = useState<
-    Record<string, Set<string>>
-  >(() => {
-    const init: Record<string, Set<string>> = {};
-    Object.entries(filters).forEach(([key, value]) => {
-      /* Các thuộc tính tùy chỉnh được lưu dưới dạng filters.[attribute_key] = [values] */
-      if (!['priceMin', 'priceMax', 'categories', 'brands', 'tags'].includes(key)) {
-        init[key] = new Set(Array.isArray(value) ? value : [value]);
-      }
-    });
-    return init;
-  });
-
-  /* --- Xử lý thay đổi bộ lọc --- */
-  const applyFilters = useCallback(
-    (newFilters: Record<string, any>) => {
-      onFilterChange(newFilters);
-    },
-    [onFilterChange]
-  );
-
-  /* Toggle giá trị cho facet */
-  const toggleCategory = useCallback(
-    (value: string, checked: boolean) => {
-      const next = new Set(selectedCategories);
-      if (checked) next.add(value);
-      else next.delete(value);
-      setSelectedCategories(next);
-      applyFilters({ ...filters, categories: Array.from(next) });
-    },
-    [filters, selectedCategories, applyFilters]
-  );
-
-  const toggleBrand = useCallback(
-    (value: string, checked: boolean) => {
-      const next = new Set(selectedBrands);
-      if (checked) next.add(value);
-      else next.delete(value);
-      setSelectedBrands(next);
-      applyFilters({ ...filters, brands: Array.from(next) });
-    },
-    [filters, selectedBrands, applyFilters]
-  );
-
-  const toggleTag = useCallback(
-    (value: string, checked: boolean) => {
-      const next = new Set(selectedTags);
-      if (checked) next.add(value);
-      else next.delete(value);
-      setSelectedTags(next);
-      applyFilters({ ...filters, tags: Array.from(next) });
-    },
-    [filters, selectedTags, applyFilters]
-  );
-
-  const toggleAttribute = useCallback(
-    (attrKey: string, value: string, checked: boolean) => {
-      setSelectedAttributes((prev) => {
-        const next = { ...prev };
-        if (!next[attrKey]) next[attrKey] = new Set();
-        if (checked) next[attrKey].add(value);
-        else next[attrKey].delete(value);
-
-        /* Nếu Set rỗng, xoá key khỏi bộ lọc */
-        const attrFilter: Record<string, string[]> = {};
-        Object.entries(next).forEach(([k, v]) => {
-          if (v.size > 0) attrFilter[k] = Array.from(v);
-        });
-
-        applyFilters({
-          ...filters,
-          ...attrFilter,
-        });
-
-        return next;
-      });
-    },
-    [filters, applyFilters]
-  );
-
-  /* Xử lý thay đổi khoảng giá */
-  const handlePriceChange = useCallback(
-    (min: number | '', max: number | '') => {
-      setPriceMin(min);
-      setPriceMax(max);
-      applyFilters({ ...filters, priceMin: min, priceMax: max });
-    },
-    [filters, applyFilters]
-  );
-
-  /* --- Xây dựng danh sách các bộ lọc đang active để hiển thị chips --- */
-  const activeChips = useMemo(() => {
-    const chips: { label: string; onRemove: () => void }[] = [];
-
-    /* Khoảng giá */
-    if (filters.priceMin || filters.priceMax) {
-      const rangeLabel = [
-        filters.priceMin ? `Từ ${filters.priceMin.toLocaleString('vi-VN')}₫` : null,
-        filters.priceMax ? `Đến ${filters.priceMax.toLocaleString('vi-VN')}₫` : null,
-      ]
-        .filter(Boolean)
-        .join(' — ');
-      chips.push({
-        label: `Giá: ${rangeLabel}`,
-        onRemove: () => handlePriceChange('', ''),
-      });
-    }
-
-    /* Danh mục */
-    if (filters.categories?.length) {
-      filters.categories.forEach((catVal: string) => {
-        const catLabel = categories?.find((c) => c.value === catVal)?.label ?? catVal;
-        chips.push({
-          label: `Danh mục: ${catLabel}`,
-          onRemove: () => toggleCategory(catVal, false),
-        });
-      });
-    }
-
-    /* Thương hiệu */
-    if (filters.brands?.length) {
-      filters.brands.forEach((brandVal: string) => {
-        const brandLabel = brands?.find((b) => b.value === brandVal)?.label ?? brandVal;
-        chips.push({
-          label: `Thương hiệu: ${brandLabel}`,
-          onRemove: () => toggleBrand(brandVal, false),
-        });
-      });
-    }
-
-    /* Thẻ */
-    if (filters.tags?.length) {
-      filters.tags.forEach((tagVal: string) => {
-        chips.push({
-          label: `Thẻ: #${tagVal}`,
-          onRemove: () => toggleTag(tagVal, false),
-        });
-      });
-    }
-
-    /* Thuộc tính tùy chỉnh */
-    Object.entries(selectedAttributes).forEach(([key, values]) => {
-      values.forEach((val) => {
-        const attr = attributes.find((a) => a.key === key);
-        chips.push({
-          label: `${attr?.name ?? key}: ${val}`,
-          onRemove: () => toggleAttribute(key, val, false),
-        });
-      });
-    });
-
-    return chips;
-  }, [filters, selectedAttributes, categories, brands, attributes, toggleCategory, toggleBrand, toggleTag, toggleAttribute, handlePriceChange]);
-
-  /* --- Xoá tất cả bộ lọc --- */
-  const clearAllFilters = useCallback(() => {
-    setSelectedCategories(new Set());
-    setSelectedBrands(new Set());
-    setSelectedTags(new Set());
-    setSelectedAttributes({});
-    setPriceMin('');
-    setPriceMax('');
-    applyFilters({});
-  }, [applyFilters]);
-
-  /* --- Lọc chỉ lấy các thuộc tính có is_filterable --- */
-  const filterableAttributes = useMemo(
-    () => attributes.filter((a) => a.is_filterable && a.options.length > 0),
-    [attributes]
-  );
-
-  /* ====================================================================
-     Render
-     ==================================================================== */
-
-  return (
-    <div
-      style={{
-        fontFamily: 'system-ui, sans-serif',
-      }}
-    >
-      {/* Tiêu đề bộ lọc */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '12px',
-        }}
-      >
-        <h2
-          style={{
-            fontSize: '16px',
-            fontWeight: 700,
-            color: '#1e293b',
-            margin: 0,
-          }}
-        >
-          {title}
-        </h2>
-        {activeChips.length > 0 && (
-          <button
-            onClick={clearAllFilters}
-            style={{
-              padding: '4px 12px',
-              border: '1px solid #fca5a5',
-              borderRadius: '6px',
-              backgroundColor: '#fff',
-              color: '#dc2626',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Xóa tất cả
-          </button>
-        )}
-      </div>
-
-      {/* Active filter chips */}
-      {activeChips.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '6px',
-            marginBottom: '16px',
-            paddingBottom: '12px',
-            borderBottom: '1px solid #f1f5f9',
-          }}
-        >
-          {activeChips.map((chip, idx) => (
-            <ActiveFilterChip key={idx} label={chip.label} onRemove={chip.onRemove} />
-          ))}
-        </div>
-      )}
-
-      {/* Các nhóm bộ lọc */}
-      <div
-        style={{
-          border: '1px solid #e2e8f0',
-          borderRadius: '12px',
-          padding: '0 16px',
-          backgroundColor: '#fff',
-        }}
-      >
-        {/* Khoảng giá */}
-        <FacetGroup title="Khoảng giá">
-          <PriceRangeFilter
-            min={filters.priceMin}
-            max={filters.priceMax}
-            onChange={handlePriceChange}
-          />
-        </FacetGroup>
-
-        {/* Danh mục */}
-        {categories && categories.length > 0 && (
-          <FacetGroup title="Danh mục">
-            {categories.map((cat) => (
-              <FacetOption
-                key={cat.value}
-                value={cat.value}
-                label={cat.label}
-                isChecked={selectedCategories.has(cat.value)}
-                onChange={toggleCategory}
-              />
-            ))}
-          </FacetGroup>
-        )}
-
-        {/* Thương hiệu */}
-        {brands && brands.length > 0 && (
-          <FacetGroup title="Thương hiệu">
-            {brands.map((brand) => (
-              <FacetOption
-                key={brand.value}
-                value={brand.value}
-                label={brand.label}
-                isChecked={selectedBrands.has(brand.value)}
-                onChange={toggleBrand}
-              />
-            ))}
-          </FacetGroup>
-        )}
-
-        {/* Thẻ */}
-        {tags && tags.length > 0 && (
-          <FacetGroup title="Thẻ">
-            {tags.map((tag) => (
-              <FacetOption
-                key={tag}
-                value={tag}
-                label={`#${tag}`}
-                isChecked={selectedTags.has(tag)}
-                onChange={toggleTag}
-              />
-            ))}
-          </FacetGroup>
-        )}
-
-        {/* Thuộc tính tùy chỉnh */}
-        {filterableAttributes.length > 0 && (
-          <FacetGroup title="Thuộc tính">
-            {filterableAttributes.map((attr) => (
-              <div key={attr.attribute_id} style={{ marginBottom: '8px' }}>
-                <div
-                  style={{
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: '#64748b',
-                    marginBottom: '4px',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {attr.name}
-                  {attr.unit ? ` (${attr.unit})` : ''}
-                </div>
-                {attr.options.map((option) => {
-                  const isSelected = selectedAttributes[attr.key]?.has(option) ?? false;
-                  return (
-                    <FacetOption
-                      key={option}
-                      value={option}
-                      label={option}
-                      isChecked={isSelected}
-                      onChange={(val, checked) =>
-                        toggleAttribute(attr.key, val, checked)
-                      }
+                /**
+                * Một dòng chọn giá trị: checkbox + nhãn + (tùy chọn) số lượng.
+                */
+                function FacetOption({
+                value,
+                label,
+                count,
+                isChecked,
+                onChange,
+                }: {
+                value: string;
+                label: string;
+                count?: number;
+                isChecked: boolean;
+                onChange: (value: string, checked: boolean) => void;
+                }) {
+                return (
+                <label style={{ display: 'flex' , alignItems: 'center' , gap: '8px' , padding: '4px 0' ,
+                    cursor: 'pointer' , fontSize: '13px' , color: isChecked ? '#1d4ed8' : '#4b5563' , }}>
+                    <input type="checkbox" checked={isChecked} onChange={(e)=> onChange(value, e.target.checked)}
+                    style={{
+                    width: '16px',
+                    height: '16px',
+                    accentColor: '#3b82f6',
+                    cursor: 'pointer',
+                    }}
                     />
-                  );
-                })}
-              </div>
-            ))}
-          </FacetGroup>
-        )}
-      </div>
-    </div>
-  );
-}
+                    <span style={{ flex: 1 }}>{label}</span>
+                    {count !== undefined && (
+                    <span style={{ fontSize: '12px' , color: '#94a3b8' , }}>
+                        {count}
+                    </span>
+                    )}
+                </label>
+                );
+                }
 
-export default FacetFilter;
-{% endraw %}
+                /* ========================================================================
+                Thành phần: Nhóm bộ lọc có thể thu gọn
+                ======================================================================== */
+
+                /**
+                * Một phần bộ lọc (facet group) với tiêu đề có thể nhấp để mở/đóng.
+                */
+                function FacetGroup({
+                title,
+                children,
+                defaultExpanded = true,
+                }: {
+                title: string;
+                children: React.ReactNode;
+                defaultExpanded?: boolean;
+                }) {
+                const [expanded, setExpanded] = useState<boolean>(defaultExpanded);
+
+                    return (
+                    <div style={{ borderBottom: '1px solid #f1f5f9' , }}>
+                        <button onClick={()=> setExpanded((prev) => !prev)}
+                            style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            width: '100%',
+                            padding: '12px 0',
+                            border: 'none',
+                            background: 'none',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            color: '#374151',
+                            }}
+                            >
+                            {title}
+                            <span style={{ fontSize: '11px' , color: '#94a3b8' , transform: expanded ? 'rotate(180deg)'
+                                : 'rotate(0deg)' , transition: 'transform 0.15s' , }}>
+                                ▼
+                            </span>
+                        </button>
+                        {expanded && <div style={{ paddingBottom: '12px' }}>{children}</div>}
+                    </div>
+                    );
+                    }
+
+                    /* ========================================================================
+                    Thành phần: Bộ lọc khoảng giá
+                    ======================================================================== */
+
+                    /**
+                    * Hai ô nhập số để xác định khoảng giá từ-đến.
+                    */
+                    function PriceRangeFilter({
+                    min,
+                    max,
+                    onChange,
+                    }: {
+                    min: number | string | undefined;
+                    max: number | string | undefined;
+                    onChange: (min: number | '', max: number | '') => void;
+                    }) {
+                    const inputStyle: React.CSSProperties = {
+                    width: '100%',
+                    padding: '8px 10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                    };
+
+                    return (
+                    <div>
+                        <div style={{ marginBottom: '8px' }}>
+                            <label style={{ fontSize: '12px' , color: '#64748b' , marginBottom: '4px' , display: 'block'
+                                , }}>
+                                Giá tối thiểu (₫)
+                            </label>
+                            <input type="number" min={0} placeholder="0" value={min ?? '' } onChange={(e)=>
+                            onChange(
+                            e.target.value ? Number(e.target.value) : '',
+                            max ?? ''
+                            )
+                            }
+                            style={inputStyle}
+                            />
+                        </div>
+                        <div>
+                            <label style={{ fontSize: '12px' , color: '#64748b' , marginBottom: '4px' , display: 'block'
+                                , }}>
+                                Giá tối đa (₫)
+                            </label>
+                            <input type="number" min={0} placeholder="Không giới hạn" value={max ?? '' } onChange={(e)=>
+                            onChange(
+                            min ?? '',
+                            e.target.value ? Number(e.target.value) : ''
+                            )
+                            }
+                            style={inputStyle}
+                            />
+                        </div>
+                    </div>
+                    );
+                    }
+
+                    /* ========================================================================
+                    Thành phần chính: Bộ lọc phân loại
+                    ======================================================================== */
+
+                    /**
+                    * Thanh bộ lọc phân loại chính.
+                    *
+                    * Hiển thị các nhóm bộ lọc (khoảng giá, danh mục, thương hiệu, thẻ,
+                    * thuộc tính tùy chỉnh). Các bộ lọc đang active hiển thị ở đầu dưới
+                    * dạng chips có thể xoá, kèm nút "Xóa tất cả".
+                    */
+                    export function FacetFilter({
+                    attributes,
+                    filters,
+                    onFilterChange,
+                    categories,
+                    brands,
+                    tags,
+                    title = 'Bộ lọc',
+                    }: FacetFilterProps) {
+                    /* --- Trạng thái bộ lọc giá --- */
+                    const [priceMin, setPriceMin] = useState<number | '' ](filters.priceMin ?? '' ); const [priceMax,
+                        setPriceMax]=useState<number | '' ](filters.priceMax ?? '' ); /* --- Trạng thái chọn cho từng
+                        facet --- */ const [selectedCategories, setSelectedCategories]=useState<Set<string>>(
+                        new Set(filters.categories ?? [])
+                        );
+                        const [selectedBrands, setSelectedBrands] = useState<Set<string>>(
+                            new Set(filters.brands ?? [])
+                            );
+                            const [selectedTags, setSelectedTags] = useState<Set<string>>(
+                                new Set(filters.tags ?? [])
+                                );
+                                /* Thuộc tính tùy chỉnh: key -> Set<value> */
+                                    const [selectedAttributes, setSelectedAttributes] = useState< Record<string,
+                                        Set<string>>
+                                        >(() => {
+                                        const init: Record<string, Set<string>> = {};
+                                            Object.entries(filters).forEach(([key, value]) => {
+                                            /* Các thuộc tính tùy chỉnh được lưu dưới dạng filters.[attribute_key] =
+                                            [values] */
+                                            if (!['priceMin', 'priceMax', 'categories', 'brands', 'tags'].includes(key))
+                                            {
+                                            init[key] = new Set(Array.isArray(value) ? value : [value]);
+                                            }
+                                            });
+                                            return init;
+                                            });
+
+                                            /* --- Xử lý thay đổi bộ lọc --- */
+                                            const applyFilters = useCallback(
+                                            (newFilters: Record<string, any>) => {
+                                                onFilterChange(newFilters);
+                                                },
+                                                [onFilterChange]
+                                                );
+
+                                                /* Toggle giá trị cho facet */
+                                                const toggleCategory = useCallback(
+                                                (value: string, checked: boolean) => {
+                                                const next = new Set(selectedCategories);
+                                                if (checked) next.add(value);
+                                                else next.delete(value);
+                                                setSelectedCategories(next);
+                                                applyFilters({ ...filters, categories: Array.from(next) });
+                                                },
+                                                [filters, selectedCategories, applyFilters]
+                                                );
+
+                                                const toggleBrand = useCallback(
+                                                (value: string, checked: boolean) => {
+                                                const next = new Set(selectedBrands);
+                                                if (checked) next.add(value);
+                                                else next.delete(value);
+                                                setSelectedBrands(next);
+                                                applyFilters({ ...filters, brands: Array.from(next) });
+                                                },
+                                                [filters, selectedBrands, applyFilters]
+                                                );
+
+                                                const toggleTag = useCallback(
+                                                (value: string, checked: boolean) => {
+                                                const next = new Set(selectedTags);
+                                                if (checked) next.add(value);
+                                                else next.delete(value);
+                                                setSelectedTags(next);
+                                                applyFilters({ ...filters, tags: Array.from(next) });
+                                                },
+                                                [filters, selectedTags, applyFilters]
+                                                );
+
+                                                const toggleAttribute = useCallback(
+                                                (attrKey: string, value: string, checked: boolean) => {
+                                                setSelectedAttributes((prev) => {
+                                                const next = { ...prev };
+                                                if (!next[attrKey]) next[attrKey] = new Set();
+                                                if (checked) next[attrKey].add(value);
+                                                else next[attrKey].delete(value);
+
+                                                /* Nếu Set rỗng, xoá key khỏi bộ lọc */
+                                                const attrFilter: Record<string, string[]> = {};
+                                                    Object.entries(next).forEach(([k, v]) => {
+                                                    if (v.size > 0) attrFilter[k] = Array.from(v);
+                                                    });
+
+                                                    applyFilters({
+                                                    ...filters,
+                                                    ...attrFilter,
+                                                    });
+
+                                                    return next;
+                                                    });
+                                                    },
+                                                    [filters, applyFilters]
+                                                    );
+
+                                                    /* Xử lý thay đổi khoảng giá */
+                                                    const handlePriceChange = useCallback(
+                                                    (min: number | '', max: number | '') => {
+                                                    setPriceMin(min);
+                                                    setPriceMax(max);
+                                                    applyFilters({ ...filters, priceMin: min, priceMax: max });
+                                                    },
+                                                    [filters, applyFilters]
+                                                    );
+
+                                                    /* --- Xây dựng danh sách các bộ lọc đang active để hiển thị chips
+                                                    --- */
+                                                    const activeChips = useMemo(() => {
+                                                    const chips: { label: string; onRemove: () => void }[] = [];
+
+                                                    /* Khoảng giá */
+                                                    if (filters.priceMin || filters.priceMax) {
+                                                    const rangeLabel = [
+                                                    filters.priceMin ? `Từ ${filters.priceMin.toLocaleString('vi-VN')}₫`
+                                                    : null,
+                                                    filters.priceMax ? `Đến
+                                                    ${filters.priceMax.toLocaleString('vi-VN')}₫` : null,
+                                                    ]
+                                                    .filter(Boolean)
+                                                    .join(' — ');
+                                                    chips.push({
+                                                    label: `Giá: ${rangeLabel}`,
+                                                    onRemove: () => handlePriceChange('', ''),
+                                                    });
+                                                    }
+
+                                                    /* Danh mục */
+                                                    if (filters.categories?.length) {
+                                                    filters.categories.forEach((catVal: string) => {
+                                                    const catLabel = categories?.find((c) => c.value === catVal)?.label
+                                                    ?? catVal;
+                                                    chips.push({
+                                                    label: `Danh mục: ${catLabel}`,
+                                                    onRemove: () => toggleCategory(catVal, false),
+                                                    });
+                                                    });
+                                                    }
+
+                                                    /* Thương hiệu */
+                                                    if (filters.brands?.length) {
+                                                    filters.brands.forEach((brandVal: string) => {
+                                                    const brandLabel = brands?.find((b) => b.value === brandVal)?.label
+                                                    ?? brandVal;
+                                                    chips.push({
+                                                    label: `Thương hiệu: ${brandLabel}`,
+                                                    onRemove: () => toggleBrand(brandVal, false),
+                                                    });
+                                                    });
+                                                    }
+
+                                                    /* Thẻ */
+                                                    if (filters.tags?.length) {
+                                                    filters.tags.forEach((tagVal: string) => {
+                                                    chips.push({
+                                                    label: `Thẻ: #${tagVal}`,
+                                                    onRemove: () => toggleTag(tagVal, false),
+                                                    });
+                                                    });
+                                                    }
+
+                                                    /* Thuộc tính tùy chỉnh */
+                                                    Object.entries(selectedAttributes).forEach(([key, values]) => {
+                                                    values.forEach((val) => {
+                                                    const attr = attributes.find((a) => a.key === key);
+                                                    chips.push({
+                                                    label: `${attr?.name ?? key}: ${val}`,
+                                                    onRemove: () => toggleAttribute(key, val, false),
+                                                    });
+                                                    });
+                                                    });
+
+                                                    return chips;
+                                                    }, [filters, selectedAttributes, categories, brands, attributes,
+                                                    toggleCategory, toggleBrand, toggleTag, toggleAttribute,
+                                                    handlePriceChange]);
+
+                                                    /* --- Xoá tất cả bộ lọc --- */
+                                                    const clearAllFilters = useCallback(() => {
+                                                    setSelectedCategories(new Set());
+                                                    setSelectedBrands(new Set());
+                                                    setSelectedTags(new Set());
+                                                    setSelectedAttributes({});
+                                                    setPriceMin('');
+                                                    setPriceMax('');
+                                                    applyFilters({});
+                                                    }, [applyFilters]);
+
+                                                    /* --- Lọc chỉ lấy các thuộc tính có is_filterable --- */
+                                                    const filterableAttributes = useMemo(
+                                                    () => attributes.filter((a) => a.is_filterable && a.options.length >
+                                                    0),
+                                                    [attributes]
+                                                    );
+
+                                                    /*
+                                                    ====================================================================
+                                                    Render
+                                                    ====================================================================
+                                                    */
+
+                                                    return (
+                                                    <div style={{ fontFamily: 'system-ui, sans-serif' , }}>
+                                                        {/* Tiêu đề bộ lọc */}
+                                                        <div style={{ display: 'flex' , alignItems: 'center' ,
+                                                            justifyContent: 'space-between' , marginBottom: '12px' , }}>
+                                                            <h2 style={{ fontSize: '16px' , fontWeight: 700,
+                                                                color: '#1e293b' , margin: 0, }}>
+                                                                {title}
+                                                            </h2>
+                                                            {activeChips.length > 0 && (
+                                                            <button onClick={clearAllFilters} style={{
+                                                                padding: '4px 12px' , border: '1px solid #fca5a5' ,
+                                                                borderRadius: '6px' , backgroundColor: '#fff' ,
+                                                                color: '#dc2626' , fontSize: '12px' , fontWeight: 600,
+                                                                cursor: 'pointer' , }}>
+                                                                Xóa tất cả
+                                                            </button>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Active filter chips */}
+                                                        {activeChips.length > 0 && (
+                                                        <div style={{ display: 'flex' , flexWrap: 'wrap' , gap: '6px' ,
+                                                            marginBottom: '16px' , paddingBottom: '12px' ,
+                                                            borderBottom: '1px solid #f1f5f9' , }}>
+                                                            {activeChips.map((chip, idx) => (
+                                                            <ActiveFilterChip key={idx} label={chip.label}
+                                                                onRemove={chip.onRemove} />
+                                                            ))}
+                                                        </div>
+                                                        )}
+
+                                                        {/* Các nhóm bộ lọc */}
+                                                        <div style={{ border: '1px solid #e2e8f0' , borderRadius: '12px'
+                                                            , padding: '0 16px' , backgroundColor: '#fff' , }}>
+                                                            {/* Khoảng giá */}
+                                                            <FacetGroup title="Khoảng giá">
+                                                                <PriceRangeFilter min={filters.priceMin}
+                                                                    max={filters.priceMax}
+                                                                    onChange={handlePriceChange} />
+                                                            </FacetGroup>
+
+                                                            {/* Danh mục */}
+                                                            {categories && categories.length > 0 && (
+                                                            <FacetGroup title="Danh mục">
+                                                                {categories.map((cat) => (
+                                                                <FacetOption key={cat.value} value={cat.value}
+                                                                    label={cat.label}
+                                                                    isChecked={selectedCategories.has(cat.value)}
+                                                                    onChange={toggleCategory} />
+                                                                ))}
+                                                            </FacetGroup>
+                                                            )}
+
+                                                            {/* Thương hiệu */}
+                                                            {brands && brands.length > 0 && (
+                                                            <FacetGroup title="Thương hiệu">
+                                                                {brands.map((brand) => (
+                                                                <FacetOption key={brand.value} value={brand.value}
+                                                                    label={brand.label}
+                                                                    isChecked={selectedBrands.has(brand.value)}
+                                                                    onChange={toggleBrand} />
+                                                                ))}
+                                                            </FacetGroup>
+                                                            )}
+
+                                                            {/* Thẻ */}
+                                                            {tags && tags.length > 0 && (
+                                                            <FacetGroup title="Thẻ">
+                                                                {tags.map((tag) => (
+                                                                <FacetOption key={tag} value={tag} label={`#${tag}`}
+                                                                    isChecked={selectedTags.has(tag)}
+                                                                    onChange={toggleTag} />
+                                                                ))}
+                                                            </FacetGroup>
+                                                            )}
+
+                                                            {/* Thuộc tính tùy chỉnh */}
+                                                            {filterableAttributes.length > 0 && (
+                                                            <FacetGroup title="Thuộc tính">
+                                                                {filterableAttributes.map((attr) => (
+                                                                <div key={attr.attribute_id} style={{
+                                                                    marginBottom: '8px' }}>
+                                                                    <div style={{ fontSize: '12px' , fontWeight: 600,
+                                                                        color: '#64748b' , marginBottom: '4px' ,
+                                                                        textTransform: 'uppercase' , }}>
+                                                                        {attr.name}
+                                                                        {attr.unit ? ` (${attr.unit})` : ''}
+                                                                    </div>
+                                                                    {attr.options.map((option) => {
+                                                                    const isSelected =
+                                                                    selectedAttributes[attr.key]?.has(option) ?? false;
+                                                                    return (
+                                                                    <FacetOption key={option} value={option}
+                                                                        label={option} isChecked={isSelected}
+                                                                        onChange={(val, checked)=>
+                                                                        toggleAttribute(attr.key, val, checked)
+                                                                        }
+                                                                        />
+                                                                        );
+                                                                        })}
+                                                                </div>
+                                                                ))}
+                                                            </FacetGroup>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    );
+                                                    }
+
+                                                    export default FacetFilter;
+                                                    {% endraw %}

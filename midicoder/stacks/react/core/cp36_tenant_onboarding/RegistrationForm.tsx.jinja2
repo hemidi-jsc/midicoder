@@ -1,5 +1,6 @@
 {% raw %}/**
 * Form dang ky tenant moi — RegistrationForm.
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 *
 * Component nay cung cap form dang ky cho tenant moi voi:
 * - Nhap email, ten cong ty
@@ -10,6 +11,22 @@
 *
 * Tu dong sinh boi Midicoder — khong sua thu cong.
 */
+{% endraw %}
+
+{% if ui_framework == "material" %}
+import { Button, TextField, Select, MenuItem, FormControl, InputLabel, Grid, Card, CardContent, Typography, Snackbar,
+Alert } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind utility classes inline
+{% elif ui_framework == "bootstrap" %}
+import { Button, Form, Col, Row, Card, Alert } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Form, Input, Select, Card, Typography, Alert, Space, Row, Col } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, TextInput, Select, SelectItem, Layer, InlineNotification, Tile } from '@carbon/react';
+{% endif %}
+
+{% raw %}
 
 import React, { useState, useCallback } from 'react';
 

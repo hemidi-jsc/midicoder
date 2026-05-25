@@ -1,862 +1,691 @@
 {% raw %}
 /**
- * CP50 Catalog & Taxonomy Engine — Trang chi tiết sản phẩm
- *
- * Hiển thị đầy đủ thông tin của một sản phẩm bao gồm: thư viện ảnh,
- * các biến thể (variants), thuộc tính (attributes), bảng giá, và
- * thông tin meta.
- */
+* UI Framework: {{{ ui_framework }}}
+* CP50 Catalog & Taxonomy Engine — Trang chi tiết sản phẩm
+*
+* Hiển thị đầy đủ thông tin của một sản phẩm bao gồm: thư viện ảnh,
+* các biến thể (variants), thuộc tính (attributes), bảng giá, và
+* thông tin meta.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { Button, Card, Tabs, Tab, Chip, Typography, Breadcrumbs } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Su? dung Tailwind CSS utility classes inline — kh?ong ca?n import thanh pha?n UI
+{% elif ui_framework == "bootstrap" %}
+import { Button, Card, Badge, Breadcrumb, Nav } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Card, Tag, Breadcrumb, Tabs } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, Tag, Breadcrumb, Accordion } from '@carbon/react';
+{% endif %}
+{% raw %}
 import React, { useState, useEffect, useCallback } from 'react';
 
 /* ========================================================================
-   Kiểu dữ liệu
-   ======================================================================== */
+Kiểu dữ liệu
+======================================================================== */
 
 /** Trạng thái của sản phẩm */
 export enum ProductStatus {
-  DRAFT = 'DRAFT',
-  ACTIVE = 'ACTIVE',
-  INACTIVE = 'INACTIVE',
-  ARCHIVED = 'ARCHIVED',
+DRAFT = 'DRAFT',
+ACTIVE = 'ACTIVE',
+INACTIVE = 'INACTIVE',
+ARCHIVED = 'ARCHIVED',
 }
 
 /** Nhãn tiếng Việt cho trạng thái */
 const STATUS_LABELS: Record<ProductStatus, string> = {
-  [ProductStatus.DRAFT]: 'Nháp',
-  [ProductStatus.ACTIVE]: 'Hoạt động',
-  [ProductStatus.INACTIVE]: 'Tạm dừng',
-  [ProductStatus.ARCHIVED]: 'Lưu trữ',
-};
+    [ProductStatus.DRAFT]: 'Nháp',
+    [ProductStatus.ACTIVE]: 'Hoạt động',
+    [ProductStatus.INACTIVE]: 'Tạm dừng',
+    [ProductStatus.ARCHIVED]: 'Lưu trữ',
+    };
 
-/** Màu badge trạng thái */
-const STATUS_COLORS: Record<ProductStatus, string> = {
-  [ProductStatus.DRAFT]: '#94a3b8',
-  [ProductStatus.ACTIVE]: '#22c55e',
-  [ProductStatus.INACTIVE]: '#f59e0b',
-  [ProductStatus.ARCHIVED]: '#6b7280',
-};
+    /** Màu badge trạng thái */
+    const STATUS_COLORS: Record<ProductStatus, string> = {
+        [ProductStatus.DRAFT]: '#94a3b8',
+        [ProductStatus.ACTIVE]: '#22c55e',
+        [ProductStatus.INACTIVE]: '#f59e0b',
+        [ProductStatus.ARCHIVED]: '#6b7280',
+        };
 
-/** Ảnh sản phẩm */
-export interface ProductImage {
-  url: string;
-  alt_text: string;
-  is_primary: boolean;
-  sort_order: number;
-}
+        /** Ảnh sản phẩm */
+        export interface ProductImage {
+        url: string;
+        alt_text: string;
+        is_primary: boolean;
+        sort_order: number;
+        }
 
-/** Sản phẩm đầy đủ */
-export interface Product {
-  product_id: string;
-  name: string;
-  slug: string;
-  sku: string;
-  description: string;
-  category_id: string | null;
-  brand_id: string | null;
-  price: number;
-  cost_price: number;
-  compare_at_price: number | null;
-  currency: string;
-  weight: number | null;
-  status: ProductStatus;
-  visibility: string;
-  tags: string[];
-  images: ProductImage[];
-  is_deleted: boolean;
-  created_at: string;
-}
+        /** Sản phẩm đầy đủ */
+        export interface Product {
+        product_id: string;
+        name: string;
+        slug: string;
+        sku: string;
+        description: string;
+        category_id: string | null;
+        brand_id: string | null;
+        price: number;
+        cost_price: number;
+        compare_at_price: number | null;
+        currency: string;
+        weight: number | null;
+        status: ProductStatus;
+        visibility: string;
+        tags: string[];
+        images: ProductImage[];
+        is_deleted: boolean;
+        created_at: string;
+        }
 
-/** Biến thể sản phẩm */
-export interface ProductVariant {
-  variant_id: string;
-  product_id: string;
-  sku: string;
-  name: string;
-  attribute_values: Record<string, string>;
-  price: number;
-  is_active: boolean;
-}
+        /** Biến thể sản phẩm */
+        export interface ProductVariant {
+        variant_id: string;
+        product_id: string;
+        sku: string;
+        name: string;
+        attribute_values: Record<string, string>;
+            price: number;
+            is_active: boolean;
+            }
 
-/** Định nghĩa thuộc tính */
-export interface AttributeDefinition {
-  attribute_id: string;
-  name: string;
-  key: string;
-  attribute_type: string;
-  is_required: boolean;
-  options: string[];
-  unit: string | null;
-  is_filterable: boolean;
-}
+            /** Định nghĩa thuộc tính */
+            export interface AttributeDefinition {
+            attribute_id: string;
+            name: string;
+            key: string;
+            attribute_type: string;
+            is_required: boolean;
+            options: string[];
+            unit: string | null;
+            is_filterable: boolean;
+            }
 
-/** Giá trị thuộc tính gán cho sản phẩm */
-export interface AttributeValue {
-  attribute_value_id: string;
-  attribute_id: string;
-  product_id: string | null;
-  variant_id: string | null;
-  value: string;
-}
+            /** Giá trị thuộc tính gán cho sản phẩm */
+            export interface AttributeValue {
+            attribute_value_id: string;
+            attribute_id: string;
+            product_id: string | null;
+            variant_id: string | null;
+            value: string;
+            }
 
-/* ========================================================================
-   Props
-   ======================================================================== */
+            /* ========================================================================
+            Props
+            ======================================================================== */
 
-export interface ProductDetailProps {
-  /** Mã định danh sản phẩm */
-  productId: string;
-  /** URL cơ sở của API (mặc định '/api/v1') */
-  apiBaseUrl?: string;
-}
+            export interface ProductDetailProps {
+            /** Mã định danh sản phẩm */
+            productId: string;
+            /** URL cơ sở của API (mặc định '/api/v1') */
+            apiBaseUrl?: string;
+            }
 
-/* ========================================================================
-   Thành phần: Thư viện ảnh
-   ======================================================================== */
+            /* ========================================================================
+            Thành phần: Thư viện ảnh
+            ======================================================================== */
 
-/** Hiển thị ảnh chính cùng dải ảnh thu nhỏ để chuyển đổi */
-function ImageGallery({ images }: { images: ProductImage[] }) {
-  const [activeIndex, setActiveIndex] = useState<number>(0);
+            /** Hiển thị ảnh chính cùng dải ảnh thu nhỏ để chuyển đổi */
+            function ImageGallery({ images }: { images: ProductImage[] }) {
+            const [activeIndex, setActiveIndex] = useState<number>(0);
 
-  /* Nếu không có ảnh, hiển thị placeholder */
-  if (!images || images.length === 0) {
-    return (
-      <div
-        style={{
-          width: '100%',
-          paddingTop: '100%',
-          backgroundColor: '#f1f5f9',
-          borderRadius: '12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#94a3b8',
-          fontSize: '14px',
-        }}
-      >
-        <div style={{ position: 'absolute' }}>Không có ảnh</div>
-      </div>
-    );
-  }
+                /* Nếu không có ảnh, hiển thị placeholder */
+                if (!images || images.length === 0) {
+                return (
+                <div style={{ width: '100%' , paddingTop: '100%' , backgroundColor: '#f1f5f9' , borderRadius: '12px' ,
+                    display: 'flex' , alignItems: 'center' , justifyContent: 'center' , color: '#94a3b8' ,
+                    fontSize: '14px' , }}>
+                    <div style={{ position: 'absolute' }}>Không có ảnh</div>
+                </div>
+                );
+                }
 
-  /* Sắp xếp ảnh: ảnh chính lên đầu, sau đó theo sort_order */
-  const sorted = [...images].sort((a, b) => {
-    if (a.is_primary && !b.is_primary) return -1;
-    if (!a.is_primary && b.is_primary) return 1;
-    return a.sort_order - b.sort_order;
-  });
+                /* Sắp xếp ảnh: ảnh chính lên đầu, sau đó theo sort_order */
+                const sorted = [...images].sort((a, b) => {
+                if (a.is_primary && !b.is_primary) return -1;
+                if (!a.is_primary && b.is_primary) return 1;
+                return a.sort_order - b.sort_order;
+                });
 
-  /* Đặt activeIndex về ảnh chính khi mount */
-  const primaryIdx = sorted.findIndex((img) => img.is_primary);
-  if (primaryIdx >= 0 && activeIndex === 0 && primaryIdx !== 0) {
-    setActiveIndex(primaryIdx);
-  }
+                /* Đặt activeIndex về ảnh chính khi mount */
+                const primaryIdx = sorted.findIndex((img) => img.is_primary);
+                if (primaryIdx >= 0 && activeIndex === 0 && primaryIdx !== 0) {
+                setActiveIndex(primaryIdx);
+                }
 
-  const activeImage = sorted[activeIndex];
+                const activeImage = sorted[activeIndex];
 
-  return (
-    <div>
-      {/* Ảnh lớn */}
-      <div
-        style={{
-          width: '100%',
-          paddingTop: '100%',
-          borderRadius: '12px',
-          overflow: 'hidden',
-          backgroundColor: '#f8fafc',
-          marginBottom: '8px',
-        }}
-      >
-        <img
-          src={activeImage.url}
-          alt={activeImage.alt_text}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain',
-          }}
-        />
-      </div>
+                return (
+                <div>
+                    {/* Ảnh lớn */}
+                    <div style={{ width: '100%' , paddingTop: '100%' , borderRadius: '12px' , overflow: 'hidden' ,
+                        backgroundColor: '#f8fafc' , marginBottom: '8px' , }}>
+                        <img src={activeImage.url} alt={activeImage.alt_text} style={{ position: 'absolute' , top: 0,
+                            left: 0, width: '100%' , height: '100%' , objectFit: 'contain' , }} />
+                    </div>
 
-      {/* Dải ảnh thu nhỏ */}
-      {sorted.length > 1 && (
-        <div
-          style={{
-            display: 'flex',
-            gap: '8px',
-            overflowX: 'auto',
-            paddingBottom: '4px',
-          }}
-        >
-          {sorted.map((img, idx) => (
-            <button
-              key={idx}
-              onClick={() => setActiveIndex(idx)}
-              style={{
-                width: '56px',
-                height: '56px',
-                flexShrink: 0,
-                borderRadius: '8px',
-                overflow: 'hidden',
-                border: idx === activeIndex ? '2px solid #3b82f6' : '2px solid transparent',
-                cursor: 'pointer',
-                padding: 0,
-                backgroundColor: '#f1f5f9',
-              }}
-            >
-              <img
-                src={img.url}
-                alt={img.alt_text}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                }}
-              />
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+                    {/* Dải ảnh thu nhỏ */}
+                    {sorted.length > 1 && (
+                    <div style={{ display: 'flex' , gap: '8px' , overflowX: 'auto' , paddingBottom: '4px' , }}>
+                        {sorted.map((img, idx) => (
+                        <button key={idx} onClick={()=> setActiveIndex(idx)}
+                            style={{
+                            width: '56px',
+                            height: '56px',
+                            flexShrink: 0,
+                            borderRadius: '8px',
+                            overflow: 'hidden',
+                            border: idx === activeIndex ? '2px solid #3b82f6' : '2px solid transparent',
+                            cursor: 'pointer',
+                            padding: 0,
+                            backgroundColor: '#f1f5f9',
+                            }}
+                            >
+                            <img src={img.url} alt={img.alt_text} style={{ width: '100%' , height: '100%' ,
+                                objectFit: 'cover' , }} />
+                        </button>
+                        ))}
+                    </div>
+                    )}
+                </div>
+                );
+                }
 
-/* ========================================================================
-   Thành phần: Badge trạng thái
-   ======================================================================== */
+                /* ========================================================================
+                Thành phần: Badge trạng thái
+                ======================================================================== */
 
-function StatusBadge({ status }: { status: ProductStatus }) {
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '4px 12px',
-        borderRadius: '9999px',
-        fontSize: '13px',
-        fontWeight: 600,
-        color: '#fff',
-        backgroundColor: STATUS_COLORS[status],
-      }}
-    >
-      {STATUS_LABELS[status]}
-    </span>
-  );
-}
+                function StatusBadge({ status }: { status: ProductStatus }) {
+                return (
+                <span style={{ display: 'inline-block' , padding: '4px 12px' , borderRadius: '9999px' , fontSize: '13px'
+                    , fontWeight: 600, color: '#fff' , backgroundColor: STATUS_COLORS[status], }}>
+                    {STATUS_LABELS[status]}
+                </span>
+                );
+                }
 
-/* ========================================================================
-   Thành phần: Bảng biến thể
-   ======================================================================== */
+                /* ========================================================================
+                Thành phần: Bảng biến thể
+                ======================================================================== */
 
-/** Hiển thị các biến thể của sản phẩm dưới dạng bảng */
-function VariantsTable({ variants }: { variants: ProductVariant[] }) {
-  if (!variants.length) {
-    return (
-      <p style={{ color: '#94a3b8', fontSize: '14px', fontStyle: 'italic' }}>
-        Không có biến thể nào.
-      </p>
-    );
-  }
+                /** Hiển thị các biến thể của sản phẩm dưới dạng bảng */
+                function VariantsTable({ variants }: { variants: ProductVariant[] }) {
+                if (!variants.length) {
+                return (
+                <p style={{ color: '#94a3b8' , fontSize: '14px' , fontStyle: 'italic' }}>
+                    Không có biến thể nào.
+                </p>
+                );
+                }
 
-  const thStyle: React.CSSProperties = {
-    textAlign: 'left',
-    padding: '10px 12px',
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#64748b',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    borderBottom: '2px solid #e2e8f0',
-  };
-
-  const tdStyle: React.CSSProperties = {
-    padding: '10px 12px',
-    fontSize: '14px',
-    color: '#1e293b',
-    borderBottom: '1px solid #f1f5f9',
-  };
-
-  return (
-    <div style={{ overflowX: 'auto' }}>
-      <table
-        style={{
-          width: '100%',
-          borderCollapse: 'collapse',
-          fontSize: '14px',
-        }}
-      >
-        <thead>
-          <tr>
-            <th style={thStyle}>Tên biến thể</th>
-            <th style={thStyle}>SKU</th>
-            <th style={thStyle}>Thuộc tính</th>
-            <th style={thStyle}>Giá bán</th>
-            <th style={thStyle}>Trạng thái</th>
-          </tr>
-        </thead>
-        <tbody>
-          {variants.map((variant) => (
-            <tr key={variant.variant_id}>
-              <td style={tdStyle}>{variant.name}</td>
-              <td
-                style={{
-                  ...tdStyle,
-                  fontFamily: 'monospace',
-                  fontSize: '13px',
-                  color: '#64748b',
-                }}
-              >
-                {variant.sku}
-              </td>
-              <td style={tdStyle}>
-                {Object.entries(variant.attribute_values).map(([key, val]) => (
-                  <span
-                    key={key}
-                    style={{
-                      display: 'inline-block',
-                      marginRight: '6px',
-                      marginBottom: '2px',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: '#f1f5f9',
-                      fontSize: '12px',
-                      color: '#475569',
-                    }}
-                  >
-                    <strong>{key}:</strong> {val}
-                  </span>
-                ))}
-              </td>
-              <td
-                style={{
-                  ...tdStyle,
-                  fontWeight: 600,
-                  color: '#dc2626',
-                }}
-              >
-                {variant.price.toLocaleString('vi-VN')}₫
-              </td>
-              <td style={tdStyle}>
-                {variant.is_active ? (
-                  <span style={{ color: '#22c55e', fontSize: '13px' }}>● Hoạt động</span>
-                ) : (
-                  <span style={{ color: '#94a3b8', fontSize: '13px' }}>● Tạm dừng</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/* ========================================================================
-   Thành phần: Danh sách thuộc tính
-   ======================================================================== */
-
-/** Hiển thị các thuộc tính được gắn vào sản phẩm, kèm nhãn định nghĩa */
-function AttributesList({
-  attributes,
-  definitions,
-}: {
-  attributes: AttributeValue[];
-  definitions: AttributeDefinition[];
-}) {
-  if (!attributes.length) {
-    return (
-      <p style={{ color: '#94a3b8', fontSize: '14px', fontStyle: 'italic' }}>
-        Không có thuộc tính nào.
-      </p>
-    );
-  }
-
-  /* Xây dựng bản đồ attribute_id -> định nghĩa */
-  const defMap = new Map<string, AttributeDefinition>();
-  definitions.forEach((def) => defMap.set(def.attribute_id, def));
-
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-        gap: '12px',
-      }}
-    >
-      {attributes.map((av) => {
-        const def = defMap.get(av.attribute_id);
-        return (
-          <div
-            key={av.attribute_value_id}
-            style={{
-              padding: '12px',
-              borderRadius: '8px',
-              backgroundColor: '#f8fafc',
-              border: '1px solid #e2e8f0',
-            }}
-          >
-            <div
-              style={{
+                const thStyle: React.CSSProperties = {
+                textAlign: 'left',
+                padding: '10px 12px',
                 fontSize: '12px',
                 fontWeight: 600,
                 color: '#64748b',
                 textTransform: 'uppercase',
-                marginBottom: '4px',
-              }}
-            >
-              {def?.name ?? av.attribute_id}
-              {def?.unit ? ` (${def.unit})` : ''}
-            </div>
-            <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 500 }}>
-              {av.value}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+                letterSpacing: '0.05em',
+                borderBottom: '2px solid #e2e8f0',
+                };
 
-/* ========================================================================
-   Thành phần chính: Chi tiết sản phẩm
-   ======================================================================== */
+                const tdStyle: React.CSSProperties = {
+                padding: '10px 12px',
+                fontSize: '14px',
+                color: '#1e293b',
+                borderBottom: '1px solid #f1f5f9',
+                };
 
-/**
- * Trang chi tiết sản phẩm.
- *
- * Tải thông tin sản phẩm, biến thể, và thuộc tính từ API;
- * hiển thị theo bố cục hai cột: ảnh bên trái, thông tin bên phải.
- */
-export function ProductDetail({ productId, apiBaseUrl = '/api/v1' }: ProductDetailProps) {
-  /* --- Trạng thái --- */
-  const [product, setProduct] = useState<Product | null>(null);
-  const [variants, setVariants] = useState<ProductVariant[]>([]);
-  const [attributes, setAttributes] = useState<AttributeValue[]>([]);
-  const [definitions, setDefinitions] = useState<AttributeDefinition[]>([]);
-
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  /* --- Tab đang xem (Biến thể / Thuộc tính) --- */
-  const [activeTab, setActiveTab] = useState<'variants' | 'attributes'>('variants');
-
-  /* --- Tải chi tiết sản phẩm --- */
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        /* 1. Tải sản phẩm */
-        const productRes = await fetch(`${apiBaseUrl}/products/${encodeURIComponent(productId)}`);
-        if (!productRes.ok) {
-          throw new Error(`Không thể tải sản phẩm (HTTP ${productRes.status})`);
-        }
-        const productData = await productRes.json();
-        if (cancelled) return;
-        setProduct(productData);
-
-        /* 2. Tải biến thể */
-        const variantsRes = await fetch(
-          `${apiBaseUrl}/products/${encodeURIComponent(productId)}/variants`
-        );
-        if (variantsRes.ok) {
-          const variantsData = await variantsRes.json();
-          if (!cancelled) setVariants(variantsData ?? []);
-        }
-
-        /* 3. Tải thuộc tính của sản phẩm */
-        const attrsRes = await fetch(
-          `${apiBaseUrl}/products/${encodeURIComponent(productId)}/attributes`
-        );
-        if (attrsRes.ok) {
-          const attrsData = await attrsRes.json();
-          if (!cancelled) {
-            setAttributes(attrsData ?? []);
-            /* Đồng thời tải định nghĩa thuộc tính cho các attribute_ids */
-            const attrIds = (attrsData ?? []).map((a: AttributeValue) => a.attribute_id);
-            if (attrIds.length > 0) {
-              const defsRes = await fetch(`${apiBaseUrl}/attributes`);
-              if (defsRes.ok) {
-                const defsData = await defsRes.json();
-                if (!cancelled) {
-                  setDefinitions(
-                    (defsData as AttributeDefinition[]).filter((d) =>
-                      attrIds.includes(d.attribute_id)
-                    )
-                  );
+                return (
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%' , borderCollapse: 'collapse' , fontSize: '14px' , }}>
+                        <thead>
+                            <tr>
+                                <th style={thStyle}>Tên biến thể</th>
+                                <th style={thStyle}>SKU</th>
+                                <th style={thStyle}>Thuộc tính</th>
+                                <th style={thStyle}>Giá bán</th>
+                                <th style={thStyle}>Trạng thái</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {variants.map((variant) => (
+                            <tr key={variant.variant_id}>
+                                <td style={tdStyle}>{variant.name}</td>
+                                <td style={{ ...tdStyle, fontFamily: 'monospace' , fontSize: '13px' , color: '#64748b' ,
+                                    }}>
+                                    {variant.sku}
+                                </td>
+                                <td style={tdStyle}>
+                                    {Object.entries(variant.attribute_values).map(([key, val]) => (
+                                    <span key={key} style={{ display: 'inline-block' , marginRight: '6px' ,
+                                        marginBottom: '2px' , padding: '2px 8px' , borderRadius: '4px' ,
+                                        backgroundColor: '#f1f5f9' , fontSize: '12px' , color: '#475569' , }}>
+                                        <strong>{key}:</strong> {val}
+                                    </span>
+                                    ))}
+                                </td>
+                                <td style={{ ...tdStyle, fontWeight: 600, color: '#dc2626' , }}>
+                                    {variant.price.toLocaleString('vi-VN')}₫
+                                </td>
+                                <td style={tdStyle}>
+                                    {variant.is_active ? (
+                                    <span style={{ color: '#22c55e' , fontSize: '13px' }}>● Hoạt động</span>
+                                    ) : (
+                                    <span style={{ color: '#94a3b8' , fontSize: '13px' }}>● Tạm dừng</span>
+                                    )}
+                                </td>
+                            </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                );
                 }
-              }
-            }
-          }
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          setError(err.message ?? 'Lỗi không xác định khi tải chi tiết sản phẩm');
-        }
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [apiBaseUrl, productId]);
+                /* ========================================================================
+                Thành phần: Danh sách thuộc tính
+                ======================================================================== */
 
-  /* ====================================================================
-     Render — Trạng thái chờ / lỗi
-     ==================================================================== */
+                /** Hiển thị các thuộc tính được gắn vào sản phẩm, kèm nhãn định nghĩa */
+                function AttributesList({
+                attributes,
+                definitions,
+                }: {
+                attributes: AttributeValue[];
+                definitions: AttributeDefinition[];
+                }) {
+                if (!attributes.length) {
+                return (
+                <p style={{ color: '#94a3b8' , fontSize: '14px' , fontStyle: 'italic' }}>
+                    Không có thuộc tính nào.
+                </p>
+                );
+                }
 
-  if (isLoading) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '60vh',
-          color: '#94a3b8',
-          fontSize: '15px',
-          fontFamily: 'system-ui, sans-serif',
-        }}
-      >
-        <span style={{ marginRight: '8px' }}>⏳</span> Đang tải chi tiết sản phẩm...
-      </div>
-    );
-  }
+                /* Xây dựng bản đồ attribute_id -> định nghĩa */
+                const defMap = new Map<string, AttributeDefinition>();
+                    definitions.forEach((def) => defMap.set(def.attribute_id, def));
 
-  if (error || !product) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '60vh',
-          fontFamily: 'system-ui, sans-serif',
-        }}
-      >
-        <div
-          role="alert"
-          style={{
-            padding: '16px 24px',
-            backgroundColor: '#fef2f2',
-            border: '1px solid #fecaca',
-            borderRadius: '12px',
-            color: '#991b1b',
-            fontSize: '14px',
-            maxWidth: '480px',
-            textAlign: 'center',
-          }}
-        >
-          <p style={{ margin: '0 0 8px', fontWeight: 600 }}>Không thể tải sản phẩm</p>
-          <p style={{ margin: 0, fontSize: '13px' }}>{error ?? 'Sản phẩm không tồn tại.'}</p>
-        </div>
-        <button
-          onClick={() => window.history.back()}
-          style={{
-            marginTop: '16px',
-            padding: '8px 20px',
-            border: '1px solid #d1d5db',
-            borderRadius: '8px',
-            backgroundColor: '#fff',
-            cursor: 'pointer',
-            fontSize: '14px',
-          }}
-        >
-          ← Quay lại
-        </button>
-      </div>
-    );
-  }
+                    return (
+                    <div style={{ display: 'grid' , gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' ,
+                        gap: '12px' , }}>
+                        {attributes.map((av) => {
+                        const def = defMap.get(av.attribute_id);
+                        return (
+                        <div key={av.attribute_value_id} style={{ padding: '12px' , borderRadius: '8px' ,
+                            backgroundColor: '#f8fafc' , border: '1px solid #e2e8f0' , }}>
+                            <div style={{ fontSize: '12px' , fontWeight: 600, color: '#64748b' ,
+                                textTransform: 'uppercase' , marginBottom: '4px' , }}>
+                                {def?.name ?? av.attribute_id}
+                                {def?.unit ? ` (${def.unit})` : ''}
+                            </div>
+                            <div style={{ fontSize: '15px' , color: '#1e293b' , fontWeight: 500 }}>
+                                {av.value}
+                            </div>
+                        </div>
+                        );
+                        })}
+                    </div>
+                    );
+                    }
 
-  /* ====================================================================
-     Render — Chi tiết sản phẩm
-     ==================================================================== */
+                    /* ========================================================================
+                    Thành phần chính: Chi tiết sản phẩm
+                    ======================================================================== */
 
-  /* Tính lợi nhuận hiển thị */
-  const margin = product.price - product.cost_price;
-  const marginPercent = product.cost_price > 0 ? Math.round((margin / product.cost_price) * 100) : 0;
+                    /**
+                    * Trang chi tiết sản phẩm.
+                    *
+                    * Tải thông tin sản phẩm, biến thể, và thuộc tính từ API;
+                    * hiển thị theo bố cục hai cột: ảnh bên trái, thông tin bên phải.
+                    */
+                    export function ProductDetail({ productId, apiBaseUrl = '/api/v1' }: ProductDetailProps) {
+                    /* --- Trạng thái --- */
+                    const [product, setProduct] = useState<Product | null>(null);
+                        const [variants, setVariants] = useState<ProductVariant[]>([]);
+                            const [attributes, setAttributes] = useState<AttributeValue[]>([]);
+                                const [definitions, setDefinitions] = useState<AttributeDefinition[]>([]);
 
-  /* Tính giảm giá */
-  const discountPercent =
-    product.compare_at_price && product.compare_at_price > product.price
-      ? Math.round(
-          ((product.compare_at_price - product.price) / product.compare_at_price) * 100
-        )
-      : null;
+                                    const [isLoading, setIsLoading] = useState<boolean>(true);
+                                        const [error, setError] = useState<string | null>(null);
 
-  return (
-    <div
-      style={{
-        maxWidth: '1200px',
-        margin: '0 auto',
-        padding: '24px',
-        fontFamily: 'system-ui, sans-serif',
-      }}
-    >
-      {/* Nút quay lại */}
-      <button
-        onClick={() => window.history.back()}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          padding: '6px 14px',
-          border: 'none',
-          borderRadius: '8px',
-          backgroundColor: 'transparent',
-          color: '#64748b',
-          fontSize: '14px',
-          cursor: 'pointer',
-          marginBottom: '20px',
-        }}
-      >
-        ← Quay lại danh sách
-      </button>
+                                            /* --- Tab đang xem (Biến thể / Thuộc tính) --- */
+                                            const [activeTab, setActiveTab] = useState<'variants' | 'attributes'>
+                                                ('variants');
 
-      {/* Bố cục hai cột: ảnh + thông tin */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '32px',
-          marginBottom: '32px',
-        }}
-      >
-        {/* Cột trái — Ảnh */}
-        <ImageGallery images={product.images} />
+                                                /* --- Tải chi tiết sản phẩm --- */
+                                                useEffect(() => {
+                                                let cancelled = false;
 
-        {/* Cột phải — Thông tin sản phẩm */}
-        <div>
-          {/* Tên sản phẩm */}
-          <h1
-            style={{
-              fontSize: '28px',
-              fontWeight: 700,
-              color: '#1e293b',
-              margin: '0 0 12px',
-              lineHeight: '1.3',
-            }}
-          >
-            {product.name}
-          </h1>
+                                                (async () => {
+                                                setIsLoading(true);
+                                                setError(null);
+                                                try {
+                                                /* 1. Tải sản phẩm */
+                                                const productRes = await
+                                                fetch(`${apiBaseUrl}/products/${encodeURIComponent(productId)}`);
+                                                if (!productRes.ok) {
+                                                throw new Error(`Không thể tải sản phẩm (HTTP ${productRes.status})`);
+                                                }
+                                                const productData = await productRes.json();
+                                                if (cancelled) return;
+                                                setProduct(productData);
 
-          {/* SKU + Slug */}
-          <div
-            style={{
-              display: 'flex',
-              gap: '16px',
-              fontSize: '13px',
-              color: '#94a3b8',
-              marginBottom: '12px',
-              fontFamily: 'monospace',
-            }}
-          >
-            <span>SKU: {product.sku}</span>
-            <span>Slug: /{product.slug}</span>
-          </div>
+                                                /* 2. Tải biến thể */
+                                                const variantsRes = await fetch(
+                                                `${apiBaseUrl}/products/${encodeURIComponent(productId)}/variants`
+                                                );
+                                                if (variantsRes.ok) {
+                                                const variantsData = await variantsRes.json();
+                                                if (!cancelled) setVariants(variantsData ?? []);
+                                                }
 
-          {/* Trạng thái */}
-          <div style={{ marginBottom: '16px' }}>
-            <StatusBadge status={product.status} />
-          </div>
+                                                /* 3. Tải thuộc tính của sản phẩm */
+                                                const attrsRes = await fetch(
+                                                `${apiBaseUrl}/products/${encodeURIComponent(productId)}/attributes`
+                                                );
+                                                if (attrsRes.ok) {
+                                                const attrsData = await attrsRes.json();
+                                                if (!cancelled) {
+                                                setAttributes(attrsData ?? []);
+                                                /* Đồng thời tải định nghĩa thuộc tính cho các attribute_ids */
+                                                const attrIds = (attrsData ?? []).map((a: AttributeValue) =>
+                                                a.attribute_id);
+                                                if (attrIds.length > 0) {
+                                                const defsRes = await fetch(`${apiBaseUrl}/attributes`);
+                                                if (defsRes.ok) {
+                                                const defsData = await defsRes.json();
+                                                if (!cancelled) {
+                                                setDefinitions(
+                                                (defsData as AttributeDefinition[]).filter((d) =>
+                                                attrIds.includes(d.attribute_id)
+                                                )
+                                                );
+                                                }
+                                                }
+                                                }
+                                                }
+                                                }
+                                                } catch (err: any) {
+                                                if (!cancelled) {
+                                                setError(err.message ?? 'Lỗi không xác định khi tải chi tiết sản phẩm');
+                                                }
+                                                } finally {
+                                                if (!cancelled) setIsLoading(false);
+                                                }
+                                                })();
 
-          {/* Giá */}
-          <div
-            style={{
-              padding: '16px',
-              borderRadius: '12px',
-              backgroundColor: '#fff7ed',
-              border: '1px solid #fed7aa',
-              marginBottom: '16px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '6px' }}>
-              <span style={{ fontSize: '32px', fontWeight: 700, color: '#dc2626' }}>
-                {product.price.toLocaleString('vi-VN')}₫
-              </span>
-              {product.compare_at_price && discountPercent && (
-                <>
-                  <span
-                    style={{
-                      fontSize: '16px',
-                      color: '#94a3b8',
-                      textDecoration: 'line-through',
-                    }}
-                  >
-                    {product.compare_at_price.toLocaleString('vi-VN')}₫
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      color: '#ef4444',
-                      backgroundColor: '#fef2f2',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                    }}
-                  >
-                    -{discountPercent}%
-                  </span>
-                </>
-              )}
-            </div>
-            <div style={{ fontSize: '12px', color: '#92400e' }}>
-              Giá vốn: {product.cost_price.toLocaleString('vi-VN')}₫ &middot; Lợi nhuận:{' '}
-              {margin.toLocaleString('vi-VN')}₫ ({marginPercent}%)
-            </div>
-          </div>
+                                                return () => {
+                                                cancelled = true;
+                                                };
+                                                }, [apiBaseUrl, productId]);
 
-          {/* Mô tả */}
-          {product.description && (
-            <div style={{ marginBottom: '16px' }}>
-              <h3
-                style={{
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  color: '#374151',
-                  marginBottom: '6px',
-                }}
-              >
-                Mô tả
-              </h3>
-              <p
-                style={{
-                  fontSize: '14px',
-                  color: '#4b5563',
-                  lineHeight: '1.7',
-                  margin: 0,
-                  whiteSpace: 'pre-wrap',
-                }}
-              >
-                {product.description}
-              </p>
-            </div>
-          )}
+                                                /* ====================================================================
+                                                Render — Trạng thái chờ / lỗi
+                                                ==================================================================== */
 
-          {/* Trọng lượng */}
-          {product.weight && (
-            <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-              Trọng lượng: <strong>{product.weight}g</strong>
-            </div>
-          )}
+                                                if (isLoading) {
+                                                return (
+                                                <div style={{ display: 'flex' , alignItems: 'center' ,
+                                                    justifyContent: 'center' , minHeight: '60vh' , color: '#94a3b8' ,
+                                                    fontSize: '15px' , fontFamily: 'system-ui, sans-serif' , }}>
+                                                    <span style={{ marginRight: '8px' }}>⏳</span> Đang tải chi tiết sản
+                                                    phẩm...
+                                                </div>
+                                                );
+                                                }
 
-          {/* Tags */}
-          {product.tags.length > 0 && (
-            <div style={{ marginBottom: '16px' }}>
-              <span
-                style={{
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: '#374151',
-                  marginRight: '8px',
-                }}
-              >
-                Thẻ:
-              </span>
-              {product.tags.map((tag) => (
-                <span
-                  key={tag}
-                  style={{
-                    display: 'inline-block',
-                    marginRight: '6px',
-                    padding: '3px 10px',
-                    borderRadius: '9999px',
-                    backgroundColor: '#e0e7ff',
-                    color: '#3730a3',
-                    fontSize: '12px',
-                    fontWeight: 500,
-                  }}
-                >
-                  #{tag}
-                </span>
-              ))}
-            </div>
-          )}
+                                                if (error || !product) {
+                                                return (
+                                                <div style={{ display: 'flex' , flexDirection: 'column' ,
+                                                    alignItems: 'center' , justifyContent: 'center' , minHeight: '60vh'
+                                                    , fontFamily: 'system-ui, sans-serif' , }}>
+                                                    <div role="alert" style={{ padding: '16px 24px' ,
+                                                        backgroundColor: '#fef2f2' , border: '1px solid #fecaca' ,
+                                                        borderRadius: '12px' , color: '#991b1b' , fontSize: '14px' ,
+                                                        maxWidth: '480px' , textAlign: 'center' , }}>
+                                                        <p style={{ margin: '0 0 8px' , fontWeight: 600 }}>Không thể tải
+                                                            sản phẩm</p>
+                                                        <p style={{ margin: 0, fontSize: '13px' }}>{error ?? 'Sản phẩm
+                                                            không tồn tại.'}</p>
+                                                    </div>
+                                                    <button onClick={()=> window.history.back()}
+                                                        style={{
+                                                        marginTop: '16px',
+                                                        padding: '8px 20px',
+                                                        border: '1px solid #d1d5db',
+                                                        borderRadius: '8px',
+                                                        backgroundColor: '#fff',
+                                                        cursor: 'pointer',
+                                                        fontSize: '14px',
+                                                        }}
+                                                        >
+                                                        ← Quay lại
+                                                    </button>
+                                                </div>
+                                                );
+                                                }
 
-          {/* Thông tin meta */}
-          <div
-            style={{
-              fontSize: '12px',
-              color: '#94a3b8',
-              borderTop: '1px solid #e2e8f0',
-              paddingTop: '12px',
-            }}
-          >
-            <div>Tạo ngày: {new Date(product.created_at).toLocaleDateString('vi-VN')}</div>
-            {product.visibility !== 'public' && (
-              <div>Hiển thị: {product.visibility}</div>
-            )}
-          </div>
-        </div>
-      </div>
+                                                /* ====================================================================
+                                                Render — Chi tiết sản phẩm
+                                                ==================================================================== */
 
-      {/* ====================================================================
-          Khu vực Tab: Biến thể / Thuộc tính
-          ==================================================================== */}
-      <div
-        style={{
-          borderTop: '1px solid #e2e8f0',
-          paddingTop: '24px',
-        }}
-      >
-        {/* Tab headers */}
-        <div
-          style={{
-            display: 'flex',
-            borderBottom: '2px solid #e2e8f0',
-            marginBottom: '20px',
-          }}
-        >
-          <button
-            onClick={() => setActiveTab('variants')}
-            style={{
-              padding: '10px 20px',
-              border: 'none',
-              borderBottom: activeTab === 'variants' ? '2px solid #3b82f6' : '2px solid transparent',
-              backgroundColor: 'transparent',
-              color: activeTab === 'variants' ? '#3b82f6' : '#64748b',
-              fontWeight: activeTab === 'variants' ? 600 : 400,
-              fontSize: '15px',
-              cursor: 'pointer',
-              marginBottom: '-2px',
-            }}
-          >
-            Biến thể ({variants.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('attributes')}
-            style={{
-              padding: '10px 20px',
-              border: 'none',
-              borderBottom:
-                activeTab === 'attributes' ? '2px solid #3b82f6' : '2px solid transparent',
-              backgroundColor: 'transparent',
-              color: activeTab === 'attributes' ? '#3b82f6' : '#64748b',
-              fontWeight: activeTab === 'attributes' ? 600 : 400,
-              fontSize: '15px',
-              cursor: 'pointer',
-              marginBottom: '-2px',
-            }}
-          >
-            Thuộc tính ({attributes.length})
-          </button>
-        </div>
+                                                /* Tính lợi nhuận hiển thị */
+                                                const margin = product.price - product.cost_price;
+                                                const marginPercent = product.cost_price > 0 ? Math.round((margin /
+                                                product.cost_price) * 100) : 0;
 
-        {/* Tab nội dung */}
-        {activeTab === 'variants' && <VariantsTable variants={variants} />}
-        {activeTab === 'attributes' && (
-          <AttributesList attributes={attributes} definitions={definitions} />
-        )}
-      </div>
-    </div>
-  );
-}
+                                                /* Tính giảm giá */
+                                                const discountPercent =
+                                                product.compare_at_price && product.compare_at_price > product.price
+                                                ? Math.round(
+                                                ((product.compare_at_price - product.price) / product.compare_at_price)
+                                                * 100
+                                                )
+                                                : null;
 
-export default ProductDetail;
-{% endraw %}
+                                                return (
+                                                <div style={{ maxWidth: '1200px' , margin: '0 auto' , padding: '24px' ,
+                                                    fontFamily: 'system-ui, sans-serif' , }}>
+                                                    {/* Nút quay lại */}
+                                                    <button onClick={()=> window.history.back()}
+                                                        style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '6px',
+                                                        padding: '6px 14px',
+                                                        border: 'none',
+                                                        borderRadius: '8px',
+                                                        backgroundColor: 'transparent',
+                                                        color: '#64748b',
+                                                        fontSize: '14px',
+                                                        cursor: 'pointer',
+                                                        marginBottom: '20px',
+                                                        }}
+                                                        >
+                                                        ← Quay lại danh sách
+                                                    </button>
+
+                                                    {/* Bố cục hai cột: ảnh + thông tin */}
+                                                    <div style={{ display: 'grid' , gridTemplateColumns: '1fr 1fr' ,
+                                                        gap: '32px' , marginBottom: '32px' , }}>
+                                                        {/* Cột trái — Ảnh */}
+                                                        <ImageGallery images={product.images} />
+
+                                                        {/* Cột phải — Thông tin sản phẩm */}
+                                                        <div>
+                                                            {/* Tên sản phẩm */}
+                                                            <h1 style={{ fontSize: '28px' , fontWeight: 700,
+                                                                color: '#1e293b' , margin: '0 0 12px' ,
+                                                                lineHeight: '1.3' , }}>
+                                                                {product.name}
+                                                            </h1>
+
+                                                            {/* SKU + Slug */}
+                                                            <div style={{ display: 'flex' , gap: '16px' ,
+                                                                fontSize: '13px' , color: '#94a3b8' ,
+                                                                marginBottom: '12px' , fontFamily: 'monospace' , }}>
+                                                                <span>SKU: {product.sku}</span>
+                                                                <span>Slug: /{product.slug}</span>
+                                                            </div>
+
+                                                            {/* Trạng thái */}
+                                                            <div style={{ marginBottom: '16px' }}>
+                                                                <StatusBadge status={product.status} />
+                                                            </div>
+
+                                                            {/* Giá */}
+                                                            <div style={{ padding: '16px' , borderRadius: '12px' ,
+                                                                backgroundColor: '#fff7ed' , border: '1px solid #fed7aa'
+                                                                , marginBottom: '16px' , }}>
+                                                                <div style={{ display: 'flex' , alignItems: 'baseline' ,
+                                                                    gap: '12px' , marginBottom: '6px' }}>
+                                                                    <span style={{ fontSize: '32px' , fontWeight: 700,
+                                                                        color: '#dc2626' }}>
+                                                                        {product.price.toLocaleString('vi-VN')}₫
+                                                                    </span>
+                                                                    {product.compare_at_price && discountPercent && (
+                                                                    <>
+                                                                        <span style={{ fontSize: '16px' ,
+                                                                            color: '#94a3b8' ,
+                                                                            textDecoration: 'line-through' , }}>
+                                                                            {product.compare_at_price.toLocaleString('vi-VN')}₫
+                                                                        </span>
+                                                                        <span style={{ fontSize: '13px' , fontWeight:
+                                                                            700, color: '#ef4444' ,
+                                                                            backgroundColor: '#fef2f2' ,
+                                                                            padding: '2px 8px' , borderRadius: '4px' ,
+                                                                            }}>
+                                                                            -{discountPercent}%
+                                                                        </span>
+                                                                    </>
+                                                                    )}
+                                                                </div>
+                                                                <div style={{ fontSize: '12px' , color: '#92400e' }}>
+                                                                    Giá vốn:
+                                                                    {product.cost_price.toLocaleString('vi-VN')}₫
+                                                                    &middot; Lợi nhuận:{' '}
+                                                                    {margin.toLocaleString('vi-VN')}₫ ({marginPercent}%)
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Mô tả */}
+                                                            {product.description && (
+                                                            <div style={{ marginBottom: '16px' }}>
+                                                                <h3 style={{ fontSize: '14px' , fontWeight: 600,
+                                                                    color: '#374151' , marginBottom: '6px' , }}>
+                                                                    Mô tả
+                                                                </h3>
+                                                                <p style={{ fontSize: '14px' , color: '#4b5563' ,
+                                                                    lineHeight: '1.7' , margin: 0,
+                                                                    whiteSpace: 'pre-wrap' , }}>
+                                                                    {product.description}
+                                                                </p>
+                                                            </div>
+                                                            )}
+
+                                                            {/* Trọng lượng */}
+                                                            {product.weight && (
+                                                            <div style={{ fontSize: '14px' , color: '#64748b' ,
+                                                                marginBottom: '12px' }}>
+                                                                Trọng lượng: <strong>{product.weight}g</strong>
+                                                            </div>
+                                                            )}
+
+                                                            {/* Tags */}
+                                                            {product.tags.length > 0 && (
+                                                            <div style={{ marginBottom: '16px' }}>
+                                                                <span style={{ fontSize: '13px' , fontWeight: 600,
+                                                                    color: '#374151' , marginRight: '8px' , }}>
+                                                                    Thẻ:
+                                                                </span>
+                                                                {product.tags.map((tag) => (
+                                                                <span key={tag} style={{ display: 'inline-block' ,
+                                                                    marginRight: '6px' , padding: '3px 10px' ,
+                                                                    borderRadius: '9999px' , backgroundColor: '#e0e7ff'
+                                                                    , color: '#3730a3' , fontSize: '12px' , fontWeight:
+                                                                    500, }}>
+                                                                    #{tag}
+                                                                </span>
+                                                                ))}
+                                                            </div>
+                                                            )}
+
+                                                            {/* Thông tin meta */}
+                                                            <div style={{ fontSize: '12px' , color: '#94a3b8' ,
+                                                                borderTop: '1px solid #e2e8f0' , paddingTop: '12px' ,
+                                                                }}>
+                                                                <div>Tạo ngày: {new
+                                                                    Date(product.created_at).toLocaleDateString('vi-VN')}
+                                                                </div>
+                                                                {product.visibility !== 'public' && (
+                                                                <div>Hiển thị: {product.visibility}</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/*
+                                                    ====================================================================
+                                                    Khu vực Tab: Biến thể / Thuộc tính
+                                                    ====================================================================
+                                                    */}
+                                                    <div style={{ borderTop: '1px solid #e2e8f0' , paddingTop: '24px' ,
+                                                        }}>
+                                                        {/* Tab headers */}
+                                                        <div style={{ display: 'flex' ,
+                                                            borderBottom: '2px solid #e2e8f0' , marginBottom: '20px' ,
+                                                            }}>
+                                                            <button onClick={()=> setActiveTab('variants')}
+                                                                style={{
+                                                                padding: '10px 20px',
+                                                                border: 'none',
+                                                                borderBottom: activeTab === 'variants' ? '2px solid
+                                                                #3b82f6' : '2px solid transparent',
+                                                                backgroundColor: 'transparent',
+                                                                color: activeTab === 'variants' ? '#3b82f6' : '#64748b',
+                                                                fontWeight: activeTab === 'variants' ? 600 : 400,
+                                                                fontSize: '15px',
+                                                                cursor: 'pointer',
+                                                                marginBottom: '-2px',
+                                                                }}
+                                                                >
+                                                                Biến thể ({variants.length})
+                                                            </button>
+                                                            <button onClick={()=> setActiveTab('attributes')}
+                                                                style={{
+                                                                padding: '10px 20px',
+                                                                border: 'none',
+                                                                borderBottom:
+                                                                activeTab === 'attributes' ? '2px solid #3b82f6' : '2px
+                                                                solid transparent',
+                                                                backgroundColor: 'transparent',
+                                                                color: activeTab === 'attributes' ? '#3b82f6' :
+                                                                '#64748b',
+                                                                fontWeight: activeTab === 'attributes' ? 600 : 400,
+                                                                fontSize: '15px',
+                                                                cursor: 'pointer',
+                                                                marginBottom: '-2px',
+                                                                }}
+                                                                >
+                                                                Thuộc tính ({attributes.length})
+                                                            </button>
+                                                        </div>
+
+                                                        {/* Tab nội dung */}
+                                                        {activeTab === 'variants' &&
+                                                        <VariantsTable variants={variants} />}
+                                                        {activeTab === 'attributes' && (
+                                                        <AttributesList attributes={attributes}
+                                                            definitions={definitions} />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                );
+                                                }
+
+                                                export default ProductDetail;
+                                                {% endraw %}

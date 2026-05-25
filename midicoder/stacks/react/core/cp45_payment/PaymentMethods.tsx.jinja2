@@ -1,9 +1,35 @@
-{% raw %}import { useCallback, useEffect, useMemo, useState } from "react";
-
+/**
+* PaymentMethods — Giao dien quan ly phuong thuc thanh toan.
+* Ho tro them, xoa, dat mac dinh va vo hieu hoa phuong thuc.
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
+*/
+{% if ui_framework == "material" %}
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PaymentChannel } from "./PaymentDashboard";
+import { Button, Card, Chip, Box, Paper, Dialog, DialogTitle, DialogContent, DialogActions, TextField, FormControl }
+from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PaymentChannel } from "./PaymentDashboard";
+// Su dung Tailwind utility classes trong JSX
+{% elif ui_framework == "bootstrap" %}
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PaymentChannel } from "./PaymentDashboard";
+import { Button, Card, Badge, Modal, Form } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PaymentChannel } from "./PaymentDashboard";
+import { Button, Card, Tag, Space, Modal, Input } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PaymentChannel } from "./PaymentDashboard";
+import { Button, Layer, Tag, Tile, Modal, ModalBody, ModalFooter, TextInput } from '@carbon/react';
+{% endif %}
 
+{% raw %}
 // ============================================================================
-// Định nghĩa loại dữ liệu cho phương thức thanh toán
+// Dinh nghia loai du lieu cho phuong thuc thanh toan
 // ============================================================================
 
 /** Trạng thái phương thức thanh toán */

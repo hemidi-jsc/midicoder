@@ -1,11 +1,36 @@
 // Batch Status Component — Progress indicator cho batch job.
 // CP34: Report & Document Generator (Angular)
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
+
+{% if ui_framework == "material" %}
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng lớp tiện ích Tailwind CSS trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng lớp Bootstrap trong template
+{% elif ui_framework == "antd" %}
+// Ant Design không áp dụng cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon không áp dụng cho Angular
+{% endif %}
 
 import { Component, Input, OnInit, OnDestroy } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { HttpClient } from "@angular/common/http";
 import { Subscription, interval } from "rxjs";
 import { switchMap } from "rxjs/operators";
+
+{% if ui_framework == "material" %}
+const UI_MODULES = [MatProgressBarModule];
+{% elif ui_framework == "tailwind" %}
+const UI_MODULES = [];
+{% elif ui_framework == "bootstrap" %}
+const UI_MODULES = [];
+{% elif ui_framework == "antd" %}
+const UI_MODULES = [];
+{% elif ui_framework == "carbon" %}
+const UI_MODULES = [];
+{% endif %}
 
 export interface BatchJobStatus {
 id: string;
@@ -18,7 +43,7 @@ error: string;
 @Component({
 selector: "app-batch-status",
 standalone: true,
-imports: [CommonModule],
+imports: [CommonModule, ...UI_MODULES],
 template: `
 <div class="batch-status">
     <h3>Trạng thái Batch Job</h3>

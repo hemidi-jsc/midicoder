@@ -1,10 +1,23 @@
 // Report List — Hiển thị danh sách reports có thể generate.
 // CP34: Report & Document Generator (React)
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 {% if collection %}
 // Tự động sinh từ {{ collection.reports | length }} report specs.
 {% endif %}
 
 import React, { useState, useEffect } from "react";
+
+{% if ui_framework == "material" %}
+import { Button, Card, CardContent, Grid, Typography, Chip } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng lớp tiện ích Tailwind CSS inline
+{% elif ui_framework == "bootstrap" %}
+import { Button, Card } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Card, Typography, Tag } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, Title, Subtitle } from '@carbon/react';
+{% endif %}
 
 export interface ReportMeta {
 id: string;
@@ -55,80 +68,134 @@ const [reports, setReports] = useState<ReportMeta[]>([]);
                     }
                     };
 
-                    if (loading) return <div>Đang tải danh sách báo cáo...</div>;
-                    if (error) return <div className="error">Lỗi: {error}</div>;
+                    {% if ui_framework == "material" %}
+                    // Render với MUI components
+                    if (loading) return <Typography>Đang tải danh sách báo cáo...</Typography>;
+                    if (error) return <Typography color="error">Lỗi: {error}</Typography>;
 
                     return (
-                    <div className="report-list">
-                        <h2>Danh sách Báo cáo</h2>
-                        <div className="report-grid">
+                    <div className="report-list" data-testid="report-list">
+                        <Typography variant="h4" gutterBottom>Danh sách Báo cáo</Typography>
+                        <Grid container spacing={2}>
                             {reports.map((report: ReportMeta) => (
-                            <div key={report.id} className="report-card">
-                                <h3>{report.name}</h3>
-                                <p className="entity">{report.entity}</p>
-                                <span className="format-badge">{report.format}</span>
-                                <p className="description">{report.description}</p>
-                                <button onClick={()=> handleGenerate(report.id)}>Generate</button>
+                            <Grid item xs={12} sm={6} md={4} key={report.id}>
+                                <Card className="report-card">
+                                    <CardContent>
+                                        <Typography variant="h6">{report.name}</Typography>
+                                        <Typography variant="body2" color="textSecondary">{report.entity}</Typography>
+                                        <Chip label={report.format} size="small" sx={{ mt: 1 }} />
+                                        <Typography variant="body2" sx={{ mt: 1 }}>{report.description}</Typography>
+                                        <Button variant="contained" sx={{ mt: 2 }} onClick={()=>
+                                            handleGenerate(report.id)}>Generate</Button>
+                                    </CardContent>
+                                </Card>
+                            </Grid>
+                            ))}
+                        </Grid>
+                    </div>
+                    );
+                    {% elif ui_framework == "tailwind" %}
+                    // Render với Tailwind CSS utility classes
+                    if (loading) return <div>Đang tải danh sách báo cáo...</div>;
+                    if (error) return <div className="text-red-500">Lỗi: {error}</div>;
+
+                    return (
+                    <div className="p-6 max-w-7xl mx-auto" data-testid="report-list">
+                        <h2 className="text-2xl font-bold mb-4">Danh sách Báo cáo</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {reports.map((report: ReportMeta) => (
+                            <div key={report.id}
+                                className="border rounded-lg p-4 shadow hover:shadow-md transition-shadow">
+                                <h3 className="text-lg font-semibold">{report.name}</h3>
+                                <p className="text-sm text-gray-500 mt-1">{report.entity}</p>
+                                <span
+                                    className="inline-block mt-2 px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-800">{report.format}</span>
+                                <p className="text-sm text-gray-600 mt-2">{report.description}</p>
+                                <button className="mt-3 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                                    onClick={()=> handleGenerate(report.id)}
+                                    >Generate</button>
                             </div>
                             ))}
                         </div>
-                        <style jsx>
-                            {
-                                ` .report-list {
-                                    padding: 20px;
-                                }
-
-                                .report-grid {
-                                    display: grid;
-                                    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-                                    gap: 16px;
-                                }
-
-                                .report-card {
-                                    border: 1px solid #ddd;
-                                    border-radius: 8px;
-                                    padding: 16px;
-                                    transition: box-shadow 0.2s;
-                                }
-
-                                .report-card:hover {
-                                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-                                }
-
-                                .format-badge {
-                                    display: inline-block;
-                                    padding: 2px 8px;
-                                    border-radius: 4px;
-                                    background: #4CAF50;
-                                    color: white;
-                                    font-size: 12px;
-                                }
-
-                                .entity {
-                                    color: #666;
-                                    margin: 4px 0;
-                                }
-
-                                .description {
-                                    color: #888;
-                                    font-size: 14px;
-                                }
-
-                                button {
-                                    margin-top: 8px;
-                                    padding: 8px 16px;
-                                    background: #4CAF50;
-                                    color: white;
-                                    border: none;
-                                    border-radius: 4px;
-                                    cursor: pointer;
-                                }
-
-                                `
-                            }
-                        </style>
                     </div>
                     );
+                    {% elif ui_framework == "bootstrap" %}
+                    // Render với react-bootstrap components
+                    if (loading) return <div>Đang tải danh sách báo cáo...</div>;
+                    if (error) return <div className="text-danger">Lỗi: {error}</div>;
+
+                    return (
+                    <div className="container report-list" data-testid="report-list">
+                        <h2 className="mb-4">Danh sách Báo cáo</h2>
+                        <div className="row">
+                            {reports.map((report: ReportMeta) => (
+                            <div className="col-md-4 mb-3" key={report.id}>
+                                <Card className="report-card h-100">
+                                    <Card.Body>
+                                        <Card.Title>{report.name}</Card.Title>
+                                        <Card.Text className="text-muted">{report.entity}</Card.Text>
+                                        <span className="badge bg-success">{report.format}</span>
+                                        <Card.Text>{report.description}</Card.Text>
+                                        <Button variant="success" onClick={()=>
+                                            handleGenerate(report.id)}>Generate</Button>
+                                    </Card.Body>
+                                </Card>
+                            </div>
+                            ))}
+                        </div>
+                    </div>
+                    );
+                    {% elif ui_framework == "antd" %}
+                    // Render với Ant Design components
+                    if (loading) return <div>Đang tải danh sách báo cáo...</div>;
+                    if (error) return <div className="text-danger">Lỗi: {error}</div>;
+
+                    return (
+                    <div className="report-list" data-testid="report-list">
+                        <Typography.Title level={2}>Danh sách Báo cáo</Typography.Title>
+                        <div className="row g-3">
+                            {reports.map((report: ReportMeta) => (
+                            <div className="col-md-4" key={report.id}>
+                                <Card title={report.name} className="report-card">
+                                    <p className="text-muted">{report.entity}</p>
+                                    <Tag color="green">{report.format}</Tag>
+                                    <p>{report.description}</p>
+                                    <Button type="primary" onClick={()=> handleGenerate(report.id)}>Generate</Button>
+                                </Card>
+                            </div>
+                            ))}
+                        </div>
+                    </div>
+                    );
+                    {% elif ui_framework == "carbon" %}
+                    // Render với Carbon Design components
+                    if (loading) return <Layer>Đang tải danh sách báo cáo...</Layer>;
+                    if (error) return <Layer className="text-danger">Lỗi: {error}</Layer>;
+
+                    return (
+                    <Layer className="report-list" data-testid="report-list">
+                        <Title level="2">Danh sách Báo cáo</Title>
+                        <div className="cds--grid">
+                            {reports.map((report: ReportMeta) => (
+                            <div className="cds--col-lg-4 cds--col-md-6" key={report.id}>
+                                <div className="cds--card report-card cds--card--contained">
+                                    <div className="cds--card__header">
+                                        <Subtitle>{report.name}</Subtitle>
+                                    </div>
+                                    <div className="cds--card__content">
+                                        <p className="text-muted">{report.entity}</p>
+                                        <span className="cds--tag cds--tag--green">{report.format}</span>
+                                        <p>{report.description}</p>
+                                        <Button kind="primary" onClick={()=>
+                                            handleGenerate(report.id)}>Generate</Button>
+                                    </div>
+                                </div>
+                            </div>
+                            ))}
+                        </div>
+                    </Layer>
+                    );
+                    {% endif %}
                     };
 
                     export default ReportList;

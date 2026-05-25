@@ -1,14 +1,32 @@
 {% raw %}/**
- * CP49 Consent & Preference Management — Cookie Banner Component.
- *
- * Banner hiển thị thông báo cookie và thu thập đồng ý từ người dùng.
- * Tuân thủ GDPR/CCPA với các tùy chọn: Chấp nhận tất cả, Từ chối tất cả, Tùy chỉnh.
- *
- * Sử dụng Signal-based state management và reactive patterns của Angular.
- *
- * Tạo tự động bởi CP49 — không sửa thủ công.
- */
-
+* UI Framework: {{{ ui_framework }}}
+* CP49 Consent & Preference Management — Cookie Banner Component.
+*
+* Banner hiển thị thông báo cookie và thu thập đồng ý từ người dùng.
+* Tuân thủ GDPR/CCPA với các tùy chọn: Chấp nhận tất cả, Từ chối tất cả, Tùy chỉnh.
+*
+* Sử dụng Signal-based state management và reactive patterns của Angular.
+*
+* Tạo tự động bởi CP49 — không sửa thủ công.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatDialogModule } from '@angular/material/dialog';
+import { MatListModule } from '@angular/material/list';
+import { MatChipsModule } from '@angular/material/chips';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+// Ant Design không áp dụng cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon không áp dụng cho Angular
+{% endif %}
+{% raw %}
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -17,272 +35,276 @@ import { ConsentService } from './consent.service';
 import { CookiePreference, CookieCategory } from './consent-types';
 
 /**
- * Danh mục cookie và cấu hình hiển thị.
- */
+* Danh mục cookie và cấu hình hiển thị.
+*/
 interface CookieCategoryConfig {
-  /** ID danh mục. */
-  id: CookieCategory;
-  /** Tên hiển thị. */
-  label: string;
-  /** Mô tả danh mục. */
-  description: string;
-  /** Bắt buộc không thể tắt. */
-  required: boolean;
-  /** Đang bật. */
-  enabled: boolean;
+/** ID danh mục. */
+id: CookieCategory;
+/** Tên hiển thị. */
+label: string;
+/** Mô tả danh mục. */
+description: string;
+/** Bắt buộc không thể tắt. */
+required: boolean;
+/** Đang bật. */
+enabled: boolean;
 }
 
 /**
- * CookieBannerComponent — Banner thông báo và thu thập đồng ý cookie.
- *
- * Hiển thị banner khi người dùng chưa có cookie preference:
- * - Chấp nhận tất cả: bật mọi danh mục cookie
- * - Từ chối tất cả: chỉ giữ danh mục necessary
- * - Tùy chỉnh: mở modal cho phép bật/tắt từng danh mục
- *
- * Banner tự động ẩn khi người dùng đã có preference hoặc đóng banner.
- */
+* CookieBannerComponent — Banner thông báo và thu thập đồng ý cookie.
+*
+* Hiển thị banner khi người dùng chưa có cookie preference:
+* - Chấp nhận tất cả: bật mọi danh mục cookie
+* - Từ chối tất cả: chỉ giữ danh mục necessary
+* - Tùy chỉnh: mở modal cho phép bật/tắt từng danh mục
+*
+* Banner tự động ẩn khi người dùng đã có preference hoặc đóng banner.
+*/
 @Component({
-  selector: 'app-cookie-banner',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './cookie-banner.component.html',
-  styleUrl: './cookie-banner.component.css',
+selector: 'app-cookie-banner',
+standalone: true,
+imports: [CommonModule, FormsModule],
+templateUrl: './cookie-banner.component.html',
+styleUrl: './cookie-banner.component.css',
 })
 export class CookieBannerComponent implements OnInit {
-  // ===========================================================================
-  // Inject dependencies
-  // ===========================================================================
+// ===========================================================================
+// Inject dependencies
+// ===========================================================================
 
-  /** Dịch vụ HTTP cho consent API. */
-  private readonly consentService = inject(ConsentService);
+/** Dịch vụ HTTP cho consent API. */
+private readonly consentService = inject(ConsentService);
 
-  // ===========================================================================
-  // Signals
-  // ===========================================================================
+// ===========================================================================
+// Signals
+// ===========================================================================
 
-  /** Banner có đang hiển thị không. */
-  readonly isVisible = signal<boolean>(false);
+/** Banner có đang hiển thị không. */
+readonly isVisible = signal<boolean>(false);
 
-  /** Đang hiển thị modal tùy chỉnh. */
-  readonly showCustomizeModal = signal<boolean>(false);
+    /** Đang hiển thị modal tùy chỉnh. */
+    readonly showCustomizeModal = signal<boolean>(false);
 
-  /** Tùy chọn cookie hiện tại. */
-  readonly cookiePreference = signal<CookiePreference | null>(null);
+        /** Tùy chọn cookie hiện tại. */
+        readonly cookiePreference = signal<CookiePreference | null>(null);
 
-  /** Danh sách danh mục cookie với trạng thái bật/tắt. */
-  readonly cookieCategories = signal<CookieCategoryConfig[]>([
-    {
-      id: 'necessary',
-      label: 'Cần thiết',
-      description: 'Cookie cần thiết để trang web hoạt động chính xác.',
-      required: true,
-      enabled: true,
-    },
-    {
-      id: 'functional',
-      label: 'Chức năng',
-      description: 'Cookie giúp lưu trữ tùy chọn của bạn (ngôn ngữ, vùng miền).',
-      required: false,
-      enabled: false,
-    },
-    {
-      id: 'analytics',
-      label: 'Phân tích',
-      description: 'Cookie giúp chúng tôi hiểu cách bạn sử dụng trang web.',
-      required: false,
-      enabled: false,
-    },
-    {
-      id: 'marketing',
-      label: 'Tiếp thị',
-      description: 'Cookie được dùng để hiển thị quảng cáo phù hợp với bạn.',
-      required: false,
-      enabled: false,
-    },
-  ]);
+            /** Danh sách danh mục cookie với trạng thái bật/tắt. */
+            readonly cookieCategories = signal<CookieCategoryConfig[]>([
+                {
+                id: 'necessary',
+                label: 'Cần thiết',
+                description: 'Cookie cần thiết để trang web hoạt động chính xác.',
+                required: true,
+                enabled: true,
+                },
+                {
+                id: 'functional',
+                label: 'Chức năng',
+                description: 'Cookie giúp lưu trữ tùy chọn của bạn (ngôn ngữ, vùng miền).',
+                required: false,
+                enabled: false,
+                },
+                {
+                id: 'analytics',
+                label: 'Phân tích',
+                description: 'Cookie giúp chúng tôi hiểu cách bạn sử dụng trang web.',
+                required: false,
+                enabled: false,
+                },
+                {
+                id: 'marketing',
+                label: 'Tiếp thị',
+                description: 'Cookie được dùng để hiển thị quảng cáo phù hợp với bạn.',
+                required: false,
+                enabled: false,
+                },
+                ]);
 
-  /** Đang xử lý. */
-  readonly isProcessing = signal<boolean>(false);
+                /** Đang xử lý. */
+                readonly isProcessing = signal<boolean>(false);
 
-  // ===========================================================================
-  // Lifecycle
-  // ===========================================================================
+                    // ===========================================================================
+                    // Lifecycle
+                    // ===========================================================================
 
-  /**
-   * Khởi tạo component — kiểm tra cookie preference.
-   */
-  async ngOnInit(): Promise<void> {
-    await this.checkExistingPreference();
-  }
+                    /**
+                    * Khởi tạo component — kiểm tra cookie preference.
+                    */
+                    async ngOnInit(): Promise<void> {
+                        await this.checkExistingPreference();
+                        }
 
-  // ===========================================================================
-  // Preference check
-  // ===========================================================================
+                        // ===========================================================================
+                        // Preference check
+                        // ===========================================================================
 
-  /**
-   * Kiểm tra xem người dùng đã có cookie preference chưa.
-   * Nếu chưa có, hiển thị banner.
-   */
-  private async checkExistingPreference(): Promise<void> {
-    try {
-      const preference = await firstValueFrom(
-        this.consentService.getCookiePreference()
-      );
-      this.cookiePreference.set(preference);
+                        /**
+                        * Kiểm tra xem người dùng đã có cookie preference chưa.
+                        * Nếu chưa có, hiển thị banner.
+                        */
+                        private async checkExistingPreference(): Promise<void> {
+                            try {
+                            const preference = await firstValueFrom(
+                            this.consentService.getCookiePreference()
+                            );
+                            this.cookiePreference.set(preference);
 
-      // Nếu đã có preference, không hiển thị banner
-      if (preference) {
-        this.updateCategoriesFromPreference(preference);
-      } else {
-        this.isVisible.set(true);
-      }
-    } catch {
-      // Nếu lỗi hoặc không có preference, hiển thị banner
-      this.isVisible.set(true);
-    }
-  }
+                            // Nếu đã có preference, không hiển thị banner
+                            if (preference) {
+                            this.updateCategoriesFromPreference(preference);
+                            } else {
+                            this.isVisible.set(true);
+                            }
+                            } catch {
+                            // Nếu lỗi hoặc không có preference, hiển thị banner
+                            this.isVisible.set(true);
+                            }
+                            }
 
-  /**
-   * Cập nhật trạng thái danh mục từ preference hiện tại.
-   *
-   * @param preference - Cookie preference.
-   */
-  private updateCategoriesFromPreference(preference: CookiePreference): void {
-    const current = this.cookieCategories();
-    const updated = current.map((cat) => {
-      // Necessary luôn bật
-      if (cat.id === 'necessary') {
-        return { ...cat, enabled: true };
-      }
-      // Lấy trạng thái từ preference
-      const isEnabled = preference.categories?.[cat.id] ?? false;
-      return { ...cat, enabled: isEnabled };
-    });
-    this.cookieCategories.set(updated);
-  }
+                            /**
+                            * Cập nhật trạng thái danh mục từ preference hiện tại.
+                            *
+                            * @param preference - Cookie preference.
+                            */
+                            private updateCategoriesFromPreference(preference: CookiePreference): void {
+                            const current = this.cookieCategories();
+                            const updated = current.map((cat) => {
+                            // Necessary luôn bật
+                            if (cat.id === 'necessary') {
+                            return { ...cat, enabled: true };
+                            }
+                            // Lấy trạng thái từ preference
+                            const isEnabled = preference.categories?.[cat.id] ?? false;
+                            return { ...cat, enabled: isEnabled };
+                            });
+                            this.cookieCategories.set(updated);
+                            }
 
-  // ===========================================================================
-  // Banner actions
-  // ===========================================================================
+                            // ===========================================================================
+                            // Banner actions
+                            // ===========================================================================
 
-  /**
-   * Chấp nhận tất cả cookie.
-   */
-  async acceptAll(): Promise<void> {
-    this.isProcessing.set(true);
-    try {
-      await firstValueFrom(this.consentService.acceptAllCookies());
-      this.cookieCategories.update((cats) =>
-        cats.map((cat) => ({ ...cat, enabled: true }))
-      );
-      this.hideBanner();
-    } catch (err: any) {
-      console.error('[CP49] Lỗi chấp nhận cookie:', err);
-    } finally {
-      this.isProcessing.set(false);
-    }
-  }
+                            /**
+                            * Chấp nhận tất cả cookie.
+                            */
+                            async acceptAll(): Promise<void> {
+                                this.isProcessing.set(true);
+                                try {
+                                await firstValueFrom(this.consentService.acceptAllCookies());
+                                this.cookieCategories.update((cats) =>
+                                cats.map((cat) => ({ ...cat, enabled: true }))
+                                );
+                                this.hideBanner();
+                                } catch (err: any) {
+                                console.error('[CP49] Lỗi chấp nhận cookie:', err);
+                                } finally {
+                                this.isProcessing.set(false);
+                                }
+                                }
 
-  /**
-   * Từ chối tất cả cookie không cần thiết.
-   */
-  async rejectAll(): Promise<void> {
-    this.isProcessing.set(true);
-    try {
-      await firstValueFrom(this.consentService.rejectNonNecessaryCookies());
-      this.cookieCategories.update((cats) =>
-        cats.map((cat) => ({
-          ...cat,
-          enabled: cat.required,
-        }))
-      );
-      this.hideBanner();
-    } catch (err: any) {
-      console.error('[CP49] Lỗi từ chối cookie:', err);
-    } finally {
-      this.isProcessing.set(false);
-    }
-  }
+                                /**
+                                * Từ chối tất cả cookie không cần thiết.
+                                */
+                                async rejectAll(): Promise<void> {
+                                    this.isProcessing.set(true);
+                                    try {
+                                    await firstValueFrom(this.consentService.rejectNonNecessaryCookies());
+                                    this.cookieCategories.update((cats) =>
+                                    cats.map((cat) => ({
+                                    ...cat,
+                                    enabled: cat.required,
+                                    }))
+                                    );
+                                    this.hideBanner();
+                                    } catch (err: any) {
+                                    console.error('[CP49] Lỗi từ chối cookie:', err);
+                                    } finally {
+                                    this.isProcessing.set(false);
+                                    }
+                                    }
 
-  /**
-   * Mở modal tùy chỉnh cookie.
-   */
-  openCustomizeModal(): void {
-    this.showCustomizeModal.set(true);
-  }
+                                    /**
+                                    * Mở modal tùy chỉnh cookie.
+                                    */
+                                    openCustomizeModal(): void {
+                                    this.showCustomizeModal.set(true);
+                                    }
 
-  /**
-   * Đóng modal tùy chỉnh.
-   */
-  closeCustomizeModal(): void {
-    this.showCustomizeModal.set(false);
-  }
+                                    /**
+                                    * Đóng modal tùy chỉnh.
+                                    */
+                                    closeCustomizeModal(): void {
+                                    this.showCustomizeModal.set(false);
+                                    }
 
-  /**
-   * Lưu tùy chỉnh cookie.
-   */
-  async saveCustomPreferences(): Promise<void> {
-    this.isProcessing.set(true);
-    try {
-      const categories: Record<string, boolean> = {};
-      for (const cat of this.cookieCategories()) {
-        categories[cat.id] = cat.enabled;
-      }
+                                    /**
+                                    * Lưu tùy chỉnh cookie.
+                                    */
+                                    async saveCustomPreferences(): Promise<void> {
+                                        this.isProcessing.set(true);
+                                        try {
+                                        const categories: Record<string, boolean> = {};
+                                            for (const cat of this.cookieCategories()) {
+                                            categories[cat.id] = cat.enabled;
+                                            }
 
-      await firstValueFrom(
-        this.consentService.setCookiePreference({ categories })
-      );
-      this.hideBanner();
-    } catch (err: any) {
-      console.error('[CP49] Lỗi lưu tùy chỉnh cookie:', err);
-    } finally {
-      this.isProcessing.set(false);
-      this.showCustomizeModal.set(false);
-    }
-  }
+                                            await firstValueFrom(
+                                            this.consentService.setCookiePreference({ categories })
+                                            );
+                                            this.hideBanner();
+                                            } catch (err: any) {
+                                            console.error('[CP49] Lỗi lưu tùy chỉnh cookie:', err);
+                                            } finally {
+                                            this.isProcessing.set(false);
+                                            this.showCustomizeModal.set(false);
+                                            }
+                                            }
 
-  // ===========================================================================
-  // Category toggle
-  // ===========================================================================
+                                            //
+                                            ===========================================================================
+                                            // Category toggle
+                                            //
+                                            ===========================================================================
 
-  /**
-   * Bật/tắt danh mục cookie.
-   *
-   * @param categoryId - ID danh mục.
-   */
-  toggleCategory(categoryId: CookieCategory): void {
-    this.cookieCategories.update((cats) =>
-      cats.map((cat) => {
-        // Không cho phép tắt danh mục bắt buộc
-        if (cat.required) {
-          return cat;
-        }
-        return cat.id === categoryId
-          ? { ...cat, enabled: !cat.enabled }
-          : cat;
-      })
-    );
-  }
+                                            /**
+                                            * Bật/tắt danh mục cookie.
+                                            *
+                                            * @param categoryId - ID danh mục.
+                                            */
+                                            toggleCategory(categoryId: CookieCategory): void {
+                                            this.cookieCategories.update((cats) =>
+                                            cats.map((cat) => {
+                                            // Không cho phép tắt danh mục bắt buộc
+                                            if (cat.required) {
+                                            return cat;
+                                            }
+                                            return cat.id === categoryId
+                                            ? { ...cat, enabled: !cat.enabled }
+                                            : cat;
+                                            })
+                                            );
+                                            }
 
-  // ===========================================================================
-  // Banner control
-  // ===========================================================================
+                                            //
+                                            ===========================================================================
+                                            // Banner control
+                                            //
+                                            ===========================================================================
 
-  /**
-   * Ẩn banner.
-   */
-  hideBanner(): void {
-    this.isVisible.set(false);
-    this.showCustomizeModal.set(false);
-  }
+                                            /**
+                                            * Ẩn banner.
+                                            */
+                                            hideBanner(): void {
+                                            this.isVisible.set(false);
+                                            this.showCustomizeModal.set(false);
+                                            }
 
-  /**
-   * Hiển thị lại banner (dùng cho nút "Quản lý cookie" trong footer).
-   */
-  showBanner(): void {
-    this.isVisible.set(true);
-    this.openCustomizeModal();
-  }
-}
-{% endraw %}
+                                            /**
+                                            * Hiển thị lại banner (dùng cho nút "Quản lý cookie" trong footer).
+                                            */
+                                            showBanner(): void {
+                                            this.isVisible.set(true);
+                                            this.openCustomizeModal();
+                                            }
+                                            }
+                                            {% endraw %}

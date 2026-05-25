@@ -5,8 +5,27 @@
 * So luong requests: {{ num_requests }}
 * So luong steps: {{ num_steps }}
 * Su dung events: {{ use_events }}
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 */
+{% if ui_framework == "material" %}
 import React, { useState, useMemo, useCallback } from 'react';
+import { Button, Card, Typography, Chip, Box, Paper, Divider, Tabs, Tab, List, ListItem, ListItemText, Badge } from
+'@mui/material';
+{% elif ui_framework == "tailwind" %}
+import React, { useState, useMemo, useCallback } from 'react';
+// Su dung Tailwind utility classes trong JSX
+{% elif ui_framework == "bootstrap" %}
+import React, { useState, useMemo, useCallback } from 'react';
+import { Button, Card, Badge as BsBadge, Tabs, Tab, ListGroup } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import React, { useState, useMemo, useCallback } from 'react';
+import { Button, Card, Typography, Tag, Space, Tabs, List, Badge } from 'antd';
+{% elif ui_framework == "carbon" %}
+import React, { useState, useMemo, useCallback } from 'react';
+import { Button, Layer, Tag, Tile, InlineNotification, DataTable, DataTableBody, DataTableRow, TableHeader,
+TableHeaderCell, TableRow } from '@carbon/react';
+{% endif %}
 
 /* ---- Loai trang thai phe duyet ---- */
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'escalated' | 'delegated' | 'expired' | 'cancelled';

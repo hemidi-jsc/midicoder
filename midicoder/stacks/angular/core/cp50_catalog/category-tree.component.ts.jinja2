@@ -1,24 +1,42 @@
 {% raw %}/**
- * CP50 Catalog & Taxonomy Engine — Category Tree Component.
- *
- * Component hiển thị cây phân loại sản phẩm với khả năng:
- * - Hiển thị phân cấp nhiều mức (recursive tree)
- * - Mở/đóng nút cây
- * - Chọn danh mục
- * - Mở rộng/thu gọn tất cả
- *
- * Sử dụng Signal-based state management và reactive patterns của Angular.
- *
- * Tạo tự động bởi CP50 — không sửa thủ công.
- */
-
+* UI Framework: {{{ ui_framework }}}
+* CP50 Catalog & Taxonomy Engine — Category Tree Component.
+*
+* Component hiển thị cây phân loại sản phẩm với khả năng:
+* - Hiển thị phân cấp nhiều mức (recursive tree)
+* - Mở/đóng nút cây
+* - Chọn danh mục
+* - Mở rộng/thu gọn tất cả
+*
+* Sử dụng Signal-based state management và reactive patterns của Angular.
+*
+* Tạo tự động bởi CP50 — không sửa thủ công.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { MatTreeModule } from '@angular/material/tree';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+import { MatListModule } from '@angular/material/list';
+import { MatInputModule } from '@angular/material/input';
+import { MatFormFieldModule } from '@angular/material/form-field';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+// Ant Design không áp dụng cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon không áp dụng cho Angular
+{% endif %}
+{% raw %}
 import {
-  Component,
-  Output,
-  EventEmitter,
-  inject,
-  OnInit,
-  signal,
+Component,
+Output,
+EventEmitter,
+inject,
+OnInit,
+signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -26,392 +44,396 @@ import { CatalogStore } from './catalog.store';
 import { Category } from './catalog-types';
 
 /**
- * Nút cây danh mục — mở rộng từ Category.
- */
+* Nút cây danh mục — mở rộng từ Category.
+*/
 interface CategoryTreeNode extends Category {
-  /** Danh sách con. */
-  children: CategoryTreeNode[];
-  /** Độ sâu trong cây. */
-  depth: number;
+/** Danh sách con. */
+children: CategoryTreeNode[];
+/** Độ sâu trong cây. */
+depth: number;
 }
 
 /**
- * CategoryTreeComponent — Cây phân loại sản phẩm.
- *
- * Cung cấp giao diện để người dùng:
- * - Xem hệ thống phân loại dạng cây
- * - Mở/đóng từng nút cây
- * - Chọn danh mục (emit sự kiện categorySelected)
- * - Mở rộng hoặc thu gọn toàn bộ cây
- * - Hiển thị số lượng sản phẩm con
- */
+* CategoryTreeComponent — Cây phân loại sản phẩm.
+*
+* Cung cấp giao diện để người dùng:
+* - Xem hệ thống phân loại dạng cây
+* - Mở/đóng từng nút cây
+* - Chọn danh mục (emit sự kiện categorySelected)
+* - Mở rộng hoặc thu gọn toàn bộ cây
+* - Hiển thị số lượng sản phẩm con
+*/
 @Component({
-  selector: 'app-category-tree',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './category-tree.component.html',
-  styleUrl: './category-tree.component.css',
+selector: 'app-category-tree',
+standalone: true,
+imports: [CommonModule, FormsModule],
+templateUrl: './category-tree.component.html',
+styleUrl: './category-tree.component.css',
 })
 export class CategoryTreeComponent implements OnInit {
-  // ===========================================================================
-  // Inject dependencies
-  // ===========================================================================
+// ===========================================================================
+// Inject dependencies
+// ===========================================================================
 
-  /** Store quản lý trạng thái catalog. */
-  private readonly catalogStore = inject(CatalogStore);
+/** Store quản lý trạng thái catalog. */
+private readonly catalogStore = inject(CatalogStore);
 
-  // ===========================================================================
-  // Outputs
-  // ===========================================================================
+// ===========================================================================
+// Outputs
+// ===========================================================================
 
-  /** Sự kiện khi người dùng chọn danh mục. */
-  @Output() readonly categorySelected = new EventEmitter<string>();
+/** Sự kiện khi người dùng chọn danh mục. */
+@Output() readonly categorySelected = new EventEmitter<string>();
 
-  // ===========================================================================
-  // Signals
-  // ===========================================================================
+    // ===========================================================================
+    // Signals
+    // ===========================================================================
 
-  /** Danh sách tất cả danh mục (dạng phẳng). */
-  readonly categories = signal<Category[]>([]);
+    /** Danh sách tất cả danh mục (dạng phẳng). */
+    readonly categories = signal<Category[]>([]);
 
-  /** Cây danh mục đã xây dựng. */
-  readonly tree = signal<CategoryTreeNode[]>([]);
+        /** Cây danh mục đã xây dựng. */
+        readonly tree = signal<CategoryTreeNode[]>([]);
 
-  /** Danh mục đang được chọn. */
-  readonly selectedCategory = signal<string | null>(null);
+            /** Danh mục đang được chọn. */
+            readonly selectedCategory = signal<string | null>(null);
 
-  /** Tập hợp các nút đang mở rộng. */
-  readonly expandedNodes = signal<Set<string>>(new Set());
+                /** Tập hợp các nút đang mở rộng. */
+                readonly expandedNodes = signal<Set<string>>(new Set());
 
-  /** Từ khóa tìm kiếm danh mục. */
-  readonly searchQuery = signal<string>('');
+                    /** Từ khóa tìm kiếm danh mục. */
+                    readonly searchQuery = signal<string>('');
 
-  /** Đang tải dữ liệu. */
-  readonly isLoading = signal<boolean>(false);
+                        /** Đang tải dữ liệu. */
+                        readonly isLoading = signal<boolean>(false);
 
-  // ===========================================================================
-  // Lifecycle
-  // ===========================================================================
+                            // ===========================================================================
+                            // Lifecycle
+                            // ===========================================================================
 
-  /**
-   * Khởi tạo component — tải và xây dựng cây danh mục.
-   */
-  async ngOnInit(): Promise<void> {
-    await this.loadAndBuildTree();
-  }
+                            /**
+                            * Khởi tạo component — tải và xây dựng cây danh mục.
+                            */
+                            async ngOnInit(): Promise<void> {
+                                await this.loadAndBuildTree();
+                                }
 
-  // ===========================================================================
-  // Data loading
-  // ===========================================================================
+                                // ===========================================================================
+                                // Data loading
+                                // ===========================================================================
 
-  /**
-   * Tải danh sách danh mục và xây dựng cây.
-   */
-  private async loadAndBuildTree(): Promise<void> {
-    this.isLoading.set(true);
+                                /**
+                                * Tải danh sách danh mục và xây dựng cây.
+                                */
+                                private async loadAndBuildTree(): Promise<void> {
+                                    this.isLoading.set(true);
 
-    try {
-      this.catalogStore.loadCategories();
-      const categories = this.catalogStore.categories();
-      this.categories.set(categories);
-      this.tree.set(this.buildTree(categories));
+                                    try {
+                                    this.catalogStore.loadCategories();
+                                    const categories = this.catalogStore.categories();
+                                    this.categories.set(categories);
+                                    this.tree.set(this.buildTree(categories));
 
-      // Tự động mở cấp đầu tiên
-      const rootIds = this.tree()
-        .map((node) => node.category_id);
-      this.expandedNodes.set(new Set(rootIds));
-    } catch (err: any) {
-      console.error('[CP50] Lỗi tải categories:', err);
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
+                                    // Tự động mở cấp đầu tiên
+                                    const rootIds = this.tree()
+                                    .map((node) => node.category_id);
+                                    this.expandedNodes.set(new Set(rootIds));
+                                    } catch (err: any) {
+                                    console.error('[CP50] Lỗi tải categories:', err);
+                                    } finally {
+                                    this.isLoading.set(false);
+                                    }
+                                    }
 
-  // ===========================================================================
-  // Tree building
-  // ===========================================================================
+                                    // ===========================================================================
+                                    // Tree building
+                                    // ===========================================================================
 
-  /**
-   * Xây dựng cây danh mục từ danh sách phẳng.
-   *
-   * @param flatList - Danh sách danh mục phẳng.
-   * @returns Cây danh mục phân cấp.
-   */
-  buildTree(flatList: Category[]): CategoryTreeNode[] {
-    // Tạo bản đồ tra cứu nhanh
-    const map = new Map<string, CategoryTreeNode>();
+                                    /**
+                                    * Xây dựng cây danh mục từ danh sách phẳng.
+                                    *
+                                    * @param flatList - Danh sách danh mục phẳng.
+                                    * @returns Cây danh mục phân cấp.
+                                    */
+                                    buildTree(flatList: Category[]): CategoryTreeNode[] {
+                                    // Tạo bản đồ tra cứu nhanh
+                                    const map = new Map<string, CategoryTreeNode>();
 
-    // Chuyển mỗi category thành node
-    for (const cat of flatList) {
-      map.set(cat.category_id, {
-        ...cat,
-        children: [],
-        depth: 0,
-      });
-    }
+                                        // Chuyển mỗi category thành node
+                                        for (const cat of flatList) {
+                                        map.set(cat.category_id, {
+                                        ...cat,
+                                        children: [],
+                                        depth: 0,
+                                        });
+                                        }
 
-    // Gộp các node vào cây
-    const roots: CategoryTreeNode[] = [];
-    for (const node of map.values()) {
-      if (node.parent_id && map.has(node.parent_id)) {
-        const parent = map.get(node.parent_id)!;
-        node.depth = parent.depth + 1;
-        parent.children.push(node);
-      } else {
-        node.depth = 0;
-        roots.push(node);
-      }
-    }
+                                        // Gộp các node vào cây
+                                        const roots: CategoryTreeNode[] = [];
+                                        for (const node of map.values()) {
+                                        if (node.parent_id && map.has(node.parent_id)) {
+                                        const parent = map.get(node.parent_id)!;
+                                        node.depth = parent.depth + 1;
+                                        parent.children.push(node);
+                                        } else {
+                                        node.depth = 0;
+                                        roots.push(node);
+                                        }
+                                        }
 
-    // Sắp xếp theo sort_order
-    const sort = (nodes: CategoryTreeNode[]): CategoryTreeNode[] => {
-      return nodes
-        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-        .map((node) => ({
-          ...node,
-          children: sort(node.children),
-        }));
-    };
+                                        // Sắp xếp theo sort_order
+                                        const sort = (nodes: CategoryTreeNode[]): CategoryTreeNode[] => {
+                                        return nodes
+                                        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                                        .map((node) => ({
+                                        ...node,
+                                        children: sort(node.children),
+                                        }));
+                                        };
 
-    return sort(roots);
-  }
+                                        return sort(roots);
+                                        }
 
-  /**
-   * Tìm kiếm danh mục theo từ khóa.
-   * Trả về danh sách node phù hợp (không theo cấu trúc cây).
-   *
-   * @param query - Từ khóa tìm kiếm.
-   * @returns Danh sách node phù hợp.
-   */
-  searchTree(query: string): CategoryTreeNode[] {
-    if (!query.trim()) {
-      return [];
-    }
+                                        /**
+                                        * Tìm kiếm danh mục theo từ khóa.
+                                        * Trả về danh sách node phù hợp (không theo cấu trúc cây).
+                                        *
+                                        * @param query - Từ khóa tìm kiếm.
+                                        * @returns Danh sách node phù hợp.
+                                        */
+                                        searchTree(query: string): CategoryTreeNode[] {
+                                        if (!query.trim()) {
+                                        return [];
+                                        }
 
-    const results: CategoryTreeNode[] = [];
-    const lowerQuery = query.toLowerCase();
+                                        const results: CategoryTreeNode[] = [];
+                                        const lowerQuery = query.toLowerCase();
 
-    const search = (nodes: CategoryTreeNode[]): void => {
-      for (const node of nodes) {
-        const matches =
-          node.name.toLowerCase().includes(lowerQuery) ||
-          node.slug.toLowerCase().includes(lowerQuery) ||
-          (node.description &&
-            node.description.toLowerCase().includes(lowerQuery));
+                                        const search = (nodes: CategoryTreeNode[]): void => {
+                                        for (const node of nodes) {
+                                        const matches =
+                                        node.name.toLowerCase().includes(lowerQuery) ||
+                                        node.slug.toLowerCase().includes(lowerQuery) ||
+                                        (node.description &&
+                                        node.description.toLowerCase().includes(lowerQuery));
 
-        if (matches) {
-          results.push(node);
-        }
-        // Luôn đệ quy vào con
-        search(node.children);
-      }
-    };
+                                        if (matches) {
+                                        results.push(node);
+                                        }
+                                        // Luôn đệ quy vào con
+                                        search(node.children);
+                                        }
+                                        };
 
-    search(this.tree());
-    return results;
-  }
+                                        search(this.tree());
+                                        return results;
+                                        }
 
-  // ===========================================================================
-  // Tree interaction
-  // ===========================================================================
+                                        // ===========================================================================
+                                        // Tree interaction
+                                        // ===========================================================================
 
-  /**
-   * Chuyển đổi trạng thái mở/đóng của nút.
-   *
-   * @param id - ID của nút cần chuyển đổi.
-   */
-  toggleNode(id: string): void {
-    this.expandedNodes.update((expanded) => {
-      const newSet = new Set(expanded);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
-      return newSet;
-    });
-  }
+                                        /**
+                                        * Chuyển đổi trạng thái mở/đóng của nút.
+                                        *
+                                        * @param id - ID của nút cần chuyển đổi.
+                                        */
+                                        toggleNode(id: string): void {
+                                        this.expandedNodes.update((expanded) => {
+                                        const newSet = new Set(expanded);
+                                        if (newSet.has(id)) {
+                                        newSet.delete(id);
+                                        } else {
+                                        newSet.add(id);
+                                        }
+                                        return newSet;
+                                        });
+                                        }
 
-  /**
-   * Chọn danh mục.
-   *
-   * @param id - ID danh mục cần chọn.
-   */
-  selectCategory(id: string): void {
-    this.selectedCategory.set(id);
-    this.categorySelected.emit(id);
-  }
+                                        /**
+                                        * Chọn danh mục.
+                                        *
+                                        * @param id - ID danh mục cần chọn.
+                                        */
+                                        selectCategory(id: string): void {
+                                        this.selectedCategory.set(id);
+                                        this.categorySelected.emit(id);
+                                        }
 
-  /**
-   * Kiểm tra nút có đang mở rộng không.
-   *
-   * @param id - ID của nút.
-   * @returns True nếu đang mở rộng.
-   */
-  isExpanded(id: string): boolean {
-    return this.expandedNodes().has(id);
-  }
+                                        /**
+                                        * Kiểm tra nút có đang mở rộng không.
+                                        *
+                                        * @param id - ID của nút.
+                                        * @returns True nếu đang mở rộng.
+                                        */
+                                        isExpanded(id: string): boolean {
+                                        return this.expandedNodes().has(id);
+                                        }
 
-  /**
-   * Kiểm tra nút có đang được chọn không.
-   *
-   * @param id - ID của nút.
-   * @returns True nếu đang được chọn.
-   */
-  isSelected(id: string): boolean {
-    return this.selectedCategory() === id;
-  }
+                                        /**
+                                        * Kiểm tra nút có đang được chọn không.
+                                        *
+                                        * @param id - ID của nút.
+                                        * @returns True nếu đang được chọn.
+                                        */
+                                        isSelected(id: string): boolean {
+                                        return this.selectedCategory() === id;
+                                        }
 
-  /**
-   * Kiểm tra nút có con không.
-   *
-   * @param node - Nút cần kiểm tra.
-   * @returns True nếu có con.
-   */
-  hasChildren(node: CategoryTreeNode): boolean {
-    return node.children && node.children.length > 0;
-  }
+                                        /**
+                                        * Kiểm tra nút có con không.
+                                        *
+                                        * @param node - Nút cần kiểm tra.
+                                        * @returns True nếu có con.
+                                        */
+                                        hasChildren(node: CategoryTreeNode): boolean {
+                                        return node.children && node.children.length > 0;
+                                        }
 
-  // ===========================================================================
-  // Bulk actions
-  // ===========================================================================
+                                        // ===========================================================================
+                                        // Bulk actions
+                                        // ===========================================================================
 
-  /**
-   * Mở rộng tất cả nút cây.
-   */
-  expandAll(): void {
-    const allIds = new Set<string>();
-    const collect = (nodes: CategoryTreeNode[]): void => {
-      for (const node of nodes) {
-        if (this.hasChildren(node)) {
-          allIds.add(node.category_id);
-        }
-        collect(node.children);
-      }
-    };
-    collect(this.tree());
-    this.expandedNodes.set(allIds);
-  }
+                                        /**
+                                        * Mở rộng tất cả nút cây.
+                                        */
+                                        expandAll(): void {
+                                        const allIds = new Set<string>();
+                                            const collect = (nodes: CategoryTreeNode[]): void => {
+                                            for (const node of nodes) {
+                                            if (this.hasChildren(node)) {
+                                            allIds.add(node.category_id);
+                                            }
+                                            collect(node.children);
+                                            }
+                                            };
+                                            collect(this.tree());
+                                            this.expandedNodes.set(allIds);
+                                            }
 
-  /**
-   * Thu gọn tất cả nút cây.
-   */
-  collapseAll(): void {
-    this.expandedNodes.set(new Set());
-  }
+                                            /**
+                                            * Thu gọn tất cả nút cây.
+                                            */
+                                            collapseAll(): void {
+                                            this.expandedNodes.set(new Set());
+                                            }
 
-  /**
-   * Mở rộng đến một nút cụ thể (mở tất cả cha của nút đó).
-   *
-   * @param id - ID của nút cần mở rộng đến.
-   */
-  expandToNode(id: string): void {
-    const parents: string[] = [];
-    const find = (nodes: CategoryTreeNode[]): boolean => {
-      for (const node of nodes) {
-        if (node.category_id === id) {
-          return true;
-        }
-        parents.push(node.category_id);
-        if (find(node.children)) {
-          return true;
-        }
-        parents.pop();
-      }
-      return false;
-    };
-    find(this.tree());
+                                            /**
+                                            * Mở rộng đến một nút cụ thể (mở tất cả cha của nút đó).
+                                            *
+                                            * @param id - ID của nút cần mở rộng đến.
+                                            */
+                                            expandToNode(id: string): void {
+                                            const parents: string[] = [];
+                                            const find = (nodes: CategoryTreeNode[]): boolean => {
+                                            for (const node of nodes) {
+                                            if (node.category_id === id) {
+                                            return true;
+                                            }
+                                            parents.push(node.category_id);
+                                            if (find(node.children)) {
+                                            return true;
+                                            }
+                                            parents.pop();
+                                            }
+                                            return false;
+                                            };
+                                            find(this.tree());
 
-    this.expandedNodes.update((expanded) => {
-      const newSet = new Set(expanded);
-      for (const parentId of parents) {
-        newSet.add(parentId);
-      }
-      return newSet;
-    });
-  }
+                                            this.expandedNodes.update((expanded) => {
+                                            const newSet = new Set(expanded);
+                                            for (const parentId of parents) {
+                                            newSet.add(parentId);
+                                            }
+                                            return newSet;
+                                            });
+                                            }
 
-  // ===========================================================================
-  // Search
-  // ===========================================================================
+                                            //
+                                            ===========================================================================
+                                            // Search
+                                            //
+                                            ===========================================================================
 
-  /**
-   * Xử lý thay đổi từ khóa tìm kiếm.
-   *
-   * @param query - Từ khóa tìm kiếm mới.
-   */
-  onSearchChange(query: string): void {
-    this.searchQuery.set(query);
-    // Nếu có tìm kiếm, mở rộng tất cả để hiển thị kết quả
-    if (query.trim()) {
-      this.expandAll();
-    }
-  }
+                                            /**
+                                            * Xử lý thay đổi từ khóa tìm kiếm.
+                                            *
+                                            * @param query - Từ khóa tìm kiếm mới.
+                                            */
+                                            onSearchChange(query: string): void {
+                                            this.searchQuery.set(query);
+                                            // Nếu có tìm kiếm, mở rộng tất cả để hiển thị kết quả
+                                            if (query.trim()) {
+                                            this.expandAll();
+                                            }
+                                            }
 
-  // ===========================================================================
-  // Utility
-  // ===========================================================================
+                                            //
+                                            ===========================================================================
+                                            // Utility
+                                            //
+                                            ===========================================================================
 
-  /**
-   * Lấy danh mục theo ID.
-   *
-   * @param id - ID danh mục.
-   * @returns Danh mục tìm thấy hoặc null.
-   */
-  getCategoryById(id: string): Category | null {
-    return this.categories().find((c) => c.category_id === id) || null;
-  }
+                                            /**
+                                            * Lấy danh mục theo ID.
+                                            *
+                                            * @param id - ID danh mục.
+                                            * @returns Danh mục tìm thấy hoặc null.
+                                            */
+                                            getCategoryById(id: string): Category | null {
+                                            return this.categories().find((c) => c.category_id === id) || null;
+                                            }
 
-  /**
-   * Lấy đường dẫn từ gốc đến một nút.
-   *
-   * @param id - ID của nút.
-   * @returns Mảng tên danh mục từ gốc đến nút.
-   */
-  getBreadcrumb(id: string): string[] {
-    const breadcrumb: string[] = [];
-    const find = (nodes: CategoryTreeNode[]): boolean => {
-      for (const node of nodes) {
-        breadcrumb.push(node.name);
-        if (node.category_id === id) {
-          return true;
-        }
-        if (find(node.children)) {
-          return true;
-        }
-        breadcrumb.pop();
-      }
-      return false;
-    };
-    find(this.tree());
-    return breadcrumb;
-  }
+                                            /**
+                                            * Lấy đường dẫn từ gốc đến một nút.
+                                            *
+                                            * @param id - ID của nút.
+                                            * @returns Mảng tên danh mục từ gốc đến nút.
+                                            */
+                                            getBreadcrumb(id: string): string[] {
+                                            const breadcrumb: string[] = [];
+                                            const find = (nodes: CategoryTreeNode[]): boolean => {
+                                            for (const node of nodes) {
+                                            breadcrumb.push(node.name);
+                                            if (node.category_id === id) {
+                                            return true;
+                                            }
+                                            if (find(node.children)) {
+                                            return true;
+                                            }
+                                            breadcrumb.pop();
+                                            }
+                                            return false;
+                                            };
+                                            find(this.tree());
+                                            return breadcrumb;
+                                            }
 
-  /**
-   * Định dạng đường dẫn breadcrumb.
-   *
-   * @param id - ID của nút.
-   * @returns Chuỗi đường dẫn.
-   */
-  getBreadcrumbPath(id: string): string {
-    return this.getBreadcrumb(id).join(' > ');
-  }
+                                            /**
+                                            * Định dạng đường dẫn breadcrumb.
+                                            *
+                                            * @param id - ID của nút.
+                                            * @returns Chuỗi đường dẫn.
+                                            */
+                                            getBreadcrumbPath(id: string): string {
+                                            return this.getBreadcrumb(id).join(' > ');
+                                            }
 
-  /**
-   * Lấy độ thụt lề CSS theo độ sâu.
-   *
-   * @param depth - Độ sâu của nút.
-   * @returns Giá trị padding-left.
-   */
-  getIndentStyle(depth: number): string {
-    return `padding-left: ${depth * 16}px;`;
-  }
+                                            /**
+                                            * Lấy độ thụt lề CSS theo độ sâu.
+                                            *
+                                            * @param depth - Độ sâu của nút.
+                                            * @returns Giá trị padding-left.
+                                            */
+                                            getIndentStyle(depth: number): string {
+                                            return `padding-left: ${depth * 16}px;`;
+                                            }
 
-  /**
-   * Làm mới dữ liệu cây.
-   */
-  async refresh(): Promise<void> {
-    await this.loadAndBuildTree();
-  }
-}
-{% endraw %}
+                                            /**
+                                            * Làm mới dữ liệu cây.
+                                            */
+                                            async refresh(): Promise<void> {
+                                                await this.loadAndBuildTree();
+                                                }
+                                                }
+                                                {% endraw %}

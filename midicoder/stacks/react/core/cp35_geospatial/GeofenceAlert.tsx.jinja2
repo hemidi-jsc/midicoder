@@ -1,5 +1,6 @@
 // Geofence Alert — Hiển thị cảnh báo geofence enter/exit.
 // CP35: Geospatial Services (React)
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 // Dùng polling để cập nhật cảnh báo theo thời gian thực.
 // Cleanup interval khi component unmount.
 {% if collection %}
@@ -8,196 +9,302 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 
+{% if ui_framework == "material" %}
+import { Card, CardContent, Chip, Typography, Button } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng lớp tiện ích Tailwind CSS inline
+{% elif ui_framework == "bootstrap" %}
+import { Button, Card, Badge } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Card, Tag, Typography } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, Title, Subtitle } from '@carbon/react';
+{% endif %}
+
 export interface GeofenceEvent {
-  id: string;
-  geofenceId: string;
-  geofenceName: string;
-  type: "enter" | "exit";
-  message: string;
-  timestamp: string;
-  location: { latitude: number; longitude: number };
-  details?: string;
+id: string;
+geofenceId: string;
+geofenceName: string;
+type: "enter" | "exit";
+message: string;
+timestamp: string;
+location: { latitude: number; longitude: number };
+details?: string;
 }
 
 interface GeofenceAlertProps {
-  geofenceId?: string;
-  pollingInterval?: number;
-  onDismiss?: (alertId: string) => void;
-  onError?: (error: string) => void;
+geofenceId?: string;
+pollingInterval?: number;
+onDismiss?: (alertId: string) => void;
+onError?: (error: string) => void;
 }
 
 interface GeofenceAlertState {
-  events: GeofenceEvent[];
-  loading: boolean;
-  error: string | null;
+events: GeofenceEvent[];
+loading: boolean;
+error: string | null;
 }
 
 const GeofenceAlert: React.FC<GeofenceAlertProps> = ({
-  geofenceId,
-  pollingInterval = 30000,
-  onDismiss,
-  onError,
-}) => {
-  const [state, setState] = useState<GeofenceAlertState>({
-    events: [],
-    loading: false,
-    error: null,
-  });
+    geofenceId,
+    pollingInterval = 30000,
+    onDismiss,
+    onError,
+    }) => {
+    const [state, setState] = useState<GeofenceAlertState>({
+        events: [],
+        loading: false,
+        error: null,
+        });
 
-  // Fetch alerts từ API
-  const fetchAlerts = useCallback(async (): Promise<void> => {
-    setState((prev) => ({ ...prev, loading: true }));
+        // Fetch alerts từ API
+        const fetchAlerts = useCallback(async (): Promise<void> => {
+            setState((prev) => ({ ...prev, loading: true }));
 
-    try {
-      const url = geofenceId
-        ? `/api/geospatial/geofences/${geofenceId}/alerts`
-        : "/api/geospatial/alerts";
+            try {
+            const url = geofenceId
+            ? `/api/geospatial/geofences/${geofenceId}/alerts`
+            : "/api/geospatial/alerts";
 
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: Không thể tải cảnh báo`);
-      }
-      const data: GeofenceEvent[] = await res.json();
-      setState((prev) => ({ ...prev, events: data, loading: false }));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setState((prev) => ({ ...prev, loading: false, error: message }));
-      onError?.(message);
-    }
-  }, [geofenceId, onError]);
+            const res = await fetch(url);
+            if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: Không thể tải cảnh báo`);
+            }
+            const data: GeofenceEvent[] = await res.json();
+            setState((prev) => ({ ...prev, events: data, loading: false }));
+            } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            setState((prev) => ({ ...prev, loading: false, error: message }));
+            onError?.(message);
+            }
+            }, [geofenceId, onError]);
 
-  // Load ban đầu và setup polling
-  useEffect(() => {
-    fetchAlerts();
+            // Load ban đầu và setup polling
+            useEffect(() => {
+            fetchAlerts();
 
-    const timer = setInterval(() => {
-      fetchAlerts();
-    }, pollingInterval);
+            const timer = setInterval(() => {
+            fetchAlerts();
+            }, pollingInterval);
 
-    // Cleanup: xóa interval khi component unmount
-    return () => clearInterval(timer);
-  }, [fetchAlerts, pollingInterval]);
+            // Cleanup: xóa interval khi component unmount
+            return () => clearInterval(timer);
+            }, [fetchAlerts, pollingInterval]);
 
-  const handleDismiss = (alertId: string): void => {
-    setState((prev) => ({
-      ...prev,
-      events: prev.events.filter((e) => e.id !== alertId),
-    }));
-    onDismiss?.(alertId);
-  };
+            const handleDismiss = (alertId: string): void => {
+            setState((prev) => ({
+            ...prev,
+            events: prev.events.filter((e) => e.id !== alertId),
+            }));
+            onDismiss?.(alertId);
+            };
 
-  const handleClearAll = (): void => {
-    setState((prev) => ({ ...prev, events: [] }));
-  };
+            const handleClearAll = (): void => {
+            setState((prev) => ({ ...prev, events: [] }));
+            };
 
-  const formatDate = (timestamp: string): string => {
-    const date = new Date(timestamp);
-    return date.toLocaleString("vi-VN", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  };
+            const formatDate = (timestamp: string): string => {
+            const date = new Date(timestamp);
+            return date.toLocaleString("vi-VN", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            });
+            };
 
-  const getTypeLabel = (type: "enter" | "exit"): string => {
-    return type === "enter" ? "Vào khu vực" : "Ra khỏi khu vực";
-  };
+            const getTypeLabel = (type: "enter" | "exit"): string => {
+            return type === "enter" ? "Vào khu vực" : "Ra khỏi khu vực";
+            };
 
-  return (
-    <div className="geofence-alerts">
-      <div className="alert-header">
-        <h3>Cảnh báo Geofence ({state.events.length})</h3>
-        <button onClick={handleClearAll}>Xóa tất cả</button>
-      </div>
+            {% if ui_framework == "material" %}
+            // Render với MUI components
+            return (
+            <div className="geofence-alerts" data-testid="geofence-alerts">
+                <div className="alert-header">
+                    <Typography variant="h6">Cảnh báo Geofence ({state.events.length})</Typography>
+                    <Button variant="outlined" onClick={handleClearAll}>Xóa tất cả</Button>
+                </div>
 
-      {state.loading && <div className="loading">Đang tải cảnh báo...</div>}
+                {state.loading && <Typography className="loading">Đang tải cảnh báo...</Typography>}
 
-      {!state.loading && state.events.length === 0 && (
-        <div className="empty-state">Không có cảnh báo geofence.</div>
-      )}
+                {!state.loading && state.events.length === 0 && (
+                <Typography className="empty-state">Không có cảnh báo geofence.</Typography>
+                )}
 
-      {state.events.map((e: GeofenceEvent) => (
-        <div key={e.id} className={`alert-item alert-${e.type}`}>
-          <div className="alert-icon">
-            {e.type === "enter" ? "[Vào]" : "[Ra]"}
-          </div>
-          <div className="alert-content">
-            <div className="alert-title">
-              {getTypeLabel(e.type)}: {e.geofenceName}
+                {state.events.map((e: GeofenceEvent) => (
+                <Card key={e.id} className={`alert-item alert-${e.type}`} sx={{ mb: 1 }}>
+                    <CardContent>
+                        <div className="d-flex align-items-start">
+                            <Chip label={e.type==="enter" ? "[Vào]" : "[Ra]" } size="small" color={e.type==="enter"
+                                ? "warning" : "success" } />
+                            <div className="alert-content ms-2 flex-grow-1">
+                                <Typography variant="subtitle2">{getTypeLabel(e.type)}: {e.geofenceName}</Typography>
+                                <Typography variant="body2">{e.message}</Typography>
+                                <Typography variant="caption" color="textSecondary">{formatDate(e.timestamp)}
+                                </Typography>
+                                {e.details && <Typography variant="body2" sx={{ mt: 1, display: 'block' }}>{e.details}
+                                </Typography>}
+                            </div>
+                            <Button size="small" onClick={()=> handleDismiss(e.id)}>Đóng</Button>
+                        </div>
+                    </CardContent>
+                </Card>
+                ))}
+
+                {state.error && <Typography color="error">{state.error}</Typography>}
             </div>
-            <div className="alert-message">{e.message}</div>
-            <div className="alert-time">{formatDate(e.timestamp)}</div>
-            {e.details && (
-              <div className="alert-details">{e.details}</div>
-            )}
-          </div>
-          <div className="alert-actions">
-            <button onClick={() => handleDismiss(e.id)}>Đóng</button>
-          </div>
-        </div>
-      ))}
+            );
+            {% elif ui_framework == "tailwind" %}
+            // Render với Tailwind CSS utility classes
+            return (
+            <div className="p-4 max-w-3xl mx-auto" data-testid="geofence-alerts">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">Cảnh báo Geofence ({state.events.length})</h3>
+                    <button className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                        onClick={handleClearAll}>Xóa tất cả</button>
+                </div>
 
-      {state.error && <div className="error-message">{state.error}</div>}
+                {state.loading && <div className="text-center py-8 text-gray-500">Đang tải cảnh báo...</div>}
 
-      <style jsx>{`
-        .geofence-alerts { padding: 20px; }
-        .alert-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 16px;
-        }
-        .loading { text-align: center; padding: 40px; color: #666; }
-        .empty-state { text-align: center; padding: 40px; color: #999; }
-        .alert-item {
-          display: flex;
-          gap: 12px;
-          padding: 12px;
-          margin: 8px 0;
-          border-radius: 8px;
-          border: 1px solid #ddd;
-          animation: slideIn 0.3s ease-out;
-        }
-        .alert-enter {
-          border-left: 4px solid #ff9800;
-          background: #fff8e1;
-        }
-        .alert-exit {
-          border-left: 4px solid #4caf50;
-          background: #e8f5e9;
-        }
-        .alert-icon { font-size: 16px; font-weight: bold; flex-shrink: 0; }
-        .alert-content { flex: 1; }
-        .alert-title { font-weight: bold; margin-bottom: 4px; }
-        .alert-message { color: #333; margin-bottom: 4px; }
-        .alert-time { color: #999; font-size: 12px; }
-        .alert-details {
-          margin-top: 8px;
-          padding: 8px;
-          background: rgba(0,0,0,0.05);
-          border-radius: 4px;
-          font-size: 13px;
-        }
-        .alert-actions { flex-shrink: 0; }
-        .error-message { color: red; margin-top: 16px; }
-        button {
-          padding: 6px 12px;
-          background: #f44336;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-        }
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateX(-20px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-      `}</style>
-    </div>
-  );
-};
+                {!state.loading && state.events.length === 0 && (
+                <div className="text-center py-8 text-gray-400">Không có cảnh báo geofence.</div>
+                )}
 
-export default GeofenceAlert;
+                {state.events.map((e: GeofenceEvent) => (
+                <div key={e.id} className={`alert-item flex gap-3 p-3 mb-2 rounded-lg border ${e.type==='enter'
+                    ? 'border-l-4 border-l-orange-500 bg-orange-50' : 'border-l-4 border-l-green-500 bg-green-50' }`}>
+                    <span className={`text-sm font-bold ${e.type==='enter' ? 'text-orange-700' : 'text-green-700' }`}>
+                        {e.type === "enter" ? "[Vào]" : "[Ra]"}
+                    </span>
+                    <div className="flex-1">
+                        <p className="font-semibold">{getTypeLabel(e.type)}: {e.geofenceName}</p>
+                        <p className="text-sm">{e.message}</p>
+                        <p className="text-xs text-gray-500">{formatDate(e.timestamp)}</p>
+                        {e.details && <p className="mt-1 text-sm bg-gray-100 p-2 rounded">{e.details}</p>}
+                    </div>
+                    <button className="px-2 py-1 text-sm text-red-600 hover:text-red-800" onClick={()=>
+                        handleDismiss(e.id)}>Đóng</button>
+                </div>
+                ))}
+
+                {state.error && <p className="text-red-500 mt-3">{state.error}</p>}
+            </div>
+            );
+            {% elif ui_framework == "bootstrap" %}
+            // Render với react-bootstrap components
+            return (
+            <div className="container geofence-alerts" data-testid="geofence-alerts">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                    <h3>Cảnh báo Geofence ({state.events.length})</h3>
+                    <Button variant="danger" onClick={handleClearAll}>Xóa tất cả</Button>
+                </div>
+
+                {state.loading && <div className="text-center py-4 text-muted">Đang tải cảnh báo...</div>}
+
+                {!state.loading && state.events.length === 0 && (
+                <div className="text-center py-4 text-muted">Không có cảnh báo geofence.</div>
+                )}
+
+                {state.events.map((e: GeofenceEvent) => (
+                <Card key={e.id} className={`alert-item mb-2 ${e.type==='enter' ? 'border-start-warning'
+                    : 'border-start-success' }`}>
+                    <Card.Body className="d-flex gap-3">
+                        <Badge bg={e.type==='enter' ? 'warning' : 'success' }>{e.type === "enter" ? "[Vào]" : "[Ra]"}
+                        </Badge>
+                        <div className="flex-grow-1">
+                            <h6 className="mb-1">{getTypeLabel(e.type)}: {e.geofenceName}</h6>
+                            <p className="mb-1 text-sm">{e.message}</p>
+                            <small className="text-muted">{formatDate(e.timestamp)}</small>
+                            {e.details && <p className="mt-2 small bg-light p-2 rounded">{e.details}</p>}
+                        </div>
+                        <Button size="sm" variant="outline-danger" onClick={()=> handleDismiss(e.id)}>Đóng</Button>
+                    </Card.Body>
+                </Card>
+                ))}
+
+                {state.error && <p className="text-danger mt-2">{state.error}</p>}
+            </div>
+            );
+            {% elif ui_framework == "antd" %}
+            // Render với Ant Design components
+            return (
+            <div className="geofence-alerts" data-testid="geofence-alerts">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                    <Typography.Title level={4} style={{ margin: 0 }}>Cảnh báo Geofence ({state.events.length})
+                    </Typography.Title>
+                    <Button danger onClick={handleClearAll}>Xóa tất cả</Button>
+                </div>
+
+                {state.loading && <div className="text-center py-4">Đang tải cảnh báo...</div>}
+
+                {!state.loading && state.events.length === 0 && (
+                <div className="text-center py-4 text-muted">Không có cảnh báo geofence.</div>
+                )}
+
+                {state.events.map((e: GeofenceEvent) => (
+                <Card key={e.id} className={`alert-item mb-2`} style={{ borderLeft: `4px solid ${e.type==='enter'
+                    ? '#ff9800' : '#4caf50' }` }}>
+                    <div className="d-flex gap-3">
+                        <Tag color={e.type==='enter' ? 'orange' : 'green' }>{e.type === "enter" ? "[Vào]" : "[Ra]"}
+                        </Tag>
+                        <div className="flex-grow-1">
+                            <Typography.Text strong>{getTypeLabel(e.type)}: {e.geofenceName}</Typography.Text>
+                            <p className="mb-1">{e.message}</p>
+                            <Typography.Text type="secondary">{formatDate(e.timestamp)}</Typography.Text>
+                            {e.details && <p className="mt-2 small bg-light p-2 rounded">{e.details}</p>}
+                        </div>
+                        <Button size="small" danger onClick={()=> handleDismiss(e.id)}>Đóng</Button>
+                    </div>
+                </Card>
+                ))}
+
+                {state.error && <Typography.Text type="danger">{state.error}</Typography.Text>}
+            </div>
+            );
+            {% elif ui_framework == "carbon" %}
+            // Render với Carbon Design components
+            return (
+            <Layer className="geofence-alerts" data-testid="geofence-alerts">
+                <div className="cds--grid mb-3">
+                    <div className="cds--col">
+                        <Title level="3">Cảnh báo Geofence ({state.events.length})</Title>
+                    </div>
+                    <div className="cds--col cds--col--auto">
+                        <Button kind="danger" onClick={handleClearAll}>Xóa tất cả</Button>
+                    </div>
+                </div>
+
+                {state.loading && <div className="text-center py-4">Đang tải cảnh báo...</div>}
+
+                {!state.loading && state.events.length === 0 && (
+                <div className="text-center py-4 text-muted">Không có cảnh báo geofence.</div>
+                )}
+
+                {state.events.map((e: GeofenceEvent) => (
+                <div key={e.id} className={`cds--card alert-item mb-2`} style={{ borderLeft: `4px solid
+                    ${e.type==='enter' ? '#ff9800' : '#4caf50' }` }}>
+                    <div className="cds--card__content d-flex gap-3">
+                        <span className={`cds--tag ${e.type==='enter' ? 'cds--tag--orange' : 'cds--tag--green' }`}>
+                            {e.type === "enter" ? "[Vào]" : "[Ra]"}
+                        </span>
+                        <div className="flex-grow-1">
+                            <p className="font-semibold">{getTypeLabel(e.type)}: {e.geofenceName}</p>
+                            <p className="text-sm">{e.message}</p>
+                            <small className="text-muted">{formatDate(e.timestamp)}</small>
+                            {e.details && <p className="mt-2 text-sm bg-gray-100 p-2 rounded">{e.details}</p>}
+                        </div>
+                        <Button size="sm" kind="danger" onClick={()=> handleDismiss(e.id)}>Đóng</Button>
+                    </div>
+                </div>
+                ))}
+
+                {state.error && <p className="text-danger mt-2">{state.error}</p>}
+            </Layer>
+            );
+            {% endif %}
+            };
+
+            export default GeofenceAlert;

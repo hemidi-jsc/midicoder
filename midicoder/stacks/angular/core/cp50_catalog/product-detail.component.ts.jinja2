@@ -1,522 +1,543 @@
 {% raw %}/**
- * CP50 Catalog & Taxonomy Engine — Product Detail Component.
- *
- * Component hiển thị chi tiết sản phẩm bao gồm thông tin cơ bản,
- * thư viện ảnh, các biến thể (variants), thuộc tính, và bảng giá.
- *
- * Sử dụng Signal-based state management và reactive patterns của Angular.
- *
- * Tạo tự động bởi CP50 — không sửa thủ công.
- */
-
+* UI Framework: {{{ ui_framework }}}
+* CP50 Catalog & Taxonomy Engine — Product Detail Component.
+*
+* Component hiển thị chi tiết sản phẩm bao gồm thông tin cơ bản,
+* thư viện ảnh, các biến thể (variants), thuộc tính, và bảng giá.
+*
+* Sử dụng Signal-based state management và reactive patterns của Angular.
+*
+* Tạo tự động bởi CP50 — không sửa thủ công.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatTabsModule } from '@angular/material/tabs';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatIconModule } from '@angular/material/icon';
+import { MatExpansionModule } from '@angular/material/expansion';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatBadgeModule } from '@angular/material/badge';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+// Ant Design không áp dụng cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon không áp dụng cho Angular
+{% endif %}
+{% raw %}
 import {
-  Component,
-  Input,
-  OnChanges,
-  SimpleChanges,
-  inject,
-  OnInit,
-  signal,
-  computed,
+Component,
+Input,
+OnChanges,
+SimpleChanges,
+inject,
+OnInit,
+signal,
+computed,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CatalogStore } from './catalog.store';
 import {
-  Product,
-  ProductStatus,
-  ProductVariant,
-  AttributeDefinition,
-  AttributeValue,
-  Visibility,
+Product,
+ProductStatus,
+ProductVariant,
+AttributeDefinition,
+AttributeValue,
+Visibility,
 } from './catalog-types';
 
 /**
- * Dữ liệu hình ảnh sản phẩm.
- */
+* Dữ liệu hình ảnh sản phẩm.
+*/
 interface ProductImage {
-  /** URL hình ảnh. */
-  url: string;
-  /** Tên mô tả. */
-  alt: string;
-  /** Hình ảnh chính. */
-  isPrimary: boolean;
-  /** Thứ tự hiển thị. */
-  sortOrder: number;
+/** URL hình ảnh. */
+url: string;
+/** Tên mô tả. */
+alt: string;
+/** Hình ảnh chính. */
+isPrimary: boolean;
+/** Thứ tự hiển thị. */
+sortOrder: number;
 }
 
 /**
- * ProductDetailComponent — Chi tiết sản phẩm.
- *
- * Cung cấp giao diện để người dùng:
- * - Xem thông tin đầy đủ của sản phẩm (tên, SKU, mô tả, danh mục)
- * - Xem thư viện ảnh với hình ảnh chính
- * - Xem và chuyển đổi các biến thể (variants)
- * - Xem các thuộc tính và giá trị
- * - Xem thông tin giá cả (giá bán, giá gốc, giá so sánh)
- */
+* ProductDetailComponent — Chi tiết sản phẩm.
+*
+* Cung cấp giao diện để người dùng:
+* - Xem thông tin đầy đủ của sản phẩm (tên, SKU, mô tả, danh mục)
+* - Xem thư viện ảnh với hình ảnh chính
+* - Xem và chuyển đổi các biến thể (variants)
+* - Xem các thuộc tính và giá trị
+* - Xem thông tin giá cả (giá bán, giá gốc, giá so sánh)
+*/
 @Component({
-  selector: 'app-product-detail',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './product-detail.component.html',
-  styleUrl: './product-detail.component.css',
+selector: 'app-product-detail',
+standalone: true,
+imports: [CommonModule, FormsModule],
+templateUrl: './product-detail.component.html',
+styleUrl: './product-detail.component.css',
 })
 export class ProductDetailComponent implements OnInit, OnChanges {
-  // ===========================================================================
-  // Inject dependencies
-  // ===========================================================================
+// ===========================================================================
+// Inject dependencies
+// ===========================================================================
 
-  /** Store quản lý trạng thái catalog. */
-  private readonly catalogStore = inject(CatalogStore);
+/** Store quản lý trạng thái catalog. */
+private readonly catalogStore = inject(CatalogStore);
 
-  // ===========================================================================
-  // Inputs
-  // ===========================================================================
+// ===========================================================================
+// Inputs
+// ===========================================================================
 
-  /** ID sản phẩm cần hiển thị chi tiết. */
-  @Input() productId: string = '';
+/** ID sản phẩm cần hiển thị chi tiết. */
+@Input() productId: string = '';
 
-  // ===========================================================================
-  // Signals
-  // ===========================================================================
+// ===========================================================================
+// Signals
+// ===========================================================================
 
-  /** Dữ liệu sản phẩm chi tiết. */
-  readonly product = signal<Product | null>(null);
+/** Dữ liệu sản phẩm chi tiết. */
+readonly product = signal<Product | null>(null);
 
-  /** Danh sách biến thể của sản phẩm. */
-  readonly variants = signal<ProductVariant[]>([]);
+    /** Danh sách biến thể của sản phẩm. */
+    readonly variants = signal<ProductVariant[]>([]);
 
-  /** Danh sách thuộc tính của sản phẩm. */
-  readonly attributes = signal<AttributeValue[]>([]);
+        /** Danh sách thuộc tính của sản phẩm. */
+        readonly attributes = signal<AttributeValue[]>([]);
 
-  /** Định nghĩa thuộc tính (dùng để tra cứu nhãn). */
-  readonly attributeDefinitions = signal<AttributeDefinition[]>([]);
+            /** Định nghĩa thuộc tính (dùng để tra cứu nhãn). */
+            readonly attributeDefinitions = signal<AttributeDefinition[]>([]);
 
-  /** Danh sách hình ảnh sản phẩm. */
-  readonly images = signal<ProductImage[]>([]);
+                /** Danh sách hình ảnh sản phẩm. */
+                readonly images = signal<ProductImage[]>([]);
 
-  /** Hình ảnh đang hiển thị. */
-  readonly selectedImageIndex = signal<number>(0);
+                    /** Hình ảnh đang hiển thị. */
+                    readonly selectedImageIndex = signal<number>(0);
 
-  /** Biến thể đang chọn. */
-  readonly selectedVariant = signal<ProductVariant | null>(null);
+                        /** Biến thể đang chọn. */
+                        readonly selectedVariant = signal<ProductVariant | null>(null);
 
-  /** Đang tải dữ liệu. */
-  readonly isLoading = signal<boolean>(false);
+                            /** Đang tải dữ liệu. */
+                            readonly isLoading = signal<boolean>(false);
 
-  /** Thông báo lỗi. */
-  readonly error = signal<string | null>(null);
+                                /** Thông báo lỗi. */
+                                readonly error = signal<string | null>(null);
 
-  // Tab đang hiển thị
-  readonly activeTab = signal<'info' | 'variants' | 'attributes' | 'pricing'>('info');
+                                    // Tab đang hiển thị
+                                    readonly activeTab = signal<'info' | 'variants' | 'attributes' | 'pricing'>('info');
 
-  // ===========================================================================
-  // Computed signals
-  // ===========================================================================
+                                        // ===========================================================================
+                                        // Computed signals
+                                        // ===========================================================================
 
-  /** Giá hiện tại (từ variant được chọn hoặc giá gốc của sản phẩm). */
-  readonly currentPrice = computed(() => {
-    const variant = this.selectedVariant();
-    if (variant) {
-      return variant.price;
-    }
-    const product = this.product();
-    return product?.price ?? 0;
-  });
+                                        /** Giá hiện tại (từ variant được chọn hoặc giá gốc của sản phẩm). */
+                                        readonly currentPrice = computed(() => {
+                                        const variant = this.selectedVariant();
+                                        if (variant) {
+                                        return variant.price;
+                                        }
+                                        const product = this.product();
+                                        return product?.price ?? 0;
+                                        });
 
-  /** Giá so sánh hiện tại. */
-  readonly comparePrice = computed(() => {
-    const product = this.product();
-    return product?.compare_at_price ?? null;
-  });
+                                        /** Giá so sánh hiện tại. */
+                                        readonly comparePrice = computed(() => {
+                                        const product = this.product();
+                                        return product?.compare_at_price ?? null;
+                                        });
 
-  /** Phần trăm giảm giá. */
-  readonly discountPercent = computed(() => {
-    const price = this.currentPrice();
-    const comparePrice = this.comparePrice();
-    if (!comparePrice || comparePrice <= price) return 0;
-    return Math.round(((comparePrice - price) / comparePrice) * 100);
-  });
+                                        /** Phần trăm giảm giá. */
+                                        readonly discountPercent = computed(() => {
+                                        const price = this.currentPrice();
+                                        const comparePrice = this.comparePrice();
+                                        if (!comparePrice || comparePrice <= price) return 0; return
+                                            Math.round(((comparePrice - price) / comparePrice) * 100); }); /** Trạng
+                                            thái hàng tồn kho. */ readonly stockStatus=computed(()=> {
+                                            const product = this.product();
+                                            if (!product) return 'unknown';
+                                            return this.getStockStatus(product);
+                                            });
 
-  /** Trạng thái hàng tồn kho. */
-  readonly stockStatus = computed(() => {
-    const product = this.product();
-    if (!product) return 'unknown';
-    return this.getStockStatus(product);
-  });
+                                            /** Số lượng biến thể đang hoạt động. */
+                                            readonly activeVariantCount = computed(() => {
+                                            return this.variants().filter((v) => v.is_active).length;
+                                            });
 
-  /** Số lượng biến thể đang hoạt động. */
-  readonly activeVariantCount = computed(() => {
-    return this.variants().filter((v) => v.is_active).length;
-  });
+                                            //
+                                            ===========================================================================
+                                            // Lifecycle
+                                            //
+                                            ===========================================================================
 
-  // ===========================================================================
-  // Lifecycle
-  // ===========================================================================
+                                            /**
+                                            * Khởi tạo component.
+                                            */
+                                            ngOnInit(): void {
+                                            // Nếu có productId từ input, tải dữ liệu
+                                            if (this.productId) {
+                                            this.loadAllProductData();
+                                            }
+                                            }
 
-  /**
-   * Khởi tạo component.
-   */
-  ngOnInit(): void {
-    // Nếu có productId từ input, tải dữ liệu
-    if (this.productId) {
-      this.loadAllProductData();
-    }
-  }
+                                            /**
+                                            * Xử lý khi input thay đổi.
+                                            *
+                                            * @param changes - Các thay đổi input.
+                                            */
+                                            ngOnChanges(changes: SimpleChanges): void {
+                                            if (changes['productId'] && this.productId) {
+                                            this.loadAllProductData();
+                                            }
+                                            }
 
-  /**
-   * Xử lý khi input thay đổi.
-   *
-   * @param changes - Các thay đổi input.
-   */
-  ngOnChanges(changes: SimpleChanges): void {
-    if (changes['productId'] && this.productId) {
-      this.loadAllProductData();
-    }
-  }
+                                            //
+                                            ===========================================================================
+                                            // Data loading
+                                            //
+                                            ===========================================================================
 
-  // ===========================================================================
-  // Data loading
-  // ===========================================================================
+                                            /**
+                                            * Tải tất cả dữ liệu sản phẩm.
+                                            */
+                                            private async loadAllProductData(): Promise<void> {
+                                                this.isLoading.set(true);
+                                                this.error.set(null);
 
-  /**
-   * Tải tất cả dữ liệu sản phẩm.
-   */
-  private async loadAllProductData(): Promise<void> {
-    this.isLoading.set(true);
-    this.error.set(null);
+                                                try {
+                                                await Promise.all([
+                                                this.loadProduct(),
+                                                this.loadVariants(),
+                                                this.loadAttributes(),
+                                                this.loadAttributeDefinitions(),
+                                                ]);
 
-    try {
-      await Promise.all([
-        this.loadProduct(),
-        this.loadVariants(),
-        this.loadAttributes(),
-        this.loadAttributeDefinitions(),
-      ]);
+                                                // Đặt biến thể đầu tiên làm mặc định
+                                                const activeVariants = this.variants().filter((v) => v.is_active);
+                                                if (activeVariants.length > 0) {
+                                                this.selectedVariant.set(activeVariants[0]);
+                                                }
+                                                } catch (err: any) {
+                                                this.error.set(err.message || 'Lỗi khi tải dữ liệu sản phẩm');
+                                                console.error('[CP50] Lỗi tải product detail:', err);
+                                                } finally {
+                                                this.isLoading.set(false);
+                                                }
+                                                }
 
-      // Đặt biến thể đầu tiên làm mặc định
-      const activeVariants = this.variants().filter((v) => v.is_active);
-      if (activeVariants.length > 0) {
-        this.selectedVariant.set(activeVariants[0]);
-      }
-    } catch (err: any) {
-      this.error.set(err.message || 'Lỗi khi tải dữ liệu sản phẩm');
-      console.error('[CP50] Lỗi tải product detail:', err);
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
+                                                /**
+                                                * Tải thông tin chi tiết sản phẩm.
+                                                */
+                                                private async loadProduct(): Promise<void> {
+                                                    const product = this.catalogStore.getProductById(this.productId);
+                                                    if (product) {
+                                                    this.product.set(product);
+                                                    // Trích xuất hình ảnh từ tags hoặc images
+                                                    this.images.set(this.extractImages(product));
+                                                    } else {
+                                                    this.product.set(null);
+                                                    this.images.set([]);
+                                                    }
+                                                    }
 
-  /**
-   * Tải thông tin chi tiết sản phẩm.
-   */
-  private async loadProduct(): Promise<void> {
-    const product = this.catalogStore.getProductById(this.productId);
-    if (product) {
-      this.product.set(product);
-      // Trích xuất hình ảnh từ tags hoặc images
-      this.images.set(this.extractImages(product));
-    } else {
-      this.product.set(null);
-      this.images.set([]);
-    }
-  }
+                                                    /**
+                                                    * Tải danh sách biến thể của sản phẩm.
+                                                    */
+                                                    private async loadVariants(): Promise<void> {
+                                                        const variants =
+                                                        this.catalogStore.getVariantsForProduct(this.productId);
+                                                        this.variants.set(variants);
+                                                        }
 
-  /**
-   * Tải danh sách biến thể của sản phẩm.
-   */
-  private async loadVariants(): Promise<void> {
-    const variants = this.catalogStore.getVariantsForProduct(this.productId);
-    this.variants.set(variants);
-  }
+                                                        /**
+                                                        * Tải danh sách thuộc tính của sản phẩm.
+                                                        */
+                                                        private async loadAttributes(): Promise<void> {
+                                                            const attributes =
+                                                            this.catalogStore.getAttributesForProduct(this.productId);
+                                                            this.attributes.set(attributes);
+                                                            }
 
-  /**
-   * Tải danh sách thuộc tính của sản phẩm.
-   */
-  private async loadAttributes(): Promise<void> {
-    const attributes = this.catalogStore.getAttributesForProduct(this.productId);
-    this.attributes.set(attributes);
-  }
+                                                            /**
+                                                            * Tải định nghĩa thuộc tính để tra cứu nhãn.
+                                                            */
+                                                            private async loadAttributeDefinitions(): Promise<void> {
+                                                                const definitions = this.catalogStore.attributes();
+                                                                this.attributeDefinitions.set(definitions);
+                                                                }
 
-  /**
-   * Tải định nghĩa thuộc tính để tra cứu nhãn.
-   */
-  private async loadAttributeDefinitions(): Promise<void> {
-    const definitions = this.catalogStore.attributes();
-    this.attributeDefinitions.set(definitions);
-  }
+                                                                //
+                                                                ===========================================================================
+                                                                // Image gallery
+                                                                //
+                                                                ===========================================================================
 
-  // ===========================================================================
-  // Image gallery
-  // ===========================================================================
+                                                                /**
+                                                                * Trích xuất danh sách hình ảnh từ sản phẩm.
+                                                                *
+                                                                * @param product - Sản phẩm.
+                                                                * @returns Danh sách hình ảnh.
+                                                                */
+                                                                private extractImages(product: Product): ProductImage[]
+                                                                {
+                                                                if (!product.images || product.images.length === 0) {
+                                                                return [];
+                                                                }
 
-  /**
-   * Trích xuất danh sách hình ảnh từ sản phẩm.
-   *
-   * @param product - Sản phẩm.
-   * @returns Danh sách hình ảnh.
-   */
-  private extractImages(product: Product): ProductImage[] {
-    if (!product.images || product.images.length === 0) {
-      return [];
-    }
+                                                                return product.images.map((img, index) => ({
+                                                                url: typeof img === 'string' ? img : img.url,
+                                                                alt: product.name,
+                                                                isPrimary: index === 0,
+                                                                sortOrder: index,
+                                                                }));
+                                                                }
 
-    return product.images.map((img, index) => ({
-      url: typeof img === 'string' ? img : img.url,
-      alt: product.name,
-      isPrimary: index === 0,
-      sortOrder: index,
-    }));
-  }
+                                                                /**
+                                                                * Chọn hình ảnh đang hiển thị.
+                                                                *
+                                                                * @param index - Chỉ số hình ảnh.
+                                                                */
+                                                                selectImage(index: number): void {
+                                                                if (index >= 0 && index < this.images().length) {
+                                                                    this.selectedImageIndex.set(index); } } /** * Hiển
+                                                                    thị hình ảnh trước. */ previousImage(): void { const
+                                                                    currentIndex=this.selectedImageIndex(); const
+                                                                    totalImages=this.images().length; if
+                                                                    (totalImages===0) return; const
+                                                                    newIndex=currentIndex> 0 ? currentIndex - 1 :
+                                                                    totalImages - 1;
+                                                                    this.selectImage(newIndex);
+                                                                    }
 
-  /**
-   * Chọn hình ảnh đang hiển thị.
-   *
-   * @param index - Chỉ số hình ảnh.
-   */
-  selectImage(index: number): void {
-    if (index >= 0 && index < this.images().length) {
-      this.selectedImageIndex.set(index);
-    }
-  }
+                                                                    /**
+                                                                    * Hiển thị hình ảnh sau.
+                                                                    */
+                                                                    nextImage(): void {
+                                                                    const currentIndex = this.selectedImageIndex();
+                                                                    const totalImages = this.images().length;
+                                                                    if (totalImages === 0) return;
+                                                                    const newIndex = currentIndex < totalImages - 1 ?
+                                                                        currentIndex + 1 : 0;
+                                                                        this.selectImage(newIndex); }
+                                                                        //===========================================================================//
+                                                                        Variant selection
+                                                                        //===========================================================================/**
+                                                                        * Chọn biến thể sản phẩm. * * @param variant -
+                                                                        Biến thể cần chọn. */ selectVariant(variant:
+                                                                        ProductVariant): void {
+                                                                        this.selectedVariant.set(variant); } /** * Kiểm
+                                                                        tra biến thể có đang chọn không. * * @param
+                                                                        variant - Biến thể cần kiểm tra. * @returns True
+                                                                        nếu đang chọn. */ isVariantSelected(variant:
+                                                                        ProductVariant): boolean { const
+                                                                        selected=this.selectedVariant(); return
+                                                                        selected?.variant_id===variant.variant_id; }
+                                                                        //===========================================================================//
+                                                                        Tab navigation
+                                                                        //===========================================================================/**
+                                                                        * Chuyển đổi tab đang hiển thị. * * @param tab -
+                                                                        Tab cần chuyển đến. */ switchTab(tab: 'info'
+                                                                        | 'variants' | 'attributes' | 'pricing' ): void
+                                                                        { this.activeTab.set(tab); } /** * Kiểm tra tab
+                                                                        có đang hoạt động không. * * @param tab - Tab
+                                                                        cần kiểm tra. * @returns True nếu tab đang hoạt
+                                                                        động. */ isActiveTab(tab: 'info' | 'variants'
+                                                                        | 'attributes' | 'pricing' ): boolean { return
+                                                                        this.activeTab()===tab; }
+                                                                        //===========================================================================//
+                                                                        Pricing display
+                                                                        //===========================================================================/**
+                                                                        * Lấy chuỗi hiển thị giá tiền. * * @param price
+                                                                        - Giá tiền. * @param currency - Đơn vị tiền tệ.
+                                                                        * @returns Chuỗi giá đã định dạng. */
+                                                                        getPriceDisplay(price: number, currency:
+                                                                        string='VND' ): string { return new
+                                                                        Intl.NumberFormat('vi-VN', { style: 'currency' ,
+                                                                        currency: currency==='VND' ? 'VND' : 'USD' ,
+                                                                        }).format(price); } /** * Kiểm tra sản phẩm có
+                                                                        giá giảm không. * * @returns True nếu có giá so
+                                                                        sánh lớn hơn giá hiện tại. */ hasDiscount():
+                                                                        boolean { return this.discountPercent()> 0;
+                                                                        }
 
-  /**
-   * Hiển thị hình ảnh trước.
-   */
-  previousImage(): void {
-    const currentIndex = this.selectedImageIndex();
-    const totalImages = this.images().length;
-    if (totalImages === 0) return;
-    const newIndex = currentIndex > 0 ? currentIndex - 1 : totalImages - 1;
-    this.selectImage(newIndex);
-  }
+                                                                        //
+                                                                        ===========================================================================
+                                                                        // Utility
+                                                                        //
+                                                                        ===========================================================================
 
-  /**
-   * Hiển thị hình ảnh sau.
-   */
-  nextImage(): void {
-    const currentIndex = this.selectedImageIndex();
-    const totalImages = this.images().length;
-    if (totalImages === 0) return;
-    const newIndex = currentIndex < totalImages - 1 ? currentIndex + 1 : 0;
-    this.selectImage(newIndex);
-  }
+                                                                        /**
+                                                                        * Lấy trạng thái tồn kho từ sản phẩm.
+                                                                        *
+                                                                        * @param product - Sản phẩm.
+                                                                        * @returns Trạng thái tồn kho.
+                                                                        */
+                                                                        getStockStatus(product: Product): string {
+                                                                        if (product.status === 'active') {
+                                                                        return 'in_stock';
+                                                                        } else if (product.status === 'inactive') {
+                                                                        return 'out_of_stock';
+                                                                        } else if (product.status === 'draft') {
+                                                                        return 'draft';
+                                                                        } else {
+                                                                        return 'unknown';
+                                                                        }
+                                                                        }
 
-  // ===========================================================================
-  // Variant selection
-  // ===========================================================================
+                                                                        /**
+                                                                        * Lấy nhãn hiển thị cho trạng thái tồn kho.
+                                                                        *
+                                                                        * @param status - Trạng thái tồn kho.
+                                                                        * @returns Chuỗi nhãn.
+                                                                        */
+                                                                        getStockStatusLabel(status: string): string {
+                                                                        const labels: Record<string, string> = {
+                                                                            in_stock: 'Còn hàng',
+                                                                            out_of_stock: 'Hết hàng',
+                                                                            draft: 'Chưa công bố',
+                                                                            unknown: 'Không xác định',
+                                                                            };
+                                                                            return labels[status] || status;
+                                                                            }
 
-  /**
-   * Chọn biến thể sản phẩm.
-   *
-   * @param variant - Biến thể cần chọn.
-   */
-  selectVariant(variant: ProductVariant): void {
-    this.selectedVariant.set(variant);
-  }
+                                                                            /**
+                                                                            * Lấy màu trạng thái tồn kho.
+                                                                            *
+                                                                            * @param status - Trạng thái tồn kho.
+                                                                            * @returns Mã màu CSS.
+                                                                            */
+                                                                            getStockStatusColor(status: string): string
+                                                                            {
+                                                                            const colors: Record<string, string> = {
+                                                                                in_stock: '#22c55e',
+                                                                                out_of_stock: '#ef4444',
+                                                                                draft: '#6b7280',
+                                                                                unknown: '#94a3b8',
+                                                                                };
+                                                                                return colors[status] || '#6b7280';
+                                                                                }
 
-  /**
-   * Kiểm tra biến thể có đang chọn không.
-   *
-   * @param variant - Biến thể cần kiểm tra.
-   * @returns True nếu đang chọn.
-   */
-  isVariantSelected(variant: ProductVariant): boolean {
-    const selected = this.selectedVariant();
-    return selected?.variant_id === variant.variant_id;
-  }
+                                                                                /**
+                                                                                * Lấy nhãn hiển thị cho trạng thái sản
+                                                                                phẩm.
+                                                                                *
+                                                                                * @param status - Trạng thái sản phẩm.
+                                                                                * @returns Chuỗi nhãn.
+                                                                                */
+                                                                                getStatusLabel(status: ProductStatus):
+                                                                                string {
+                                                                                const labels: Record<ProductStatus,
+                                                                                    string> = {
+                                                                                    draft: 'Bản nháp',
+                                                                                    active: 'Đang hoạt động',
+                                                                                    inactive: 'Tạm ngưng',
+                                                                                    archived: 'Đã lưu kho',
+                                                                                    };
+                                                                                    return labels[status] || status;
+                                                                                    }
 
-  // ===========================================================================
-  // Tab navigation
-  // ===========================================================================
+                                                                                    /**
+                                                                                    * Lấy nhãn hiển thị cho khả năng
+                                                                                    hiển thị.
+                                                                                    *
+                                                                                    * @param visibility - Khả năng hiển
+                                                                                    thị.
+                                                                                    * @returns Chuỗi nhãn.
+                                                                                    */
+                                                                                    getVisibilityLabel(visibility:
+                                                                                    Visibility): string {
+                                                                                    const labels: Record<Visibility,
+                                                                                        string> = {
+                                                                                        public: 'Công khai',
+                                                                                        private: 'Riêng tư',
+                                                                                        internal: 'Nội bộ',
+                                                                                        };
+                                                                                        return labels[visibility] ||
+                                                                                        visibility;
+                                                                                        }
 
-  /**
-   * Chuyển đổi tab đang hiển thị.
-   *
-   * @param tab - Tab cần chuyển đến.
-   */
-  switchTab(tab: 'info' | 'variants' | 'attributes' | 'pricing'): void {
-    this.activeTab.set(tab);
-  }
+                                                                                        /**
+                                                                                        * Lấy nhãn thuộc tính từ định
+                                                                                        nghĩa.
+                                                                                        *
+                                                                                        * @param attributeId - ID thuộc
+                                                                                        tính.
+                                                                                        * @returns Tên thuộc tính hoặc
+                                                                                        key.
+                                                                                        */
+                                                                                        getAttributeName(attributeId:
+                                                                                        string): string {
+                                                                                        const def =
+                                                                                        this.attributeDefinitions().find(
+                                                                                        (d) => d.attribute_id ===
+                                                                                        attributeId
+                                                                                        );
+                                                                                        return def?.name || attributeId;
+                                                                                        }
 
-  /**
-   * Kiểm tra tab có đang hoạt động không.
-   *
-   * @param tab - Tab cần kiểm tra.
-   * @returns True nếu tab đang hoạt động.
-   */
-  isActiveTab(tab: 'info' | 'variants' | 'attributes' | 'pricing'): boolean {
-    return this.activeTab() === tab;
-  }
+                                                                                        /**
+                                                                                        * Lấy đơn vị thuộc tính từ định
+                                                                                        nghĩa.
+                                                                                        *
+                                                                                        * @param attributeId - ID thuộc
+                                                                                        tính.
+                                                                                        * @returns Đơn vị hoặc rỗng.
+                                                                                        */
+                                                                                        getAttributeUnit(attributeId:
+                                                                                        string): string {
+                                                                                        const def =
+                                                                                        this.attributeDefinitions().find(
+                                                                                        (d) => d.attribute_id ===
+                                                                                        attributeId
+                                                                                        );
+                                                                                        return def?.unit || '';
+                                                                                        }
 
-  // ===========================================================================
-  // Pricing display
-  // ===========================================================================
+                                                                                        /**
+                                                                                        * Format giá trị thuộc tính theo
+                                                                                        loại.
+                                                                                        *
+                                                                                        * @param value - Giá trị thuộc
+                                                                                        tính.
+                                                                                        * @param unit - Đơn vị.
+                                                                                        * @returns Chuỗi giá trị đã
+                                                                                        format.
+                                                                                        */
+                                                                                        formatAttributeValue(value:
+                                                                                        string | number, unit: string):
+                                                                                        string {
+                                                                                        if (typeof value === 'number') {
+                                                                                        return `${new
+                                                                                        Intl.NumberFormat('vi-VN').format(value)}
+                                                                                        ${unit}`.trim();
+                                                                                        }
+                                                                                        return `${value}
+                                                                                        ${unit}`.trim();
+                                                                                        }
 
-  /**
-   * Lấy chuỗi hiển thị giá tiền.
-   *
-   * @param price - Giá tiền.
-   * @param currency - Đơn vị tiền tệ.
-   * @returns Chuỗi giá đã định dạng.
-   */
-  getPriceDisplay(price: number, currency: string = 'VND'): string {
-    return new Intl.NumberFormat('vi-VN', {
-      style: 'currency',
-      currency: currency === 'VND' ? 'VND' : 'USD',
-    }).format(price);
-  }
+                                                                                        /**
+                                                                                        * Lấy danh sách thẻ tag hiển
+                                                                                        thị.
+                                                                                        *
+                                                                                        * @returns Mảng thẻ tag.
+                                                                                        */
+                                                                                        getTags(): string[] {
+                                                                                        const product = this.product();
+                                                                                        return
+                                                                                        product?.tags?.filter(Boolean)
+                                                                                        || [];
+                                                                                        }
 
-  /**
-   * Kiểm tra sản phẩm có giá giảm không.
-   *
-   * @returns True nếu có giá so sánh lớn hơn giá hiện tại.
-   */
-  hasDiscount(): boolean {
-    return this.discountPercent() > 0;
-  }
-
-  // ===========================================================================
-  // Utility
-  // ===========================================================================
-
-  /**
-   * Lấy trạng thái tồn kho từ sản phẩm.
-   *
-   * @param product - Sản phẩm.
-   * @returns Trạng thái tồn kho.
-   */
-  getStockStatus(product: Product): string {
-    if (product.status === 'active') {
-      return 'in_stock';
-    } else if (product.status === 'inactive') {
-      return 'out_of_stock';
-    } else if (product.status === 'draft') {
-      return 'draft';
-    } else {
-      return 'unknown';
-    }
-  }
-
-  /**
-   * Lấy nhãn hiển thị cho trạng thái tồn kho.
-   *
-   * @param status - Trạng thái tồn kho.
-   * @returns Chuỗi nhãn.
-   */
-  getStockStatusLabel(status: string): string {
-    const labels: Record<string, string> = {
-      in_stock: 'Còn hàng',
-      out_of_stock: 'Hết hàng',
-      draft: 'Chưa công bố',
-      unknown: 'Không xác định',
-    };
-    return labels[status] || status;
-  }
-
-  /**
-   * Lấy màu trạng thái tồn kho.
-   *
-   * @param status - Trạng thái tồn kho.
-   * @returns Mã màu CSS.
-   */
-  getStockStatusColor(status: string): string {
-    const colors: Record<string, string> = {
-      in_stock: '#22c55e',
-      out_of_stock: '#ef4444',
-      draft: '#6b7280',
-      unknown: '#94a3b8',
-    };
-    return colors[status] || '#6b7280';
-  }
-
-  /**
-   * Lấy nhãn hiển thị cho trạng thái sản phẩm.
-   *
-   * @param status - Trạng thái sản phẩm.
-   * @returns Chuỗi nhãn.
-   */
-  getStatusLabel(status: ProductStatus): string {
-    const labels: Record<ProductStatus, string> = {
-      draft: 'Bản nháp',
-      active: 'Đang hoạt động',
-      inactive: 'Tạm ngưng',
-      archived: 'Đã lưu kho',
-    };
-    return labels[status] || status;
-  }
-
-  /**
-   * Lấy nhãn hiển thị cho khả năng hiển thị.
-   *
-   * @param visibility - Khả năng hiển thị.
-   * @returns Chuỗi nhãn.
-   */
-  getVisibilityLabel(visibility: Visibility): string {
-    const labels: Record<Visibility, string> = {
-      public: 'Công khai',
-      private: 'Riêng tư',
-      internal: 'Nội bộ',
-    };
-    return labels[visibility] || visibility;
-  }
-
-  /**
-   * Lấy nhãn thuộc tính từ định nghĩa.
-   *
-   * @param attributeId - ID thuộc tính.
-   * @returns Tên thuộc tính hoặc key.
-   */
-  getAttributeName(attributeId: string): string {
-    const def = this.attributeDefinitions().find(
-      (d) => d.attribute_id === attributeId
-    );
-    return def?.name || attributeId;
-  }
-
-  /**
-   * Lấy đơn vị thuộc tính từ định nghĩa.
-   *
-   * @param attributeId - ID thuộc tính.
-   * @returns Đơn vị hoặc rỗng.
-   */
-  getAttributeUnit(attributeId: string): string {
-    const def = this.attributeDefinitions().find(
-      (d) => d.attribute_id === attributeId
-    );
-    return def?.unit || '';
-  }
-
-  /**
-   * Format giá trị thuộc tính theo loại.
-   *
-   * @param value - Giá trị thuộc tính.
-   * @param unit - Đơn vị.
-   * @returns Chuỗi giá trị đã format.
-   */
-  formatAttributeValue(value: string | number, unit: string): string {
-    if (typeof value === 'number') {
-      return `${new Intl.NumberFormat('vi-VN').format(value)} ${unit}`.trim();
-    }
-    return `${value} ${unit}`.trim();
-  }
-
-  /**
-   * Lấy danh sách thẻ tag hiển thị.
-   *
-   * @returns Mảng thẻ tag.
-   */
-  getTags(): string[] {
-    const product = this.product();
-    return product?.tags?.filter(Boolean) || [];
-  }
-
-  /**
-   * Refresh dữ liệu sản phẩm.
-   */
-  async refresh(): Promise<void> {
-    await this.loadAllProductData();
-  }
-}
-{% endraw %}
+                                                                                        /**
+                                                                                        * Refresh dữ liệu sản phẩm.
+                                                                                        */
+                                                                                        async refresh(): Promise<void> {
+                                                                                            await
+                                                                                            this.loadAllProductData();
+                                                                                            }
+                                                                                            }
+                                                                                            {% endraw %}

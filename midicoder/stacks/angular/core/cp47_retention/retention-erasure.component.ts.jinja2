@@ -1,20 +1,21 @@
 {% raw %}/**
- * CP47 — Thành phần yêu cầu xóa dữ liệu (GDPR Erasure)
- *
- * Tìm kiếm chủ thể, form gửi yêu cầu xóa, theo dõi tiến độ,
- * phê duyệt/từ chối yêu cầu. Tuân thủ GDPR Article 17 (Right to Erasure).
- *
- * Sử dụng Angular Signals, OnPush, Material Design components.
- */
+* UI Framework: {{{ ui_framework }}}
+* CP47 — Thành phần yêu cầu xóa dữ liệu (GDPR Erasure)
+*
+* Tìm kiếm chủ thể, form gửi yêu cầu xóa, theo dõi tiến độ,
+* phê duyệt/từ chối yêu cầu. Tuân thủ GDPR Article 17 (Right to Erasure).
+*
+* Sử dụng Angular Signals, OnPush, Material Design components.
+*/
 
 import {
-  Component,
-  ChangeDetectionStrategy,
-  signal,
-  computed,
-  effect,
-  OnInit,
-  inject,
+Component,
+ChangeDetectionStrategy,
+signal,
+computed,
+effect,
+OnInit,
+inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
@@ -47,19 +48,19 @@ import { MatSidenavModule } from '@angular/material/sidenav';
 
 // Nội bộ
 import {
-  ErasureRequest,
-  ErasureRequestForm,
-  ErasureRequestFilters,
-  ErasureRequestStatus,
-  ErasureDenialReason,
-  RetentionDataType,
-  SortDirection,
-  ERASURE_COLUMNS,
-  ERASURE_STATUS_LABELS,
-  ERASURE_STATUS_COLORS,
-  DATA_TYPE_LABELS,
-  ERASURE_RATE_LIMIT,
-  DEFAULT_PAGE_SIZE,
+ErasureRequest,
+ErasureRequestForm,
+ErasureRequestFilters,
+ErasureRequestStatus,
+ErasureDenialReason,
+RetentionDataType,
+SortDirection,
+ERASURE_COLUMNS,
+ERASURE_STATUS_LABELS,
+ERASURE_STATUS_COLORS,
+DATA_TYPE_LABELS,
+ERASURE_RATE_LIMIT,
+DEFAULT_PAGE_SIZE,
 } from './retention-types';
 import { RetentionStore } from './retention.store';
 
@@ -68,19 +69,19 @@ import { RetentionStore } from './retention.store';
 // ──────────────────────────────────────────────
 
 function formatShortDate(isoString: string | null): string {
-  if (!isoString) return '—';
-  const d = new Date(isoString);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}/${mm}/${d.getFullYear()}`;
+if (!isoString) return '—';
+const d = new Date(isoString);
+const dd = String(d.getDate()).padStart(2, '0');
+const mm = String(d.getMonth() + 1).padStart(2, '0');
+return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
 /**
- * Tính phần trăm tiến độ đã hoàn thành.
- */
+* Tính phần trăm tiến độ đã hoàn thành.
+*/
 function calcProgressPercent(erased: number, total: number): number {
-  if (total === 0) return 0;
-  return Math.round((erased / total) * 100);
+if (total === 0) return 0;
+return Math.round((erased / total) * 100);
 }
 
 // ──────────────────────────────────────────────
@@ -88,1123 +89,1004 @@ function calcProgressPercent(erased: number, total: number): number {
 // ──────────────────────────────────────────────
 
 /**
- * Dialog form để gửi yêu cầu xóa dữ liệu mới.
- * Multi-step stepper: Thông tin chủ thể → Loại dữ liệu → Xác nhận.
- */
+* Dialog form để gửi yêu cầu xóa dữ liệu mới.
+* Multi-step stepper: Thông tin chủ thể → Loại dữ liệu → Xác nhận.
+*/
 @Component({
-  selector: 'cp47-erasure-form-dialog',
-  standalone: true,
-  imports: [
-    CommonModule,
-    FormsModule,
-    ReactiveFormsModule,
-    MatCardModule,
-    MatInputModule,
-    MatSelectModule,
-    MatFormFieldModule,
-    MatButtonModule,
-    MatCheckboxModule,
-    MatStepperModule,
-    MatDividerModule,
-    MatChipsModule,
-    MatIconModule,
-    MatTooltipModule,
-  ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: `
-    :host {
-      display: block;
-      width: 600px;
-      max-width: 100vw;
-    }
-    .dialog-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 24px 0;
-    }
-    .dialog-header h2 {
-      margin: 0;
-      font-size: 20px;
-      font-weight: 500;
-    }
-    .form-body {
-      padding: 24px;
-    }
-    mat-form-field {
-      width: 100%;
-      margin-bottom: 16px;
-    }
-    .checkbox-group {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      padding: 8px 0;
-    }
-    .checkbox-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      border: 1px solid #e0e0e0;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.15s ease;
-    }
-    .checkbox-item:hover {
-      background: #f5f5f5;
-    }
-    .confirmation-box {
-      background: #fff3e0;
-      border: 1px solid #ffe0b2;
-      border-radius: 8px;
-      padding: 16px;
-      margin: 16px 0;
-    }
-    .confirmation-box p {
-      margin: 0 0 8px;
-      font-size: 14px;
-    }
-    .form-actions {
-      display: flex;
-      justify-content: space-between;
-      padding: 16px 24px;
-      border-top: 1px solid #eee;
-    }
-    .rate-limit-warning {
-      background: #ffebee;
-      border: 1px solid #ffcdd2;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 16px;
-      font-size: 13px;
-      color: #c62828;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-  `,
-  template: `
-    <div class="dialog-header">
-      <h2>Gửi yêu cầu xóa dữ liệu</h2>
-      <button mat-icon-button (click)="closeDialog()" matTooltip="Đóng">
+selector: 'cp47-erasure-form-dialog',
+standalone: true,
+imports: [
+CommonModule,
+FormsModule,
+ReactiveFormsModule,
+MatCardModule,
+MatInputModule,
+MatSelectModule,
+MatFormFieldModule,
+MatButtonModule,
+MatCheckboxModule,
+MatStepperModule,
+MatDividerModule,
+MatChipsModule,
+MatIconModule,
+MatTooltipModule,
+],
+changeDetection: ChangeDetectionStrategy.OnPush,
+styles: `
+:host {
+display: block;
+width: 600px;
+max-width: 100vw;
+}
+.dialog-header {
+display: flex;
+align-items: center;
+justify-content: space-between;
+padding: 16px 24px 0;
+}
+.dialog-header h2 {
+margin: 0;
+font-size: 20px;
+font-weight: 500;
+}
+.form-body {
+padding: 24px;
+}
+mat-form-field {
+width: 100%;
+margin-bottom: 16px;
+}
+.checkbox-group {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 8px;
+padding: 8px 0;
+}
+.checkbox-item {
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 8px 12px;
+border: 1px solid #e0e0e0;
+border-radius: 8px;
+cursor: pointer;
+transition: background 0.15s ease;
+}
+.checkbox-item:hover {
+background: #f5f5f5;
+}
+.confirmation-box {
+background: #fff3e0;
+border: 1px solid #ffe0b2;
+border-radius: 8px;
+padding: 16px;
+margin: 16px 0;
+}
+.confirmation-box p {
+margin: 0 0 8px;
+font-size: 14px;
+}
+.form-actions {
+display: flex;
+justify-content: space-between;
+padding: 16px 24px;
+border-top: 1px solid #eee;
+}
+.rate-limit-warning {
+background: #ffebee;
+border: 1px solid #ffcdd2;
+border-radius: 8px;
+padding: 12px 16px;
+margin-bottom: 16px;
+font-size: 13px;
+color: #c62828;
+display: flex;
+align-items: center;
+gap: 8px;
+}
+`,
+template: `
+<div class="dialog-header">
+    <h2>Gửi yêu cầu xóa dữ liệu</h2>
+    <button mat-icon-button (click)="closeDialog()" matTooltip="Đóng">
         <mat-icon>close</mat-icon>
-      </button>
-    </div>
+    </button>
+</div>
 
-    <mat-stepper
-      #stepper
-      linear
-      [labelPosition]="'top'"
-      color="primary"
-    >
-      <!-- Bước 1: Thông tin chủ thể -->
-      <mat-step
-        label="Thông tin chủ thể"
-        [completed]="subjectForm.valid"
-      >
+<mat-stepper #stepper linear [labelPosition]="'top'" color="primary">
+    <!-- Bước 1: Thông tin chủ thể -->
+    <mat-step label="Thông tin chủ thể" [completed]="subjectForm.valid">
         <div class="form-body">
-          <mat-form-field appearance="outline">
-            <mat-label>Họ và tên</mat-label>
-            <input
-              matInput
-              formControlName="subjectName"
-              placeholder="Nguyễn Văn A"
-            />
-            @if (subjectForm.get('subjectName')?.hasError('required')) {
-              <mat-error>Họ tên là bắt buộc</mat-error>
-            }
-          </mat-form-field>
-
-          <mat-form-field appearance="outline">
-            <mat-label>Địa chỉ email</mat-label>
-            <input
-              matInput
-              type="email"
-              formControlName="subjectEmail"
-              placeholder="email@example.com"
-            />
-            @if (subjectForm.get('subjectEmail')?.hasError('required')) {
-              <mat-error>Email là bắt buộc</mat-error>
-            } @else if (subjectForm.get('subjectEmail')?.hasError('email')) {
-              <mat-error>Email không hợp lệ</mat-error>
-            }
-          </mat-form-field>
-
-          <mat-form-field appearance="outline">
-            <mat-label>Số điện thoại</mat-label>
-            <input
-              matInput
-              formControlName="subjectPhone"
-              placeholder="0901234567"
-            />
-            @if (subjectForm.get('subjectPhone')?.hasError('required')) {
-              <mat-error>Số điện thoại là bắt buộc</mat-error>
-            }
-          </mat-form-field>
-
-          <mat-form-field appearance="outline">
-            <mat-label>Phương thức xác minh</mat-label>
-            <mat-select formControlName="verificationMethod">
-              <mat-option value="email">Email xác minh</mat-option>
-              <mat-option value="phone">SMS xác minh</mat-option>
-              <mat-option value="document">Tài liệu tùy chọn</mat-option>
-            </mat-select>
-          </mat-form-field>
-        </div>
-        <div class="form-actions">
-          <span></span>
-          <button mat-flat-button color="primary" (click)="stepper.next()"
-            [disabled]="subjectForm.invalid">
-            Tiếp theo
-          </button>
-        </div>
-      </mat-step>
-
-      <!-- Bước 2: Chọn loại dữ liệu -->
-      <mat-step label="Loại dữ liệu">
-        <div class="form-body">
-          <p style="margin:0 0 16px;color:#757575;font-size:14px">
-            Chọn các loại dữ liệu cần xóa. Bạn có thể chọn nhiều loại.
-          </p>
-
-          <div class="checkbox-group">
-            @for (dt of dataTypes(); track dt.value) {
-              <label class="checkbox-item">
-                <mat-checkbox
-                  [formControlName]="'dataType_' + dt.value"
-                  color="primary"
-                >
-                  {{ dt.label }}
-                </mat-checkbox>
-              </label>
-            }
-          </div>
-
-          <mat-form-field appearance="outline" style="margin-top:16px">
-            <mat-label>Lý do xóa</mat-label>
-            <textarea
-              matInput
-              formControlName="reason"
-              rows="4"
-              placeholder="Mô tả lý do bạn muốn xóa dữ liệu..."
-            />
-            @if (erasureForm.get('reason')?.hasError('required')) {
-              <mat-error>Lý do là bắt buộc</mat-error>
-            }
-          </mat-form-field>
-        </div>
-        <div class="form-actions">
-          <button mat-button (click)="stepper.previous()">Quay lại</button>
-          <button mat-flat-button color="primary" (click)="stepper.next()"
-            [disabled]="!hasSelectedDataTypes()">
-            Tiếp theo
-          </button>
-        </div>
-      </mat-step>
-
-      <!-- Bước 3: Xác nhận -->
-      <mat-step label="Xác nhận">
-        <div class="form-body">
-          <div class="confirmation-box">
-            <p>
-              <mat-icon style="vertical-align:middle;color:#e65100">warning</mat-icon>
-              <strong>Cảnh báo:</strong> Hành động xóa dữ liệu không thể hoàn tác.
-              Sau khi xóa, dữ liệu sẽ bị loại bỏ hoàn toàn khỏi tất cả hệ thống.
-            </p>
-            <p style="font-size:12px">
-              Theo GDPR Article 17, bạn có quyền yêu cầu xóa dữ liệu cá nhân
-              trong các trường hợp nhất định. Yêu cầu sẽ được xử lý trong vòng
-              30 ngày làm việc.
-            </p>
-          </div>
-
-          @if (ERASURE_RATE_LIMIT > 0) {
-            <div class="rate-limit-warning">
-              <mat-icon style="font-size:18px;width:18px;height:18px;color:#c62828">
-                info
-              </mat-icon>
-              Giới hạn: tối đa {{ ERASURE_RATE_LIMIT }} yêu cầu mỗi 30 ngày.
-            </div>
-          }
-
-          <h3 style="margin:16px 0 8px;font-size:16px">Tóm tắt yêu cầu</h3>
-          <div style="padding:12px;background:#f5f5f5;border-radius:8px">
-            <p style="margin:4px 0"><strong>Chủ thể:</strong> {{ erasureForm.value.subjectName }}</p>
-            <p style="margin:4px 0"><strong>Email:</strong> {{ erasureForm.value.subjectEmail }}</p>
-            <p style="margin:4px 0"><strong>Phương thức xác minh:</strong>
-              {{ erasureForm.value.verificationMethod === 'email' ? 'Email' :
-                 erasureForm.value.verificationMethod === 'phone' ? 'SMS' : 'Tài liệu' }}
-            </p>
-            <p style="margin:4px 0"><strong>Loại dữ liệu:</strong>
-              <mat-chip-set style="margin-top:4px">
-                @for (dt of selectedDataTypes(); track dt) {
-                  <mat-chip selected color="warn" variant="filled">
-                    {{ dataTypeLabels()[dt] }}
-                  </mat-chip>
+            <mat-form-field appearance="outline">
+                <mat-label>Họ và tên</mat-label>
+                <input matInput formControlName="subjectName" placeholder="Nguyễn Văn A" />
+                @if (subjectForm.get('subjectName')?.hasError('required')) {
+                <mat-error>Họ tên là bắt buộc</mat-error>
                 }
-              </mat-chip-set>
-            </p>
-            <p style="margin:8px 0 0"><strong>Lý do:</strong> {{ erasureForm.value.reason }}</p>
-          </div>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+                <mat-label>Địa chỉ email</mat-label>
+                <input matInput type="email" formControlName="subjectEmail" placeholder="email@example.com" />
+                @if (subjectForm.get('subjectEmail')?.hasError('required')) {
+                <mat-error>Email là bắt buộc</mat-error>
+                } @else if (subjectForm.get('subjectEmail')?.hasError('email')) {
+                <mat-error>Email không hợp lệ</mat-error>
+                }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+                <mat-label>Số điện thoại</mat-label>
+                <input matInput formControlName="subjectPhone" placeholder="0901234567" />
+                @if (subjectForm.get('subjectPhone')?.hasError('required')) {
+                <mat-error>Số điện thoại là bắt buộc</mat-error>
+                }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+                <mat-label>Phương thức xác minh</mat-label>
+                <mat-select formControlName="verificationMethod">
+                    <mat-option value="email">Email xác minh</mat-option>
+                    <mat-option value="phone">SMS xác minh</mat-option>
+                    <mat-option value="document">Tài liệu tùy chọn</mat-option>
+                </mat-select>
+            </mat-form-field>
         </div>
         <div class="form-actions">
-          <button mat-button (click)="stepper.previous()">Quay lại</button>
-          <button
-            mat-flat-button
-            color="warn"
-            (click)="handleSubmit()"
-            [disabled]="submitting()"
-          >
-            @if (submitting()) {
-              <mat-progress-spinner diameter="18" mode="indeterminate" />
-            } @else {
-              <mat-icon>delete_sweep</mat-icon>
-            }
-            Gửi yêu cầu xóa
-          </button>
+            <span></span>
+            <button mat-flat-button color="primary" (click)="stepper.next()" [disabled]="subjectForm.invalid">
+                Tiếp theo
+            </button>
         </div>
-      </mat-step>
-    </mat-stepper>
-  `,
+    </mat-step>
+
+    <!-- Bước 2: Chọn loại dữ liệu -->
+    <mat-step label="Loại dữ liệu">
+        <div class="form-body">
+            <p style="margin:0 0 16px;color:#757575;font-size:14px">
+                Chọn các loại dữ liệu cần xóa. Bạn có thể chọn nhiều loại.
+            </p>
+
+            <div class="checkbox-group">
+                @for (dt of dataTypes(); track dt.value) {
+                <label class="checkbox-item">
+                    <mat-checkbox [formControlName]="'dataType_' + dt.value" color="primary">
+                        {{ dt.label }}
+                    </mat-checkbox>
+                </label>
+                }
+            </div>
+
+            <mat-form-field appearance="outline" style="margin-top:16px">
+                <mat-label>Lý do xóa</mat-label>
+                <textarea matInput formControlName="reason" rows="4"
+                    placeholder="Mô tả lý do bạn muốn xóa dữ liệu..." />
+                @if (erasureForm.get('reason')?.hasError('required')) {
+                <mat-error>Lý do là bắt buộc</mat-error>
+                }
+            </mat-form-field>
+        </div>
+        <div class="form-actions">
+            <button mat-button (click)="stepper.previous()">Quay lại</button>
+            <button mat-flat-button color="primary" (click)="stepper.next()" [disabled]="!hasSelectedDataTypes()">
+                Tiếp theo
+            </button>
+        </div>
+    </mat-step>
+
+    <!-- Bước 3: Xác nhận -->
+    <mat-step label="Xác nhận">
+        <div class="form-body">
+            <div class="confirmation-box">
+                <p>
+                    <mat-icon style="vertical-align:middle;color:#e65100">warning</mat-icon>
+                    <strong>Cảnh báo:</strong> Hành động xóa dữ liệu không thể hoàn tác.
+                    Sau khi xóa, dữ liệu sẽ bị loại bỏ hoàn toàn khỏi tất cả hệ thống.
+                </p>
+                <p style="font-size:12px">
+                    Theo GDPR Article 17, bạn có quyền yêu cầu xóa dữ liệu cá nhân
+                    trong các trường hợp nhất định. Yêu cầu sẽ được xử lý trong vòng
+                    30 ngày làm việc.
+                </p>
+            </div>
+
+            @if (ERASURE_RATE_LIMIT > 0) {
+            <div class="rate-limit-warning">
+                <mat-icon style="font-size:18px;width:18px;height:18px;color:#c62828">
+                    info
+                </mat-icon>
+                Giới hạn: tối đa {{ ERASURE_RATE_LIMIT }} yêu cầu mỗi 30 ngày.
+            </div>
+            }
+
+            <h3 style="margin:16px 0 8px;font-size:16px">Tóm tắt yêu cầu</h3>
+            <div style="padding:12px;background:#f5f5f5;border-radius:8px">
+                <p style="margin:4px 0"><strong>Chủ thể:</strong> {{ erasureForm.value.subjectName }}</p>
+                <p style="margin:4px 0"><strong>Email:</strong> {{ erasureForm.value.subjectEmail }}</p>
+                <p style="margin:4px 0"><strong>Phương thức xác minh:</strong>
+                    {{ erasureForm.value.verificationMethod === 'email' ? 'Email' :
+                    erasureForm.value.verificationMethod === 'phone' ? 'SMS' : 'Tài liệu' }}
+                </p>
+                <p style="margin:4px 0"><strong>Loại dữ liệu:</strong>
+                    <mat-chip-set style="margin-top:4px">
+                        @for (dt of selectedDataTypes(); track dt) {
+                        <mat-chip selected color="warn" variant="filled">
+                            {{ dataTypeLabels()[dt] }}
+                        </mat-chip>
+                        }
+                    </mat-chip-set>
+                </p>
+                <p style="margin:8px 0 0"><strong>Lý do:</strong> {{ erasureForm.value.reason }}</p>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button mat-button (click)="stepper.previous()">Quay lại</button>
+            <button mat-flat-button color="warn" (click)="handleSubmit()" [disabled]="submitting()">
+                @if (submitting()) {
+                <mat-progress-spinner diameter="18" mode="indeterminate" />
+                } @else {
+                <mat-icon>delete_sweep</mat-icon>
+                }
+                Gửi yêu cầu xóa
+            </button>
+        </div>
+    </mat-step>
+</mat-stepper>
+`,
 })
 export class ErasureFormDialogComponent {
-  private readonly fb = inject(FormBuilder);
-  private readonly store = inject(RetentionStore);
+private readonly fb = inject(FormBuilder);
+private readonly store = inject(RetentionStore);
 
-  readonly submitting = signal<boolean>(false);
+readonly submitting = signal<boolean>(false);
 
-  readonly dataTypes = signal<Array<{ value: RetentionDataType; label: string }>>([
-    { value: RetentionDataType.Logs, label: 'Nhật ký hệ thống' },
-    { value: RetentionDataType.Sessions, label: 'Phiên người dùng' },
-    { value: RetentionDataType.CodeDrafts, label: 'Bản nháp mã nguồn' },
-    { value: RetentionDataType.Analytics, label: 'Kết quả phân tích' },
-    { value: RetentionDataType.DatabaseBackups, label: 'Sao lưu CSDL' },
-    { value: RetentionDataType.MediaAssets, label: 'Tệp đa phương tiện' },
-    { value: RetentionDataType.InternalMessages, label: 'Nhắn tin nội bộ' },
-    { value: RetentionDataType.PersonalData, label: 'Dữ liệu cá nhân (PII)' },
-  ]);
+    readonly dataTypes = signal<Array<{ value: RetentionDataType; label: string }>>([
+        { value: RetentionDataType.Logs, label: 'Nhật ký hệ thống' },
+        { value: RetentionDataType.Sessions, label: 'Phiên người dùng' },
+        { value: RetentionDataType.CodeDrafts, label: 'Bản nháp mã nguồn' },
+        { value: RetentionDataType.Analytics, label: 'Kết quả phân tích' },
+        { value: RetentionDataType.DatabaseBackups, label: 'Sao lưu CSDL' },
+        { value: RetentionDataType.MediaAssets, label: 'Tệp đa phương tiện' },
+        { value: RetentionDataType.InternalMessages, label: 'Nhắn tin nội bộ' },
+        { value: RetentionDataType.PersonalData, label: 'Dữ liệu cá nhân (PII)' },
+        ]);
 
-  readonly dataTypeLabels = computed(() => DATA_TYPE_LABELS);
+        readonly dataTypeLabels = computed(() => DATA_TYPE_LABELS);
 
-  /** Form chính sách — bước 1 */
-  subjectForm: FormGroup = this.fb.group({
-    subjectName: ['', [Validators.required, Validators.minLength(2)]],
-    subjectEmail: ['', [Validators.required, Validators.email]],
-    subjectPhone: ['', [Validators.required]],
-    verificationMethod: ['email'],
-  });
+        /** Form chính sách — bước 1 */
+        subjectForm: FormGroup = this.fb.group({
+        subjectName: ['', [Validators.required, Validators.minLength(2)]],
+        subjectEmail: ['', [Validators.required, Validators.email]],
+        subjectPhone: ['', [Validators.required]],
+        verificationMethod: ['email'],
+        });
 
-  /** Form đầy đủ — bao gồm bước 2, 3 */
-  erasureForm: FormGroup = this.fb.group({
-    subjectName: ['', [Validators.required, Validators.minLength(2)]],
-    subjectEmail: ['', [Validators.required, Validators.email]],
-    subjectPhone: ['', [Validators.required]],
-    verificationMethod: ['email'],
-    // Checkboxes cho từng loại dữ liệu
-    ...Object.fromEntries(
-      Object.values(RetentionDataType).map((dt) => [`dataType_${dt}`, [false]])
-    ),
-    reason: ['', [Validators.required, Validators.minLength(10)]],
-  });
+        /** Form đầy đủ — bao gồm bước 2, 3 */
+        erasureForm: FormGroup = this.fb.group({
+        subjectName: ['', [Validators.required, Validators.minLength(2)]],
+        subjectEmail: ['', [Validators.required, Validators.email]],
+        subjectPhone: ['', [Validators.required]],
+        verificationMethod: ['email'],
+        // Checkboxes cho từng loại dữ liệu
+        ...Object.fromEntries(
+        Object.values(RetentionDataType).map((dt) => [`dataType_${dt}`, [false]])
+        ),
+        reason: ['', [Validators.required, Validators.minLength(10)]],
+        });
 
-  /**
-   * Computed: danh sách loại dữ liệu được chọn.
-   */
-  readonly selectedDataTypes = computed<RetentionDataType[]>(() => {
-    return Object.values(RetentionDataType).filter((dt) => {
-      const ctrl = this.erasureForm.get(`dataType_${dt}`);
-      return ctrl?.value === true;
-    });
-  });
+        /**
+        * Computed: danh sách loại dữ liệu được chọn.
+        */
+        readonly selectedDataTypes = computed<RetentionDataType[]>(() => {
+            return Object.values(RetentionDataType).filter((dt) => {
+            const ctrl = this.erasureForm.get(`dataType_${dt}`);
+            return ctrl?.value === true;
+            });
+            });
 
-  /**
-   * Kiểm tra có ít nhất 1 loại dữ liệu được chọn.
-   */
-  hasSelectedDataTypes(): boolean {
-    return this.selectedDataTypes().length > 0;
-  }
-
-  handleSubmit(): void {
-    if (this.erasureForm.invalid || !this.hasSelectedDataTypes()) return;
-
-    this.submitting.set(true);
-
-    const selectedTypes = this.selectedDataTypes();
-    const form: ErasureRequestForm = {
-      subjectName: this.erasureForm.value.subjectName,
-      subjectEmail: this.erasureForm.value.subjectEmail,
-      subjectPhone: this.erasureForm.value.subjectPhone,
-      verificationMethod: this.erasureForm.value.verificationMethod,
-      dataTypes: selectedTypes,
-      reason: this.erasureForm.value.reason,
-    };
-
-    this.store.submitErasureRequest(form);
-
-    // Reload danh sách yêu cầu
-    this.store.loadErasureRequests();
-  }
-
-  closeDialog(): void {
-    this.store.closeErasureForm();
-  }
-}
-
-// ──────────────────────────────────────────────
-// Dialog — Từ chối yêu cầu xóa
-// ──────────────────────────────────────────────
-
-@Component({
-  selector: 'cp47-erasure-deny-dialog',
-  standalone: true,
-  imports: [
-    CommonModule,
-    FormsModule,
-    ReactiveFormsModule,
-    MatCardModule,
-    MatInputModule,
-    MatSelectModule,
-    MatFormFieldModule,
-    MatButtonModule,
-    MatDividerModule,
-  ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: `
-    :host { display: block; width: 440px; max-width: 100vw; }
-    .dialog-header { padding: 16px 24px 8px; }
-    .dialog-header h2 { margin: 0; font-size: 18px; }
-    .form-body { padding: 16px 24px; }
-    .form-actions {
-      display: flex; justify-content: flex-end; gap: 8px;
-      padding: 16px 24px; border-top: 1px solid #eee;
-    }
-    mat-form-field { width: 100%; }
-  `,
-  template: `
-    <div class="dialog-header">
-      <h2>Từ chối yêu cầu xóa</h2>
-    </div>
-    <div class="form-body">
-      <p style="margin:0 0 16px;color:#757575;font-size:14px">
-        Hãy chọn lý do từ chối và (tùy chọn) thêm ghi chú chi tiết.
-      </p>
-      <form [formGroup]="denyForm">
-        <mat-form-field appearance="outline">
-          <mat-label>Lý do từ chối</mat-label>
-          <mat-select formControlName="reasonCode">
-            @for (reason of denialReasons(); track reason.value) {
-              <mat-option [value]="reason.value">
-                {{ reason.label }}
-              </mat-option>
+            /**
+            * Kiểm tra có ít nhất 1 loại dữ liệu được chọn.
+            */
+            hasSelectedDataTypes(): boolean {
+            return this.selectedDataTypes().length > 0;
             }
-          </mat-select>
-        </mat-form-field>
 
-        <mat-form-field appearance="outline">
-          <mat-label>Ghi chú bổ sung</mat-label>
-          <textarea
-            matInput
-            formControlName="note"
-            rows="3"
-            placeholder="Giải thích chi tiết..."
-          />
-        </mat-form-field>
-      </form>
-    </div>
-    <div class="form-actions">
-      <button mat-button (click)="closeDialog()">Hủy bỏ</button>
-      <button
-        mat-flat-button
-        color="warn"
-        (click)="handleDeny()"
-        [disabled]="denyForm.invalid"
-      >
-        <mat-icon>block</mat-icon>
-        Từ chối
-      </button>
-    </div>
-  `,
-})
-export class ErasureDenyDialogComponent {
-  private readonly fb = inject(FormBuilder);
-  private readonly dialog = inject(MatDialog);
-  private readonly store = inject(RetentionStore);
+            handleSubmit(): void {
+            if (this.erasureForm.invalid || !this.hasSelectedDataTypes()) return;
 
-  readonly denialReasons = signal<Array<{ value: string; label: string }>>([
-    { value: ErasureDenialReason.InsufficientVerification, label: 'Thiếu thông tin xác minh' },
-    { value: ErasureDenialReason.LegalHold, label: 'Dữ liệu bắt buộc lưu theo luật' },
-    { value: ErasureDenialReason.RateLimitExceeded, label: 'Vượt quá tần suất yêu cầu' },
-    { value: ErasureDenialReason.NoDataFound, label: 'Không tìm thấy dữ liệu' },
-    { value: ErasureDenialReason.Other, label: 'Khác' },
-  ]);
+            this.submitting.set(true);
 
-  denyForm: FormGroup = this.fb.group({
-    reasonCode: ['', Validators.required],
-    note: [''],
-  });
+            const selectedTypes = this.selectedDataTypes();
+            const form: ErasureRequestForm = {
+            subjectName: this.erasureForm.value.subjectName,
+            subjectEmail: this.erasureForm.value.subjectEmail,
+            subjectPhone: this.erasureForm.value.subjectPhone,
+            verificationMethod: this.erasureForm.value.verificationMethod,
+            dataTypes: selectedTypes,
+            reason: this.erasureForm.value.reason,
+            };
 
-  // Data được truyền qua MatDialogRef
-  private requestId: string | null = null;
+            this.store.submitErasureRequest(form);
 
-  handleDeny(): void {
-    if (!this.requestId || this.denyForm.invalid) return;
-    const { reasonCode, note } = this.denyForm.value;
-    this.store.denyErasure(this.requestId, reasonCode, note || undefined);
-    this.closeDialog();
-  }
+            // Reload danh sách yêu cầu
+            this.store.loadErasureRequests();
+            }
 
-  closeDialog(): void {
-    this.dialog.closeAll();
-  }
-}
+            closeDialog(): void {
+            this.store.closeErasureForm();
+            }
+            }
 
-// ──────────────────────────────────────────────
-// Component chính — Quản lý yêu cầu xóa
-// ──────────────────────────────────────────────
+            // ──────────────────────────────────────────────
+            // Dialog — Từ chối yêu cầu xóa
+            // ──────────────────────────────────────────────
 
-@Component({
-  selector: 'cp47-retention-erasure',
-  standalone: true,
-  imports: [
-    CommonModule,
-    FormsModule,
-    RouterLink,
-    MatCardModule,
-    MatTableModule,
-    MatPaginatorModule,
-    MatSortModule,
-    MatProgressSpinnerModule,
-    MatProgressBarModule,
-    MatChipsModule,
-    MatTooltipModule,
-    MatIconModule,
-    MatButtonModule,
-    MatInputModule,
-    MatSelectModule,
-    MatFormFieldModule,
-    MatDividerModule,
-    MatSnackBarModule,
-    MatDialogModule,
-    MatMenuModule,
-    MatBadgeModule,
-    MatListModule,
-  ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: `
-    :host {
-      display: block;
-      padding: 24px;
-      background: #fafafa;
-      min-height: 100vh;
-    }
-    .page-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }
-    .page-header h1 {
-      margin: 0;
-      font-size: 22px;
-      font-weight: 500;
-    }
-    .filters-bar {
-      display: flex;
-      gap: 16px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-    .filters-bar mat-form-field {
-      flex: 1;
-      min-width: 200px;
-    }
-    table { width: 100%; }
-    .progress-bar-cell {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .progress-bar-cell mat-progress-bar {
-      flex: 1;
-      height: 6px;
-    }
-    .progress-percent {
-      font-size: 12px;
-      font-weight: 500;
-      min-width: 36px;
-      text-align: right;
-    }
-    .row-hover:hover { background: #f5f5f5; }
-    .empty-state {
-      text-align: center;
-      padding: 48px 16px;
-      color: #757575;
-    }
-    .loading-overlay {
-      display: flex; justify-content: center; padding: 48px;
-    }
-    .detail-panel {
-      margin-top: 24px;
-    }
-    .detail-panel mat-card {
-      background: #fff;
-    }
-    .detail-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .status-chip { font-weight: 500; }
-    .action-buttons { display: flex; gap: 8px; }
-    mat-paginator { border-top: 1px solid #eee; }
+            @Component({
+            selector: 'cp47-erasure-deny-dialog',
+            standalone: true,
+            imports: [
+            CommonModule,
+            FormsModule,
+            ReactiveFormsModule,
+            MatCardModule,
+            MatInputModule,
+            MatSelectModule,
+            MatFormFieldModule,
+            MatButtonModule,
+            MatDividerModule,
+            ],
+            changeDetection: ChangeDetectionStrategy.OnPush,
+            styles: `
+            :host { display: block; width: 440px; max-width: 100vw; }
+            .dialog-header { padding: 16px 24px 8px; }
+            .dialog-header h2 { margin: 0; font-size: 18px; }
+            .form-body { padding: 16px 24px; }
+            .form-actions {
+            display: flex; justify-content: flex-end; gap: 8px;
+            padding: 16px 24px; border-top: 1px solid #eee;
+            }
+            mat-form-field { width: 100%; }
+            `,
+            template: `
+            <div class="dialog-header">
+                <h2>Từ chối yêu cầu xóa</h2>
+            </div>
+            <div class="form-body">
+                <p style="margin:0 0 16px;color:#757575;font-size:14px">
+                    Hãy chọn lý do từ chối và (tùy chọn) thêm ghi chú chi tiết.
+                </p>
+                <form [formGroup]="denyForm">
+                    <mat-form-field appearance="outline">
+                        <mat-label>Lý do từ chối</mat-label>
+                        <mat-select formControlName="reasonCode">
+                            @for (reason of denialReasons(); track reason.value) {
+                            <mat-option [value]="reason.value">
+                                {{ reason.label }}
+                            </mat-option>
+                            }
+                        </mat-select>
+                    </mat-form-field>
 
-    /* Progress steps */
-    .progress-steps {
-      display: flex;
-      gap: 16px;
-      padding: 16px 0;
-      flex-wrap: wrap;
-    }
-    .step-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      flex: 1;
-      min-width: 100px;
-    }
-    .step-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-    }
-    .step-icon.done { background: #e8f5e9; color: #4caf50; }
-    .step-icon.current { background: #e3f2fd; color: #2196f3; }
-    .step-icon.pending { background: #f5f5f5; color: #bdbdbd; }
-    .step-label {
-      font-size: 11px;
-      text-align: center;
-      color: #757575;
-    }
-  `,
-  template: `
-    <!-- Header -->
-    <div class="page-header">
-      <div style="display:flex;align-items:center;gap:12px">
-        <button mat-icon-button routerLink="/retention/dashboard">
-          <mat-icon>arrow_back</mat-icon>
-        </button>
-        <h1>
-          Yêu cầu xóa dữ liệu
-          <mat-badge
-            [badgeContent]="pendingCount()"
-            color="warn"
-            @if (pendingCount() === 0) { style="display:none" }
-          />
-        </h1>
-      </div>
-      <button
-        mat-flat-button
-        color="primary"
-        (click)="handleCreateErasure()"
-      >
-        <mat-icon>delete_sweep</mat-icon>
-        Gửi yêu cầu xóa
-      </button>
-    </div>
-
-    <!-- Thanh lọc -->
-    <div class="filters-bar">
-      <mat-form-field appearance="outline">
-        <mat-label>Tìm kiếm chủ thể</mat-label>
-        <input
-          matInput
-          placeholder="Tìm theo tên, email..."
-          (input)="onSearch($event)"
-          [value]="searchQuery()"
-        />
-        <mat-icon matSuffix>search</mat-icon>
-      </mat-form-field>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Trạng thái</mat-label>
-        <mat-select (selectionChange)="onStatusFilter($event.value)">
-          <mat-option value="all">Tất cả</mat-option>
-          @for (status of statusOptions(); track status.value) {
-            <mat-option [value]="status.value">
-              {{ status.label }}
-            </mat-option>
-          }
-        </mat-select>
-      </mat-form-field>
-    </div>
-
-    <!-- Bảng yêu cầu -->
-    <mat-card>
-      @if (erasureLoading()) {
-        <div class="loading-overlay">
-          <mat-progress-spinner diameter="32" mode="indeterminate" />
-        </div>
-      } @else if (erasureRequests().length === 0) {
-        <div class="empty-state">
-          <mat-icon style="font-size:48px;width:48px;height:48px;color:#bdbdbd">
-            delete_sweep
-          </mat-icon>
-          <p>Chưa có yêu cầu xóa nào</p>
-          <button mat-stroked-button color="primary" (click)="handleCreateErasure()">
-            Gửi yêu cầu xóa đầu tiên
-          </button>
-        </div>
-      } @else {
-        <div style="overflow-x:auto">
-          <table
-            mat-table
-            [dataSource]="erasureRequests()"
-            matSort
-          >
-            <!-- Tên chủ thể -->
-            <ng-container matColumnDef="subjectName">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Chủ thể</th>
-              <td mat-cell *matCellDef="let req">
-                <strong style="cursor:pointer;color:#1976d2"
-                  (click)="handleSelectRequest(req)">
-                  {{ req.subjectName }}
-                </strong>
-              </td>
-            </ng-container>
-
-            <!-- Email -->
-            <ng-container matColumnDef="subjectEmail">
-              <th mat-header-cell *matHeaderCellDef>Email</th>
-              <td mat-cell *matCellDef="let req">
-                <span style="font-size:13px;color:#757575">
-                  {{ req.subjectEmail }}
-                </span>
-              </td>
-            </ng-container>
-
-            <!-- Trạng thái -->
-            <ng-container matColumnDef="status">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Trạng thái</th>
-              <td mat-cell *matCellDef="let req">
-                <mat-chip-set>
-                  <mat-chip
-                    class="status-chip"
-                    [color]="statusColorMap()[req.status]"
-                    selected
-                    variant="filled"
-                  >
-                    {{ statusLabels()[req.status] }}
-                  </mat-chip>
-                </mat-chip-set>
-              </td>
-            </ng-container>
-
-            <!-- Tiến độ -->
-            <ng-container matColumnDef="progressPercent">
-              <th mat-header-cell *matHeaderCellDef>Tiến độ</th>
-              <td mat-cell *matCellDef="let req">
-                <div class="progress-bar-cell">
-                  <mat-progress-bar
-                    mode="determinate"
-                    [value]="req.progressPercent"
-                    [color]="getProgressColor(req.status)"
-                  />
-                  <span class="progress-percent">
-                    {{ req.progressPercent }}%
-                  </span>
-                </div>
-              </td>
-            </ng-container>
-
-            <!-- Loại dữ liệu -->
-            <ng-container matColumnDef="dataTypes">
-              <th mat-header-cell *matHeaderCellDef>Loại dữ liệu</th>
-              <td mat-cell *matCellDef="let req">
-                <mat-chip-set>
-                  @for (dt of req.dataTypes; track dt; let i = $index) {
-                    @if (i < 2) {
-                      <mat-chip selected color="primary" variant="filled"
-                        [matTooltip]="'C\u00f3 ' + (req.dataTypes.length - 2) + ' lo\u1ea1i kh\u00e1c'">
-                        {{ dataTypeLabels()[dt] }}
-                      </mat-chip>
-                    }
-                  }
-                  @if (req.dataTypes.length > 2) {
-                    <mat-chip>
-                      +{{ req.dataTypes.length - 2 }}
-                    </mat-chip>
-                  }
-                </mat-chip-set>
-              </td>
-            </ng-container>
-
-            <!-- Ngày tạo -->
-            <ng-container matColumnDef="createdAt">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Ngày tạo</th>
-              <td mat-cell *matCellDef="let req">
-                {{ formatShortDate(req.createdAt) }}
-              </td>
-            </ng-container>
-
-            <!-- Hoàn thành -->
-            <ng-container matColumnDef="completedAt">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Hoàn thành</th>
-              <td mat-cell *matCellDef="let req">
-                {{ formatShortDate(req.completedAt) }}
-              </td>
-            </ng-container>
-
-            <!-- Hành động -->
-            <ng-container matColumnDef="actions">
-              <th mat-header-cell *matHeaderCellDef>Hành động</th>
-              <td mat-cell *matCellDef="let req">
-                <button
-                  mat-icon-button
-                  color="primary"
-                  (click)="handleSelectRequest(req)"
-                  matTooltip="Xem chi tiết"
-                >
-                  <mat-icon>visibility</mat-icon>
-                </button>
-                @if (req.status === 'pending' || req.status === 'verified') {
-                  <button
-                    mat-icon-button
-                    color="accent"
-                    (click)="handleApprove(req)"
-                    matTooltip="Phê duyệt"
-                  >
-                    <mat-icon>check_circle</mat-icon>
-                  </button>
-                  <button
-                    mat-icon-button
-                    color="warn"
-                    (click)="handleDeny(req)"
-                    matTooltip="Từ chối"
-                  >
+                    <mat-form-field appearance="outline">
+                        <mat-label>Ghi chú bổ sung</mat-label>
+                        <textarea matInput formControlName="note" rows="3" placeholder="Giải thích chi tiết..." />
+                    </mat-form-field>
+                </form>
+            </div>
+            <div class="form-actions">
+                <button mat-button (click)="closeDialog()">Hủy bỏ</button>
+                <button mat-flat-button color="warn" (click)="handleDeny()" [disabled]="denyForm.invalid">
                     <mat-icon>block</mat-icon>
-                  </button>
+                    Từ chối
+                </button>
+            </div>
+            `,
+            })
+            export class ErasureDenyDialogComponent {
+            private readonly fb = inject(FormBuilder);
+            private readonly dialog = inject(MatDialog);
+            private readonly store = inject(RetentionStore);
+
+            readonly denialReasons = signal<Array<{ value: string; label: string }>>([
+                { value: ErasureDenialReason.InsufficientVerification, label: 'Thiếu thông tin xác minh' },
+                { value: ErasureDenialReason.LegalHold, label: 'Dữ liệu bắt buộc lưu theo luật' },
+                { value: ErasureDenialReason.RateLimitExceeded, label: 'Vượt quá tần suất yêu cầu' },
+                { value: ErasureDenialReason.NoDataFound, label: 'Không tìm thấy dữ liệu' },
+                { value: ErasureDenialReason.Other, label: 'Khác' },
+                ]);
+
+                denyForm: FormGroup = this.fb.group({
+                reasonCode: ['', Validators.required],
+                note: [''],
+                });
+
+                // Data được truyền qua MatDialogRef
+                private requestId: string | null = null;
+
+                handleDeny(): void {
+                if (!this.requestId || this.denyForm.invalid) return;
+                const { reasonCode, note } = this.denyForm.value;
+                this.store.denyErasure(this.requestId, reasonCode, note || undefined);
+                this.closeDialog();
                 }
-              </td>
-            </ng-container>
 
-            <tr mat-header-row *matHeaderRowDef="displayedColumns" />
-            <tr
-              mat-row
-              *matRowDef="let row; columns: displayedColumns"
-              class="row-hover"
-            />
-          </table>
-        </div>
+                closeDialog(): void {
+                this.dialog.closeAll();
+                }
+                }
 
-        <!-- Phân trang -->
-        @if (erasurePagination(); as pag) {
-          <mat-paginator
-            [length]="pag.total"
-            [pageSize]="pag.pageSize"
-            [pageIndex]="pag.page - 1"
-            [pageSizeOptions]="[10, 20, 50]"
-            showFirstLastButtons
-            (page)="onPageChange($event)"
-          />
-        }
-      }
-    </mat-card>
+                // ──────────────────────────────────────────────
+                // Component chính — Quản lý yêu cầu xóa
+                // ──────────────────────────────────────────────
 
-    <!-- Panel chi tiết yêu cầu được chọn -->
-    @if (selectedRequest(); as req) {
-      <mat-card class="detail-panel">
-        <mat-card-header>
-          <div class="detail-header">
-            <mat-card-title>
-              Chi tiết yêu cầu — {{ req.subjectName }}
-            </mat-card-title>
-            <button mat-icon-button (click)="handleDeselect()" matTooltip="Đóng">
-              <mat-icon>close</mat-icon>
-            </button>
-          </div>
-        </mat-card-header>
-        <mat-card-content>
-          <!-- Tiến độ Steps -->
-          <div class="progress-steps">
-            <div class="step-item">
-              <div class="step-icon"
-                [class]="getStepClass(req, 'pending')">
-                <mat-icon>pending</mat-icon>
-              </div>
-              <span class="step-label">Đang chờ</span>
-            </div>
-            <div class="step-item">
-              <div class="step-icon"
-                [class]="getStepClass(req, 'processing')">
-                <mat-icon>hourglass_top</mat-icon>
-              </div>
-              <span class="step-label">Xử lý</span>
-            </div>
-            <div class="step-item">
-              <div class="step-icon"
-                [class]="getStepClass(req, 'verified')">
-                <mat-icon>verified_user</mat-icon>
-              </div>
-              <span class="step-label">Xác minh</span>
-            </div>
-            <div class="step-item">
-              <div class="step-icon"
-                [class]="getStepClass(req, 'erasing')">
-                <mat-icon>delete_sweep</mat-icon>
-              </div>
-              <span class="step-label">Đang xóa</span>
-            </div>
-            <div class="step-item">
-              <div class="step-icon"
-                [class]="getStepClass(req, 'completed')">
-                <mat-icon>check_circle</mat-icon>
-              </div>
-              <span class="step-label">Hoàn thành</span>
-            </div>
-          </div>
+                @Component({
+                selector: 'cp47-retention-erasure',
+                standalone: true,
+                imports: [
+                CommonModule,
+                FormsModule,
+                RouterLink,
+                MatCardModule,
+                MatTableModule,
+                MatPaginatorModule,
+                MatSortModule,
+                MatProgressSpinnerModule,
+                MatProgressBarModule,
+                MatChipsModule,
+                MatTooltipModule,
+                MatIconModule,
+                MatButtonModule,
+                MatInputModule,
+                MatSelectModule,
+                MatFormFieldModule,
+                MatDividerModule,
+                MatSnackBarModule,
+                MatDialogModule,
+                MatMenuModule,
+                MatBadgeModule,
+                MatListModule,
+                ],
+                changeDetection: ChangeDetectionStrategy.OnPush,
+                styles: `
+                :host {
+                display: block;
+                padding: 24px;
+                background: #fafafa;
+                min-height: 100vh;
+                }
+                .page-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 24px;
+                }
+                .page-header h1 {
+                margin: 0;
+                font-size: 22px;
+                font-weight: 500;
+                }
+                .filters-bar {
+                display: flex;
+                gap: 16px;
+                margin-bottom: 16px;
+                flex-wrap: wrap;
+                align-items: center;
+                }
+                .filters-bar mat-form-field {
+                flex: 1;
+                min-width: 200px;
+                }
+                table { width: 100%; }
+                .progress-bar-cell {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                }
+                .progress-bar-cell mat-progress-bar {
+                flex: 1;
+                height: 6px;
+                }
+                .progress-percent {
+                font-size: 12px;
+                font-weight: 500;
+                min-width: 36px;
+                text-align: right;
+                }
+                .row-hover:hover { background: #f5f5f5; }
+                .empty-state {
+                text-align: center;
+                padding: 48px 16px;
+                color: #757575;
+                }
+                .loading-overlay {
+                display: flex; justify-content: center; padding: 48px;
+                }
+                .detail-panel {
+                margin-top: 24px;
+                }
+                .detail-panel mat-card {
+                background: #fff;
+                }
+                .detail-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                }
+                .status-chip { font-weight: 500; }
+                .action-buttons { display: flex; gap: 8px; }
+                mat-paginator { border-top: 1px solid #eee; }
 
-          <mat-divider />
-
-          <!-- Thông tin chi tiết -->
-          <div style="padding:16px 0;display:grid;grid-template-columns:1fr 1fr;gap:16px">
-            <div>
-              <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
-                Email
-              </div>
-              <div>{{ req.subjectEmail }}</div>
-            </div>
-            <div>
-              <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
-                Điện thoại
-              </div>
-              <div>{{ req.subjectPhone }}</div>
-            </div>
-            <div>
-              <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
-                Trạng thái
-              </div>
-              <mat-chip-set>
-                <mat-chip [color]="statusColorMap()[req.status]" selected>
-                  {{ statusLabels()[req.status] }}
-                </mat-chip>
-              </mat-chip-set>
-            </div>
-            <div>
-              <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
-                Tiến độ xóa
-              </div>
-              <div>
-                {{ req.recordsErased }} / {{ req.totalRecords }} bản ghi
-                ({{ req.progressPercent }}%)
-              </div>
-            </div>
-            <div style="grid-column:span 2">
-              <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
-                Lý do
-              </div>
-              <div>{{ req.reason }}</div>
-            </div>
-            @if (req.status === 'denied' && req.denialNote) {
-              <div style="grid-column:span 2">
-                <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
-                  Lý do từ chối
+                /* Progress steps */
+                .progress-steps {
+                display: flex;
+                gap: 16px;
+                padding: 16px 0;
+                flex-wrap: wrap;
+                }
+                .step-item {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 4px;
+                flex: 1;
+                min-width: 100px;
+                }
+                .step-icon {
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 18px;
+                }
+                .step-icon.done { background: #e8f5e9; color: #4caf50; }
+                .step-icon.current { background: #e3f2fd; color: #2196f3; }
+                .step-icon.pending { background: #f5f5f5; color: #bdbdbd; }
+                .step-label {
+                font-size: 11px;
+                text-align: center;
+                color: #757575;
+                }
+                `,
+                template: `
+                <!-- Header -->
+                <div class="page-header">
+                    <div style="display:flex;align-items:center;gap:12px">
+                        <button mat-icon-button routerLink="/retention/dashboard">
+                            <mat-icon>arrow_back</mat-icon>
+                        </button>
+                        <h1>
+                            Yêu cầu xóa dữ liệu
+                            <mat-badge [badgeContent]="pendingCount()" color="warn" @if (pendingCount()===0) {
+                                style="display:none" } />
+                        </h1>
+                    </div>
+                    <button mat-flat-button color="primary" (click)="handleCreateErasure()">
+                        <mat-icon>delete_sweep</mat-icon>
+                        Gửi yêu cầu xóa
+                    </button>
                 </div>
-                <div style="color:#c62828">{{ req.denialNote }}</div>
-              </div>
-            }
-          </div>
-        </mat-card-content>
-      </mat-card>
-    }
-  `,
-})
-export class RetentionErasureComponent implements OnInit {
-  // ── Inject ──
-  private readonly store = inject(RetentionStore);
-  private readonly dialog = inject(MatDialog);
-  private readonly snackBar = inject(MatSnackBar);
 
-  // ── Signals ──
-  readonly searchQuery = signal<string>('');
-  private readonly debounceTimer = signal<ReturnType<typeof setTimeout> | null>(null);
+                <!-- Thanh lọc -->
+                <div class="filters-bar">
+                    <mat-form-field appearance="outline">
+                        <mat-label>Tìm kiếm chủ thể</mat-label>
+                        <input matInput placeholder="Tìm theo tên, email..." (input)="onSearch($event)"
+                            [value]="searchQuery()" />
+                        <mat-icon matSuffix>search</mat-icon>
+                    </mat-form-field>
 
-  // ── Computed từ store ──
-  readonly erasureRequests = this.store.erasureRequests;
-  readonly erasureLoading = this.store.erasureLoading;
-  readonly erasurePagination = this.store.erasurePagination;
-  readonly selectedRequest = this.store.selectedErasureRequest;
+                    <mat-form-field appearance="outline">
+                        <mat-label>Trạng thái</mat-label>
+                        <mat-select (selectionChange)="onStatusFilter($event.value)">
+                            <mat-option value="all">Tất cả</mat-option>
+                            @for (status of statusOptions(); track status.value) {
+                            <mat-option [value]="status.value">
+                                {{ status.label }}
+                            </mat-option>
+                            }
+                        </mat-select>
+                    </mat-form-field>
+                </div>
 
-  // ── Computed local ──
-  /** Số yêu cầu đang chờ xử lý */
-  readonly pendingCount = computed(() => {
-    return this.erasureRequests().filter(
-      (r) => r.status === 'pending' || r.status === 'processing'
-    ).length;
-  });
+                <!-- Bảng yêu cầu -->
+                <mat-card>
+                    @if (erasureLoading()) {
+                    <div class="loading-overlay">
+                        <mat-progress-spinner diameter="32" mode="indeterminate" />
+                    </div>
+                    } @else if (erasureRequests().length === 0) {
+                    <div class="empty-state">
+                        <mat-icon style="font-size:48px;width:48px;height:48px;color:#bdbdbd">
+                            delete_sweep
+                        </mat-icon>
+                        <p>Chưa có yêu cầu xóa nào</p>
+                        <button mat-stroked-button color="primary" (click)="handleCreateErasure()">
+                            Gửi yêu cầu xóa đầu tiên
+                        </button>
+                    </div>
+                    } @else {
+                    <div style="overflow-x:auto">
+                        <table mat-table [dataSource]="erasureRequests()" matSort>
+                            <!-- Tên chủ thể -->
+                            <ng-container matColumnDef="subjectName">
+                                <th mat-header-cell *matHeaderCellDef mat-sort-header>Chủ thể</th>
+                                <td mat-cell *matCellDef="let req">
+                                    <strong style="cursor:pointer;color:#1976d2" (click)="handleSelectRequest(req)">
+                                        {{ req.subjectName }}
+                                    </strong>
+                                </td>
+                            </ng-container>
 
-  // ── Dữ liệu tĩnh ──
-  readonly displayedColumns: string[] = [
-    'subjectName', 'subjectEmail', 'status', 'progressPercent',
-    'dataTypes', 'createdAt', 'completedAt', 'actions',
-  ];
+                            <!-- Email -->
+                            <ng-container matColumnDef="subjectEmail">
+                                <th mat-header-cell *matHeaderCellDef>Email</th>
+                                <td mat-cell *matCellDef="let req">
+                                    <span style="font-size:13px;color:#757575">
+                                        {{ req.subjectEmail }}
+                                    </span>
+                                </td>
+                            </ng-container>
 
-  readonly statusOptions = computed(() =>
-    Object.entries(ERASURE_STATUS_LABELS).map(([value, label]) => ({
-      value: value as ErasureRequestStatus,
-      label,
-    }))
-  );
+                            <!-- Trạng thái -->
+                            <ng-container matColumnDef="status">
+                                <th mat-header-cell *matHeaderCellDef mat-sort-header>Trạng thái</th>
+                                <td mat-cell *matCellDef="let req">
+                                    <mat-chip-set>
+                                        <mat-chip class="status-chip" [color]="statusColorMap()[req.status]" selected
+                                            variant="filled">
+                                            {{ statusLabels()[req.status] }}
+                                        </mat-chip>
+                                    </mat-chip-set>
+                                </td>
+                            </ng-container>
 
-  readonly statusLabels = computed(() => ERASURE_STATUS_LABELS);
-  readonly statusColorMap = computed(() => ERASURE_STATUS_COLORS);
-  readonly dataTypeLabels = computed(() => DATA_TYPE_LABELS);
+                            <!-- Tiến độ -->
+                            <ng-container matColumnDef="progressPercent">
+                                <th mat-header-cell *matHeaderCellDef>Tiến độ</th>
+                                <td mat-cell *matCellDef="let req">
+                                    <div class="progress-bar-cell">
+                                        <mat-progress-bar mode="determinate" [value]="req.progressPercent"
+                                            [color]="getProgressColor(req.status)" />
+                                        <span class="progress-percent">
+                                            {{ req.progressPercent }}%
+                                        </span>
+                                    </div>
+                                </td>
+                            </ng-container>
 
-  // ── Lifecycle ──
-  ngOnInit(): void {
-    this.store.loadErasureRequests();
+                            <!-- Loại dữ liệu -->
+                            <ng-container matColumnDef="dataTypes">
+                                <th mat-header-cell *matHeaderCellDef>Loại dữ liệu</th>
+                                <td mat-cell *matCellDef="let req">
+                                    <mat-chip-set>
+                                        @for (dt of req.dataTypes; track dt; let i = $index) {
+                                        @if (i < 2) { <mat-chip selected color="primary" variant="filled"
+                                            [matTooltip]="'C\u00f3 ' + (req.dataTypes.length - 2) + ' lo\u1ea1i kh\u00e1c'">
+                                            {{ dataTypeLabels()[dt] }}
+                                            </mat-chip>
+                                            }
+                                            }
+                                            @if (req.dataTypes.length > 2) {
+                                            <mat-chip>
+                                                +{{ req.dataTypes.length - 2 }}
+                                            </mat-chip>
+                                            }
+                                    </mat-chip-set>
+                                </td>
+                            </ng-container>
 
-    // Effect: cảnh báo lỗi
-    effect(() => {
-      const err = this.store.erasureError();
-      if (err) {
-        this.showWarning(`Lỗi: ${err.message}`);
-      }
-    });
-  }
+                            <!-- Ngày tạo -->
+                            <ng-container matColumnDef="createdAt">
+                                <th mat-header-cell *matHeaderCellDef mat-sort-header>Ngày tạo</th>
+                                <td mat-cell *matCellDef="let req">
+                                    {{ formatShortDate(req.createdAt) }}
+                                </td>
+                            </ng-container>
 
-  // ── Event handlers ──
+                            <!-- Hoàn thành -->
+                            <ng-container matColumnDef="completedAt">
+                                <th mat-header-cell *matHeaderCellDef mat-sort-header>Hoàn thành</th>
+                                <td mat-cell *matCellDef="let req">
+                                    {{ formatShortDate(req.completedAt) }}
+                                </td>
+                            </ng-container>
 
-  handleCreateErasure(): void {
-    this.dialog.open(ErasureFormDialogComponent, {
-      width: '640px',
-      maxWidth: '95vw',
-      disableClose: false,
-    });
-  }
+                            <!-- Hành động -->
+                            <ng-container matColumnDef="actions">
+                                <th mat-header-cell *matHeaderCellDef>Hành động</th>
+                                <td mat-cell *matCellDef="let req">
+                                    <button mat-icon-button color="primary" (click)="handleSelectRequest(req)"
+                                        matTooltip="Xem chi tiết">
+                                        <mat-icon>visibility</mat-icon>
+                                    </button>
+                                    @if (req.status === 'pending' || req.status === 'verified') {
+                                    <button mat-icon-button color="accent" (click)="handleApprove(req)"
+                                        matTooltip="Phê duyệt">
+                                        <mat-icon>check_circle</mat-icon>
+                                    </button>
+                                    <button mat-icon-button color="warn" (click)="handleDeny(req)" matTooltip="Từ chối">
+                                        <mat-icon>block</mat-icon>
+                                    </button>
+                                    }
+                                </td>
+                            </ng-container>
 
-  handleSelectRequest(req: ErasureRequest): void {
-    this.store.selectErasureRequest(req.id);
-  }
+                            <tr mat-header-row *matHeaderRowDef="displayedColumns" />
+                            <tr mat-row *matRowDef="let row; columns: displayedColumns" class="row-hover" />
+                        </table>
+                    </div>
 
-  handleDeselect(): void {
-    this.store.selectErasureRequest('');
-  }
+                    <!-- Phân trang -->
+                    @if (erasurePagination(); as pag) {
+                    <mat-paginator [length]="pag.total" [pageSize]="pag.pageSize" [pageIndex]="pag.page - 1"
+                        [pageSizeOptions]="[10, 20, 50]" showFirstLastButtons (page)="onPageChange($event)" />
+                    }
+                    }
+                </mat-card>
 
-  handleApprove(req: ErasureRequest): void {
-    const confirmed = window.confirm(
-      `Phê duyệt yêu cầu xóa của "${req.subjectName}"?\n\n` +
-      `Hành động này sẽ bắt đầu xóa ${req.totalRecords} bản ghi.\n` +
-      `Dữ liệu sẽ bị xóa vĩnh viễn và không thể khôi phục.`
-    );
-    if (confirmed) {
-      this.store.approveErasure(req.id);
-      this.showSuccess('Đã phê duyệt yêu cầu xóa');
-    }
-  }
+                <!-- Panel chi tiết yêu cầu được chọn -->
+                @if (selectedRequest(); as req) {
+                <mat-card class="detail-panel">
+                    <mat-card-header>
+                        <div class="detail-header">
+                            <mat-card-title>
+                                Chi tiết yêu cầu — {{ req.subjectName }}
+                            </mat-card-title>
+                            <button mat-icon-button (click)="handleDeselect()" matTooltip="Đóng">
+                                <mat-icon>close</mat-icon>
+                            </button>
+                        </div>
+                    </mat-card-header>
+                    <mat-card-content>
+                        <!-- Tiến độ Steps -->
+                        <div class="progress-steps">
+                            <div class="step-item">
+                                <div class="step-icon" [class]="getStepClass(req, 'pending')">
+                                    <mat-icon>pending</mat-icon>
+                                </div>
+                                <span class="step-label">Đang chờ</span>
+                            </div>
+                            <div class="step-item">
+                                <div class="step-icon" [class]="getStepClass(req, 'processing')">
+                                    <mat-icon>hourglass_top</mat-icon>
+                                </div>
+                                <span class="step-label">Xử lý</span>
+                            </div>
+                            <div class="step-item">
+                                <div class="step-icon" [class]="getStepClass(req, 'verified')">
+                                    <mat-icon>verified_user</mat-icon>
+                                </div>
+                                <span class="step-label">Xác minh</span>
+                            </div>
+                            <div class="step-item">
+                                <div class="step-icon" [class]="getStepClass(req, 'erasing')">
+                                    <mat-icon>delete_sweep</mat-icon>
+                                </div>
+                                <span class="step-label">Đang xóa</span>
+                            </div>
+                            <div class="step-item">
+                                <div class="step-icon" [class]="getStepClass(req, 'completed')">
+                                    <mat-icon>check_circle</mat-icon>
+                                </div>
+                                <span class="step-label">Hoàn thành</span>
+                            </div>
+                        </div>
 
-  handleDeny(req: ErasureRequest): void {
-    this.dialog.open(ErasureDenyDialogComponent, {
-      width: '480px',
-      data: { requestId: req.id },
-    });
-  }
+                        <mat-divider />
 
-  // ── Filter handlers ──
+                        <!-- Thông tin chi tiết -->
+                        <div style="padding:16px 0;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                            <div>
+                                <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
+                                    Email
+                                </div>
+                                <div>{{ req.subjectEmail }}</div>
+                            </div>
+                            <div>
+                                <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
+                                    Điện thoại
+                                </div>
+                                <div>{{ req.subjectPhone }}</div>
+                            </div>
+                            <div>
+                                <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
+                                    Trạng thái
+                                </div>
+                                <mat-chip-set>
+                                    <mat-chip [color]="statusColorMap()[req.status]" selected>
+                                        {{ statusLabels()[req.status] }}
+                                    </mat-chip>
+                                </mat-chip-set>
+                            </div>
+                            <div>
+                                <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
+                                    Tiến độ xóa
+                                </div>
+                                <div>
+                                    {{ req.recordsErased }} / {{ req.totalRecords }} bản ghi
+                                    ({{ req.progressPercent }}%)
+                                </div>
+                            </div>
+                            <div style="grid-column:span 2">
+                                <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
+                                    Lý do
+                                </div>
+                                <div>{{ req.reason }}</div>
+                            </div>
+                            @if (req.status === 'denied' && req.denialNote) {
+                            <div style="grid-column:span 2">
+                                <div style="font-size:11px;color:#9e9e9e;text-transform:uppercase">
+                                    Lý do từ chối
+                                </div>
+                                <div style="color:#c62828">{{ req.denialNote }}</div>
+                            </div>
+                            }
+                        </div>
+                    </mat-card-content>
+                </mat-card>
+                }
+                `,
+                })
+                export class RetentionErasureComponent implements OnInit {
+                // ── Inject ──
+                private readonly store = inject(RetentionStore);
+                private readonly dialog = inject(MatDialog);
+                private readonly snackBar = inject(MatSnackBar);
 
-  onSearch(event: Event): void {
-    const target = event.target as HTMLInputElement;
-    const value = target.value;
-    this.searchQuery.set(value);
+                // ── Signals ──
+                readonly searchQuery = signal<string>('');
+                    private readonly debounceTimer = signal<ReturnType<typeof setTimeout> | null>(null);
 
-    if (this.debounceTimer()) {
-      clearTimeout(this.debounceTimer());
-    }
-    this.debounceTimer.set(
-      setTimeout(() => {
-        this.store.setErasureFilters({ search: value, page: 1 });
-      }, 300)
-    );
-  }
+                        // ── Computed từ store ──
+                        readonly erasureRequests = this.store.erasureRequests;
+                        readonly erasureLoading = this.store.erasureLoading;
+                        readonly erasurePagination = this.store.erasurePagination;
+                        readonly selectedRequest = this.store.selectedErasureRequest;
 
-  onStatusFilter(status: ErasureRequestStatus | 'all'): void {
-    this.store.setErasureFilters({ status, page: 1 });
-  }
+                        // ── Computed local ──
+                        /** Số yêu cầu đang chờ xử lý */
+                        readonly pendingCount = computed(() => {
+                        return this.erasureRequests().filter(
+                        (r) => r.status === 'pending' || r.status === 'processing'
+                        ).length;
+                        });
 
-  onPageChange(event: PageEvent): void {
-    this.store.setErasureFilters({
-      page: event.pageIndex + 1,
-      pageSize: event.pageSize,
-    });
-  }
+                        // ── Dữ liệu tĩnh ──
+                        readonly displayedColumns: string[] = [
+                        'subjectName', 'subjectEmail', 'status', 'progressPercent',
+                        'dataTypes', 'createdAt', 'completedAt', 'actions',
+                        ];
 
-  // ── Helpers ──
+                        readonly statusOptions = computed(() =>
+                        Object.entries(ERASURE_STATUS_LABELS).map(([value, label]) => ({
+                        value: value as ErasureRequestStatus,
+                        label,
+                        }))
+                        );
 
-  formatShortDate(iso: string | null): string {
-    return formatShortDate(iso);
-  }
+                        readonly statusLabels = computed(() => ERASURE_STATUS_LABELS);
+                        readonly statusColorMap = computed(() => ERASURE_STATUS_COLORS);
+                        readonly dataTypeLabels = computed(() => DATA_TYPE_LABELS);
 
-  /**
-   * Xác định màu progress bar theo trạng thái.
-   */
-  getProgressColor(status: ErasureRequestStatus): 'primary' | 'accent' | 'warn' {
-    switch (status) {
-      case 'completed': return 'accent';
-      case 'denied': return 'warn';
-      case 'expired': return 'warn';
-      default: return 'primary';
-    }
-  }
+                        // ── Lifecycle ──
+                        ngOnInit(): void {
+                        this.store.loadErasureRequests();
 
-  /**
-   * Xác định CSS class cho step trong progress stepper.
-   */
-  getStepClass(req: ErasureRequest, stepStatus: string): string {
-    const statusOrder = [
-      'pending',
-      'processing',
-      'verified',
-      'erasing',
-      'completed',
-    ];
+                        // Effect: cảnh báo lỗi
+                        effect(() => {
+                        const err = this.store.erasureError();
+                        if (err) {
+                        this.showWarning(`Lỗi: ${err.message}`);
+                        }
+                        });
+                        }
 
-    const currentIndex = statusOrder.indexOf(req.status);
-    const stepIndex = statusOrder.indexOf(stepStatus);
+                        // ── Event handlers ──
 
-    if (req.status === 'denied' || req.status === 'expired') {
-      // Nếu bị từ chối/hết hạn: các step trước là done, step hiện tại là current
-      if (stepIndex <= 0) return 'done';
-      return 'pending';
-    }
+                        handleCreateErasure(): void {
+                        this.dialog.open(ErasureFormDialogComponent, {
+                        width: '640px',
+                        maxWidth: '95vw',
+                        disableClose: false,
+                        });
+                        }
 
-    if (stepIndex < currentIndex) return 'done';
-    if (stepIndex === currentIndex) return 'current';
-    return 'pending';
-  }
+                        handleSelectRequest(req: ErasureRequest): void {
+                        this.store.selectErasureRequest(req.id);
+                        }
 
-  // ── Snackbar ──
+                        handleDeselect(): void {
+                        this.store.selectErasureRequest('');
+                        }
 
-  private showSuccess(msg: string): void {
-    this.snackBar.open(msg, 'Đóng', {
-      duration: 3000,
-      horizontalPosition: 'end',
-      verticalPosition: 'bottom',
-    });
-  }
+                        handleApprove(req: ErasureRequest): void {
+                        const confirmed = window.confirm(
+                        `Phê duyệt yêu cầu xóa của "${req.subjectName}"?\n\n` +
+                        `Hành động này sẽ bắt đầu xóa ${req.totalRecords} bản ghi.\n` +
+                        `Dữ liệu sẽ bị xóa vĩnh viễn và không thể khôi phục.`
+                        );
+                        if (confirmed) {
+                        this.store.approveErasure(req.id);
+                        this.showSuccess('Đã phê duyệt yêu cầu xóa');
+                        }
+                        }
 
-  private showWarning(msg: string): void {
-    this.snackBar.open(msg, 'Đóng', {
-      duration: 5000,
-      panelClass: ['cp47-snackbar-warn'],
-      horizontalPosition: 'end',
-      verticalPosition: 'bottom',
-    });
-  }
-}
-{% endraw %}
+                        handleDeny(req: ErasureRequest): void {
+                        this.dialog.open(ErasureDenyDialogComponent, {
+                        width: '480px',
+                        data: { requestId: req.id },
+                        });
+                        }
+
+                        // ── Filter handlers ──
+
+                        onSearch(event: Event): void {
+                        const target = event.target as HTMLInputElement;
+                        const value = target.value;
+                        this.searchQuery.set(value);
+
+                        if (this.debounceTimer()) {
+                        clearTimeout(this.debounceTimer());
+                        }
+                        this.debounceTimer.set(
+                        setTimeout(() => {
+                        this.store.setErasureFilters({ search: value, page: 1 });
+                        }, 300)
+                        );
+                        }
+
+                        onStatusFilter(status: ErasureRequestStatus | 'all'): void {
+                        this.store.setErasureFilters({ status, page: 1 });
+                        }
+
+                        onPageChange(event: PageEvent): void {
+                        this.store.setErasureFilters({
+                        page: event.pageIndex + 1,
+                        pageSize: event.pageSize,
+                        });
+                        }
+
+                        // ── Helpers ──
+
+                        formatShortDate(iso: string | null): string {
+                        return formatShortDate(iso);
+                        }
+
+                        /**
+                        * Xác định màu progress bar theo trạng thái.
+                        */
+                        getProgressColor(status: ErasureRequestStatus): 'primary' | 'accent' | 'warn' {
+                        switch (status) {
+                        case 'completed': return 'accent';
+                        case 'denied': return 'warn';
+                        case 'expired': return 'warn';
+                        default: return 'primary';
+                        }
+                        }
+
+                        /**
+                        * Xác định CSS class cho step trong progress stepper.
+                        */
+                        getStepClass(req: ErasureRequest, stepStatus: string): string {
+                        const statusOrder = [
+                        'pending',
+                        'processing',
+                        'verified',
+                        'erasing',
+                        'completed',
+                        ];
+
+                        const currentIndex = statusOrder.indexOf(req.status);
+                        const stepIndex = statusOrder.indexOf(stepStatus);
+
+                        if (req.status === 'denied' || req.status === 'expired') {
+                        // Nếu bị từ chối/hết hạn: các step trước là done, step hiện tại là current
+                        if (stepIndex <= 0) return 'done' ; return 'pending' ; } if (stepIndex < currentIndex)
+                            return 'done' ; if (stepIndex===currentIndex) return 'current' ; return 'pending' ; } // ──
+                            Snackbar ── private showSuccess(msg: string): void { this.snackBar.open(msg, 'Đóng' , {
+                            duration: 3000, horizontalPosition: 'end' , verticalPosition: 'bottom' , }); } private
+                            showWarning(msg: string): void { this.snackBar.open(msg, 'Đóng' , { duration: 5000,
+                            panelClass: ['cp47-snackbar-warn'], horizontalPosition: 'end' , verticalPosition: 'bottom' ,
+                            }); } } {% endraw %}

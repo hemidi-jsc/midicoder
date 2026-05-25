@@ -1,8 +1,26 @@
 /**
 * DelegationSettings — UI cau hinh delegation: form chon delegatee, type, valid_until date picker, delegation list.
 * Sinh boi CP42 ApprovalEmitter.
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 */
+{% if ui_framework == "material" %}
 import React, { useState, useCallback } from 'react';
+import { Button, Card, Typography, Chip, Box, TextField, MenuItem, FormControl, InputLabel, Select, List, ListItem,
+ListItemText, Divider } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+import React, { useState, useCallback } from 'react';
+// Su dung Tailwind utility classes trong JSX
+{% elif ui_framework == "bootstrap" %}
+import React, { useState, useCallback } from 'react';
+import { Button, Card, Form, Badge as BsBadge } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import React, { useState, useCallback } from 'react';
+import { Button, Card, Typography, Tag, Space, Select, Input, Divider } from 'antd';
+{% elif ui_framework == "carbon" %}
+import React, { useState, useCallback } from 'react';
+import { Button, Layer, Tag, TextInput, Select, SelectItem, ComboBox } from '@carbon/react';
+{% endif %}
 
 /* ---- Loai uy quyen ---- */
 export type DelegationType = 'temporary' | 'permanent' | 'conditional';

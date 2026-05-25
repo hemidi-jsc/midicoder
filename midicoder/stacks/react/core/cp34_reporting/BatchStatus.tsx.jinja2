@@ -1,7 +1,20 @@
 // Batch Status — Progress indicator cho batch job.
 // CP34: Report & Document Generator (React)
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 
 import React, { useState, useEffect } from "react";
+
+{% if ui_framework == "material" %}
+import { Card, CardContent, LinearProgress, Typography, Chip, List, ListItem, ListItemText } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng lớp tiện ích Tailwind CSS inline
+{% elif ui_framework == "bootstrap" %}
+import { Card, Progress, Badge } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Card, Progress, Tag, Typography } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, Title, Subtitle, ProgressBar } from '@carbon/react';
+{% endif %}
 
 export interface BatchStatusProps {
 jobId: string;
@@ -42,29 +55,161 @@ const statusLabels: Record<BatchStatusValue, string> = {
                 return () => clearInterval(t);
                 }, [jobId]);
 
+                {% if ui_framework == "material" %}
+                // Render với MUI components
+                if (!job) return <Typography>Đang tải...</Typography>;
+
+                return (
+                <Card className="batch-status">
+                    <CardContent>
+                        <Typography variant="h6">Trạng thái Batch Job</Typography>
+                        <Chip label={statusLabels[job.status]} color={ job.status==="completed" ? "success" :
+                            job.status==="failed" ? "error" : job.status==="running" ? "primary" : "default" } sx={{ mt:
+                            1 }} />
+                        {job.status === "running" && (
+                        <div sx={{ mt: 2 }}>
+                            <LinearProgress variant="determinate" value={(job.resultUrls?.length || 0) /
+                                (job.reportSpecIds?.length || 1) * 100} />
+                            <Typography variant="body2">{job.resultUrls?.length || 0} / {job.reportSpecIds?.length || 0}
+                            </Typography>
+                        </div>
+                        )}
+                        {job.status === "completed" && (
+                        <List>
+                            {job.resultUrls.map((url: string, index: number) => (
+                            <ListItem key={index}>
+                                <ListItemText primary={ <a href={url} target="_blank" rel="noopener noreferrer">Download
+                                    {index + 1}</a>
+                                    }
+                                    />
+                            </ListItem>
+                            ))}
+                        </List>
+                        )}
+                        {job.status === "failed" && <Typography color="error">{job.error}</Typography>}
+                    </CardContent>
+                </Card>
+                );
+                {% elif ui_framework == "tailwind" %}
+                // Render với Tailwind CSS utility classes
                 if (!job) return <p>Đang tải...</p>;
 
                 return (
-                <div className="batch-status">
-                    <h3>Trạng thái Batch Job</h3>
-                    <span>{statusLabels[job.status]}</span>
+                <div className="p-4 border rounded-lg" data-testid="batch-status">
+                    <h3 className="text-lg font-semibold mb-2">Trạng thái Batch Job</h3>
+                    <span className={`inline-block px-2 py-1 text-xs rounded-full ${ job.status==="completed"
+                        ? "bg-green-100 text-green-800" : job.status==="failed" ? "bg-red-100 text-red-800" :
+                        job.status==="running" ? "bg-blue-100 text-blue-800" : "bg-yellow-100 text-yellow-800" }`}>
+                        {statusLabels[job.status]}
+                    </span>
                     {job.status === "running" && (
-                    <p>{job.resultUrls?.length || 0} / {job.reportSpecIds?.length || 0}</p>
+                    <div className="mt-3">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${((job.resultUrls?.length ||
+                                0) / (job.reportSpecIds?.length || 1)) * 100}%` }} />
+                        </div>
+                        <p className="text-sm text-gray-500 mt-1">{job.resultUrls?.length || 0} /
+                            {job.reportSpecIds?.length || 0}</p>
+                    </div>
                     )}
                     {job.status === "completed" && (
-                    <ul>
+                    <ul className="mt-3 space-y-1">
                         {job.resultUrls.map((url: string, index: number) => (
                         <li key={index}>
-                            <a href={url} target="_blank" rel="noopener noreferrer">
+                            <a href={url} target="_blank" rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline">
                                 Download {index + 1}
                             </a>
                         </li>
                         ))}
                     </ul>
                     )}
-                    {job.status === "failed" && <p className="error">{job.error}</p>}
+                    {job.status === "failed" && <p className="text-red-500 mt-2">{job.error}</p>}
                 </div>
                 );
+                {% elif ui_framework == "bootstrap" %}
+                // Render với react-bootstrap components
+                if (!job) return <p>Đang tải...</p>;
+
+                return (
+                <Card className="batch-status">
+                    <Card.Body>
+                        <h3>Trạng thái Batch Job</h3>
+                        <Badge bg={ job.status==="completed" ? "success" : job.status==="failed" ? "danger" :
+                            job.status==="running" ? "primary" : "warning" }>{statusLabels[job.status]}</Badge>
+                        {job.status === "running" && (
+                        <div className="mt-2">
+                            <Progress now={(job.resultUrls?.length || 0) / (job.reportSpecIds?.length || 1) * 100} />
+                            <p className="small">{job.resultUrls?.length || 0} / {job.reportSpecIds?.length || 0}</p>
+                        </div>
+                        )}
+                        {job.status === "completed" && (
+                        <ul className="mt-3">
+                            {job.resultUrls.map((url: string, index: number) => (
+                            <li key={index}>
+                                <a href={url} target="_blank" rel="noopener noreferrer">Download {index + 1}</a>
+                            </li>
+                            ))}
+                        </ul>
+                        )}
+                        {job.status === "failed" && <p className="text-danger">{job.error}</p>}
+                    </Card.Body>
+                </Card>
+                );
+                {% elif ui_framework == "antd" %}
+                // Render với Ant Design components
+                if (!job) return <p>Đang tải...</p>;
+
+                return (
+                <Card title="Trạng thái Batch Job" className="batch-status">
+                    <Tag color={ job.status==="completed" ? "green" : job.status==="failed" ? "red" :
+                        job.status==="running" ? "blue" : "orange" }>{statusLabels[job.status]}</Tag>
+                    {job.status === "running" && (
+                    <Progress percent={Math.round(((job.resultUrls?.length || 0) / (job.reportSpecIds?.length || 1)) *
+                        100)} status="active" />
+                    )}
+                    {job.status === "completed" && (
+                    <ul className="mt-3">
+                        {job.resultUrls.map((url: string, index: number) => (
+                        <li key={index}>
+                            <a href={url} target="_blank" rel="noopener noreferrer">Download {index + 1}</a>
+                        </li>
+                        ))}
+                    </ul>
+                    )}
+                    {job.status === "failed" && <Typography.Text type="danger">{job.error}</Typography.Text>}
+                </Card>
+                );
+                {% elif ui_framework == "carbon" %}
+                // Render với Carbon Design components
+                if (!job) return <Layer>Đang tải...</Layer>;
+
+                return (
+                <Layer className="batch-status">
+                    <Title level="3">Trạng thái Batch Job</Title>
+                    <span className={`cds--tag ${ job.status==="completed" ? "cds--tag--green" : job.status==="failed"
+                        ? "cds--tag--red" : job.status==="running" ? "cds--tag--teal" : "cds--tag--orange"
+                        }`}>{statusLabels[job.status]}</span>
+                    {job.status === "running" && (
+                    <div className="mt-3">
+                        <ProgressBar label="Tiến độ" value={(job.resultUrls?.length || 0) / (job.reportSpecIds?.length
+                            || 1)} />
+                        <p className="text-sm">{job.resultUrls?.length || 0} / {job.reportSpecIds?.length || 0}</p>
+                    </div>
+                    )}
+                    {job.status === "completed" && (
+                    <ul className="mt-3">
+                        {job.resultUrls.map((url: string, index: number) => (
+                        <li key={index}>
+                            <a href={url} target="_blank" rel="noopener noreferrer">Download {index + 1}</a>
+                        </li>
+                        ))}
+                    </ul>
+                    )}
+                    {job.status === "failed" && <p className="cds--label--danger">{job.error}</p>}
+                </Layer>
+                );
+                {% endif %}
                 };
 
                 export default BatchStatus;

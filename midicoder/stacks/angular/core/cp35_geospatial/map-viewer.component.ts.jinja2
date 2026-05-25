@@ -1,8 +1,21 @@
 // Map Viewer Component — Hiển thị bản đồ với marker, polyline, geofence overlay.
 // CP35: Geospatial Services (Angular)
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 // Dùng @asymmetrik/ngx-leaflet
 {% if collection %}
 // Tự động sinh từ {{ collection.reports | length }} geospatial specs.
+{% endif %}
+
+{% if ui_framework == "material" %}
+import { MatButtonModule } from '@angular/material/button';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng lớp tiện ích Tailwind CSS trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng lớp Bootstrap trong template
+{% elif ui_framework == "antd" %}
+// Ant Design không áp dụng cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon không áp dụng cho Angular
 {% endif %}
 
 import { Component, OnInit, OnDestroy, Input } from "@angular/core";
@@ -11,197 +24,209 @@ import { HttpClient } from "@angular/common/http";
 import { Subscription } from "rxjs";
 import { LeafletModule } from "@asymmetrik/ngx-leaflet";
 import {
-  leaflet,
-  line,
-  circle,
-  polygon,
-  marker,
-  icon,
-  LatLngTuple,
+leaflet,
+line,
+circle,
+polygon,
+marker,
+icon,
+LatLngTuple,
 } from "@asymmetrik/ngx-leaflet";
 
+{% if ui_framework == "material" %}
+const UI_MODULES = [MatButtonModule];
+{% elif ui_framework == "tailwind" %}
+const UI_MODULES = [];
+{% elif ui_framework == "bootstrap" %}
+const UI_MODULES = [];
+{% elif ui_framework == "antd" %}
+const UI_MODULES = [];
+{% elif ui_framework == "carbon" %}
+const UI_MODULES = [];
+{% endif %}
+
 export interface GeoMarker {
-  position: LatLngTuple;
-  label: string;
-  popup: string;
+position: LatLngTuple;
+label: string;
+popup: string;
 }
 
 export interface GeoRoute {
-  name: string;
-  positions: LatLngTuple[];
-  color: string;
-  weight: number;
+name: string;
+positions: LatLngTuple[];
+color: string;
+weight: number;
 }
 
 export interface GeoFenceZone {
-  id: string;
-  name: string;
-  shape: string;
-  center?: { latitude: number; longitude: number };
-  radius_m?: number;
-  points?: { latitude: number; longitude: number }[];
+id: string;
+name: string;
+shape: string;
+center?: { latitude: number; longitude: number };
+radius_m?: number;
+points?: { latitude: number; longitude: number }[];
 }
 
 @Component({
-  selector: "app-map-viewer",
-  standalone: true,
-  imports: [CommonModule, LeafletModule],
-  template: `
-    <div class="map-viewer">
-      <div class="map-header">
+selector: "app-map-viewer",
+standalone: true,
+imports: [CommonModule, LeafletModule, ...UI_MODULES],
+template: `
+<div class="map-viewer">
+    <div class="map-header">
         <h2>Bản đồ Địa lý</h2>
         <div class="map-controls">
-          <button (click)="zoomIn()">Zoom In</button>
-          <button (click)="zoomOut()">Zoom Out</button>
-          <button (click)="resetView()">Đặt lại</button>
+            <button (click)="zoomIn()">Zoom In</button>
+            <button (click)="zoomOut()">Zoom Out</button>
+            <button (click)="resetView()">Đặt lại</button>
         </div>
-      </div>
+    </div>
 
-      <div id="map" [style.height.px]="height" [style.width.%]="100">
+    <div id="map" [style.height.px]="height" [style.width.%]="100">
         <div *ngIf="loading">Đang tải bản đồ...</div>
-      </div>
+    </div>
 
-      <div class="map-legend">
+    <div class="map-legend">
         <h3>Hướng dẫn</h3>
         <div *ngFor="let gf of geofences" class="legend-item">
-          <span class="legend-shape" [class]="gf.shape"></span>
-          {{ gf.name }} ({{ gf.shape }})
+            <span class="legend-shape" [class]="gf.shape"></span>
+            {{ gf.name }} ({{ gf.shape }})
         </div>
         <div class="legend-item" *ngIf="hasRouting">
-          <span class="legend-route"></span> Route (Polyline)
+            <span class="legend-route"></span> Route (Polyline)
         </div>
-      </div>
-
-      <div *ngIf="error" class="error-message">
-        {{ error }}
-      </div>
     </div>
-  `,
-  styles: [`
-    :host { display: block; padding: 20px; }
-    .map-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-    .map-controls button {
-      margin-left: 8px;
-      padding: 6px 12px;
-      background: #2196f3;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    .map-legend { margin-top: 16px; padding: 12px; background: #f5f5f5; border-radius: 4px; }
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin: 4px 0;
-      font-size: 14px;
-    }
-    .legend-shape.circle {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: rgba(255, 0, 0, 0.3);
-      border: 2px solid red;
-    }
-    .legend-shape.polygon {
-      width: 12px;
-      height: 12px;
-      background: rgba(0, 0, 255, 0.3);
-      border: 2px solid blue;
-      clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
-    }
-    .legend-shape.rectangle {
-      width: 16px;
-      height: 10px;
-      background: rgba(0, 255, 0, 0.3);
-      border: 2px solid green;
-    }
-    .legend-route {
-      width: 24px;
-      height: 4px;
-      background: #ff9800;
-      border-radius: 2px;
-    }
-    .error-message { color: red; margin-top: 16px; }
-  `]
+
+    <div *ngIf="error" class="error-message">
+        {{ error }}
+    </div>
+</div>
+`,
+styles: [`
+:host { display: block; padding: 20px; }
+.map-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 16px;
+}
+.map-controls button {
+margin-left: 8px;
+padding: 6px 12px;
+background: #2196f3;
+color: white;
+border: none;
+border-radius: 4px;
+cursor: pointer;
+}
+.map-legend { margin-top: 16px; padding: 12px; background: #f5f5f5; border-radius: 4px; }
+.legend-item {
+display: flex;
+align-items: center;
+gap: 8px;
+margin: 4px 0;
+font-size: 14px;
+}
+.legend-shape.circle {
+width: 12px;
+height: 12px;
+border-radius: 50%;
+background: rgba(255, 0, 0, 0.3);
+border: 2px solid red;
+}
+.legend-shape.polygon {
+width: 12px;
+height: 12px;
+background: rgba(0, 0, 255, 0.3);
+border: 2px solid blue;
+clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+}
+.legend-shape.rectangle {
+width: 16px;
+height: 10px;
+background: rgba(0, 255, 0, 0.3);
+border: 2px solid green;
+}
+.legend-route {
+width: 24px;
+height: 4px;
+background: #ff9800;
+border-radius: 2px;
+}
+.error-message { color: red; margin-top: 16px; }
+`]
 })
 export class MapViewerComponent implements OnInit, OnDestroy {
-  @Input() center: [number, number] = [10.7769, 106.7009]; // TP. Hồ Chí Minh
-  @Input() zoom: number = 13;
-  @Input() height: number = 400;
+@Input() center: [number, number] = [10.7769, 106.7009]; // TP. Hồ Chí Minh
+@Input() zoom: number = 13;
+@Input() height: number = 400;
 
-  markers: GeoMarker[] = [];
-  routes: GeoRoute[] = [];
-  geofences: GeoFenceZone[] = [];
+markers: GeoMarker[] = [];
+routes: GeoRoute[] = [];
+geofences: GeoFenceZone[] = [];
 
-  loading = false;
-  error: string = "";
-  hasRouting = false;
+loading = false;
+error: string = "";
+hasRouting = false;
 
-  private subscriptions: Subscription = new Subscription();
+private subscriptions: Subscription = new Subscription();
 
-  constructor(private http: HttpClient) {}
+constructor(private http: HttpClient) {}
 
-  ngOnInit(): void {
-    this.loadMapData();
-    this.loadGeofences();
-    if (this.hasRouting) {
-      this.loadRoutes();
-    }
-  }
-
-  ngOnDestroy(): void {
-    this.subscriptions.unsubscribe();
-  }
-
-  loadMapData(): void {
-    this.loading = true;
-    const sub = this.http.get<GeoMarker[]>("/api/geospatial/markers").subscribe({
-      next: (data) => {
-        this.markers = data;
-        this.loading = false;
-      },
-      error: (err) => {
-        this.loading = false;
-        this.error = "Không thể tải dữ liệu bản đồ: " + err.message;
-        console.error("Failed to load map data:", err);
-      },
-    });
-    this.subscriptions.add(sub);
-  }
-
-  loadGeofences(): void {
-    const sub = this.http.get<GeoFenceZone[]>("/api/geospatial/geofences").subscribe({
-      next: (data) => { this.geofences = data; },
-      error: (err) => { console.error("Failed to load geofences:", err); },
-    });
-    this.subscriptions.add(sub);
-  }
-
-  loadRoutes(): void {
-    const sub = this.http.get<GeoRoute[]>("/api/geospatial/routes").subscribe({
-      next: (data) => { this.routes = data; },
-      error: (err) => { console.error("Failed to load routes:", err); },
-    });
-    this.subscriptions.add(sub);
-  }
-
-  zoomIn(): void {
-    console.log("Zoom in");
-  }
-
-  zoomOut(): void {
-    console.log("Zoom out");
-  }
-
-  resetView(): void {
-    this.center = [10.7769, 106.7009];
-    this.zoom = 13;
-  }
+ngOnInit(): void {
+this.loadMapData();
+this.loadGeofences();
+if (this.hasRouting) {
+this.loadRoutes();
 }
+}
+
+ngOnDestroy(): void {
+this.subscriptions.unsubscribe();
+}
+
+loadMapData(): void {
+this.loading = true;
+const sub = this.http.get<GeoMarker[]>("/api/geospatial/markers").subscribe({
+    next: (data) => {
+    this.markers = data;
+    this.loading = false;
+    },
+    error: (err) => {
+    this.loading = false;
+    this.error = "Không thể tải dữ liệu bản đồ: " + err.message;
+    console.error("Failed to load map data:", err);
+    },
+    });
+    this.subscriptions.add(sub);
+    }
+
+    loadGeofences(): void {
+    const sub = this.http.get<GeoFenceZone[]>("/api/geospatial/geofences").subscribe({
+        next: (data) => { this.geofences = data; },
+        error: (err) => { console.error("Failed to load geofences:", err); },
+        });
+        this.subscriptions.add(sub);
+        }
+
+        loadRoutes(): void {
+        const sub = this.http.get<GeoRoute[]>("/api/geospatial/routes").subscribe({
+            next: (data) => { this.routes = data; },
+            error: (err) => { console.error("Failed to load routes:", err); },
+            });
+            this.subscriptions.add(sub);
+            }
+
+            zoomIn(): void {
+            console.log("Zoom in");
+            }
+
+            zoomOut(): void {
+            console.log("Zoom out");
+            }
+
+            resetView(): void {
+            this.center = [10.7769, 106.7009];
+            this.zoom = 13;
+            }
+            }

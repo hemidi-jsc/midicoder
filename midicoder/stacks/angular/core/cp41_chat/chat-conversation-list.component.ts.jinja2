@@ -1,22 +1,23 @@
 /**
- * ChatConversationListComponent — Sidebar danh sách hội thoại.
- *
- * Hiển thị danh sách các hội thoại với preview tin nhắn cuối cùng,
- * badge số tin chưa đọc. Hỗ trợ tìm kiếm/lọc hội thoại.
- * Click vào hội thoại để chọn và mở trong chat window.
- *
- * Tạo tự động bởi CP41 — không sửa thủ công.
- */
+* ChatConversationListComponent — Sidebar danh sach hoi thoai.
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
+*
+* Hien thi danh sach cac hoi thoai voi preview tin nhan cuoi cung,
+* badge so tin chua doc. Ho tro tim kiem/loc hoi thoai.
+* Click vao hoi thoai de chon va mo trong chat window.
+*
+* Tao tu dong boi CP41 — khong sua thuc cong.
+*/
 
 import {
-  Component,
-  OnInit,
-  Output,
-  EventEmitter,
-  ChangeDetectionStrategy,
-  inject,
-  signal,
-  computed
+Component,
+OnInit,
+Output,
+EventEmitter,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -26,373 +27,345 @@ import { ChatStore } from './chat.store';
 import { Conversation, ConversationType } from './chat-types';
 
 // ===========================================================================
-// Cấu hình
+// Cau hinh
 // ===========================================================================
 
-/** Số hội thoại ban đầu. */
+/** So hoi thoai ban dau. */
 const INITIAL_CONVERSATION_COUNT: number = {{ num_conversations }};
 
 /**
- * ChatConversationListComponent — Sidebar danh sách hội thoại.
- *
- * Sử dụng:
- *   <app-chat-conversation-list
- *     (onSelect)="handleSelect($event)">
- *   </app-chat-conversation-list>
- */
+* ChatConversationListComponent — Sidebar danh sach hoi thoai.
+*
+* Sử dụng:
+* <app-chat-conversation-list * (onSelect)="handleSelect($event)">
+    * </app-chat-conversation-list>
+*/
 @Component({
-  selector: 'app-chat-conversation-list',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  changeDetection: ChangeDetectionStrategy.OnPush,
+selector: 'app-chat-conversation-list',
+standalone: true,
+imports: [CommonModule, FormsModule],
+changeDetection: ChangeDetectionStrategy.OnPush,
 {% raw %}
-  template: `
-    <div class="conversation-list">
-      <!-- Thanh tiêu đề và tìm kiếm -->
-      <header class="list-header">
+template: `
+<div class="conversation-list">
+    <!-- Thanh tiêu đề và tìm kiếm -->
+    <header class="list-header">
         <h2 class="list-title">Hội Thoại</h2>
         <button class="btn-new-chat" (click)="onNewChat.emit()" title="Tạo hội thoại mới">
-          + Mới
+            + Mới
         </button>
-      </header>
+    </header>
 
-      <!-- Thanh tìm kiếm -->
-      <div class="search-bar">
-        <input
-          type="text"
-          class="search-input"
-          placeholder="Tìm kiếm hội thoại..."
-          [(ngModel)]="searchQuery"
-          (ngModelChange)="onSearchChange()"
-        />
+    <!-- Thanh tìm kiếm -->
+    <div class="search-bar">
+        <input type="text" class="search-input" placeholder="Tìm kiếm hội thoại..." [(ngModel)]="searchQuery"
+            (ngModelChange)="onSearchChange()" />
         <span class="search-count" *ngIf="searchQuery.trim()">
-          {{ filteredConversations().length }} kết quả
+            {{ filteredConversations().length }} kết quả
         </span>
-      </div>
+    </div>
 
-      <!-- Bộ lọc loại hội thoại -->
-      <div class="filter-bar">
-        <button
-          class="filter-btn"
-          [class.active]="activeFilter() === 'all'"
-          (click)="setFilter('all')"
-        >
-          Tất cả
+    <!-- Bộ lọc loại hội thoại -->
+    <div class="filter-bar">
+        <button class="filter-btn" [class.active]="activeFilter() === 'all'" (click)="setFilter('all')">
+            Tất cả
         </button>
-        <button
-          class="filter-btn"
-          [class.active]="activeFilter() === 'direct'"
-          (click)="setFilter('direct')"
-        >
-          Trực tiếp
+        <button class="filter-btn" [class.active]="activeFilter() === 'direct'" (click)="setFilter('direct')">
+            Trực tiếp
         </button>
-        <button
-          class="filter-btn"
-          [class.active]="activeFilter() === 'group'"
-          (click)="setFilter('group')"
-        >
-          Nhóm
+        <button class="filter-btn" [class.active]="activeFilter() === 'group'" (click)="setFilter('group')">
+            Nhóm
         </button>
-        <button
-          class="filter-btn"
-          [class.active]="activeFilter() === 'support'"
-          (click)="setFilter('support')"
-        >
-          Hỗ trợ
+        <button class="filter-btn" [class.active]="activeFilter() === 'support'" (click)="setFilter('support')">
+            Hỗ trợ
         </button>
-      </div>
+    </div>
 
-      <!-- Tổng số tin chưa đọc -->
-      <div class="unread-summary" *ngIf="totalUnreadMessages() > 0">
+    <!-- Tổng số tin chưa đọc -->
+    <div class="unread-summary" *ngIf="totalUnreadMessages() > 0">
         <span class="unread-total-badge">{{ totalUnreadMessages() }}</span>
         <span class="unread-label">tin chưa đọc</span>
-      </div>
+    </div>
 
-      <!-- Danh sách hội thoại -->
-      <div class="conversations-scroll">
-        <div
-          class="conversation-item"
-          *ngFor="let conv of filteredConversations()"
-          [class.active]="conv.conversationId === activeConversationId()"
-          [class.unread]="conv.unreadCount > 0"
-          [class.inactive]="!conv.isActive"
-          (click)="selectConversation(conv.conversationId)"
-          [title]="conv.name"
-        >
-          <!-- Avatar hội thoại -->
-          <div class="conv-avatar">
-            <span class="avatar-letter">{{ getAvatarLetter(conv) }}</span>
-            <!-- Badge online cho direct chat -->
-            <span class="online-dot" *ngIf="conv.conversationType === 'direct'"></span>
-          </div>
-
-          <!-- Thông tin hội thoại -->
-          <div class="conv-info">
-            <div class="conv-top-row">
-              <span class="conv-name">{{ conv.name || 'Hội thoại không tên' }}</span>
-              <span class="conv-time" *ngIf="conv.lastMessage">
-                {{ conv.lastMessage.createdAt | date:'HH:mm' }}
-              </span>
+    <!-- Danh sách hội thoại -->
+    <div class="conversations-scroll">
+        <div class="conversation-item" *ngFor="let conv of filteredConversations()"
+            [class.active]="conv.conversationId === activeConversationId()" [class.unread]="conv.unreadCount > 0"
+            [class.inactive]="!conv.isActive" (click)="selectConversation(conv.conversationId)" [title]="conv.name">
+            <!-- Avatar hội thoại -->
+            <div class="conv-avatar">
+                <span class="avatar-letter">{{ getAvatarLetter(conv) }}</span>
+                <!-- Badge online cho direct chat -->
+                <span class="online-dot" *ngIf="conv.conversationType === 'direct'"></span>
             </div>
-            <div class="conv-bottom-row">
-              <!-- Preview tin nhắn cuối cùng -->
-              <span class="last-message-preview">
-                <span class="sender-name" *ngIf="conv.lastMessage?.senderName">
-                  {{ conv.lastMessage.senderName }}:
-                </span>
-                <span class="message-text">
-                  {{ getLastMessagePreview(conv) }}
-                </span>
-              </span>
 
-              <!-- Badge tin chưa đọc -->
-              <span class="unread-badge" *ngIf="conv.unreadCount > 0">
-                {{ conv.unreadCount > 99 ? '99+' : conv.unreadCount }}
-              </span>
+            <!-- Thông tin hội thoại -->
+            <div class="conv-info">
+                <div class="conv-top-row">
+                    <span class="conv-name">{{ conv.name || 'Hội thoại không tên' }}</span>
+                    <span class="conv-time" *ngIf="conv.lastMessage">
+                        {{ conv.lastMessage.createdAt | date:'HH:mm' }}
+                    </span>
+                </div>
+                <div class="conv-bottom-row">
+                    <!-- Preview tin nhắn cuối cùng -->
+                    <span class="last-message-preview">
+                        <span class="sender-name" *ngIf="conv.lastMessage?.senderName">
+                            {{ conv.lastMessage.senderName }}:
+                        </span>
+                        <span class="message-text">
+                            {{ getLastMessagePreview(conv) }}
+                        </span>
+                    </span>
+
+                    <!-- Badge tin chưa đọc -->
+                    <span class="unread-badge" *ngIf="conv.unreadCount > 0">
+                        {{ conv.unreadCount > 99 ? '99+' : conv.unreadCount }}
+                    </span>
+                </div>
             </div>
-          </div>
 
-          <!-- Badge loại hội thoại -->
-          <span class="conv-type-badge" [class]="getConvTypeBadgeClass(conv.conversationType)">
-            {{ getConvTypeBadgeLabel(conv.conversationType) }}
-          </span>
+            <!-- Badge loại hội thoại -->
+            <span class="conv-type-badge" [class]="getConvTypeBadgeClass(conv.conversationType)">
+                {{ getConvTypeBadgeLabel(conv.conversationType) }}
+            </span>
         </div>
 
         <!-- Trạng thái trống -->
         <div class="empty-state" *ngIf="!filteredConversations().length">
-          <div class="empty-icon">💬</div>
-          <p *ngIf="searchQuery.trim(); else noConversations">
-            Không tìm thấy hội thoại nào phù hợp
-          </p>
-          <ng-template #noConversations>
-            <p>Chưa có hội thoại nào</p>
-            <button class="btn-create-first" (click)="onNewChat.emit()">
-              Tạo hội thoại đầu tiên
-            </button>
-          </ng-template>
+            <div class="empty-icon">💬</div>
+            <p *ngIf="searchQuery.trim(); else noConversations">
+                Không tìm thấy hội thoại nào phù hợp
+            </p>
+            <ng-template #noConversations>
+                <p>Chưa có hội thoại nào</p>
+                <button class="btn-create-first" (click)="onNewChat.emit()">
+                    Tạo hội thoại đầu tiên
+                </button>
+            </ng-template>
         </div>
-      </div>
+    </div>
 
-      <!-- Footer với số lượng -->
-      <footer class="list-footer">
+    <!-- Footer với số lượng -->
+    <footer class="list-footer">
         <span class="total-count">
-          {{ conversations().length }} hội thoại
+            {{ conversations().length }} hội thoại
         </span>
         <span class="initial-info" *ngIf="conversations().length <= initialCount">
-          ({{ initialCount }} ban đầu)
+            ({{ initialCount }} ban đầu)
         </span>
-      </footer>
-    </div>
-  `
+    </footer>
+</div>
+`
 {% endraw %}
 })
 export class ChatConversationListComponent implements OnInit {
 
-  // ===========================================================================
-  // Inject dependencies
-  // ===========================================================================
+// ===========================================================================
+// Inject dependencies
+// ===========================================================================
 
-  private readonly chatService = inject(ChatService);
-  private readonly chatStore = inject(ChatStore);
+private readonly chatService = inject(ChatService);
+private readonly chatStore = inject(ChatStore);
 
-  // ===========================================================================
-  // Đầu ra
-  // ===========================================================================
+// ===========================================================================
+// Đầu ra
+// ===========================================================================
 
-  /** Phát ra khi người dùng chọn hội thoại. */
-  @Output() onSelect = new EventEmitter<string>();
+/** Phát ra khi người dùng chọn hội thoại. */
+@Output() onSelect = new EventEmitter<string>();
 
-  /** Phát ra khi người dùng nhấn nút tạo hội thoại mới. */
-  @Output() onNewChat = new EventEmitter<void>();
+    /** Phát ra khi người dùng nhấn nút tạo hội thoại mới. */
+    @Output() onNewChat = new EventEmitter<void>();
 
-  // ===========================================================================
-  // Local state
-  // ===========================================================================
+        // ===========================================================================
+        // Local state
+        // ===========================================================================
 
-  /** Từ khóa tìm kiếm. */
-  public searchQuery: string = '';
+        /** Từ khóa tìm kiếm. */
+        public searchQuery: string = '';
 
-  /** Bộ lọc loại hội thoại hiện tại. */
-  public readonly activeFilter = signal<string>('all');
+        /** Bộ lọc loại hội thoại hiện tại. */
+        public readonly activeFilter = signal<string>('all');
 
-  /** Số hội thoại ban đầu từ template. */
-  public readonly initialCount: number = INITIAL_CONVERSATION_COUNT;
+            /** Số hội thoại ban đầu từ template. */
+            public readonly initialCount: number = INITIAL_CONVERSATION_COUNT;
 
-  // ===========================================================================
-  // Computed signals
-  // ===========================================================================
+            // ===========================================================================
+            // Computed signals
+            // ===========================================================================
 
-  /** Danh sách hội thoại từ store. */
-  public readonly conversations = this.chatStore.conversations;
+            /** Danh sách hội thoại từ store. */
+            public readonly conversations = this.chatStore.conversations;
 
-  /** ID hội thoại đang mở. */
-  public readonly activeConversationId = this.chatStore.activeConversationId;
+            /** ID hội thoại đang mở. */
+            public readonly activeConversationId = this.chatStore.activeConversationId;
 
-  /** Tổng số tin chưa đọc. */
-  public readonly totalUnreadMessages = this.chatStore.totalUnreadMessages;
+            /** Tổng số tin chưa đọc. */
+            public readonly totalUnreadMessages = this.chatStore.totalUnreadMessages;
 
-  /** Hội thoại đã lọc theo tìm kiếm và loại. */
-  public readonly filteredConversations = computed<Conversation[]>(() => {
-    let list = this.conversations();
-    const filter = this.activeFilter();
-    const query = this.searchQuery.trim().toLowerCase();
+            /** Hội thoại đã lọc theo tìm kiếm và loại. */
+            public readonly filteredConversations = computed<Conversation[]>(() => {
+                let list = this.conversations();
+                const filter = this.activeFilter();
+                const query = this.searchQuery.trim().toLowerCase();
 
-    // Lọc theo loại.
-    if (filter !== 'all') {
-      list = list.filter(c => c.conversationType === filter);
-    }
+                // Lọc theo loại.
+                if (filter !== 'all') {
+                list = list.filter(c => c.conversationType === filter);
+                }
 
-    // Lọc theo từ khóa tìm kiếm.
-    if (query) {
-      list = list.filter(c => {
-        const name = (c.name || '').toLowerCase();
-        const lastMsg = (c.lastMessage?.content || '').toLowerCase();
-        const sender = (c.lastMessage?.senderName || '').toLowerCase();
-        return name.includes(query) || lastMsg.includes(query) || sender.includes(query);
-      });
-    }
+                // Lọc theo từ khóa tìm kiếm.
+                if (query) {
+                list = list.filter(c => {
+                const name = (c.name || '').toLowerCase();
+                const lastMsg = (c.lastMessage?.content || '').toLowerCase();
+                const sender = (c.lastMessage?.senderName || '').toLowerCase();
+                return name.includes(query) || lastMsg.includes(query) || sender.includes(query);
+                });
+                }
 
-    // Sắp xếp: có tin chưa đọc lên trên, sau đó theo thời gian cập nhật.
-    return list.sort((a, b) => {
-      // Ưu tiên có unread.
-      if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
-      if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
+                // Sắp xếp: có tin chưa đọc lên trên, sau đó theo thời gian cập nhật.
+                return list.sort((a, b) => {
+                // Ưu tiên có unread.
+                if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
+                if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
 
-      // Sau đó theo updatedAt.
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
-  });
+                // Sau đó theo updatedAt.
+                return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+                });
+                });
 
-  // ===========================================================================
-  // Lifecycle
-  // ===========================================================================
+                // ===========================================================================
+                // Lifecycle
+                // ===========================================================================
 
-  ngOnInit(): void {
-    // Tải danh sách hội thoại từ API.
-    this.loadConversations();
-  }
+                ngOnInit(): void {
+                // Tải danh sách hội thoại từ API.
+                this.loadConversations();
+                }
 
-  /**
-   * Tải danh sách hội thoại từ server.
-   */
-  private loadConversations(): void {
-    this.chatStore.setLoading('conversations', true);
+                /**
+                * Tải danh sách hội thoại từ server.
+                */
+                private loadConversations(): void {
+                this.chatStore.setLoading('conversations', true);
 
-    this.chatService.getConversations(1, 100).subscribe({
-      next: (response) => {
-        this.chatStore.setConversations(response.conversations);
-        this.chatStore.setLoading('conversations', false);
-      },
-      error: () => {
-        console.warn('[ChatConversationList] Không thể tải danh sách hội thoại');
-        this.chatStore.setLoading('conversations', false);
-      }
-    });
-  }
+                this.chatService.getConversations(1, 100).subscribe({
+                next: (response) => {
+                this.chatStore.setConversations(response.conversations);
+                this.chatStore.setLoading('conversations', false);
+                },
+                error: () => {
+                console.warn('[ChatConversationList] Không thể tải danh sách hội thoại');
+                this.chatStore.setLoading('conversations', false);
+                }
+                });
+                }
 
-  // ===========================================================================
-  // Tương tác
-  // ===========================================================================
+                // ===========================================================================
+                // Tương tác
+                // ===========================================================================
 
-  /**
-   * Xử lý khi người dùng thay đổi từ khóa tìm kiếm.
-   */
-  onSearchChange(): void {
-    // Computed signal tự động cập nhật khi searchQuery thay đổi.
-  }
+                /**
+                * Xử lý khi người dùng thay đổi từ khóa tìm kiếm.
+                */
+                onSearchChange(): void {
+                // Computed signal tự động cập nhật khi searchQuery thay đổi.
+                }
 
-  /**
-   * Đặt bộ lọc loại hội thoại.
-   */
-  setFilter(filter: string): void {
-    this.activeFilter.set(filter);
-  }
+                /**
+                * Đặt bộ lọc loại hội thoại.
+                */
+                setFilter(filter: string): void {
+                this.activeFilter.set(filter);
+                }
 
-  /**
-   * Chọn hội thoại — đặt active và phát sự kiện.
-   */
-  selectConversation(conversationId: string): void {
-    this.chatStore.setActiveConversation(conversationId);
-    this.onSelect.emit(conversationId);
+                /**
+                * Chọn hội thoại — đặt active và phát sự kiện.
+                */
+                selectConversation(conversationId: string): void {
+                this.chatStore.setActiveConversation(conversationId);
+                this.onSelect.emit(conversationId);
 
-    // Đánh dấu hội thoại là đã đọc.
-    this.chatService.markAsRead(conversationId, 'latest').subscribe();
-  }
+                // Đánh dấu hội thoại là đã đọc.
+                this.chatService.markAsRead(conversationId, 'latest').subscribe();
+                }
 
-  // ===========================================================================
-  // Helper methods
-  // ===========================================================================
+                // ===========================================================================
+                // Helper methods
+                // ===========================================================================
 
-  /**
-   * Lấy ký tự hiển thị trong avatar.
-   */
-  getAvatarLetter(conv: Conversation): string {
-    if (conv.name && conv.name.trim()) {
-      return conv.name.trim().charAt(0).toUpperCase();
-    }
-    if (conv.conversationType === 'group') {
-      return '#';
-    }
-    if (conv.conversationType === 'support') {
-      return '?';
-    }
-    return '?';
-  }
+                /**
+                * Lấy ký tự hiển thị trong avatar.
+                */
+                getAvatarLetter(conv: Conversation): string {
+                if (conv.name && conv.name.trim()) {
+                return conv.name.trim().charAt(0).toUpperCase();
+                }
+                if (conv.conversationType === 'group') {
+                return '#';
+                }
+                if (conv.conversationType === 'support') {
+                return '?';
+                }
+                return '?';
+                }
 
-  /**
-   * Lấy preview tin nhắn cuối cùng.
-   */
-  getLastMessagePreview(conv: Conversation): string {
-    if (!conv.lastMessage) {
-      return 'Chưa có tin nhắn';
-    }
+                /**
+                * Lấy preview tin nhắn cuối cùng.
+                */
+                getLastMessagePreview(conv: Conversation): string {
+                if (!conv.lastMessage) {
+                return 'Chưa có tin nhắn';
+                }
 
-    const msg = conv.lastMessage;
-    let prefix = '';
+                const msg = conv.lastMessage;
+                let prefix = '';
 
-    // Thêm prefix cho loại tin nhắn đặc biệt.
-    if (msg.messageType === 'image') {
-      prefix = '📷 ';
-    } else if (msg.messageType === 'video') {
-      prefix = '🎥 ';
-    } else if (msg.messageType === 'audio') {
-      prefix = '🎵 ';
-    } else if (msg.messageType === 'file') {
-      prefix = '📎 ';
-    } else if (msg.messageType === 'system') {
-      prefix = 'ℹ️ ';
-    }
+                // Thêm prefix cho loại tin nhắn đặc biệt.
+                if (msg.messageType === 'image') {
+                prefix = '📷 ';
+                } else if (msg.messageType === 'video') {
+                prefix = '🎥 ';
+                } else if (msg.messageType === 'audio') {
+                prefix = '🎵 ';
+                } else if (msg.messageType === 'file') {
+                prefix = '📎 ';
+                } else if (msg.messageType === 'system') {
+                prefix = 'ℹ️ ';
+                }
 
-    // Giới hạn độ dài nội dung.
-    const content = msg.content || 'Tin nhắn trống';
-    const truncated = content.length > 40 ? content.substring(0, 40) + '...' : content;
+                // Giới hạn độ dài nội dung.
+                const content = msg.content || 'Tin nhắn trống';
+                const truncated = content.length > 40 ? content.substring(0, 40) + '...' : content;
 
-    return prefix + truncated;
-  }
+                return prefix + truncated;
+                }
 
-  /**
-   * Lấy class CSS cho badge loại hội thoại.
-   */
-  getConvTypeBadgeClass(type: string): string {
-    const classMap: Record<string, string> = {
-      'direct': 'badge-direct',
-      'group': 'badge-group',
-      'support': 'badge-support',
-      'broadcast': 'badge-broadcast'
-    };
-    return classMap[type] || '';
-  }
+                /**
+                * Lấy class CSS cho badge loại hội thoại.
+                */
+                getConvTypeBadgeClass(type: string): string {
+                const classMap: Record<string, string> = {
+                    'direct': 'badge-direct',
+                    'group': 'badge-group',
+                    'support': 'badge-support',
+                    'broadcast': 'badge-broadcast'
+                    };
+                    return classMap[type] || '';
+                    }
 
-  /**
-   * Lấy nhãn cho badge loại hội thoại.
-   */
-  getConvTypeBadgeLabel(type: string): string {
-    const labelMap: Record<string, string> = {
-      'direct': '1:1',
-      'group': 'Nhóm',
-      'support': 'Support',
-      'broadcast': 'Broadcast'
-    };
-    return labelMap[type] || type;
-  }
-}
+                    /**
+                    * Lấy nhãn cho badge loại hội thoại.
+                    */
+                    getConvTypeBadgeLabel(type: string): string {
+                    const labelMap: Record<string, string> = {
+                        'direct': '1:1',
+                        'group': 'Nhóm',
+                        'support': 'Support',
+                        'broadcast': 'Broadcast'
+                        };
+                        return labelMap[type] || type;
+                        }
+                        }

@@ -1,8 +1,23 @@
 {% raw %}/**
- * RetentionDashboard — Bảng điều khiển tổng quan chính sách lưu trữ và vòng đời dữ liệu:
- * thống kê lưu trữ, bảng lưu trữ gần đây, tổng quan chính sách.
- * Sinh bởi CP47 Data Retention & Lifecycle Management.
- */
+* UI Framework: {{{ ui_framework }}}
+* RetentionDashboard — Bảng điều khiển tổng quan chính sách lưu trữ và vòng đời dữ liệu:
+* thống kê lưu trữ, bảng lưu trữ gần đây, tổng quan chính sách.
+* Sinh bởi CP47 Data Retention & Lifecycle Management.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { Button, Card, Grid, Typography, Table, TableBody, TableCell, TableHead, TableRow, Chip, LinearProgress } from
+'@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng Tailwind CSS utility classes inline — không cần import thành phần UI
+{% elif ui_framework == "bootstrap" %}
+import { Button, Card, Table, Badge, ProgressBar } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Card, Typography, Table, Tag, Progress, Space, Row, Col } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, Tile, DataTable, DataTableBody, DataTableRow, Tag, ProgressBar } from '@carbon/react';
+{% endif %}
+{% raw %}
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 
 /* ---- Interface dữ liệu ---- */
@@ -18,715 +33,740 @@ export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancel
 
 /** Một bản ghi chính sách lưu trữ */
 export interface RetentionPolicy {
-    id: string;
-    name: string;
-    description: string;
-    data_type: DataType;
-    retention_days: number;
-    archive_after_days: number | null;
-    action_after_expiry: 'archive' | 'erase' | 'anonymize';
-    status: RetentionPolicyStatus;
-    created_at: string;
-    updated_at: string;
-    applied_count: number;
+id: string;
+name: string;
+description: string;
+data_type: DataType;
+retention_days: number;
+archive_after_days: number | null;
+action_after_expiry: 'archive' | 'erase' | 'anonymize';
+status: RetentionPolicyStatus;
+created_at: string;
+updated_at: string;
+applied_count: number;
 }
 
 /** Một công việc lưu trữ hoặc xóa */
 export interface RetentionJob {
-    id: string;
-    policy_id: string;
-    policy_name: string;
-    data_type: DataType;
-    status: JobStatus;
-    total_records: number;
-    processed_records: number;
-    created_at: string;
-    completed_at?: string;
-    error_message?: string;
+id: string;
+policy_id: string;
+policy_name: string;
+data_type: DataType;
+status: JobStatus;
+total_records: number;
+processed_records: number;
+created_at: string;
+completed_at?: string;
+error_message?: string;
 }
 
 /** Dữ liệu thống kê tổng quan */
 export interface RetentionStats {
-    total_policies: number;
-    active_policies: number;
-    total_data_size_gb: number;
-    archived_size_gb: number;
-    erased_size_gb: number;
-    pending_jobs: number;
-    running_jobs: number;
-    expired_records_count: number;
+total_policies: number;
+active_policies: number;
+total_data_size_gb: number;
+archived_size_gb: number;
+erased_size_gb: number;
+pending_jobs: number;
+running_jobs: number;
+expired_records_count: number;
 }
 
 /** Props của component */
 export interface RetentionDashboardProps {
-    /** URL API cơ sở để gọi dữ liệu */
-    apiBase?: string;
-    /** Callback khi nhấn hành động nhanh */
-    onAction?: (action: string) => void;
-    /** Refresh interval tính bằng mili giây (mặc định 30s) */
-    refreshInterval?: number;
+/** URL API cơ sở để gọi dữ liệu */
+apiBase?: string;
+/** Callback khi nhấn hành động nhanh */
+onAction?: (action: string) => void;
+/** Refresh interval tính bằng mili giây (mặc định 30s) */
+refreshInterval?: number;
 }
 
 /* ---- Style objects ---- */
 
 const sWrap: React.CSSProperties = {
-    padding: '24px',
-    maxWidth: '1400px',
-    margin: '0 auto',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
-    backgroundColor: '#f8fafc',
-    minHeight: '100vh',
+padding: '24px',
+maxWidth: '1400px',
+margin: '0 auto',
+fontFamily: 'system-ui, -apple-system, sans-serif',
+backgroundColor: '#f8fafc',
+minHeight: '100vh',
 };
 
 const sHeader: React.CSSProperties = {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '24px',
-    flexWrap: 'wrap',
-    gap: '16px',
+display: 'flex',
+justifyContent: 'space-between',
+alignItems: 'flex-start',
+marginBottom: '24px',
+flexWrap: 'wrap',
+gap: '16px',
 };
 
 const sHeaderTitle: React.CSSProperties = {
-    margin: 0,
-    fontSize: '26px',
-    fontWeight: 700,
-    color: '#0f172a',
+margin: 0,
+fontSize: '26px',
+fontWeight: 700,
+color: '#0f172a',
 };
 
 const sHeaderSub: React.CSSProperties = {
-    fontSize: '14px',
-    color: '#64748b',
-    marginTop: '4px',
+fontSize: '14px',
+color: '#64748b',
+marginTop: '4px',
 };
 
 const sStatsRow: React.CSSProperties = {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '16px',
-    marginBottom: '24px',
+display: 'grid',
+gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+gap: '16px',
+marginBottom: '24px',
 };
 
 const sStatCard: React.CSSProperties = {
-    background: '#fff',
-    borderRadius: '12px',
-    padding: '20px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
-    position: 'relative',
-    overflow: 'hidden',
+background: '#fff',
+borderRadius: '12px',
+padding: '20px',
+boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+position: 'relative',
+overflow: 'hidden',
 };
 
 const sStatBar: React.CSSProperties = {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: '4px',
+position: 'absolute',
+left: 0,
+top: 0,
+bottom: 0,
+width: '4px',
 };
 
 const sStatLabel: React.CSSProperties = {
-    margin: 0,
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#64748b',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
+margin: 0,
+fontSize: '12px',
+fontWeight: 600,
+color: '#64748b',
+textTransform: 'uppercase',
+letterSpacing: '0.06em',
 };
 
 const sStatValue: React.CSSProperties = {
-    margin: '8px 0 0',
-    fontSize: '30px',
-    fontWeight: 700,
-    lineHeight: 1.1,
+margin: '8px 0 0',
+fontSize: '30px',
+fontWeight: 700,
+lineHeight: 1.1,
 };
 
 const sStatDelta: React.CSSProperties = {
-    fontSize: '12px',
-    marginTop: '6px',
-    fontWeight: 500,
+fontSize: '12px',
+marginTop: '6px',
+fontWeight: 500,
 };
 
 const sQuickActions: React.CSSProperties = {
-    display: 'flex',
-    gap: '10px',
-    marginBottom: '24px',
-    flexWrap: 'wrap',
+display: 'flex',
+gap: '10px',
+marginBottom: '24px',
+flexWrap: 'wrap',
 };
 
 const sBtnBase: React.CSSProperties = {
-    padding: '9px 18px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    background: '#fff',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#334155',
-    transition: 'all 0.15s',
+padding: '9px 18px',
+border: '1px solid #e2e8f0',
+borderRadius: '8px',
+background: '#fff',
+cursor: 'pointer',
+fontSize: '14px',
+fontWeight: 500,
+color: '#334155',
+transition: 'all 0.15s',
 };
 
 const sBtnPrimary: React.CSSProperties = {
-    ...sBtnBase,
-    background: '#6366f1',
-    color: '#fff',
-    border: 'none',
+...sBtnBase,
+background: '#6366f1',
+color: '#fff',
+border: 'none',
 };
 
 const sBtnSuccess: React.CSSProperties = {
-    ...sBtnBase,
-    background: '#22c55e',
-    color: '#fff',
-    border: 'none',
+...sBtnBase,
+background: '#22c55e',
+color: '#fff',
+border: 'none',
 };
 
 const sBtnWarning: React.CSSProperties = {
-    ...sBtnBase,
-    background: '#f59e0b',
-    color: '#fff',
-    border: 'none',
+...sBtnBase,
+background: '#f59e0b',
+color: '#fff',
+border: 'none',
 };
 
 const sBtnDanger: React.CSSProperties = {
-    ...sBtnBase,
-    background: '#ef4444',
-    color: '#fff',
-    border: 'none',
+...sBtnBase,
+background: '#ef4444',
+color: '#fff',
+border: 'none',
 };
 
 const sBtnInfo: React.CSSProperties = {
-    ...sBtnBase,
-    background: '#3b82f6',
-    color: '#fff',
-    border: 'none',
+...sBtnBase,
+background: '#3b82f6',
+color: '#fff',
+border: 'none',
 };
 
 const sCard: React.CSSProperties = {
-    background: '#fff',
-    borderRadius: '12px',
-    padding: '20px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
-    marginBottom: '20px',
+background: '#fff',
+borderRadius: '12px',
+padding: '20px',
+boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+marginBottom: '20px',
 };
 
 const sCardTitle: React.CSSProperties = {
-    margin: '0 0 16px',
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#0f172a',
+margin: '0 0 16px',
+fontSize: '18px',
+fontWeight: 600,
+color: '#0f172a',
 };
 
 const sTable: React.CSSProperties = {
-    width: '100%',
-    borderCollapse: 'collapse',
+width: '100%',
+borderCollapse: 'collapse',
 };
 
 const sTh: React.CSSProperties = {
-    padding: '12px 10px',
-    textAlign: 'left',
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#64748b',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    borderBottom: '2px solid #e2e8f0',
-    whiteSpace: 'nowrap',
+padding: '12px 10px',
+textAlign: 'left',
+fontSize: '12px',
+fontWeight: 600,
+color: '#64748b',
+textTransform: 'uppercase',
+letterSpacing: '0.05em',
+borderBottom: '2px solid #e2e8f0',
+whiteSpace: 'nowrap',
 };
 
 const sTd: React.CSSProperties = {
-    padding: '12px 10px',
-    fontSize: '14px',
-    borderBottom: '1px solid #f1f5f9',
-    color: '#334155',
+padding: '12px 10px',
+fontSize: '14px',
+borderBottom: '1px solid #f1f5f9',
+color: '#334155',
 };
 
 const sTdCode: React.CSSProperties = {
-    fontFamily: 'ui-monospace, monospace',
-    fontSize: '13px',
-    color: '#6366f1',
-    background: '#eef2ff',
-    padding: '2px 6px',
-    borderRadius: '4px',
+fontFamily: 'ui-monospace, monospace',
+fontSize: '13px',
+color: '#6366f1',
+background: '#eef2ff',
+padding: '2px 6px',
+borderRadius: '4px',
 };
 
 const sEmptyState: React.CSSProperties = {
-    padding: '48px 20px',
-    textAlign: 'center',
-    color: '#94a3b8',
-    fontSize: '15px',
+padding: '48px 20px',
+textAlign: 'center',
+color: '#94a3b8',
+fontSize: '15px',
 };
 
 const sLoading: React.CSSProperties = {
-    padding: '48px 20px',
-    textAlign: 'center',
-    color: '#64748b',
-    fontSize: '15px',
+padding: '48px 20px',
+textAlign: 'center',
+color: '#64748b',
+fontSize: '15px',
 };
 
 const sError: React.CSSProperties = {
-    padding: '14px 18px',
-    background: '#fef2f2',
-    borderRadius: '8px',
-    color: '#991b1b',
-    fontSize: '14px',
-    border: '1px solid #fecaca',
-    marginBottom: '16px',
+padding: '14px 18px',
+background: '#fef2f2',
+borderRadius: '8px',
+color: '#991b1b',
+fontSize: '14px',
+border: '1px solid #fecaca',
+marginBottom: '16px',
 };
 
 const sBadgeBase: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '4px',
-    padding: '3px 10px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontWeight: 600,
-    whiteSpace: 'nowrap',
+display: 'inline-flex',
+alignItems: 'center',
+gap: '4px',
+padding: '3px 10px',
+borderRadius: '12px',
+fontSize: '12px',
+fontWeight: 600,
+whiteSpace: 'nowrap',
 };
 
 const sProgressBar: React.CSSProperties = {
-    width: '100%',
-    height: '6px',
-    background: '#e2e8f0',
-    borderRadius: '3px',
-    overflow: 'hidden',
+width: '100%',
+height: '6px',
+background: '#e2e8f0',
+borderRadius: '3px',
+overflow: 'hidden',
 };
 
 const sProgressFill: React.CSSProperties = {
-    height: '100%',
-    borderRadius: '3px',
-    transition: 'width 0.3s ease',
+height: '100%',
+borderRadius: '3px',
+transition: 'width 0.3s ease',
 };
 
 const sGrid2Col: React.CSSProperties = {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '20px',
+display: 'grid',
+gridTemplateColumns: '1fr 1fr',
+gap: '20px',
 };
 
 /* ---- Helper functions ---- */
 
 /** Màu và nhãn cho trạng thái chính sách */
 function policyStatusStyle(status: RetentionPolicyStatus): React.CSSProperties {
-    const map: Record<RetentionPolicyStatus, { bg: string; color: string }> = {
-        active:   { bg: '#d1fae5', color: '#065f46' },
-        inactive: { bg: '#f1f5f9', color: '#475569' },
-        expired:  { bg: '#fee2e2', color: '#991b1b' },
-        draft:    { bg: '#fef3c7', color: '#92400e' },
+const map: Record<RetentionPolicyStatus, { bg: string; color: string }> = {
+    active: { bg: '#d1fae5', color: '#065f46' },
+    inactive: { bg: '#f1f5f9', color: '#475569' },
+    expired: { bg: '#fee2e2', color: '#991b1b' },
+    draft: { bg: '#fef3c7', color: '#92400e' },
     };
     const c = map[status] || { bg: '#f1f5f9', color: '#475569' };
     return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
-}
+    }
 
-function policyStatusLabel(status: RetentionPolicyStatus): string {
+    function policyStatusLabel(status: RetentionPolicyStatus): string {
     const map: Record<RetentionPolicyStatus, string> = {
-        active:   'Đang hoạt động',
+        active: 'Đang hoạt động',
         inactive: 'Không hoạt động',
-        expired:  'Đã hết hạn',
-        draft:    'Bản nháp',
-    };
-    return map[status] || status;
-}
-
-/** Màu và nhãn cho trạng thái công việc */
-function jobStatusStyle(status: JobStatus): React.CSSProperties {
-    const map: Record<JobStatus, { bg: string; color: string }> = {
-        pending:   { bg: '#fef3c7', color: '#92400e' },
-        running:   { bg: '#dbeafe', color: '#1e40af' },
-        completed: { bg: '#d1fae5', color: '#065f46' },
-        failed:    { bg: '#fee2e2', color: '#991b1b' },
-        cancelled: { bg: '#f1f5f9', color: '#475569' },
-    };
-    const c = map[status] || { bg: '#f1f5f9', color: '#475569' };
-    return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
-}
-
-function jobStatusLabel(status: JobStatus): string {
-    const map: Record<JobStatus, string> = {
-        pending:   'Đang chờ',
-        running:   'Đang chạy',
-        completed: 'Hoàn thành',
-        failed:    'Thất bại',
-        cancelled: 'Đã hủy',
-    };
-    return map[status] || status;
-}
-
-/** Nhãn loại dữ liệu bằng tiếng Việt */
-const dataTypeLabels: Record<DataType, string> = {
-    user_data:       'Dữ liệu người dùng',
-    log_data:        'Nhật ký hệ thống',
-    session_data:    'Dữ liệu phiên',
-    audit_trail:     'Dấu vết kiểm toán',
-    file_attachment: 'Tập tin đính kèm',
-    analytics:       'Dữ liệu phân tích',
-};
-
-/** Nhãn hành động sau khi hết hạn */
-const actionLabels: Record<string, string> = {
-    archive:    'Lưu trữ',
-    erase:      'Xóa vĩnh viễn',
-    anonymize:  'Ẩn danh hóa',
-};
-
-/** Định dạng ngày giờ */
-function formatDateTime(iso: string | null | undefined): string {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    return d.toLocaleDateString('vi-VN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-}
-
-/** Định dạng dung lượng */
-function formatSize(gb: number): string {
-    if (gb >= 1000) return `${(gb / 1000).toFixed(2)} TB`;
-    if (gb >= 1) return `${gb.toFixed(2)} GB`;
-    return `${(gb * 1024).toFixed(1)} MB`;
-}
-
-/** Tính tỷ lệ phần trăm hoàn thành */
-function calcProgress(total: number, processed: number): number {
-    if (total <= 0) return 0;
-    return Math.min(100, Math.round((processed / total) * 100));
-}
-
-/* ---- Sub-components ---- */
-
-const StatCard: React.FC<{
-    title: string;
-    value: string | number;
-    color: string;
-    barColor: string;
-    delta?: string;
-    deltaColor?: string;
-}> = ({ title, value, color, barColor, delta, deltaColor }) => (
-    <div style={sStatCard}>
-        <div style={{ ...sStatBar, backgroundColor: barColor }} />
-        <p style={sStatLabel}>{title}</p>
-        <p style={{ ...sStatValue, color }}>
-            {typeof value === 'number' ? value.toLocaleString('vi-VN') : value}
-        </p>
-        {delta && (
-            <p style={{ ...sStatDelta, color: deltaColor || '#64748b' }}>{delta}</p>
-        )}
-    </div>
-);
-
-const StatusBadge: React.FC<{
-    style: React.CSSProperties;
-    children: React.ReactNode;
-}> = ({ style, children }) => (
-    <span style={style}>{children}</span>
-);
-
-const ProgressBar: React.FC<{
-    percent: number;
-    status: JobStatus;
-}> = ({ percent, status }) => {
-    const colorMap: Record<JobStatus, string> = {
-        pending:   '#f59e0b',
-        running:   '#3b82f6',
-        completed: '#22c55e',
-        failed:    '#ef4444',
-        cancelled: '#94a3b8',
-    };
-    return (
-        <div style={sProgressBar}>
-            <div
-                style={{
-                    ...sProgressFill,
-                    width: `${percent}%`,
-                    backgroundColor: colorMap[status] || '#94a3b8',
-                }}
-            />
-        </div>
-    );
-};
-
-/* ---- Component chính ---- */
-
-export const RetentionDashboard: React.FC<RetentionDashboardProps> = ({
-    apiBase,
-    onAction,
-    refreshInterval = 30000,
-}) => {
-    const baseUrl = apiBase || '/api';
-
-    const [stats, setStats] = useState<RetentionStats | null>(null);
-    const [jobs, setJobs] = useState<RetentionJob[]>([]);
-    const [policies, setPolicies] = useState<RetentionPolicy[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    /* Tải dữ liệu từ API */
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const [statsRes, jobsRes, policiesRes] = await Promise.all([
-                fetch(`${baseUrl}/api/retention/stats`).then((r) => r.json()),
-                fetch(`${baseUrl}/api/retention/jobs?limit=15`).then((r) => r.json()),
-                fetch(`${baseUrl}/api/retention/policies`).then((r) => r.json()),
-            ]);
-            setStats(statsRes);
-            setJobs(jobsRes || []);
-            setPolicies(policiesRes || []);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Không thể tải dữ liệu chính sách lưu trữ');
-        } finally {
-            setLoading(false);
-        }
-    }, [baseUrl]);
-
-    useEffect(() => {
-        loadData();
-    }, [loadData]);
-
-    /* Tự động làm mới theo khoảng thời gian */
-    useEffect(() => {
-        const id = setInterval(loadData, refreshInterval);
-        return () => clearInterval(id);
-    }, [loadData, refreshInterval]);
-
-    /* Sắp xếp công việc theo thời gian, ưu tiên đang chạy */
-    const sortedJobs = useMemo(() => {
-        const priority: Record<JobStatus, number> = {
-            running: 0,
-            pending: 1,
-            failed: 2,
-            completed: 3,
-            cancelled: 4,
+        expired: 'Đã hết hạn',
+        draft: 'Bản nháp',
         };
-        return [...jobs].sort((a, b) => {
-            const pDiff = priority[a.status] - priority[b.status];
-            if (pDiff !== 0) return pDiff;
-            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        });
-    }, [jobs]);
+        return map[status] || status;
+        }
 
-    /* Tính tổng dữ liệu còn lại */
-    const remainingData = useMemo(() => {
-        if (!stats) return '—';
-        return formatSize(Math.max(0, stats.total_data_size_gb - stats.archived_size_gb - stats.erased_size_gb));
-    }, [stats]);
+        /** Màu và nhãn cho trạng thái công việc */
+        function jobStatusStyle(status: JobStatus): React.CSSProperties {
+        const map: Record<JobStatus, { bg: string; color: string }> = {
+            pending: { bg: '#fef3c7', color: '#92400e' },
+            running: { bg: '#dbeafe', color: '#1e40af' },
+            completed: { bg: '#d1fae5', color: '#065f46' },
+            failed: { bg: '#fee2e2', color: '#991b1b' },
+            cancelled: { bg: '#f1f5f9', color: '#475569' },
+            };
+            const c = map[status] || { bg: '#f1f5f9', color: '#475569' };
+            return { ...sBadgeBase, backgroundColor: c.bg, color: c.color };
+            }
 
-    /* Xử lý hành động nhanh */
-    const handleQuickAction = useCallback(
-        (action: string) => {
-            onAction?.(action);
-            console.log(`[RetentionDashboard] Hành động: ${action}`);
-        },
-        [onAction],
-    );
+            function jobStatusLabel(status: JobStatus): string {
+            const map: Record<JobStatus, string> = {
+                pending: 'Đang chờ',
+                running: 'Đang chạy',
+                completed: 'Hoàn thành',
+                failed: 'Thất bại',
+                cancelled: 'Đã hủy',
+                };
+                return map[status] || status;
+                }
 
-    return (
-        <div style={sWrap}>
-            {/* Header */}
-            <div style={sHeader}>
-                <div>
-                    <h1 style={sHeaderTitle}>Bảng điều khiển lưu trữ dữ liệu</h1>
-                    <p style={sHeaderSub}>
-                        Quản lý vòng đời dữ liệu, chính sách lưu trữ và yêu cầu xóa GDPR
-                    </p>
-                </div>
-                <div>
-                    <button
-                        onClick={loadData}
-                        style={sBtnPrimary}
-                        disabled={loading}
-                    >
-                        {loading ? 'Đang tải...' : 'Làm mới dữ liệu'}
-                    </button>
-                </div>
-            </div>
+                /** Nhãn loại dữ liệu bằng tiếng Việt */
+                const dataTypeLabels: Record<DataType, string> = {
+                    user_data: 'Dữ liệu người dùng',
+                    log_data: 'Nhật ký hệ thống',
+                    session_data: 'Dữ liệu phiên',
+                    audit_trail: 'Dấu vết kiểm toán',
+                    file_attachment: 'Tập tin đính kèm',
+                    analytics: 'Dữ liệu phân tích',
+                    };
 
-            {/* Thông báo lỗi */}
-            {error && (
-                <div style={sError}>
-                    <strong>Lỗi:</strong> {error}
-                </div>
-            )}
+                    /** Nhãn hành động sau khi hết hạn */
+                    const actionLabels: Record<string, string> = {
+                        archive: 'Lưu trữ',
+                        erase: 'Xóa vĩnh viễn',
+                        anonymize: 'Ẩn danh hóa',
+                        };
 
-            {/* Thống kê tổng quan */}
-            {loading && !stats ? (
-                <div style={sLoading}>Đang tải thống kê lưu trữ...</div>
-            ) : stats ? (
-                <div style={sStatsRow}>
-                    <StatCard
-                        title="Tổng chính sách"
-                        value={stats.total_policies}
-                        color="#6366f1"
-                        barColor="#6366f1"
-                        delta={`${stats.active_policies} đang hoạt động`}
-                        deltaColor="#22c55e"
-                    />
-                    <StatCard
-                        title="Dung lượng dữ liệu"
-                        value={formatSize(stats.total_data_size_gb)}
-                        color="#3b82f6"
-                        barColor="#3b82f6"
-                        delta={`Còn lại: ${remainingData}`}
-                        deltaColor="#64748b"
-                    />
-                    <StatCard
-                        title="Đã lưu trữ"
-                        value={formatSize(stats.archived_size_gb)}
-                        color="#22c55e"
-                        barColor="#22c55e"
-                    />
-                    <StatCard
-                        title="Đã xóa"
-                        value={formatSize(stats.erased_size_gb)}
-                        color="#ef4444"
-                        barColor="#ef4444"
-                    />
-                    <StatCard
-                        title="Công việc đang chờ"
-                        value={stats.pending_jobs}
-                        color="#f59e0b"
-                        barColor="#f59e0b"
-                        delta={`${stats.running_jobs} đang chạy`}
-                        deltaColor="#3b82f6"
-                    />
-                    <StatCard
-                        title="Bản ghi hết hạn"
-                        value={stats.expired_records_count.toLocaleString('vi-VN')}
-                        color="#8b5cf6"
-                        barColor="#8b5cf6"
-                    />
-                </div>
-            ) : null}
+                        /** Định dạng ngày giờ */
+                        function formatDateTime(iso: string | null | undefined): string {
+                        if (!iso) return '—';
+                        const d = new Date(iso);
+                        return d.toLocaleDateString('vi-VN', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        });
+                        }
 
-            {/* Hành động nhanh */}
-            <div style={sQuickActions}>
-                <button onClick={() => handleQuickAction('create_policy')} style={sBtnPrimary}>
-                    Tạo chính sách mới
-                </button>
-                <button onClick={() => handleQuickAction('manage_policies')} style={sBtnSuccess}>
-                    Quản lý chính sách
-                </button>
-                <button onClick={() => handleQuickAction('new_erasure')} style={sBtnDanger}>
-                    Yêu cầu xóa GDPR
-                </button>
-                <button onClick={() => handleQuickAction('view_jobs')} style={sBtnInfo}>
-                    Xem công việc
-                </button>
-                <button onClick={() => handleQuickAction('export_report')} style={sBtnBase}>
-                    Xuất báo cáo
-                </button>
-            </div>
+                        /** Định dạng dung lượng */
+                        function formatSize(gb: number): string {
+                        if (gb >= 1000) return `${(gb / 1000).toFixed(2)} TB`;
+                        if (gb >= 1) return `${gb.toFixed(2)} GB`;
+                        return `${(gb * 1024).toFixed(1)} MB`;
+                        }
 
-            {/* Grid 2 cột: Chính sách + Công việc */}
-            <div style={sGrid2Col}>
-                {/* Tổng quan chính sách */}
-                <div style={sCard}>
-                    <h2 style={sCardTitle}>Chính sách lưu trữ ({policies.length})</h2>
-                    {loading && !policies.length ? (
-                        <div style={sLoading}>Đang tải chính sách...</div>
-                    ) : (
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={sTable}>
-                                <thead>
-                                    <tr>
-                                        <th style={sTh}>Tên</th>
-                                        <th style={sTh}>Loại</th>
-                                        <th style={sTh}>Ngày giữ</th>
-                                        <th style={sTh}>Hành động</th>
-                                        <th style={sTh}>Trạng thái</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {policies.slice(0, 8).map((p) => (
-                                        <tr key={p.id}>
-                                            <td style={sTd}>
-                                                <span style={{ fontWeight: 500 }}>{p.name}</span>
-                                            </td>
-                                            <td style={sTd}>{dataTypeLabels[p.data_type] || p.data_type}</td>
-                                            <td style={sTd}>{p.retention_days} ngày</td>
-                                            <td style={sTd}>{actionLabels[p.action_after_expiry] || p.action_after_expiry}</td>
-                                            <td style={sTd}>
-                                                <StatusBadge style={policyStatusStyle(p.status)}>
-                                                    {policyStatusLabel(p.status)}
-                                                </StatusBadge>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {!policies.length && (
-                                        <tr>
-                                            <td colSpan={5} style={sEmptyState}>
-                                                Chưa có chính sách lưu trữ nào được cấu hình.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
+                        /** Tính tỷ lệ phần trăm hoàn thành */
+                        function calcProgress(total: number, processed: number): number {
+                        if (total <= 0) return 0; return Math.min(100, Math.round((processed / total) * 100)); } /* ----
+                            Sub-components ---- */ const StatCard: React.FC<{ title: string; value: string | number;
+                            color: string; barColor: string; delta?: string; deltaColor?: string; }> = ({ title, value,
+                            color, barColor, delta, deltaColor }) => (
+                            <div style={sStatCard}>
+                                <div style={{ ...sStatBar, backgroundColor: barColor }} />
+                                <p style={sStatLabel}>{title}</p>
+                                <p style={{ ...sStatValue, color }}>
+                                    {typeof value === 'number' ? value.toLocaleString('vi-VN') : value}
+                                </p>
+                                {delta && (
+                                <p style={{ ...sStatDelta, color: deltaColor || '#64748b' }}>{delta}</p>
+                                )}
+                            </div>
+                            );
 
-                {/* Công việc gần đây */}
-                <div style={sCard}>
-                    <h2 style={sCardTitle}>Công việc gần đây ({sortedJobs.length})</h2>
-                    {loading && !sortedJobs.length ? (
-                        <div style={sLoading}>Đang tải công việc...</div>
-                    ) : (
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={sTable}>
-                                <thead>
-                                    <tr>
-                                        <th style={sTh}>ID</th>
-                                        <th style={sTh}>Chính sách</th>
-                                        <th style={sTh}>Tiến độ</th>
-                                        <th style={sTh}>Trạng thái</th>
-                                        <th style={sTh}>Ngày tạo</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {sortedJobs.slice(0, 8).map((j) => {
-                                        const progress = calcProgress(j.total_records, j.processed_records);
+                            const StatusBadge: React.FC<{ style: React.CSSProperties; children: React.ReactNode; }> = ({
+                                style, children }) => (
+                                <span style={style}>{children}</span>
+                                );
+
+                                const ProgressBar: React.FC<{ percent: number; status: JobStatus; }> = ({ percent,
+                                    status }) => {
+                                    const colorMap: Record<JobStatus, string> = {
+                                        pending: '#f59e0b',
+                                        running: '#3b82f6',
+                                        completed: '#22c55e',
+                                        failed: '#ef4444',
+                                        cancelled: '#94a3b8',
+                                        };
                                         return (
-                                            <tr key={j.id}>
-                                                <td style={sTd}>
-                                                    <span style={sTdCode}>{j.id.slice(0, 12)}</span>
-                                                </td>
-                                                <td style={sTd}>{j.policy_name}</td>
-                                                <td style={{ ...sTd, minWidth: '120px' }}>
-                                                    <div style={{ marginBottom: '4px' }}>
-                                                        <span style={{ fontSize: '12px', color: '#64748b' }}>
-                                                            {j.processed_records}/{j.total_records}
-                                                        </span>
-                                                    </div>
-                                                    <ProgressBar percent={progress} status={j.status} />
-                                                </td>
-                                                <td style={sTd}>
-                                                    <StatusBadge style={jobStatusStyle(j.status)}>
-                                                        {jobStatusLabel(j.status)}
-                                                    </StatusBadge>
-                                                </td>
-                                                <td style={sTd}>{formatDateTime(j.created_at)}</td>
-                                            </tr>
+                                        <div style={sProgressBar}>
+                                            <div style={{ ...sProgressFill, width: `${percent}%`, backgroundColor:
+                                                colorMap[status] || '#94a3b8' , }} />
+                                        </div>
                                         );
-                                    })}
-                                    {!sortedJobs.length && (
-                                        <tr>
-                                            <td colSpan={5} style={sEmptyState}>
-                                                Chưa có công việc nào được tạo.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
+                                        };
 
-export default RetentionDashboard;
-{% endraw %}
+                                        /* ---- Component chính ---- */
+
+                                        export const RetentionDashboard: React.FC<RetentionDashboardProps> = ({
+                                            apiBase,
+                                            onAction,
+                                            refreshInterval = 30000,
+                                            }) => {
+                                            const baseUrl = apiBase || '/api';
+
+                                            const [stats, setStats] = useState<RetentionStats | null>(null);
+                                                const [jobs, setJobs] = useState<RetentionJob[]>([]);
+                                                    const [policies, setPolicies] = useState<RetentionPolicy[]>([]);
+                                                        const [loading, setLoading] = useState(true);
+                                                        const [error, setError] = useState<string | null>(null);
+
+                                                            /* Tải dữ liệu từ API */
+                                                            const loadData = useCallback(async () => {
+                                                            setLoading(true);
+                                                            setError(null);
+                                                            try {
+                                                            const [statsRes, jobsRes, policiesRes] = await Promise.all([
+                                                            fetch(`${baseUrl}/api/retention/stats`).then((r) =>
+                                                            r.json()),
+                                                            fetch(`${baseUrl}/api/retention/jobs?limit=15`).then((r) =>
+                                                            r.json()),
+                                                            fetch(`${baseUrl}/api/retention/policies`).then((r) =>
+                                                            r.json()),
+                                                            ]);
+                                                            setStats(statsRes);
+                                                            setJobs(jobsRes || []);
+                                                            setPolicies(policiesRes || []);
+                                                            } catch (err) {
+                                                            setError(err instanceof Error ? err.message : 'Không thể tải
+                                                            dữ liệu chính sách lưu trữ');
+                                                            } finally {
+                                                            setLoading(false);
+                                                            }
+                                                            }, [baseUrl]);
+
+                                                            useEffect(() => {
+                                                            loadData();
+                                                            }, [loadData]);
+
+                                                            /* Tự động làm mới theo khoảng thời gian */
+                                                            useEffect(() => {
+                                                            const id = setInterval(loadData, refreshInterval);
+                                                            return () => clearInterval(id);
+                                                            }, [loadData, refreshInterval]);
+
+                                                            /* Sắp xếp công việc theo thời gian, ưu tiên đang chạy */
+                                                            const sortedJobs = useMemo(() => {
+                                                            const priority: Record<JobStatus, number> = {
+                                                                running: 0,
+                                                                pending: 1,
+                                                                failed: 2,
+                                                                completed: 3,
+                                                                cancelled: 4,
+                                                                };
+                                                                return [...jobs].sort((a, b) => {
+                                                                const pDiff = priority[a.status] - priority[b.status];
+                                                                if (pDiff !== 0) return pDiff;
+                                                                return new Date(b.created_at).getTime() - new
+                                                                Date(a.created_at).getTime();
+                                                                });
+                                                                }, [jobs]);
+
+                                                                /* Tính tổng dữ liệu còn lại */
+                                                                const remainingData = useMemo(() => {
+                                                                if (!stats) return '—';
+                                                                return formatSize(Math.max(0, stats.total_data_size_gb -
+                                                                stats.archived_size_gb - stats.erased_size_gb));
+                                                                }, [stats]);
+
+                                                                /* Xử lý hành động nhanh */
+                                                                const handleQuickAction = useCallback(
+                                                                (action: string) => {
+                                                                onAction?.(action);
+                                                                console.log(`[RetentionDashboard] Hành động:
+                                                                ${action}`);
+                                                                },
+                                                                [onAction],
+                                                                );
+
+                                                                return (
+                                                                <div style={sWrap}>
+                                                                    {/* Header */}
+                                                                    <div style={sHeader}>
+                                                                        <div>
+                                                                            <h1 style={sHeaderTitle}>Bảng điều khiển lưu
+                                                                                trữ dữ liệu</h1>
+                                                                            <p style={sHeaderSub}>
+                                                                                Quản lý vòng đời dữ liệu, chính sách lưu
+                                                                                trữ và yêu cầu xóa GDPR
+                                                                            </p>
+                                                                        </div>
+                                                                        <div>
+                                                                            <button onClick={loadData}
+                                                                                style={sBtnPrimary} disabled={loading}>
+                                                                                {loading ? 'Đang tải...' : 'Làm mới dữ
+                                                                                liệu'}
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Thông báo lỗi */}
+                                                                    {error && (
+                                                                    <div style={sError}>
+                                                                        <strong>Lỗi:</strong> {error}
+                                                                    </div>
+                                                                    )}
+
+                                                                    {/* Thống kê tổng quan */}
+                                                                    {loading && !stats ? (
+                                                                    <div style={sLoading}>Đang tải thống kê lưu trữ...
+                                                                    </div>
+                                                                    ) : stats ? (
+                                                                    <div style={sStatsRow}>
+                                                                        <StatCard title="Tổng chính sách"
+                                                                            value={stats.total_policies} color="#6366f1"
+                                                                            barColor="#6366f1"
+                                                                            delta={`${stats.active_policies} đang hoạt
+                                                                            động`} deltaColor="#22c55e" />
+                                                                        <StatCard title="Dung lượng dữ liệu"
+                                                                            value={formatSize(stats.total_data_size_gb)}
+                                                                            color="#3b82f6" barColor="#3b82f6"
+                                                                            delta={`Còn lại: ${remainingData}`}
+                                                                            deltaColor="#64748b" />
+                                                                        <StatCard title="Đã lưu trữ"
+                                                                            value={formatSize(stats.archived_size_gb)}
+                                                                            color="#22c55e" barColor="#22c55e" />
+                                                                        <StatCard title="Đã xóa"
+                                                                            value={formatSize(stats.erased_size_gb)}
+                                                                            color="#ef4444" barColor="#ef4444" />
+                                                                        <StatCard title="Công việc đang chờ"
+                                                                            value={stats.pending_jobs} color="#f59e0b"
+                                                                            barColor="#f59e0b"
+                                                                            delta={`${stats.running_jobs} đang chạy`}
+                                                                            deltaColor="#3b82f6" />
+                                                                        <StatCard title="Bản ghi hết hạn"
+                                                                            value={stats.expired_records_count.toLocaleString('vi-VN')}
+                                                                            color="#8b5cf6" barColor="#8b5cf6" />
+                                                                    </div>
+                                                                    ) : null}
+
+                                                                    {/* Hành động nhanh */}
+                                                                    <div style={sQuickActions}>
+                                                                        <button onClick={()=>
+                                                                            handleQuickAction('create_policy')}
+                                                                            style={sBtnPrimary}>
+                                                                            Tạo chính sách mới
+                                                                        </button>
+                                                                        <button onClick={()=>
+                                                                            handleQuickAction('manage_policies')}
+                                                                            style={sBtnSuccess}>
+                                                                            Quản lý chính sách
+                                                                        </button>
+                                                                        <button onClick={()=>
+                                                                            handleQuickAction('new_erasure')}
+                                                                            style={sBtnDanger}>
+                                                                            Yêu cầu xóa GDPR
+                                                                        </button>
+                                                                        <button onClick={()=>
+                                                                            handleQuickAction('view_jobs')}
+                                                                            style={sBtnInfo}>
+                                                                            Xem công việc
+                                                                        </button>
+                                                                        <button onClick={()=>
+                                                                            handleQuickAction('export_report')}
+                                                                            style={sBtnBase}>
+                                                                            Xuất báo cáo
+                                                                        </button>
+                                                                    </div>
+
+                                                                    {/* Grid 2 cột: Chính sách + Công việc */}
+                                                                    <div style={sGrid2Col}>
+                                                                        {/* Tổng quan chính sách */}
+                                                                        <div style={sCard}>
+                                                                            <h2 style={sCardTitle}>Chính sách lưu trữ
+                                                                                ({policies.length})</h2>
+                                                                            {loading && !policies.length ? (
+                                                                            <div style={sLoading}>Đang tải chính sách...
+                                                                            </div>
+                                                                            ) : (
+                                                                            <div style={{ overflowX: 'auto' }}>
+                                                                                <table style={sTable}>
+                                                                                    <thead>
+                                                                                        <tr>
+                                                                                            <th style={sTh}>Tên</th>
+                                                                                            <th style={sTh}>Loại</th>
+                                                                                            <th style={sTh}>Ngày giữ
+                                                                                            </th>
+                                                                                            <th style={sTh}>Hành động
+                                                                                            </th>
+                                                                                            <th style={sTh}>Trạng thái
+                                                                                            </th>
+                                                                                        </tr>
+                                                                                    </thead>
+                                                                                    <tbody>
+                                                                                        {policies.slice(0, 8).map((p) =>
+                                                                                        (
+                                                                                        <tr key={p.id}>
+                                                                                            <td style={sTd}>
+                                                                                                <span style={{
+                                                                                                    fontWeight: 500
+                                                                                                    }}>{p.name}</span>
+                                                                                            </td>
+                                                                                            <td style={sTd}>
+                                                                                                {dataTypeLabels[p.data_type]
+                                                                                                || p.data_type}</td>
+                                                                                            <td style={sTd}>
+                                                                                                {p.retention_days} ngày
+                                                                                            </td>
+                                                                                            <td style={sTd}>
+                                                                                                {actionLabels[p.action_after_expiry]
+                                                                                                ||
+                                                                                                p.action_after_expiry}
+                                                                                            </td>
+                                                                                            <td style={sTd}>
+                                                                                                <StatusBadge
+                                                                                                    style={policyStatusStyle(p.status)}>
+                                                                                                    {policyStatusLabel(p.status)}
+                                                                                                </StatusBadge>
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                        ))}
+                                                                                        {!policies.length && (
+                                                                                        <tr>
+                                                                                            <td colSpan={5}
+                                                                                                style={sEmptyState}>
+                                                                                                Chưa có chính sách lưu
+                                                                                                trữ nào được cấu hình.
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                        )}
+                                                                                    </tbody>
+                                                                                </table>
+                                                                            </div>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* Công việc gần đây */}
+                                                                        <div style={sCard}>
+                                                                            <h2 style={sCardTitle}>Công việc gần đây
+                                                                                ({sortedJobs.length})</h2>
+                                                                            {loading && !sortedJobs.length ? (
+                                                                            <div style={sLoading}>Đang tải công việc...
+                                                                            </div>
+                                                                            ) : (
+                                                                            <div style={{ overflowX: 'auto' }}>
+                                                                                <table style={sTable}>
+                                                                                    <thead>
+                                                                                        <tr>
+                                                                                            <th style={sTh}>ID</th>
+                                                                                            <th style={sTh}>Chính sách
+                                                                                            </th>
+                                                                                            <th style={sTh}>Tiến độ</th>
+                                                                                            <th style={sTh}>Trạng thái
+                                                                                            </th>
+                                                                                            <th style={sTh}>Ngày tạo
+                                                                                            </th>
+                                                                                        </tr>
+                                                                                    </thead>
+                                                                                    <tbody>
+                                                                                        {sortedJobs.slice(0, 8).map((j)
+                                                                                        => {
+                                                                                        const progress =
+                                                                                        calcProgress(j.total_records,
+                                                                                        j.processed_records);
+                                                                                        return (
+                                                                                        <tr key={j.id}>
+                                                                                            <td style={sTd}>
+                                                                                                <span
+                                                                                                    style={sTdCode}>{j.id.slice(0,
+                                                                                                    12)}</span>
+                                                                                            </td>
+                                                                                            <td style={sTd}>
+                                                                                                {j.policy_name}</td>
+                                                                                            <td style={{ ...sTd,
+                                                                                                minWidth: '120px' }}>
+                                                                                                <div style={{
+                                                                                                    marginBottom: '4px'
+                                                                                                    }}>
+                                                                                                    <span style={{
+                                                                                                        fontSize: '12px'
+                                                                                                        ,
+                                                                                                        color: '#64748b'
+                                                                                                        }}>
+                                                                                                        {j.processed_records}/{j.total_records}
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                                <ProgressBar
+                                                                                                    percent={progress}
+                                                                                                    status={j.status} />
+                                                                                            </td>
+                                                                                            <td style={sTd}>
+                                                                                                <StatusBadge
+                                                                                                    style={jobStatusStyle(j.status)}>
+                                                                                                    {jobStatusLabel(j.status)}
+                                                                                                </StatusBadge>
+                                                                                            </td>
+                                                                                            <td style={sTd}>
+                                                                                                {formatDateTime(j.created_at)}
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                        );
+                                                                                        })}
+                                                                                        {!sortedJobs.length && (
+                                                                                        <tr>
+                                                                                            <td colSpan={5}
+                                                                                                style={sEmptyState}>
+                                                                                                Chưa có công việc nào
+                                                                                                được tạo.
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                        )}
+                                                                                    </tbody>
+                                                                                </table>
+                                                                            </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                );
+                                                                };
+
+                                                                export default RetentionDashboard;
+                                                                {% endraw %}

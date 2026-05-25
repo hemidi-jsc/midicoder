@@ -1,5 +1,6 @@
 {% raw %}/**
 * Banner thong bao thoi gian trial — TrialBanner.
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 *
 * Component nay hien thi banner dem nguoc thoi gian trial:
 * - Hien thi so ngay con lai va countdown timer
@@ -10,7 +11,22 @@
 *
 * Tu dong sinh boi Midicoder — khong sua thu cong.
 */
+{% endraw %}
 
+{% if ui_framework == "material" %}
+import { Button, LinearProgress, Snackbar, IconButton, Typography } from '@mui/material';
+import { Close as CloseIcon } from '@mui/icons-material';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind utility classes inline
+{% elif ui_framework == "bootstrap" %}
+import { Button, ProgressBar, CloseButton } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Progress, Space, Typography } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, ProgressBar, InlineNotification } from '@carbon/react';
+{% endif %}
+
+{% raw %}
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 // ===========================================================================

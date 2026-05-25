@@ -1,314 +1,337 @@
 {% raw %}/**
- * CP49 Consent & Preference Management — Consent Manager Component.
- *
- * Component quản lý danh sách bản ghi đồng ý của người dùng:
- * - Xem tất cả consents theo mục đích/danh mục
- * - Cấp đồng ý mới
- * - Hủy đồng ý
- * - Lọc và tìm kiếm
- *
- * Sử dụng Signal-based state management và reactive patterns của Angular.
- *
- * Tạo tự động bởi CP49 — không sửa thủ công.
- */
-
+* UI Framework: {{{ ui_framework }}}
+* CP49 Consent & Preference Management — Consent Manager Component.
+*
+* Component quản lý danh sách bản ghi đồng ý của người dùng:
+* - Xem tất cả consents theo mục đích/danh mục
+* - Cấp đồng ý mới
+* - Hủy đồng ý
+* - Lọc và tìm kiếm
+*
+* Sử dụng Signal-based state management và reactive patterns của Angular.
+*
+* Tạo tự động bởi CP49 — không sửa thủ công.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatTableModule } from '@angular/material/table';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatSelectModule } from '@angular/material/select';
+import { MatInputModule } from '@angular/material/input';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatDialogModule } from '@angular/material/dialog';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+// Ant Design không áp dụng cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon không áp dụng cho Angular
+{% endif %}
+{% raw %}
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ConsentService } from './consent.service';
 import {
-  ConsentRecord,
-  ConsentPurpose,
-  ConsentCategory,
-  ConsentStatus,
+ConsentRecord,
+ConsentPurpose,
+ConsentCategory,
+ConsentStatus,
 } from './consent-types';
 
 /**
- * Bộ lọc hiển thị consents.
- */
+* Bộ lọc hiển thị consents.
+*/
 interface ConsentFilterState {
-  /** Lọc theo trạng thái. */
-  status: ConsentStatus | null;
-  /** Lọc theo mục đích. */
-  purpose: ConsentPurpose | null;
-  /** Lọc theo danh mục. */
-  category: ConsentCategory | null;
-  /** Từ khóa tìm kiếm. */
-  search: string;
+/** Lọc theo trạng thái. */
+status: ConsentStatus | null;
+/** Lọc theo mục đích. */
+purpose: ConsentPurpose | null;
+/** Lọc theo danh mục. */
+category: ConsentCategory | null;
+/** Từ khóa tìm kiếm. */
+search: string;
 }
 
 /**
- * ConsentManagerComponent — Quản lý bản ghi đồng ý.
- *
- * Cung cấp giao diện để người dùng:
- * - Xem danh sách tất cả consents của mình
- * - Lọc theo trạng thái, mục đích, danh mục
- * - Tìm kiếm theo từ khóa
- * - Cấp đồng ý mới cho mục đích cụ thể
- * - Hủy đồng ý đang hoạt động
- */
+* ConsentManagerComponent — Quản lý bản ghi đồng ý.
+*
+* Cung cấp giao diện để người dùng:
+* - Xem danh sách tất cả consents của mình
+* - Lọc theo trạng thái, mục đích, danh mục
+* - Tìm kiếm theo từ khóa
+* - Cấp đồng ý mới cho mục đích cụ thể
+* - Hủy đồng ý đang hoạt động
+*/
 @Component({
-  selector: 'app-consent-manager',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './consent-manager.component.html',
-  styleUrl: './consent-manager.component.css',
+selector: 'app-consent-manager',
+standalone: true,
+imports: [CommonModule, FormsModule],
+templateUrl: './consent-manager.component.html',
+styleUrl: './consent-manager.component.css',
 })
 export class ConsentManagerComponent implements OnInit {
-  // ===========================================================================
-  // Inject dependencies
-  // ===========================================================================
+// ===========================================================================
+// Inject dependencies
+// ===========================================================================
 
-  /** Dịch vụ HTTP cho consent API. */
-  private readonly consentService = inject(ConsentService);
+/** Dịch vụ HTTP cho consent API. */
+private readonly consentService = inject(ConsentService);
 
-  // ===========================================================================
-  // Signals
-  // ===========================================================================
+// ===========================================================================
+// Signals
+// ===========================================================================
 
-  /** Danh sách tất cả bản ghi đồng ý. */
-  readonly consents = signal<ConsentRecord[]>([]);
+/** Danh sách tất cả bản ghi đồng ý. */
+readonly consents = signal<ConsentRecord[]>([]);
 
-  /** Danh sách đã lọc. */
-  readonly filteredConsents = signal<ConsentRecord[]>([]);
+    /** Danh sách đã lọc. */
+    readonly filteredConsents = signal<ConsentRecord[]>([]);
 
-  /** Bộ lọc hiện tại. */
-  readonly filters = signal<ConsentFilterState>({
-    status: null,
-    purpose: null,
-    category: null,
-    search: '',
-  });
+        /** Bộ lọc hiện tại. */
+        readonly filters = signal<ConsentFilterState>({
+            status: null,
+            purpose: null,
+            category: null,
+            search: '',
+            });
 
-  /** Đang tải dữ liệu. */
-  readonly isLoading = signal<boolean>(false);
+            /** Đang tải dữ liệu. */
+            readonly isLoading = signal<boolean>(false);
 
-  /** Thông báo lỗi. */
-  readonly error = signal<string | null>(null);
+                /** Thông báo lỗi. */
+                readonly error = signal<string | null>(null);
 
-  /** Đang hiển thị modal xác nhận hủy. */
-  readonly showRevokeModal = signal<boolean>(false);
+                    /** Đang hiển thị modal xác nhận hủy. */
+                    readonly showRevokeModal = signal<boolean>(false);
 
-  /** Record đang cần xác nhận hủy. */
-  readonly revokingRecordId = signal<string | null>(null);
+                        /** Record đang cần xác nhận hủy. */
+                        readonly revokingRecordId = signal<string | null>(null);
 
-  // Các tùy chọn lọc
-  readonly statuses: ConsentStatus[] = ['active', 'revoked', 'expired', 'pending'];
-  readonly purposes: ConsentPurpose[] = [
-    'essential',
-    'analytics',
-    'marketing',
-    'advertising',
-    'personalization',
-    'communication',
-  ];
-  readonly categories: ConsentCategory[] = [
-    'essential',
-    'performance',
-    'functionality',
-    'targeting',
-  ];
+                            // Các tùy chọn lọc
+                            readonly statuses: ConsentStatus[] = ['active', 'revoked', 'expired', 'pending'];
+                            readonly purposes: ConsentPurpose[] = [
+                            'essential',
+                            'analytics',
+                            'marketing',
+                            'advertising',
+                            'personalization',
+                            'communication',
+                            ];
+                            readonly categories: ConsentCategory[] = [
+                            'essential',
+                            'performance',
+                            'functionality',
+                            'targeting',
+                            ];
 
-  // ===========================================================================
-  // Lifecycle
-  // ===========================================================================
+                            // ===========================================================================
+                            // Lifecycle
+                            // ===========================================================================
 
-  /**
-   * Khởi tạo component — tải danh sách consents.
-   */
-  async ngOnInit(): Promise<void> {
-    await this.loadConsents();
-  }
+                            /**
+                            * Khởi tạo component — tải danh sách consents.
+                            */
+                            async ngOnInit(): Promise<void> {
+                                await this.loadConsents();
+                                }
 
-  // ===========================================================================
-  // Data loading
-  // ===========================================================================
+                                // ===========================================================================
+                                // Data loading
+                                // ===========================================================================
 
-  /**
-   * Tải danh sách consents của người dùng.
-   */
-  private async loadConsents(): Promise<void> {
-    this.isLoading.set(true);
-    this.error.set(null);
+                                /**
+                                * Tải danh sách consents của người dùng.
+                                */
+                                private async loadConsents(): Promise<void> {
+                                    this.isLoading.set(true);
+                                    this.error.set(null);
 
-    try {
-      const records = await firstValueFrom(
-        this.consentService.getUserConsents()
-      );
-      this.consents.set(records);
-      this.applyFilters();
-    } catch (err: any) {
-      this.error.set(err.message || 'Lỗi khi tải danh sách đồng ý');
-      console.error('[CP49] Lỗi tải consents:', err);
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
+                                    try {
+                                    const records = await firstValueFrom(
+                                    this.consentService.getUserConsents()
+                                    );
+                                    this.consents.set(records);
+                                    this.applyFilters();
+                                    } catch (err: any) {
+                                    this.error.set(err.message || 'Lỗi khi tải danh sách đồng ý');
+                                    console.error('[CP49] Lỗi tải consents:', err);
+                                    } finally {
+                                    this.isLoading.set(false);
+                                    }
+                                    }
 
-  // ===========================================================================
-  // Filtering
-  // ===========================================================================
+                                    // ===========================================================================
+                                    // Filtering
+                                    // ===========================================================================
 
-  /**
-   * Áp dụng bộ lọc lên danh sách consents.
-   */
-  applyFilters(): void {
-    const filters = this.filters();
-    let filtered = this.consents();
+                                    /**
+                                    * Áp dụng bộ lọc lên danh sách consents.
+                                    */
+                                    applyFilters(): void {
+                                    const filters = this.filters();
+                                    let filtered = this.consents();
 
-    // Lọc theo trạng thái
-    if (filters.status) {
-      filtered = filtered.filter((r) => r.status === filters.status);
-    }
+                                    // Lọc theo trạng thái
+                                    if (filters.status) {
+                                    filtered = filtered.filter((r) => r.status === filters.status);
+                                    }
 
-    // Lọc theo mục đích
-    if (filters.purpose) {
-      filtered = filtered.filter((r) => r.purpose === filters.purpose);
-    }
+                                    // Lọc theo mục đích
+                                    if (filters.purpose) {
+                                    filtered = filtered.filter((r) => r.purpose === filters.purpose);
+                                    }
 
-    // Lọc theo danh mục
-    if (filters.category) {
-      filtered = filtered.filter((r) => r.category === filters.category);
-    }
+                                    // Lọc theo danh mục
+                                    if (filters.category) {
+                                    filtered = filtered.filter((r) => r.category === filters.category);
+                                    }
 
-    // Tìm kiếm theo từ khóa
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      filtered = filtered.filter(
-        (r) =>
-          r.purpose.toLowerCase().includes(searchLower) ||
-          r.category.toLowerCase().includes(searchLower) ||
-          r.recordId.toLowerCase().includes(searchLower)
-      );
-    }
+                                    // Tìm kiếm theo từ khóa
+                                    if (filters.search) {
+                                    const searchLower = filters.search.toLowerCase();
+                                    filtered = filtered.filter(
+                                    (r) =>
+                                    r.purpose.toLowerCase().includes(searchLower) ||
+                                    r.category.toLowerCase().includes(searchLower) ||
+                                    r.recordId.toLowerCase().includes(searchLower)
+                                    );
+                                    }
 
-    this.filteredConsents.set(filtered);
-  }
+                                    this.filteredConsents.set(filtered);
+                                    }
 
-  /**
-   * Cập nhật bộ lọc.
-   *
-   * @param key - Khóa bộ lọc.
-   * @param value - Giá trị mới.
-   */
-  updateFilter<K extends keyof ConsentFilterState>(
-    key: K,
-    value: ConsentFilterState[K]
-  ): void {
-    this.filters.update((f) => ({ ...f, [key]: value }));
-    this.applyFilters();
-  }
+                                    /**
+                                    * Cập nhật bộ lọc.
+                                    *
+                                    * @param key - Khóa bộ lọc.
+                                    * @param value - Giá trị mới.
+                                    */
+                                    updateFilter<K extends keyof ConsentFilterState>(
+                                        key: K,
+                                        value: ConsentFilterState[K]
+                                        ): void {
+                                        this.filters.update((f) => ({ ...f, [key]: value }));
+                                        this.applyFilters();
+                                        }
 
-  /**
-   * Xóa tất cả bộ lọc.
-   */
-  clearFilters(): void {
-    this.filters.set({
-      status: null,
-      purpose: null,
-      category: null,
-      search: '',
-    });
-    this.applyFilters();
-  }
+                                        /**
+                                        * Xóa tất cả bộ lọc.
+                                        */
+                                        clearFilters(): void {
+                                        this.filters.set({
+                                        status: null,
+                                        purpose: null,
+                                        category: null,
+                                        search: '',
+                                        });
+                                        this.applyFilters();
+                                        }
 
-  // ===========================================================================
-  // Consent actions
-  // ===========================================================================
+                                        // ===========================================================================
+                                        // Consent actions
+                                        // ===========================================================================
 
-  /**
-   * Mở modal xác nhận hủy đồng ý.
-   *
-   * @param recordId - ID bản ghi cần hủy.
-   */
-  openRevokeModal(recordId: string): void {
-    this.revokingRecordId.set(recordId);
-    this.showRevokeModal.set(true);
-  }
+                                        /**
+                                        * Mở modal xác nhận hủy đồng ý.
+                                        *
+                                        * @param recordId - ID bản ghi cần hủy.
+                                        */
+                                        openRevokeModal(recordId: string): void {
+                                        this.revokingRecordId.set(recordId);
+                                        this.showRevokeModal.set(true);
+                                        }
 
-  /**
-   * Đóng modal xác nhận hủy.
-   */
-  closeRevokeModal(): void {
-    this.showRevokeModal.set(false);
-    this.revokingRecordId.set(null);
-  }
+                                        /**
+                                        * Đóng modal xác nhận hủy.
+                                        */
+                                        closeRevokeModal(): void {
+                                        this.showRevokeModal.set(false);
+                                        this.revokingRecordId.set(null);
+                                        }
 
-  /**
-   * Xác nhận hủy đồng ý.
-   */
-  async confirmRevoke(): Promise<void> {
-    const recordId = this.revokingRecordId();
-    if (!recordId) return;
+                                        /**
+                                        * Xác nhận hủy đồng ý.
+                                        */
+                                        async confirmRevoke(): Promise<void> {
+                                            const recordId = this.revokingRecordId();
+                                            if (!recordId) return;
 
-    this.isLoading.set(true);
-    this.error.set(null);
+                                            this.isLoading.set(true);
+                                            this.error.set(null);
 
-    try {
-      await firstValueFrom(this.consentService.revokeConsent(recordId));
-      await this.loadConsents();
-      this.closeRevokeModal();
-    } catch (err: any) {
-      this.error.set(err.message || 'Lỗi khi hủy đồng ý');
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
+                                            try {
+                                            await firstValueFrom(this.consentService.revokeConsent(recordId));
+                                            await this.loadConsents();
+                                            this.closeRevokeModal();
+                                            } catch (err: any) {
+                                            this.error.set(err.message || 'Lỗi khi hủy đồng ý');
+                                            } finally {
+                                            this.isLoading.set(false);
+                                            }
+                                            }
 
-  /**
-   * Refresh danh sách consents.
-   */
-  async refresh(): Promise<void> {
-    await this.loadConsents();
-  }
+                                            /**
+                                            * Refresh danh sách consents.
+                                            */
+                                            async refresh(): Promise<void> {
+                                                await this.loadConsents();
+                                                }
 
-  // ===========================================================================
-  // Utility
-  // ===========================================================================
+                                                //
+                                                ===========================================================================
+                                                // Utility
+                                                //
+                                                ===========================================================================
 
-  /**
-   * Lấy nhãn hiển thị cho mục đích.
-   *
-   * @param purpose - Mục đích.
-   * @returns Chuỗi nhãn.
-   */
-  getPurposeLabel(purpose: ConsentPurpose): string {
-    const labels: Record<string, string> = {
-      essential: 'Cốt lõi',
-      analytics: 'Phân tích',
-      marketing: 'Tiếp thị',
-      advertising: 'Quảng cáo',
-      personalization: 'Cá nhân hóa',
-      communication: 'Liên lạc',
-    };
-    return labels[purpose] || purpose;
-  }
+                                                /**
+                                                * Lấy nhãn hiển thị cho mục đích.
+                                                *
+                                                * @param purpose - Mục đích.
+                                                * @returns Chuỗi nhãn.
+                                                */
+                                                getPurposeLabel(purpose: ConsentPurpose): string {
+                                                const labels: Record<string, string> = {
+                                                    essential: 'Cốt lõi',
+                                                    analytics: 'Phân tích',
+                                                    marketing: 'Tiếp thị',
+                                                    advertising: 'Quảng cáo',
+                                                    personalization: 'Cá nhân hóa',
+                                                    communication: 'Liên lạc',
+                                                    };
+                                                    return labels[purpose] || purpose;
+                                                    }
 
-  /**
-   * Lấy màu trạng thái.
-   *
-   * @param status - Trạng thái.
-   * @returns Mã màu CSS.
-   */
-  getStatusColor(status: ConsentStatus): string {
-    const colors: Record<string, string> = {
-      active: '#22c55e',
-      revoked: '#ef4444',
-      expired: '#f59e0b',
-      pending: '#6366f1',
-    };
-    return colors[status] || '#6b7280';
-  }
+                                                    /**
+                                                    * Lấy màu trạng thái.
+                                                    *
+                                                    * @param status - Trạng thái.
+                                                    * @returns Mã màu CSS.
+                                                    */
+                                                    getStatusColor(status: ConsentStatus): string {
+                                                    const colors: Record<string, string> = {
+                                                        active: '#22c55e',
+                                                        revoked: '#ef4444',
+                                                        expired: '#f59e0b',
+                                                        pending: '#6366f1',
+                                                        };
+                                                        return colors[status] || '#6b7280';
+                                                        }
 
-  /**
-   * Kiểm tra record có thể hủy không.
-   *
-   * @param record - Bản ghi đồng ý.
-   * @returns True nếu có thể hủy.
-   */
-  canRevoke(record: ConsentRecord): boolean {
-    return record.status === 'active' && record.purpose !== 'essential';
-  }
-}
-{% endraw %}
+                                                        /**
+                                                        * Kiểm tra record có thể hủy không.
+                                                        *
+                                                        * @param record - Bản ghi đồng ý.
+                                                        * @returns True nếu có thể hủy.
+                                                        */
+                                                        canRevoke(record: ConsentRecord): boolean {
+                                                        return record.status === 'active' && record.purpose !==
+                                                        'essential';
+                                                        }
+                                                        }
+                                                        {% endraw %}

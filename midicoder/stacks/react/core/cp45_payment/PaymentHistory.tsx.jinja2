@@ -1,9 +1,36 @@
-{% raw %}import { useCallback, useEffect, useMemo, useState } from "react";
-
+/**
+* PaymentHistory — Danh sach lich su giao dich thanh toan.
+* Ho tro phan trang, loc trang thai, sap xep va tim kiem.
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
+*/
+{% if ui_framework == "material" %}
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PaymentChannel, PaymentStatus } from "./PaymentDashboard";
+import { Button, Chip, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, TablePagination, Select,
+MenuItem, FormControl, InputLabel, TextField } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PaymentChannel, PaymentStatus } from "./PaymentDashboard";
+// Su dung Tailwind utility classes trong JSX
+{% elif ui_framework == "bootstrap" %}
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PaymentChannel, PaymentStatus } from "./PaymentDashboard";
+import { Button, Table, Badge, Form, Pagination } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PaymentChannel, PaymentStatus } from "./PaymentDashboard";
+import { Button, Table, Tag, Space, Select, Input, Pagination } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PaymentChannel, PaymentStatus } from "./PaymentDashboard";
+import { Button, DataTable, DataTableBody, DataTableRow, TableHeader, TableHeaderCell, TableRow, Tag, TextInput, Select,
+SelectItem } from '@carbon/react';
+{% endif %}
 
+{% raw %}
 // ============================================================================
-// Định nghĩa loại dữ liệu cho lịch sử giao dịch
+// Dinh nghia loai du lieu cho lich su giao dich
 // ============================================================================
 
 /** Lọc trạng thái giao dịch */

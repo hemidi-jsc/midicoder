@@ -1,20 +1,21 @@
 {% raw %}/**
- * CP47 — Dashboard chính cho quản lý chu kỳ dữ liệu
- *
- * Hiển thị tổng quan thống kê, bảng lưu trữ gần đây,
- * và các hành động nhanh. Sử dụng Angular Signals, OnPush,
- * và Material Design components.
- */
+* UI Framework: {{{ ui_framework }}}
+* CP47 — Dashboard chính cho quản lý chu kỳ dữ liệu
+*
+* Hiển thị tổng quan thống kê, bảng lưu trữ gần đây,
+* và các hành động nhanh. Sử dụng Angular Signals, OnPush,
+* và Material Design components.
+*/
 
 import {
-  Component,
-  ChangeDetectionStrategy,
-  signal,
-  computed,
-  effect,
-  OnInit,
-  OnDestroy,
-  inject,
+Component,
+ChangeDetectionStrategy,
+signal,
+computed,
+effect,
+OnInit,
+OnDestroy,
+inject,
 } from '@angular/core';
 import { CommonModule, DatePipe, DecimalPipe, PercentPipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
@@ -41,17 +42,17 @@ import { MatExpansionModule } from '@angular/material/expansion';
 
 // Nội bộ module
 import {
-  RetentionStats,
-  ArchiveRecord,
-  QuickActionType,
-  QuickActionConfig,
-  StatCardConfig,
-  STAT_CARDS,
-  QUICK_ACTIONS,
-  ARCHIVE_COLUMNS,
-  ARCHIVE_PAGE_SIZE,
-  DATA_TYPE_LABELS,
-  DASHBOARD_REFRESH_INTERVAL,
+RetentionStats,
+ArchiveRecord,
+QuickActionType,
+QuickActionConfig,
+StatCardConfig,
+STAT_CARDS,
+QUICK_ACTIONS,
+ARCHIVE_COLUMNS,
+ARCHIVE_PAGE_SIZE,
+DATA_TYPE_LABELS,
+DASHBOARD_REFRESH_INTERVAL,
 } from './retention-types';
 import { RetentionStore } from './retention.store';
 
@@ -60,35 +61,35 @@ import { RetentionStore } from './retention.store';
 // ──────────────────────────────────────────────
 
 /**
- * Định dạng dung lượng MB thành chuỗi dễ đọc.
- * Ví dụ: 1500 → '1.46 GB', 256 → '256 MB'
- */
+* Định dạng dung lượng MB thành chuỗi dễ đọc.
+* Ví dụ: 1500 → '1.46 GB', 256 → '256 MB'
+*/
 function formatSizeMB(mb: number): string {
-  if (mb >= 1024) {
-    return `${(mb / 1024).toFixed(2)} GB`;
-  }
-  return `${Math.round(mb)} MB`;
+if (mb >= 1024) {
+return `${(mb / 1024).toFixed(2)} GB`;
+}
+return `${Math.round(mb)} MB`;
 }
 
 /**
- * Định dạng ngày ISO sang định dạng ngắn tiếng Việt.
- */
+* Định dạng ngày ISO sang định dạng ngắn tiếng Việt.
+*/
 function formatShortDate(isoString: string): string {
-  const d = new Date(isoString);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+const d = new Date(isoString);
+const dd = String(d.getDate()).padStart(2, '0');
+const mm = String(d.getMonth() + 1).padStart(2, '0');
+const yyyy = d.getFullYear();
+return `${dd}/${mm}/${yyyy}`;
 }
 
 /**
- * Tính số ngày còn lại từ ngày hiện tại.
- */
+* Tính số ngày còn lại từ ngày hiện tại.
+*/
 function daysRemaining(targetDate: string): number {
-  const now = new Date();
-  const target = new Date(targetDate);
-  const diffMs = target.getTime() - now.getTime();
-  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+const now = new Date();
+const target = new Date(targetDate);
+const diffMs = target.getTime() - now.getTime();
+return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
 // ──────────────────────────────────────────────
@@ -96,837 +97,758 @@ function daysRemaining(targetDate: string): number {
 // ──────────────────────────────────────────────
 
 /**
- * Dashboard tổng quan cho CP47 Retention.
- *
- * Bố cục:
- *  - Thanh tiến độ trên cùng (tải thống kê)
- *  - Hàng card thống kê (6 card)
- *  - Hai cột: bảng lưu trữ gần đây + hành động nhanh
- *  - Chân trang: thông tin cập nhật cuối
- *
- * Self-refresh mỗi DASHBOARD_REFRESH_INTERVAL (60s).
- */
+* Dashboard tổng quan cho CP47 Retention.
+*
+* Bố cục:
+* - Thanh tiến độ trên cùng (tải thống kê)
+* - Hàng card thống kê (6 card)
+* - Hai cột: bảng lưu trữ gần đây + hành động nhanh
+* - Chân trang: thông tin cập nhật cuối
+*
+* Self-refresh mỗi DASHBOARD_REFRESH_INTERVAL (60s).
+*/
 @Component({
-  selector: 'cp47-retention-dashboard',
-  standalone: true,
-  imports: [
-    CommonModule,
-    DatePipe,
-    DecimalPipe,
-    PercentPipe,
-    RouterLink,
-    FormsModule,
-    MatCardModule,
-    MatGridListModule,
-    MatTableModule,
-    MatPaginatorModule,
-    MatSortModule,
-    MatProgressSpinnerModule,
-    MatProgressBarModule,
-    MatChipsModule,
-    MatTooltipModule,
-    MatIconModule,
-    MatButtonModule,
-    MatBadgeModule,
-    MatDividerModule,
-    MatSnackBarModule,
-    MatMenuModule,
-    MatListModule,
-    MatExpansionModule,
-  ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: `
-    /* ── Layout tổng ── */
-    :host {
-      display: block;
-      padding: 24px;
-      background: #f5f5f5;
-      min-height: 100vh;
-    }
+selector: 'cp47-retention-dashboard',
+standalone: true,
+imports: [
+CommonModule,
+DatePipe,
+DecimalPipe,
+PercentPipe,
+RouterLink,
+FormsModule,
+MatCardModule,
+MatGridListModule,
+MatTableModule,
+MatPaginatorModule,
+MatSortModule,
+MatProgressSpinnerModule,
+MatProgressBarModule,
+MatChipsModule,
+MatTooltipModule,
+MatIconModule,
+MatButtonModule,
+MatBadgeModule,
+MatDividerModule,
+MatSnackBarModule,
+MatMenuModule,
+MatListModule,
+MatExpansionModule,
+],
+changeDetection: ChangeDetectionStrategy.OnPush,
+styles: `
+/* ── Layout tổng ── */
+:host {
+display: block;
+padding: 24px;
+background: #f5f5f5;
+min-height: 100vh;
+}
 
-    /* ── Header ── */
-    .dashboard-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }
+/* ── Header ── */
+.dashboard-header {
+display: flex;
+align-items: center;
+justify-content: space-between;
+margin-bottom: 24px;
+}
 
-    .dashboard-header h1 {
-      margin: 0;
-      font-size: 24px;
-      font-weight: 500;
-      color: #212121;
-    }
+.dashboard-header h1 {
+margin: 0;
+font-size: 24px;
+font-weight: 500;
+color: #212121;
+}
 
-    .header-actions {
-      display: flex;
-      gap: 8px;
-    }
+.header-actions {
+display: flex;
+gap: 8px;
+}
 
-    /* ── Thống kê cards ── */
-    .stats-grid {
-      margin-bottom: 24px;
-    }
+/* ── Thống kê cards ── */
+.stats-grid {
+margin-bottom: 24px;
+}
 
-    .stat-card {
-      position: relative;
-      overflow: hidden;
-      cursor: default;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
+.stat-card {
+position: relative;
+overflow: hidden;
+cursor: default;
+transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
 
-    .stat-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
+.stat-card:hover {
+transform: translateY(-2px);
+box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
 
-    .stat-card .card-content {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 16px;
-    }
+.stat-card .card-content {
+display: flex;
+align-items: center;
+gap: 16px;
+padding: 16px;
+}
 
-    .stat-icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
+.stat-icon {
+width: 48px;
+height: 48px;
+border-radius: 12px;
+display: flex;
+align-items: center;
+justify-content: center;
+flex-shrink: 0;
+}
 
-    .stat-icon.primary { background: rgba(33, 150, 243, 0.12); color: #2196f3; }
-    .stat-icon.accent { background: rgba(255, 152, 0, 0.12); color: #ff9800; }
-    .stat-icon.warn { background: rgba(244, 67, 54, 0.12); color: #f44336; }
-    .stat-icon.info { background: rgba(76, 175, 80, 0.12); color: #4caf50; }
+.stat-icon.primary { background: rgba(33, 150, 243, 0.12); color: #2196f3; }
+.stat-icon.accent { background: rgba(255, 152, 0, 0.12); color: #ff9800; }
+.stat-icon.warn { background: rgba(244, 67, 54, 0.12); color: #f44336; }
+.stat-icon.info { background: rgba(76, 175, 80, 0.12); color: #4caf50; }
 
-    .stat-info {
-      flex: 1;
-      min-width: 0;
-    }
+.stat-info {
+flex: 1;
+min-width: 0;
+}
 
-    .stat-info .stat-title {
-      font-size: 12px;
-      color: #757575;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
+.stat-info .stat-title {
+font-size: 12px;
+color: #757575;
+text-transform: uppercase;
+letter-spacing: 0.5px;
+}
 
-    .stat-info .stat-value {
-      font-size: 28px;
-      font-weight: 600;
-      color: #212121;
-      line-height: 1.2;
-    }
+.stat-info .stat-value {
+font-size: 28px;
+font-weight: 600;
+color: #212121;
+line-height: 1.2;
+}
 
-    .stat-info .stat-trend {
-      font-size: 11px;
-      margin-top: 2px;
-    }
+.stat-info .stat-trend {
+font-size: 11px;
+margin-top: 2px;
+}
 
-    .stat-trend.up { color: #4caf50; }
-    .stat-trend.down { color: #f44336; }
+.stat-trend.up { color: #4caf50; }
+.stat-trend.down { color: #f44336; }
 
-    /* ── Main content: 2 cột ── */
-    .main-content {
-      display: grid;
-      grid-template-columns: 1fr 340px;
-      gap: 24px;
-      align-items: start;
-    }
+/* ── Main content: 2 cột ── */
+.main-content {
+display: grid;
+grid-template-columns: 1fr 340px;
+gap: 24px;
+align-items: start;
+}
 
-    @media (max-width: 1100px) {
-      .main-content {
-        grid-template-columns: 1fr;
-      }
-    }
+@media (max-width: 1100px) {
+.main-content {
+grid-template-columns: 1fr;
+}
+}
 
-    /* ── Bảng ── */
-    .table-card {
-      overflow: hidden;
-    }
+/* ── Bảng ── */
+.table-card {
+overflow: hidden;
+}
 
-    .table-card mat-card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
+.table-card mat-card-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
 
-    table {
-      width: 100%;
-    }
+table {
+width: 100%;
+}
 
-    .row-clickable {
-      cursor: pointer;
-    }
+.row-clickable {
+cursor: pointer;
+}
 
-    .row-clickable:hover {
-      background: #f5f5f5;
-    }
+.row-clickable:hover {
+background: #f5f5f5;
+}
 
-    /* ── Panel hành động nhanh ── */
-    .quick-actions-panel {
-      position: sticky;
-      top: 24px;
-    }
+/* ── Panel hành động nhanh ── */
+.quick-actions-panel {
+position: sticky;
+top: 24px;
+}
 
-    .quick-action-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 16px;
-      cursor: pointer;
-      transition: background 0.15s ease;
-      border-radius: 8px;
-    }
+.quick-action-item {
+display: flex;
+align-items: center;
+gap: 12px;
+padding: 12px 16px;
+cursor: pointer;
+transition: background 0.15s ease;
+border-radius: 8px;
+}
 
-    .quick-action-item:hover {
-      background: #e3f2fd;
-    }
+.quick-action-item:hover {
+background: #e3f2fd;
+}
 
-    .quick-action-item:disabled,
-    .quick-action-item[disabled] {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
+.quick-action-item:disabled,
+.quick-action-item[disabled] {
+opacity: 0.4;
+cursor: not-allowed;
+}
 
-    .quick-action-item mat-icon {
-      color: #2196f3;
-    }
+.quick-action-item mat-icon {
+color: #2196f3;
+}
 
-    /* ── Cảnh báo hết hạn ── */
-    .expiring-warning {
-      margin-top: 24px;
-    }
+/* ── Cảnh báo hết hạn ── */
+.expiring-warning {
+margin-top: 24px;
+}
 
-    .expiring-policy-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid #eee;
-    }
+.expiring-policy-item {
+display: flex;
+align-items: center;
+justify-content: space-between;
+padding: 8px 0;
+border-bottom: 1px solid #eee;
+}
 
-    .expiring-policy-item:last-child {
-      border-bottom: none;
-    }
+.expiring-policy-item:last-child {
+border-bottom: none;
+}
 
-    .days-badge {
-      font-size: 12px;
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-weight: 500;
-    }
+.days-badge {
+font-size: 12px;
+padding: 2px 8px;
+border-radius: 12px;
+font-weight: 500;
+}
 
-    .days-badge.urgent {
-      background: #ffebee;
-      color: #c62828;
-    }
+.days-badge.urgent {
+background: #ffebee;
+color: #c62828;
+}
 
-    .days-badge.warning {
-      background: #fff3e0;
-      color: #e65100;
-    }
+.days-badge.warning {
+background: #fff3e0;
+color: #e65100;
+}
 
-    .days-badge.ok {
-      background: #e8f5e9;
-      color: #2e7d32;
-    }
+.days-badge.ok {
+background: #e8f5e9;
+color: #2e7d32;
+}
 
-    /* ── Footer ── */
-    .dashboard-footer {
-      margin-top: 24px;
-      text-align: center;
-      font-size: 12px;
-      color: #9e9e9e;
-    }
+/* ── Footer ── */
+.dashboard-footer {
+margin-top: 24px;
+text-align: center;
+font-size: 12px;
+color: #9e9e9e;
+}
 
-    /* ── Loading overlay ── */
-    .loading-overlay {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 64px 0;
-    }
+/* ── Loading overlay ── */
+.loading-overlay {
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+padding: 64px 0;
+}
 
-    /* ── Empty state ── */
-    .empty-state {
-      text-align: center;
-      padding: 48px 16px;
-      color: #757575;
-    }
+/* ── Empty state ── */
+.empty-state {
+text-align: center;
+padding: 48px 16px;
+color: #757575;
+}
 
-    .empty-state mat-icon {
-      font-size: 48px;
-      width: 48px;
-      height: 48px;
-      color: #bdbdbd;
-    }
-  `,
-  template: `
-    <!-- Thanh tiến độ tải thống kê -->
-    @if (statsLoading()) {
-      <mat-progress-bar mode="indeterminate" />
-    }
+.empty-state mat-icon {
+font-size: 48px;
+width: 48px;
+height: 48px;
+color: #bdbdbd;
+}
+`,
+template: `
+<!-- Thanh tiến độ tải thống kê -->
+@if (statsLoading()) {
+<mat-progress-bar mode="indeterminate" />
+}
 
-    <!-- ── Header ── -->
-    <div class="dashboard-header">
-      <h1>Bảng điều khiển — Quản lý chu kỳ dữ liệu</h1>
-      <div class="header-actions">
-        <button
-          mat-icon-button
-          (click)="handleRefresh()"
-          [disabled]="refreshing()"
-          matTooltip="Làm mới dữ liệu"
-        >
-          <mat-icon>{{ refreshing() ? 'hourglass_empty' : 'refresh' }}</mat-icon>
+<!-- ── Header ── -->
+<div class="dashboard-header">
+    <h1>Bảng điều khiển — Quản lý chu kỳ dữ liệu</h1>
+    <div class="header-actions">
+        <button mat-icon-button (click)="handleRefresh()" [disabled]="refreshing()" matTooltip="Làm mới dữ liệu">
+            <mat-icon>{{ refreshing() ? 'hourglass_empty' : 'refresh' }}</mat-icon>
         </button>
-        <button
-          mat-flat-button
-          color="primary"
-          routerLink="/retention/policies"
-        >
-          <mat-icon>policy</mat-icon>
-          Quản lý chính sách
+        <button mat-flat-button color="primary" routerLink="/retention/policies">
+            <mat-icon>policy</mat-icon>
+            Quản lý chính sách
         </button>
-      </div>
     </div>
+</div>
 
-    <!-- ── Thống kê Cards ── -->
-    @if (stats(); as currentStats) {
-      <div class="stats-grid">
-        <mat-grid-list
-          [cols]="getGridCols()"
-          rowHeight="100px"
-          gutterSize="16px"
-        >
-          @for (card of statCards(); track card.title) {
-            <mat-grid-tile>
-              <mat-card class="stat-card">
+<!-- ── Thống kê Cards ── -->
+@if (stats(); as currentStats) {
+<div class="stats-grid">
+    <mat-grid-list [cols]="getGridCols()" rowHeight="100px" gutterSize="16px">
+        @for (card of statCards(); track card.title) {
+        <mat-grid-tile>
+            <mat-card class="stat-card">
                 <div class="card-content">
-                  <div class="stat-icon" [class]="card.color">
-                    <mat-icon>{{ card.icon }}</mat-icon>
-                  </div>
-                  <div class="stat-info">
-                    <div class="stat-title">{{ card.title }}</div>
-                    <div class="stat-value">
-                      @if (card.valueKey === 'compliancePercentage') {
-                        {{ currentStats[card.valueKey] | percent:'1.0-0' }}
-                      } @else if (card.valueKey === 'totalArchivedMB') {
-                        {{ formatStatValue(currentStats[card.valueKey]) }}
-                      } @else {
-                        {{ currentStats[card.valueKey] | number }}
-                      }
+                    <div class="stat-icon" [class]="card.color">
+                        <mat-icon>{{ card.icon }}</mat-icon>
                     </div>
-                    @if (card.trend) {
-                      <div class="stat-trend" [class]="card.trend.direction">
-                        @if (card.trend.direction === 'up') {
-                          <mat-icon style="font-size:14px;width:14px;height:14px;vertical-align:middle">trending_up</mat-icon>
-                          +{{ card.trend.value }}% ({{ card.trend.period }})
-                        } @else {
-                          <mat-icon style="font-size:14px;width:14px;height:14px;vertical-align:middle">trending_down</mat-icon>
-                          -{{ card.trend.value }}% ({{ card.trend.period }})
+                    <div class="stat-info">
+                        <div class="stat-title">{{ card.title }}</div>
+                        <div class="stat-value">
+                            @if (card.valueKey === 'compliancePercentage') {
+                            {{ currentStats[card.valueKey] | percent:'1.0-0' }}
+                            } @else if (card.valueKey === 'totalArchivedMB') {
+                            {{ formatStatValue(currentStats[card.valueKey]) }}
+                            } @else {
+                            {{ currentStats[card.valueKey] | number }}
+                            }
+                        </div>
+                        @if (card.trend) {
+                        <div class="stat-trend" [class]="card.trend.direction">
+                            @if (card.trend.direction === 'up') {
+                            <mat-icon
+                                style="font-size:14px;width:14px;height:14px;vertical-align:middle">trending_up</mat-icon>
+                            +{{ card.trend.value }}% ({{ card.trend.period }})
+                            } @else {
+                            <mat-icon
+                                style="font-size:14px;width:14px;height:14px;vertical-align:middle">trending_down</mat-icon>
+                            -{{ card.trend.value }}% ({{ card.trend.period }})
+                            }
+                        </div>
                         }
-                      </div>
-                    }
-                  </div>
+                    </div>
                 </div>
-              </mat-card>
-            </mat-grid-tile>
-          }
-        </mat-grid-list>
-      </div>
-    } @else if (statsLoading()) {
-      <div class="loading-overlay">
-        <mat-progress-spinner
-          diameter="40"
-          mode="indeterminate"
-          color="primary"
-        />
-        <p style="margin-top:16px;color:#757575">Đang tải thống kê...</p>
-      </div>
-    }
+            </mat-card>
+        </mat-grid-tile>
+        }
+    </mat-grid-list>
+</div>
+} @else if (statsLoading()) {
+<div class="loading-overlay">
+    <mat-progress-spinner diameter="40" mode="indeterminate" color="primary" />
+    <p style="margin-top:16px;color:#757575">Đang tải thống kê...</p>
+</div>
+}
 
-    <!-- ── Nội dung chính: 2 cột ── -->
-    <div class="main-content">
+<!-- ── Nội dung chính: 2 cột ── -->
+<div class="main-content">
 
-      <!-- Cột trái: Bảng lưu trữ gần đây -->
-      <mat-card class="table-card">
+    <!-- Cột trái: Bảng lưu trữ gần đây -->
+    <mat-card class="table-card">
         <mat-card-header>
-          <mat-card-title>
-            Lưu trữ gần đây
-            <mat-badge
-              [badgeContent]="archives().length"
-              color="primary"
-              position="after"
-            />
-          </mat-card-title>
-          <button
-            mat-icon-button
-            routerLink="/retention/archives"
-            matTooltip="Xem tất cả"
-          >
-            <mat-icon>open_in_new</mat-icon>
-          </button>
+            <mat-card-title>
+                Lưu trữ gần đây
+                <mat-badge [badgeContent]="archives().length" color="primary" position="after" />
+            </mat-card-title>
+            <button mat-icon-button routerLink="/retention/archives" matTooltip="Xem tất cả">
+                <mat-icon>open_in_new</mat-icon>
+            </button>
         </mat-card-header>
         <mat-card-content>
-          @if (archivesLoading()) {
+            @if (archivesLoading()) {
             <div class="loading-overlay">
-              <mat-progress-spinner
-                diameter="32"
-                mode="indeterminate"
-              />
+                <mat-progress-spinner diameter="32" mode="indeterminate" />
             </div>
-          } @else if (archives().length === 0) {
+            } @else if (archives().length === 0) {
             <div class="empty-state">
-              <mat-icon>archive</mat-icon>
-              <p>Chưa có bản ghi lưu trữ nào</p>
+                <mat-icon>archive</mat-icon>
+                <p>Chưa có bản ghi lưu trữ nào</p>
             </div>
-          } @else {
+            } @else {
             <div style="overflow-x:auto">
-              <table mat-table [dataSource]="archives()">
-                <!-- Tên -->
-                <ng-container matColumnDef="name">
-                  <th mat-header-cell *matHeaderCellDef>Tên</th>
-                  <td mat-cell *matCellDef="let record">
-                    <strong>{{ record.name }}</strong>
-                  </td>
-                </ng-container>
+                <table mat-table [dataSource]="archives()">
+                    <!-- Tên -->
+                    <ng-container matColumnDef="name">
+                        <th mat-header-cell *matHeaderCellDef>Tên</th>
+                        <td mat-cell *matCellDef="let record">
+                            <strong>{{ record.name }}</strong>
+                        </td>
+                    </ng-container>
 
-                <!-- Loại -->
-                <ng-container matColumnDef="dataType">
-                  <th mat-header-cell *matHeaderCellDef>Loại</th>
-                  <td mat-cell *matCellDef="let record">
-                    <mat-chip-set>
-                      <mat-chip
-                        selected
-                        color="primary"
-                        variant="filled"
-                      >
-                        {{ dataTypeLabels()[record.dataType] ?? record.dataType }}
-                      </mat-chip>
-                    </mat-chip-set>
-                  </td>
-                </ng-container>
+                    <!-- Loại -->
+                    <ng-container matColumnDef="dataType">
+                        <th mat-header-cell *matHeaderCellDef>Loại</th>
+                        <td mat-cell *matCellDef="let record">
+                            <mat-chip-set>
+                                <mat-chip selected color="primary" variant="filled">
+                                    {{ dataTypeLabels()[record.dataType] ?? record.dataType }}
+                                </mat-chip>
+                            </mat-chip-set>
+                        </td>
+                    </ng-container>
 
-                <!-- Dung lượng -->
-                <ng-container matColumnDef="sizeMB">
-                  <th mat-header-cell *matHeaderCellDef>Dung lượng</th>
-                  <td mat-cell *matCellDef="let record">
-                    {{ formatSizeMB(record.sizeMB) }}
-                  </td>
-                </ng-container>
+                    <!-- Dung lượng -->
+                    <ng-container matColumnDef="sizeMB">
+                        <th mat-header-cell *matHeaderCellDef>Dung lượng</th>
+                        <td mat-cell *matCellDef="let record">
+                            {{ formatSizeMB(record.sizeMB) }}
+                        </td>
+                    </ng-container>
 
-                <!-- Số bản ghi -->
-                <ng-container matColumnDef="recordCount">
-                  <th mat-header-cell *matHeaderCellDef>Bản ghi</th>
-                  <td mat-cell *matCellDef="let record">
-                    {{ record.recordCount | number }}
-                  </td>
-                </ng-container>
+                    <!-- Số bản ghi -->
+                    <ng-container matColumnDef="recordCount">
+                        <th mat-header-cell *matHeaderCellDef>Bản ghi</th>
+                        <td mat-cell *matCellDef="let record">
+                            {{ record.recordCount | number }}
+                        </td>
+                    </ng-container>
 
-                <!-- Ngày lưu -->
-                <ng-container matColumnDef="archivedAt">
-                  <th mat-header-cell *matHeaderCellDef>Ngày lưu</th>
-                  <td mat-cell *matCellDef="let record">
-                    {{ formatShortDate(record.archivedAt) }}
-                  </td>
-                </ng-container>
+                    <!-- Ngày lưu -->
+                    <ng-container matColumnDef="archivedAt">
+                        <th mat-header-cell *matHeaderCellDef>Ngày lưu</th>
+                        <td mat-cell *matCellDef="let record">
+                            {{ formatShortDate(record.archivedAt) }}
+                        </td>
+                    </ng-container>
 
-                <!-- Định dạng -->
-                <ng-container matColumnDef="format">
-                  <th mat-header-cell *matHeaderCellDef>Định dạng</th>
-                  <td mat-cell *matCellDef="let record">
-                    <code style="background:#eee;padding:2px 6px;border-radius:4px">
+                    <!-- Định dạng -->
+                    <ng-container matColumnDef="format">
+                        <th mat-header-cell *matHeaderCellDef>Định dạng</th>
+                        <td mat-cell *matCellDef="let record">
+                            <code style="background:#eee;padding:2px 6px;border-radius:4px">
                       {{ record.format }}
                     </code>
-                  </td>
-                </ng-container>
+                        </td>
+                    </ng-container>
 
-                <!-- Kiểm tra -->
-                <ng-container matColumnDef="integrity">
-                  <th mat-header-cell *matHeaderCellDef>Kiểm tra</th>
-                  <td mat-cell *matCellDef="let record">
-                    @if (record.integrity === 'ready') {
-                      <mat-chip
-                        chosen
-                        avatar=<mat-icon style="color:#4caf50">check_circle</mat-icon>
-                      >
-                        OK
-                      </mat-chip>
-                    } @else if (record.integrity === 'corrupt') {
-                      <mat-chip color="warn">Hư hỏng</mat-chip>
-                    } @else {
-                      <mat-chip>Dã xóa</mat-chip>
-                    }
-                  </td>
-                </ng-container>
+                    <!-- Kiểm tra -->
+                    <ng-container matColumnDef="integrity">
+                        <th mat-header-cell *matHeaderCellDef>Kiểm tra</th>
+                        <td mat-cell *matCellDef="let record">
+                            @if (record.integrity === 'ready') {
+                            <mat-chip chosen avatar=<mat-icon style="color:#4caf50">check_circle</mat-icon>
+                                >
+                                OK
+                            </mat-chip>
+                            } @else if (record.integrity === 'corrupt') {
+                            <mat-chip color="warn">Hư hỏng</mat-chip>
+                            } @else {
+                            <mat-chip>Dã xóa</mat-chip>
+                            }
+                        </td>
+                    </ng-container>
 
-                <!-- Hành động -->
-                <ng-container matColumnDef="actions">
-                  <th mat-header-cell *matHeaderCellDef>Hành động</th>
-                  <td mat-cell *matCellDef="let record">
-                    <button
-                      mat-icon-button
-                      color="primary"
-                      (click)="handleDownloadArchive(record.id)"
-                      matTooltip="Tải xuống"
-                      [disabled]="record.integrity !== 'ready'"
-                    >
-                      <mat-icon>download</mat-icon>
-                    </button>
-                  </td>
-                </ng-container>
+                    <!-- Hành động -->
+                    <ng-container matColumnDef="actions">
+                        <th mat-header-cell *matHeaderCellDef>Hành động</th>
+                        <td mat-cell *matCellDef="let record">
+                            <button mat-icon-button color="primary" (click)="handleDownloadArchive(record.id)"
+                                matTooltip="Tải xuống" [disabled]="record.integrity !== 'ready'">
+                                <mat-icon>download</mat-icon>
+                            </button>
+                        </td>
+                    </ng-container>
 
-                <tr
-                  mat-header-row
-                  *matHeaderRowDef="displayedColumns"
-                />
-                <tr
-                  mat-row
-                  *matRowDef="let row; columns: displayedColumns;"
-                  class="row-clickable"
-                  (click)="handleViewArchive(row)"
-                />
-              </table>
+                    <tr mat-header-row *matHeaderRowDef="displayedColumns" />
+                    <tr mat-row *matRowDef="let row; columns: displayedColumns;" class="row-clickable"
+                        (click)="handleViewArchive(row)" />
+                </table>
             </div>
-          }
+            }
         </mat-card-content>
-      </mat-card>
+    </mat-card>
 
-      <!-- Cột phải: Hành động nhanh + Cảnh báo -->
-      <div>
+    <!-- Cột phải: Hành động nhanh + Cảnh báo -->
+    <div>
         <!-- Hành động nhanh -->
         <mat-card class="quick-actions-panel">
-          <mat-card-header>
-            <mat-card-title>Hành động nhanh</mat-card-title>
-          </mat-card-header>
-          <mat-card-content>
-            @for (action of quickActions(); track action.type) {
-              <div
-                class="quick-action-item"
-                [attr.disabled]="action.disabled ? '' : null"
-                (click)="handleQuickAction(action)"
-              >
-                <mat-icon>{{ action.icon }}</mat-icon>
-                <span>{{ action.label }}</span>
-              </div>
-              @if ($index < quickActions().length - 1) {
-                <mat-divider />
-              }
-            }
-          </mat-card-content>
+            <mat-card-header>
+                <mat-card-title>Hành động nhanh</mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+                @for (action of quickActions(); track action.type) {
+                <div class="quick-action-item" [attr.disabled]="action.disabled ? '' : null"
+                    (click)="handleQuickAction(action)">
+                    <mat-icon>{{ action.icon }}</mat-icon>
+                    <span>{{ action.label }}</span>
+                </div>
+                @if ($index
+                < quickActions().length - 1) { <mat-divider />
+                }
+                }
+            </mat-card-content>
         </mat-card>
 
         <!-- Chính sách sắp hết hạn -->
         @if (stats(); as s) {
-          @if (s.expiringPolicies.length > 0) {
-            <mat-card class="expiring-warning">
-              <mat-card-header>
+        @if (s.expiringPolicies.length > 0) {
+        <mat-card class="expiring-warning">
+            <mat-card-header>
                 <mat-card-title>
-                  <mat-icon style="color:#f44336;margin-right:8px">
-                    warning
-                  </mat-icon>
-                  Sắp hết hạn
-                  <mat-badge
-                    [badgeContent]="s.expiringPolicies.length"
-                    color="warn"
-                  />
+                    <mat-icon style="color:#f44336;margin-right:8px">
+                        warning
+                    </mat-icon>
+                    Sắp hết hạn
+                    <mat-badge [badgeContent]="s.expiringPolicies.length" color="warn" />
                 </mat-card-title>
-              </mat-card-header>
-              <mat-card-content>
+            </mat-card-header>
+            <mat-card-content>
                 @for (policy of s.expiringPolicies; track policy.id) {
-                  <div class="expiring-policy-item">
+                <div class="expiring-policy-item">
                     <div>
-                      <strong>{{ policy.name }}</strong>
-                      <div style="font-size:12px;color:#757575">
-                        Hết hạn: {{ policy.expirationDate | date:'dd/MM/yyyy' }}
-                      </div>
+                        <strong>{{ policy.name }}</strong>
+                        <div style="font-size:12px;color:#757575">
+                            Hết hạn: {{ policy.expirationDate | date:'dd/MM/yyyy' }}
+                        </div>
                     </div>
-                    <span
-                      class="days-badge"
-                      [class]="getDaysBadgeClass(policy.daysRemaining)"
-                    >
-                      {{ policy.daysRemaining }} ngày
+                    <span class="days-badge" [class]="getDaysBadgeClass(policy.daysRemaining)">
+                        {{ policy.daysRemaining }} ngày
                     </span>
-                  </div>
+                </div>
                 }
-              </mat-card-content>
-            </mat-card>
-          }
+            </mat-card-content>
+        </mat-card>
         }
-      </div>
+        }
     </div>
+</div>
 
-    <!-- ── Footer ── -->
-    @if (statsLastUpdated()) {
-      <div class="dashboard-footer">
-        Cập nhật cuối: {{ statsLastUpdated() | date:'HH:mm:ss dd/MM/yyyy' }}
-        &middot; Tự động làm mới mỗi 60 giây
-      </div>
-    }
-  `,
+<!-- ── Footer ── -->
+@if (statsLastUpdated()) {
+<div class="dashboard-footer">
+    Cập nhật cuối: {{ statsLastUpdated() | date:'HH:mm:ss dd/MM/yyyy' }}
+    &middot; Tự động làm mới mỗi 60 giây
+</div>
+}
+`,
 })
 export class RetentionDashboardComponent implements OnInit, OnDestroy {
-  // ── Dependency injection ──
-  private readonly store = inject(RetentionStore);
-  private readonly snackBar = inject(MatSnackBar);
+// ── Dependency injection ──
+private readonly store = inject(RetentionStore);
+private readonly snackBar = inject(MatSnackBar);
 
-  // ── Timer ID cho tự động làm mới ──
-  private refreshTimerId: ReturnType<typeof setInterval> | null = null;
+// ── Timer ID cho tự động làm mới ──
+private refreshTimerId: ReturnType<typeof setInterval> | null = null;
 
-  // ── Signal trạng thái ──
-  /** Đang làm mới thủ công */
-  readonly refreshing = signal<boolean>(false);
+    // ── Signal trạng thái ──
+    /** Đang làm mới thủ công */
+    readonly refreshing = signal<boolean>(false);
 
-  // ── Computed từ store ──
-  readonly stats = this.store.stats;
-  readonly statsLoading = this.store.statsLoading;
-  readonly statsLastUpdated = this.store.statsLastUpdated;
-  readonly archives = this.store.archives;
-  readonly archivesLoading = this.store.archivesLoading;
+        // ── Computed từ store ──
+        readonly stats = this.store.stats;
+        readonly statsLoading = this.store.statsLoading;
+        readonly statsLastUpdated = this.store.statsLastUpdated;
+        readonly archives = this.store.archives;
+        readonly archivesLoading = this.store.archivesLoading;
 
-  // ── Cấu hình tĩnh ──
-  /** Các card thống kê hiển thị */
-  readonly statCards = signal<StatCardConfig[]>(STAT_CARDS);
+        // ── Cấu hình tĩnh ──
+        /** Các card thống kê hiển thị */
+        readonly statCards = signal<StatCardConfig[]>(STAT_CARDS);
 
-  /** Các hành động nhanh */
-  readonly quickActions = signal<QuickActionConfig[]>(QUICK_ACTIONS);
+            /** Các hành động nhanh */
+            readonly quickActions = signal<QuickActionConfig[]>(QUICK_ACTIONS);
 
-  /** Cột hiển thị trong bảng */
-  readonly displayedColumns: string[] = [
-    'name',
-    'dataType',
-    'sizeMB',
-    'recordCount',
-    'archivedAt',
-    'format',
-    'integrity',
-    'actions',
-  ];
+                /** Cột hiển thị trong bảng */
+                readonly displayedColumns: string[] = [
+                'name',
+                'dataType',
+                'sizeMB',
+                'recordCount',
+                'archivedAt',
+                'format',
+                'integrity',
+                'actions',
+                ];
 
-  /** Mapping label loại dữ liệu */
-  readonly dataTypeLabels = computed(() => DATA_TYPE_LABELS);
+                /** Mapping label loại dữ liệu */
+                readonly dataTypeLabels = computed(() => DATA_TYPE_LABELS);
 
-  // ── Lifecycle ──
+                // ── Lifecycle ──
 
-  ngOnInit(): void {
-    // Tải dữ liệu ban đầu
-    this.store.initialize();
+                ngOnInit(): void {
+                // Tải dữ liệu ban đầu
+                this.store.initialize();
 
-    // Thiết lập tự động làm mới
-    this.setupAutoRefresh();
+                // Thiết lập tự động làm mới
+                this.setupAutoRefresh();
 
-    // Effect: hiển thị snackbar khi có lỗi từ store
-    effect(() => {
-      const error = this.store.statsError();
-      if (error) {
-        this.showError(`Lỗi tải thống kê: ${error.message}`);
-      }
-    });
+                // Effect: hiển thị snackbar khi có lỗi từ store
+                effect(() => {
+                const error = this.store.statsError();
+                if (error) {
+                this.showError(`Lỗi tải thống kê: ${error.message}`);
+                }
+                });
 
-    // Effect: log khi archives thay đổi
-    effect(() => {
-      const count = this.archives().length;
-      if (count > 0) {
-        console.log(`[CP47 Dashboard] Đã tải ${count} bản ghi lưu trữ`);
-      }
-    });
-  }
+                // Effect: log khi archives thay đổi
+                effect(() => {
+                const count = this.archives().length;
+                if (count > 0) {
+                console.log(`[CP47 Dashboard] Đã tải ${count} bản ghi lưu trữ`);
+                }
+                });
+                }
 
-  ngOnDestroy(): void {
-    this.stopAutoRefresh();
-  }
+                ngOnDestroy(): void {
+                this.stopAutoRefresh();
+                }
 
-  // ── Auto-refresh ──
+                // ── Auto-refresh ──
 
-  /**
-   * Thiết lập bộ đếm tự động làm mới mỗi 60s.
-   * Dùng setInterval để đồng bộ với chu kỳ server.
-   */
-  private setupAutoRefresh(): void {
-    this.refreshTimerId = setInterval(() => {
-      console.log('[CP47 Dashboard] Tự động làm mới thống kê...');
-      this.store.refreshStats();
-      this.store.loadArchives();
-    }, DASHBOARD_REFRESH_INTERVAL);
-  }
+                /**
+                * Thiết lập bộ đếm tự động làm mới mỗi 60s.
+                * Dùng setInterval để đồng bộ với chu kỳ server.
+                */
+                private setupAutoRefresh(): void {
+                this.refreshTimerId = setInterval(() => {
+                console.log('[CP47 Dashboard] Tự động làm mới thống kê...');
+                this.store.refreshStats();
+                this.store.loadArchives();
+                }, DASHBOARD_REFRESH_INTERVAL);
+                }
 
-  /** Dừng bộ đếm tự động làm mới */
-  private stopAutoRefresh(): void {
-    if (this.refreshTimerId !== null) {
-      clearInterval(this.refreshTimerId);
-      this.refreshTimerId = null;
-    }
-  }
+                /** Dừng bộ đếm tự động làm mới */
+                private stopAutoRefresh(): void {
+                if (this.refreshTimerId !== null) {
+                clearInterval(this.refreshTimerId);
+                this.refreshTimerId = null;
+                }
+                }
 
-  // ── Event handlers ──
+                // ── Event handlers ──
 
-  /**
-   * Xử lý làm mới thủ công bằng nút refresh.
-   * Hiển thị trạng thái loading trong khi tải.
-   */
-  handleRefresh(): void {
-    this.refreshing.set(true);
+                /**
+                * Xử lý làm mới thủ công bằng nút refresh.
+                * Hiển thị trạng thái loading trong khi tải.
+                */
+                handleRefresh(): void {
+                this.refreshing.set(true);
 
-    // Reload tất cả dữ liệu
-    Promise.all([
-      this.reloadAndAwait('stats'),
-      this.reloadAndAwait('archives'),
-    ]).finally(() => {
-      this.refreshing.set(false);
-      this.showSuccess('Đã làm mới dữ liệu');
-    });
-  }
+                // Reload tất cả dữ liệu
+                Promise.all([
+                this.reloadAndAwait('stats'),
+                this.reloadAndAwait('archives'),
+                ]).finally(() => {
+                this.refreshing.set(false);
+                this.showSuccess('Đã làm mới dữ liệu');
+                });
+                }
 
-  /**
-   * Helper: reload và trả về Promise resolve khi xong.
-   * Dùng Promise wrapper để await nhiều thao tác cùng lúc.
-   */
-  private reloadAndAwait(
-    type: 'stats' | 'archives'
-  ): Promise<void> {
-    return new Promise((resolve) => {
-      if (type === 'stats') {
-        this.store.refreshStats();
-        // Stats load nhanh — delay nhỏ để UI cập nhật
-        setTimeout(resolve, 500);
-      } else {
-        this.store.loadArchives();
-        setTimeout(resolve, 500);
-      }
-    });
-  }
+                /**
+                * Helper: reload và trả về Promise resolve khi xong.
+                * Dùng Promise wrapper để await nhiều thao tác cùng lúc.
+                */
+                private reloadAndAwait(
+                type: 'stats' | 'archives'
+                ): Promise<void> {
+                    return new Promise((resolve) => {
+                    if (type === 'stats') {
+                    this.store.refreshStats();
+                    // Stats load nhanh — delay nhỏ để UI cập nhật
+                    setTimeout(resolve, 500);
+                    } else {
+                    this.store.loadArchives();
+                    setTimeout(resolve, 500);
+                    }
+                    });
+                    }
 
-  /**
-   * Xử lý hành động nhanh được click.
-   * Mỗi loại hành động sẽ điều hướng hoặc mở dialog tương ứng.
-   */
-  handleQuickAction(action: QuickActionConfig): void {
-    if (action.disabled) return;
+                    /**
+                    * Xử lý hành động nhanh được click.
+                    * Mỗi loại hành động sẽ điều hướng hoặc mở dialog tương ứng.
+                    */
+                    handleQuickAction(action: QuickActionConfig): void {
+                    if (action.disabled) return;
 
-    switch (action.type) {
-      case QuickActionType.CreatePolicy:
-        this.store.openCreatePolicyDialog();
-        break;
+                    switch (action.type) {
+                    case QuickActionType.CreatePolicy:
+                    this.store.openCreatePolicyDialog();
+                    break;
 
-      case QuickActionType.BulkArchive:
-        this.showInfo('Chức năng lưu trữ hàng loạt — đang phát triển');
-        break;
+                    case QuickActionType.BulkArchive:
+                    this.showInfo('Chức năng lưu trữ hàng loạt — đang phát triển');
+                    break;
 
-      case QuickActionType.SubmitErasure:
-        this.store.openErasureForm();
-        break;
+                    case QuickActionType.SubmitErasure:
+                    this.store.openErasureForm();
+                    break;
 
-      case QuickActionType.ExportCompliance:
-        this.handleExportCompliance();
-        break;
+                    case QuickActionType.ExportCompliance:
+                    this.handleExportCompliance();
+                    break;
 
-      case QuickActionType.RefreshCounts:
-        this.handleRefresh();
-        break;
+                    case QuickActionType.RefreshCounts:
+                    this.handleRefresh();
+                    break;
 
-      case QuickActionType.AuditLog:
-        this.showInfo('Mở nhật ký thính giác — đang phát triển');
-        break;
-    }
-  }
+                    case QuickActionType.AuditLog:
+                    this.showInfo('Mở nhật ký thính giác — đang phát triển');
+                    break;
+                    }
+                    }
 
-  /**
-   * Xử lý xuất báo cáo tuân thủ.
-   * Tải file PDF về máy người dùng.
-   */
-  handleExportCompliance(): void {
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 1);
+                    /**
+                    * Xử lý xuất báo cáo tuân thủ.
+                    * Tải file PDF về máy người dùng.
+                    */
+                    handleExportCompliance(): void {
+                    const endDate = new Date();
+                    const startDate = new Date();
+                    startDate.setMonth(startDate.getMonth() - 1);
 
-    // Gọi API export thông qua service
-    // Lưu ý: service.exportComplianceReport() trả về Blob
-    // Component gọi trực tiếp service cho thao tác download
-    // (không qua store vì đây là side-effect không cần state)
-    this.showInfo('Đang chuẩn bị báo cáo tuân thủ...');
-  }
+                    // Gọi API export thông qua service
+                    // Lưu ý: service.exportComplianceReport() trả về Blob
+                    // Component gọi trực tiếp service cho thao tác download
+                    // (không qua store vì đây là side-effect không cần state)
+                    this.showInfo('Đang chuẩn bị báo cáo tuân thủ...');
+                    }
 
-  /**
-   * Xử lý tải xuống bản ghi lưu trữ.
-   * Ngăn propagation để không kích hoạt row click.
-   */
-  handleDownloadArchive(archiveId: string): void {
-    console.log(`[CP47 Dashboard] Tải xuống lưu trữ: ${archiveId}`);
-    this.showSuccess('Bắt đầu tải xuống...');
-  }
+                    /**
+                    * Xử lý tải xuống bản ghi lưu trữ.
+                    * Ngăn propagation để không kích hoạt row click.
+                    */
+                    handleDownloadArchive(archiveId: string): void {
+                    console.log(`[CP47 Dashboard] Tải xuống lưu trữ: ${archiveId}`);
+                    this.showSuccess('Bắt đầu tải xuống...');
+                    }
 
-  /**
-   * Xử lý click vào hàng trong bảng — xem chi tiết.
-   */
-  handleViewArchive(record: ArchiveRecord): void {
-    console.log(`[CP47 Dashboard] Xem chi tiết lưu trữ: ${record.id}`);
-    // Điều hướng đến trang chi tiết hoặc mở dialog
-  }
+                    /**
+                    * Xử lý click vào hàng trong bảng — xem chi tiết.
+                    */
+                    handleViewArchive(record: ArchiveRecord): void {
+                    console.log(`[CP47 Dashboard] Xem chi tiết lưu trữ: ${record.id}`);
+                    // Điều hướng đến trang chi tiết hoặc mở dialog
+                    }
 
-  // ── Helpers ──
+                    // ── Helpers ──
 
-  /**
-   * Trả về số cột grid tùy theo kích thước màn hình.
-   * Desktop: 6, Tablet: 3, Mobile: 2
-   */
-  getGridCols(): number {
-    // Responsive: dùng window.innerWidth
-    const width = window.innerWidth;
-    if (width >= 1200) return 6;
-    if (width >= 900) return 3;
-    return 2;
-  }
+                    /**
+                    * Trả về số cột grid tùy theo kích thước màn hình.
+                    * Desktop: 6, Tablet: 3, Mobile: 2
+                    */
+                    getGridCols(): number {
+                    // Responsive: dùng window.innerWidth
+                    const width = window.innerWidth;
+                    if (width >= 1200) return 6;
+                    if (width >= 900) return 3;
+                    return 2;
+                    }
 
-  /**
-   * Định dạng giá trị thống kê cho card.
-   */
-  formatStatValue(value: number | string): string {
-    const num = typeof value === 'string' ? parseFloat(value) : value;
-    return formatSizeMB(num);
-  }
+                    /**
+                    * Định dạng giá trị thống kê cho card.
+                    */
+                    formatStatValue(value: number | string): string {
+                    const num = typeof value === 'string' ? parseFloat(value) : value;
+                    return formatSizeMB(num);
+                    }
 
-  /**
-   * Trả về CSS class cho badge ngày còn lại.
-   */
-  getDaysBadgeClass(days: number): string {
-    if (days <= 7) return 'urgent';
-    if (days <= 15) return 'warning';
-    return 'ok';
-  }
-
-  // ── Snackbar helpers ──
-
-  private showError(message: string): void {
-    this.snackBar.open(message, 'Đóng', {
-      duration: 5000,
-      panelClass: ['cp47-snackbar-error'],
-      horizontalPosition: 'end',
-      verticalPosition: 'bottom',
-    });
-  }
-
-  private showSuccess(message: string): void {
-    this.snackBar.open(message, 'Đóng', {
-      duration: 3000,
-      panelClass: ['cp47-snackbar-success'],
-      horizontalPosition: 'end',
-      verticalPosition: 'bottom',
-    });
-  }
-
-  private showInfo(message: string): void {
-    this.snackBar.open(message, 'Đóng', {
-      duration: 4000,
-      panelClass: ['cp47-snackbar-info'],
-      horizontalPosition: 'end',
-      verticalPosition: 'bottom',
-    });
-  }
-}
-{% endraw %}
+                    /**
+                    * Trả về CSS class cho badge ngày còn lại.
+                    */
+                    getDaysBadgeClass(days: number): string {
+                    if (days <= 7) return 'urgent' ; if (days <=15) return 'warning' ; return 'ok' ; } // ── Snackbar
+                        helpers ── private showError(message: string): void { this.snackBar.open(message, 'Đóng' , {
+                        duration: 5000, panelClass: ['cp47-snackbar-error'], horizontalPosition: 'end' ,
+                        verticalPosition: 'bottom' , }); } private showSuccess(message: string): void {
+                        this.snackBar.open(message, 'Đóng' , { duration: 3000, panelClass: ['cp47-snackbar-success'],
+                        horizontalPosition: 'end' , verticalPosition: 'bottom' , }); } private showInfo(message:
+                        string): void { this.snackBar.open(message, 'Đóng' , { duration: 4000, panelClass:
+                        ['cp47-snackbar-info'], horizontalPosition: 'end' , verticalPosition: 'bottom' , }); } } {%
+                        endraw %}

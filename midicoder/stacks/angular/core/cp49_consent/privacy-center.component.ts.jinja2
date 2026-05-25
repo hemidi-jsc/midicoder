@@ -1,314 +1,353 @@
 {% raw %}/**
- * CP49 Consent & Preference Management — Privacy Center Component.
- *
- * Component chính hiển thị trung tâm quyền riêng tư, cho phép người dùng:
- * - Xem tất cả bản ghi đồng ý
- * - Quản lý tùy chọn cookie
- * - Quản lý tùy chọn liên lạc
- * - Yêu cầu xóa dữ liệu (GDPR)
- *
- * Sử dụng Signal-based state management và reactive patterns của Angular.
- *
- * Tạo tự động bởi CP49 — không sửa thủ công.
- */
-
+* UI Framework: {{{ ui_framework }}}
+* CP49 Consent & Preference Management — Privacy Center Component.
+*
+* Component chính hiển thị trung tâm quyền riêng tư, cho phép người dùng:
+* - Xem tất cả bản ghi đồng ý
+* - Quản lý tùy chọn cookie
+* - Quản lý tùy chọn liên lạc
+* - Yêu cầu xóa dữ liệu (GDPR)
+*
+* Sử dụng Signal-based state management và reactive patterns của Angular.
+*
+* Tạo tự động bởi CP49 — không sửa thủ công.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatListModule } from '@angular/material/list';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatTabsModule } from '@angular/material/tabs';
+import { MatIconModule } from '@angular/material/icon';
+import { MatSidenavModule } from '@angular/material/sidenav';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+// Ant Design không áp dụng cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon không áp dụng cho Angular
+{% endif %}
+{% raw %}
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Observable, firstValueFrom } from 'rxjs';
 import { ConsentService } from './consent.service';
 import {
-  ConsentRecord,
-  ConsentPurpose,
-  ConsentCategory,
-  ConsentStatus,
-  CookiePreference,
-  CommunicationPreference,
-  ErasureRequest,
-  ErasureScope,
-  ConsentStats,
+ConsentRecord,
+ConsentPurpose,
+ConsentCategory,
+ConsentStatus,
+CookiePreference,
+CommunicationPreference,
+ErasureRequest,
+ErasureScope,
+ConsentStats,
 } from './consent-types';
 
 /**
- * Tab đang hoạt động trong Privacy Center.
- */
+* Tab đang hoạt động trong Privacy Center.
+*/
 type PrivacyCenterTab = 'consents' | 'cookies' | 'communication' | 'erasure' | 'stats';
 
 /**
- * PrivacyCenterComponent — Trung tâm quyền riêng tư.
- *
- * Cung cấp giao diện thống nhất để người dùng quản lý:
- * - Bản ghi đồng ý (xem, cấp, hủy)
- * - Tùy chọn cookie (chấp nhận, từ chối, tùy chỉnh)
- * - Tùy chọn liên lạc (bật/tắt theo kênh)
- * - Yêu cầu xóa dữ liệu (GDPR Art.17)
- * - Thống kê đồng ý tổng quan
- *
- * Sử dụng tab navigation để tổ chức các chức năng.
- */
+* PrivacyCenterComponent — Trung tâm quyền riêng tư.
+*
+* Cung cấp giao diện thống nhất để người dùng quản lý:
+* - Bản ghi đồng ý (xem, cấp, hủy)
+* - Tùy chọn cookie (chấp nhận, từ chối, tùy chỉnh)
+* - Tùy chọn liên lạc (bật/tắt theo kênh)
+* - Yêu cầu xóa dữ liệu (GDPR Art.17)
+* - Thống kê đồng ý tổng quan
+*
+* Sử dụng tab navigation để tổ chức các chức năng.
+*/
 @Component({
-  selector: 'app-privacy-center',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './privacy-center.component.html',
-  styleUrl: './privacy-center.component.css',
+selector: 'app-privacy-center',
+standalone: true,
+imports: [CommonModule, FormsModule],
+templateUrl: './privacy-center.component.html',
+styleUrl: './privacy-center.component.css',
 })
 export class PrivacyCenterComponent implements OnInit {
-  // ===========================================================================
-  // Inject dependencies
-  // ===========================================================================
+// ===========================================================================
+// Inject dependencies
+// ===========================================================================
 
-  /** Dịch vụ HTTP cho consent API. */
-  private readonly consentService = inject(ConsentService);
+/** Dịch vụ HTTP cho consent API. */
+private readonly consentService = inject(ConsentService);
 
-  // ===========================================================================
-  // Signals
-  // ===========================================================================
+// ===========================================================================
+// Signals
+// ===========================================================================
 
-  /** Tab đang hoạt động. */
-  readonly activeTab = signal<PrivacyCenterTab>('consents');
+/** Tab đang hoạt động. */
+readonly activeTab = signal<PrivacyCenterTab>('consents');
 
-  /** Danh sách bản ghi đồng ý. */
-  readonly consents = signal<ConsentRecord[]>([]);
+    /** Danh sách bản ghi đồng ý. */
+    readonly consents = signal<ConsentRecord[]>([]);
 
-  /** Tùy chọn cookie hiện tại. */
-  readonly cookiePreference = signal<CookiePreference | null>(null);
+        /** Tùy chọn cookie hiện tại. */
+        readonly cookiePreference = signal<CookiePreference | null>(null);
 
-  /** Tùy chọn liên lạc hiện tại. */
-  readonly commPreference = signal<CommunicationPreference | null>(null);
+            /** Tùy chọn liên lạc hiện tại. */
+            readonly commPreference = signal<CommunicationPreference | null>(null);
 
-  /** Danh sách yêu cầu xóa. */
-  readonly erasureRequests = signal<ErasureRequest[]>([]);
+                /** Danh sách yêu cầu xóa. */
+                readonly erasureRequests = signal<ErasureRequest[]>([]);
 
-  /** Thống kê đồng ý. */
-  readonly stats = signal<ConsentStats | null>(null);
+                    /** Thống kê đồng ý. */
+                    readonly stats = signal<ConsentStats | null>(null);
 
-  /** Đang tải dữ liệu. */
-  readonly isLoading = signal<boolean>(false);
+                        /** Đang tải dữ liệu. */
+                        readonly isLoading = signal<boolean>(false);
 
-  /** Thông báo lỗi. */
-  readonly error = signal<string | null>(null);
+                            /** Thông báo lỗi. */
+                            readonly error = signal<string | null>(null);
 
-  /** Đang hiển thị modal xác nhận. */
-  readonly showConfirmModal = signal<boolean>(false);
+                                /** Đang hiển thị modal xác nhận. */
+                                readonly showConfirmModal = signal<boolean>(false);
 
-  /** Callback xác nhận. */
-  readonly confirmCallback = signal<() => void>(() => {});
+                                    /** Callback xác nhận. */
+                                    readonly confirmCallback = signal<()=> void>(() => {});
 
-  /** Tiêu đề modal xác nhận. */
-  readonly confirmTitle = signal<string>('');
+                                        /** Tiêu đề modal xác nhận. */
+                                        readonly confirmTitle = signal<string>('');
 
-  // ===========================================================================
-  // Lifecycle
-  // ===========================================================================
+                                            //
+                                            ===========================================================================
+                                            // Lifecycle
+                                            //
+                                            ===========================================================================
 
-  /**
-   * Khởi tạo component — tải dữ liệu ban đầu.
-   */
-  async ngOnInit(): Promise<void> {
-    await this.loadAllData();
-  }
+                                            /**
+                                            * Khởi tạo component — tải dữ liệu ban đầu.
+                                            */
+                                            async ngOnInit(): Promise<void> {
+                                                await this.loadAllData();
+                                                }
 
-  // ===========================================================================
-  // Data loading
-  // ===========================================================================
+                                                //
+                                                ===========================================================================
+                                                // Data loading
+                                                //
+                                                ===========================================================================
 
-  /**
-   * Tải tất cả dữ liệu cần thiết cho Privacy Center.
-   */
-  private async loadAllData(): Promise<void> {
-    this.isLoading.set(true);
-    this.error.set(null);
+                                                /**
+                                                * Tải tất cả dữ liệu cần thiết cho Privacy Center.
+                                                */
+                                                private async loadAllData(): Promise<void> {
+                                                    this.isLoading.set(true);
+                                                    this.error.set(null);
 
-    try {
-      // Tải song song tất cả dữ liệu
-      const [consents, cookiePref, commPref, erasureReqs, stats] = await Promise.all([
-        firstValueFrom(this.consentService.getUserConsents()),
-        firstValueFrom(this.consentService.getCookiePreference()),
-        firstValueFrom(this.consentService.getCommPreference()),
-        firstValueFrom(this.consentService.getErasureRequests()),
-        firstValueFrom(this.consentService.getTenantStats()),
-      ]);
+                                                    try {
+                                                    // Tải song song tất cả dữ liệu
+                                                    const [consents, cookiePref, commPref, erasureReqs, stats] = await
+                                                    Promise.all([
+                                                    firstValueFrom(this.consentService.getUserConsents()),
+                                                    firstValueFrom(this.consentService.getCookiePreference()),
+                                                    firstValueFrom(this.consentService.getCommPreference()),
+                                                    firstValueFrom(this.consentService.getErasureRequests()),
+                                                    firstValueFrom(this.consentService.getTenantStats()),
+                                                    ]);
 
-      this.consents.set(consents);
-      this.cookiePreference.set(cookiePref);
-      this.commPreference.set(commPref);
-      this.erasureRequests.set(erasureReqs);
-      this.stats.set(stats);
-    } catch (err: any) {
-      this.error.set(err.message || 'Lỗi khi tải dữ liệu');
-      console.error('[CP49] Lỗi tải dữ liệu Privacy Center:', err);
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
+                                                    this.consents.set(consents);
+                                                    this.cookiePreference.set(cookiePref);
+                                                    this.commPreference.set(commPref);
+                                                    this.erasureRequests.set(erasureReqs);
+                                                    this.stats.set(stats);
+                                                    } catch (err: any) {
+                                                    this.error.set(err.message || 'Lỗi khi tải dữ liệu');
+                                                    console.error('[CP49] Lỗi tải dữ liệu Privacy Center:', err);
+                                                    } finally {
+                                                    this.isLoading.set(false);
+                                                    }
+                                                    }
 
-  // ===========================================================================
-  // Tab navigation
-  // ===========================================================================
+                                                    //
+                                                    ===========================================================================
+                                                    // Tab navigation
+                                                    //
+                                                    ===========================================================================
 
-  /**
-   * Chuyển đổi tab đang hoạt động.
-   *
-   * @param tab - Tab cần chuyển đến.
-   */
-  switchTab(tab: PrivacyCenterTab): void {
-    this.activeTab.set(tab);
-  }
+                                                    /**
+                                                    * Chuyển đổi tab đang hoạt động.
+                                                    *
+                                                    * @param tab - Tab cần chuyển đến.
+                                                    */
+                                                    switchTab(tab: PrivacyCenterTab): void {
+                                                    this.activeTab.set(tab);
+                                                    }
 
-  /**
-   * Kiểm tra tab có đang hoạt động không.
-   *
-   * @param tab - Tab cần kiểm tra.
-   * @returns True nếu tab đang hoạt động.
-   */
-  isActiveTab(tab: PrivacyCenterTab): boolean {
-    return this.activeTab() === tab;
-  }
+                                                    /**
+                                                    * Kiểm tra tab có đang hoạt động không.
+                                                    *
+                                                    * @param tab - Tab cần kiểm tra.
+                                                    * @returns True nếu tab đang hoạt động.
+                                                    */
+                                                    isActiveTab(tab: PrivacyCenterTab): boolean {
+                                                    return this.activeTab() === tab;
+                                                    }
 
-  // ===========================================================================
-  // Consent actions
-  // ===========================================================================
+                                                    //
+                                                    ===========================================================================
+                                                    // Consent actions
+                                                    //
+                                                    ===========================================================================
 
-  /**
-   * Hủy đồng ý theo ID bản ghi.
-   *
-   * Hiển thị modal xác nhận trước khi thực hiện.
-   *
-   * @param recordId - ID bản ghi đồng ý cần hủy.
-   */
-  confirmRevokeConsent(recordId: string): void {
-    this.confirmTitle.set('Xác nhận hủy đồng ý');
-    this.confirmCallback.set(async () => {
-      this.isLoading.set(true);
-      try {
-        await firstValueFrom(this.consentService.revokeConsent(recordId));
-        await this.loadAllData();
-      } catch (err: any) {
-        this.error.set(err.message || 'Lỗi khi hủy đồng ý');
-      } finally {
-        this.isLoading.set(false);
-        this.showConfirmModal.set(false);
-      }
-    });
-    this.showConfirmModal.set(true);
-  }
+                                                    /**
+                                                    * Hủy đồng ý theo ID bản ghi.
+                                                    *
+                                                    * Hiển thị modal xác nhận trước khi thực hiện.
+                                                    *
+                                                    * @param recordId - ID bản ghi đồng ý cần hủy.
+                                                    */
+                                                    confirmRevokeConsent(recordId: string): void {
+                                                    this.confirmTitle.set('Xác nhận hủy đồng ý');
+                                                    this.confirmCallback.set(async () => {
+                                                    this.isLoading.set(true);
+                                                    try {
+                                                    await firstValueFrom(this.consentService.revokeConsent(recordId));
+                                                    await this.loadAllData();
+                                                    } catch (err: any) {
+                                                    this.error.set(err.message || 'Lỗi khi hủy đồng ý');
+                                                    } finally {
+                                                    this.isLoading.set(false);
+                                                    this.showConfirmModal.set(false);
+                                                    }
+                                                    });
+                                                    this.showConfirmModal.set(true);
+                                                    }
 
-  /**
-   * Xác nhận hành động từ modal.
-   */
-  async confirmAction(): Promise<void> {
-    await this.confirmCallback()();
-  }
+                                                    /**
+                                                    * Xác nhận hành động từ modal.
+                                                    */
+                                                    async confirmAction(): Promise<void> {
+                                                        await this.confirmCallback()();
+                                                        }
 
-  /**
-   * Hủy hành động từ modal.
-   */
-  cancelAction(): void {
-    this.showConfirmModal.set(false);
-  }
+                                                        /**
+                                                        * Hủy hành động từ modal.
+                                                        */
+                                                        cancelAction(): void {
+                                                        this.showConfirmModal.set(false);
+                                                        }
 
-  // ===========================================================================
-  // Cookie actions
-  // ===========================================================================
+                                                        //
+                                                        ===========================================================================
+                                                        // Cookie actions
+                                                        //
+                                                        ===========================================================================
 
-  /**
-   * Chấp nhận tất cả cookie.
-   */
-  async acceptAllCookies(): Promise<void> {
-    this.isLoading.set(true);
-    try {
-      await firstValueFrom(this.consentService.acceptAllCookies());
-      await this.loadAllData();
-    } catch (err: any) {
-      this.error.set(err.message || 'Lỗi khi chấp nhận cookie');
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
+                                                        /**
+                                                        * Chấp nhận tất cả cookie.
+                                                        */
+                                                        async acceptAllCookies(): Promise<void> {
+                                                            this.isLoading.set(true);
+                                                            try {
+                                                            await
+                                                            firstValueFrom(this.consentService.acceptAllCookies());
+                                                            await this.loadAllData();
+                                                            } catch (err: any) {
+                                                            this.error.set(err.message || 'Lỗi khi chấp nhận cookie');
+                                                            } finally {
+                                                            this.isLoading.set(false);
+                                                            }
+                                                            }
 
-  /**
-   * Từ chối tất cả cookie không cần thiết.
-   */
-  async rejectNonNecessaryCookies(): Promise<void> {
-    this.isLoading.set(true);
-    try {
-      await firstValueFrom(this.consentService.rejectNonNecessaryCookies());
-      await this.loadAllData();
-    } catch (err: any) {
-      this.error.set(err.message || 'Lỗi khi từ chối cookie');
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
+                                                            /**
+                                                            * Từ chối tất cả cookie không cần thiết.
+                                                            */
+                                                            async rejectNonNecessaryCookies(): Promise<void> {
+                                                                this.isLoading.set(true);
+                                                                try {
+                                                                await
+                                                                firstValueFrom(this.consentService.rejectNonNecessaryCookies());
+                                                                await this.loadAllData();
+                                                                } catch (err: any) {
+                                                                this.error.set(err.message || 'Lỗi khi từ chối cookie');
+                                                                } finally {
+                                                                this.isLoading.set(false);
+                                                                }
+                                                                }
 
-  // ===========================================================================
-  // Erasure actions
-  // ===========================================================================
+                                                                //
+                                                                ===========================================================================
+                                                                // Erasure actions
+                                                                //
+                                                                ===========================================================================
 
-  /**
-   * Tạo yêu cầu xóa dữ liệu mới.
-   *
-   * @param scope - Phạm vi xóa.
-   * @param reason - Lý do xóa.
-   */
-  async createErasureRequest(scope: ErasureScope, reason: string): Promise<void> {
-    this.isLoading.set(true);
-    try {
-      await firstValueFrom(
-        this.consentService.createErasureRequest({ scope, reason })
-      );
-      await this.loadAllData();
-    } catch (err: any) {
-      this.error.set(err.message || 'Lỗi khi tạo yêu cầu xóa');
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
+                                                                /**
+                                                                * Tạo yêu cầu xóa dữ liệu mới.
+                                                                *
+                                                                * @param scope - Phạm vi xóa.
+                                                                * @param reason - Lý do xóa.
+                                                                */
+                                                                async createErasureRequest(scope: ErasureScope, reason:
+                                                                string): Promise<void> {
+                                                                    this.isLoading.set(true);
+                                                                    try {
+                                                                    await firstValueFrom(
+                                                                    this.consentService.createErasureRequest({ scope,
+                                                                    reason })
+                                                                    );
+                                                                    await this.loadAllData();
+                                                                    } catch (err: any) {
+                                                                    this.error.set(err.message || 'Lỗi khi tạo yêu cầu
+                                                                    xóa');
+                                                                    } finally {
+                                                                    this.isLoading.set(false);
+                                                                    }
+                                                                    }
 
-  // ===========================================================================
-  // Utility
-  // ===========================================================================
+                                                                    //
+                                                                    ===========================================================================
+                                                                    // Utility
+                                                                    //
+                                                                    ===========================================================================
 
-  /**
-   * Lấy nhãn hiển thị cho mục đích đồng ý.
-   *
-   * @param purpose - Mục đích đồng ý.
-   * @returns Chuỗi nhãn hiển thị.
-   */
-  getPurposeLabel(purpose: ConsentPurpose): string {
-    const labels: Record<ConsentPurpose, string> = {
-      analytics: 'Phân tích',
-      marketing: 'Tiếp thị',
-      advertising: 'Quảng cáo',
-      personalization: 'Cá nhân hóa',
-      essential: 'Cốt lõi',
-      communication: 'Liên lạc',
-    };
-    return labels[purpose] || purpose;
-  }
+                                                                    /**
+                                                                    * Lấy nhãn hiển thị cho mục đích đồng ý.
+                                                                    *
+                                                                    * @param purpose - Mục đích đồng ý.
+                                                                    * @returns Chuỗi nhãn hiển thị.
+                                                                    */
+                                                                    getPurposeLabel(purpose: ConsentPurpose): string {
+                                                                    const labels: Record<ConsentPurpose, string> = {
+                                                                        analytics: 'Phân tích',
+                                                                        marketing: 'Tiếp thị',
+                                                                        advertising: 'Quảng cáo',
+                                                                        personalization: 'Cá nhân hóa',
+                                                                        essential: 'Cốt lõi',
+                                                                        communication: 'Liên lạc',
+                                                                        };
+                                                                        return labels[purpose] || purpose;
+                                                                        }
 
-  /**
-   * Lấy màu trạng thái đồng ý.
-   *
-   * @param status - Trạng thái đồng ý.
-   * @returns Chuỗi màu CSS.
-   */
-  getStatusColor(status: ConsentStatus): string {
-    const colors: Record<ConsentStatus, string> = {
-      active: '#22c55e',
-      revoked: '#ef4444',
-      expired: '#f59e0b',
-      pending: '#6366f1',
-    };
-    return colors[status] || '#6b7280';
-  }
+                                                                        /**
+                                                                        * Lấy màu trạng thái đồng ý.
+                                                                        *
+                                                                        * @param status - Trạng thái đồng ý.
+                                                                        * @returns Chuỗi màu CSS.
+                                                                        */
+                                                                        getStatusColor(status: ConsentStatus): string {
+                                                                        const colors: Record<ConsentStatus, string> = {
+                                                                            active: '#22c55e',
+                                                                            revoked: '#ef4444',
+                                                                            expired: '#f59e0b',
+                                                                            pending: '#6366f1',
+                                                                            };
+                                                                            return colors[status] || '#6b7280';
+                                                                            }
 
-  /**
-   * Refresh toàn bộ dữ liệu.
-   */
-  async refresh(): Promise<void> {
-    await this.loadAllData();
-  }
-}
-{% endraw %}
+                                                                            /**
+                                                                            * Refresh toàn bộ dữ liệu.
+                                                                            */
+                                                                            async refresh(): Promise<void> {
+                                                                                await this.loadAllData();
+                                                                                }
+                                                                                }
+                                                                                {% endraw %}

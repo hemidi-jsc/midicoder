@@ -1,10 +1,24 @@
 {% raw %}/**
+* UI Framework: {{{ ui_framework }}}
 * PrivacyCenter — Trung tam rieng tu: tab Consents, Cookies, Communication, Erasure.
 * Sinh boi CP49 ConsentEmitter.
 *
 * Hien thi danh sach dong y voi badge trang thai, nut huy dong y, va xac thuc.
 * Su dung Tailwind CSS va React hooks.
 */
+{% endraw %}
+{% if ui_framework == "material" %}
+import { Button, Card, Tabs, Tab, Chip, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind CSS utility classes inline — khong can import thanh phan UI
+{% elif ui_framework == "bootstrap" %}
+import { Button, Card, Nav, Modal, Badge } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Card, Tabs, Tag, Modal } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, TabList, TabPanels, Modal } from '@carbon/react';
+{% endif %}
+{% raw %}
 import React, { useState, useMemo, useCallback } from 'react';
 import { useConsent } from './useConsent';
 

@@ -1,13 +1,40 @@
 // Report List Component — Hiển thị danh sách reports có thể generate.
 // CP34: Report & Document Generator (Angular)
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 {% if collection %}
 // Tự động sinh từ {{ collection.reports | length }} report specs.
+{% endif %}
+
+{% if ui_framework == "material" %}
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatIconModule } from '@angular/material/icon';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng lớp tiện ích Tailwind CSS trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng lớp Bootstrap trong template
+{% elif ui_framework == "antd" %}
+// Ant Design không áp dụng cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon không áp dụng cho Angular
 {% endif %}
 
 import { Component, OnInit, OnDestroy } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { HttpClient } from "@angular/common/http";
 import { Subscription } from "rxjs";
+
+{% if ui_framework == "material" %}
+const UI_MODULES = [MatButtonModule, MatCardModule, MatIconModule];
+{% elif ui_framework == "tailwind" %}
+const UI_MODULES = [];
+{% elif ui_framework == "bootstrap" %}
+const UI_MODULES = [];
+{% elif ui_framework == "antd" %}
+const UI_MODULES = [];
+{% elif ui_framework == "carbon" %}
+const UI_MODULES = [];
+{% endif %}
 
 export interface ReportMeta {
 id: string;
@@ -21,7 +48,7 @@ description: string;
 @Component({
 selector: "app-report-list",
 standalone: true,
-imports: [CommonModule],
+imports: [CommonModule, ...UI_MODULES],
 template: `
 <div class="report-list">
     <h2>Danh sách Báo cáo</h2>

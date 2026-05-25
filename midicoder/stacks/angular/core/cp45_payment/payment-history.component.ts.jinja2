@@ -1,17 +1,18 @@
-{% raw %}
 /**
 * CP45 Payment Gateway — Payment History Component
 *
-* Thành phần hiển thị lịch sử giao dịch thanh toán với:
-* - Bảng giao dịch phân trang
-* - Bộ lọc theo trạng thái, phương thức, khoảng ngày, số tiền
-* - Tìm kiếm theo từ khóa
-* - Sắp xếp theo cột
-* - Hành động: xem chi tiết, hoàn tiền, hủy giao dịch
+* Thanh phan hien thi lich su giao dich thanh toan voi:
+* - Bang giao dich phan trang
+* - Bo loc theo trang thai, phuong thuc, khoang ngay, so tien
+* - Tim kiem theo tu khoa
+* - Sap xep theo cot
+* - Hanh dong: xem chi tiet, hoan tien, huy giao dich
 *
-* Sử dụng Signal Store và Angular signals hiện đại.
+* Su dung Signal Store va Angular signals hien dai.
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 */
-
+{% if ui_framework == "material" %}
 import {
 Component,
 ChangeDetectionStrategy,
@@ -20,6 +21,55 @@ computed,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
+import { MatTableModule } from '@angular/material/table';
+import { MatPaginatorModule } from '@angular/material/paginator';
+import { MatSortModule } from '@angular/material/sort';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatDialogModule } from '@angular/material/dialog';
+{% elif ui_framework == "tailwind" %}
+import {
+Component,
+ChangeDetectionStrategy,
+inject,
+computed,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+// Su dung Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+import {
+Component,
+ChangeDetectionStrategy,
+inject,
+computed,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+// Su dung Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+import {
+Component,
+ChangeDetectionStrategy,
+inject,
+computed,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+// Ant Design khong dung cho Angular
+{% elif ui_framework == "carbon" %}
+import {
+Component,
+ChangeDetectionStrategy,
+inject,
+computed,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+// Carbon khong dung cho Angular
+{% endif %}
 
 import { PaymentStore } from './payment.store';
 import {

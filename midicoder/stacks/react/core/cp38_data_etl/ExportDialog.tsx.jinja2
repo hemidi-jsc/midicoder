@@ -1,750 +1,792 @@
 /**
- * ExportDialog Component — CP38: Data Import/Export/ETL.
- *
- * Modal dialog để export dữ liệu.
- * Bao gồm: chọn thực thể, chọn định dạng, checkbox cột, bộ lọc,
- * nút xem trước, nút export với trạng thái loading, nút đóng/hủy.
- * Hiển thị JobStatusPanel khi job đang chạy hoặc đã hoàn thành.
- */
+* ExportDialog Component — CP38: Data Import/Export/ETL.
+*{% raw %}
+* UI Framework: {{{ ui_framework }}}{% endraw %}
+*
+* Modal dialog de export du lieu.
+* Bao gom: chon thuc the, chon dinh dang, checkbox cot, bo loc,
+* nut xem truoc, nut export voi trang thai loading, nut dong/huy.
+* Hien thi JobStatusPanel khi job dang chay hoac da hoan thanh.
+*/
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { ExportService, CreateExportJobRequest, PreviewRow } from './export.service';
 import { useExportJob } from './useExportJob';
 import { JobStatusPanel, JobStatusData } from './JobStatusPanel';
 
+{% if ui_framework == "material" %}
+import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Checkbox, FormControlLabel, Table,
+TableBody, TableCell, TableContainer, TableHead, TableRow, LinearProgress, Chip, Divider, FormControl, InputLabel,
+Select, MenuItem } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind utility classes inline
+{% elif ui_framework == "bootstrap" %}
+import { Modal, Button, Form, Table, ProgressBar } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Modal, Button, Table, Checkbox, Select, Divider, Space, Tag } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { ModalWrapper, ModalHeader, ModalBody, ModalFooter, Button, Checkbox, InlineLoading } from '@carbon/react';
+{% endif %}
+{% raw %}
+
 /* ===== Loại dữ liệu ===== */
 
 /**
- * Một trường/cột trong thực thể.
- */
+* Một trường/cột trong thực thể.
+*/
 interface EntityField {
-  /** Khóa trường. */
-  key: string;
-  /** Nhãn hiển thị. */
-  label: string;
-  /** Loại dữ liệu. */
-  type: string;
+/** Khóa trường. */
+key: string;
+/** Nhãn hiển thị. */
+label: string;
+/** Loại dữ liệu. */
+type: string;
 }
 
 /**
- * Một thực thể có thể export.
- */
+* Một thực thể có thể export.
+*/
 interface ExportableEntity {
-  /** Khóa thực thể. */
-  key: string;
-  /** Nhãn hiển thị. */
-  label: string;
-  /** Danh sách các trường/cột. */
-  fields: EntityField[];
-  /** Các bộ lọc có sẵn (ví dụ: status). */
-  availableFilters?: string[];
+/** Khóa thực thể. */
+key: string;
+/** Nhãn hiển thị. */
+label: string;
+/** Danh sách các trường/cột. */
+fields: EntityField[];
+/** Các bộ lọc có sẵn (ví dụ: status). */
+availableFilters?: string[];
 }
 
 /**
- * Props của ExportDialog.
- */
+* Props của ExportDialog.
+*/
 export interface ExportDialogProps {
-  /** Mở/đóng dialog. */
-  isOpen: boolean;
-  /** Callback khi đóng dialog. */
-  onClose: () => void;
-  /**
-   * Danh sách các thực thể có thể export.
-   */
-  entities: ExportableEntity[];
-  /** Định dạng mặc định. */
-  defaultFormat?: 'csv' | 'json';
-  /** Callback khi export hoàn tất thành công. */
-  onSuccess?: (jobKey: string) => void;
-  /** Class tên tùy chỉnh. */
-  className?: string;
+/** Mở/đóng dialog. */
+isOpen: boolean;
+/** Callback khi đóng dialog. */
+onClose: () => void;
+/**
+* Danh sách các thực thể có thể export.
+*/
+entities: ExportableEntity[];
+/** Định dạng mặc định. */
+defaultFormat?: 'csv' | 'json';
+/** Callback khi export hoàn tất thành công. */
+onSuccess?: (jobKey: string) => void;
+/** Class tên tùy chỉnh. */
+className?: string;
 }
 
 /* ===== Component chính ===== */
 
 /**
- * Modal dialog để export dữ liệu.
- *
- * @example
- * ```tsx
- * const [exportOpen, setExportOpen] = useState(false);
- *
- * return (
- *   <>
- *     <button onClick={() => setExportOpen(true)}>Export dữ liệu</button>
- *     <ExportDialog
- *       isOpen={exportOpen}
- *       onClose={() => setExportOpen(false)}
- *       entities={[
- *         {
- *           key: 'products',
- *           label: 'Sản phẩm',
- *           fields: [
- *             { key: 'id', label: 'Mã', type: 'string' },
- *             { key: 'name', label: 'Tên', type: 'string' },
- *             { key: 'price', label: 'Giá', type: 'number' },
- *           ],
- *         },
- *       ]}
- *     />
- *   </>
- * );
- * ```
- */
+* Modal dialog để export dữ liệu.
+*
+* @example
+* ```tsx
+* const [exportOpen, setExportOpen] = useState(false);
+*
+* return (
+* <>
+    * <button onClick={()=> setExportOpen(true)}>Export dữ liệu</button>
+    * <ExportDialog * isOpen={exportOpen} * onClose={()=> setExportOpen(false)}
+        * entities={[
+        * {
+        * key: 'products',
+        * label: 'Sản phẩm',
+        * fields: [
+        * { key: 'id', label: 'Mã', type: 'string' },
+        * { key: 'name', label: 'Tên', type: 'string' },
+        * { key: 'price', label: 'Giá', type: 'number' },
+        * ],
+        * },
+        * ]}
+        * />
+        * </>
+* );
+* ```
+*/
 export const ExportDialog: React.FC<ExportDialogProps> = ({
-  isOpen,
-  onClose,
-  entities,
-  defaultFormat = 'csv',
-  onSuccess,
-  className = '',
-}) => {
-  // --- Hook quản lý export job ---
-  const exportHook = useExportJob();
+    isOpen,
+    onClose,
+    entities,
+    defaultFormat = 'csv',
+    onSuccess,
+    className = '',
+    }) => {
+    // --- Hook quản lý export job ---
+    const exportHook = useExportJob();
 
-  // --- Trạng thái form ---
-  const [selectedEntity, setSelectedEntity] = useState<string>('');
-  const [format, setFormat] = useState<'csv' | 'json'>(defaultFormat);
-  const [selectedColumns, setSelectedColumns] = useState<Set<string>>(new Set());
-  const [filterStatus, setFilterStatus] = useState<string>('');
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-  const [showFilters, setShowFilters] = useState(false);
+    // --- Trạng thái form ---
+    const [selectedEntity, setSelectedEntity] = useState<string>('');
+        const [format, setFormat] = useState<'csv' | 'json'>(defaultFormat);
+            const [selectedColumns, setSelectedColumns] = useState<Set<string>>(new Set());
+                const [filterStatus, setFilterStatus] = useState<string>('');
+                    const [startDate, setStartDate] = useState<string>('');
+                        const [endDate, setEndDate] = useState<string>('');
+                            const [showFilters, setShowFilters] = useState(false);
 
-  // --- Trạng thái xem trước ---
-  const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
-  const [previewColumns, setPreviewColumns] = useState<string[]>([]);
-  const [previewTotal, setPreviewTotal] = useState(0);
-  const [previewLoading, setPreviewLoading] = useState(false);
+                            // --- Trạng thái xem trước ---
+                            const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
+                                const [previewColumns, setPreviewColumns] = useState<string[]>([]);
+                                    const [previewTotal, setPreviewTotal] = useState(0);
+                                    const [previewLoading, setPreviewLoading] = useState(false);
 
-  // --- Trạng thái hiển thị job panel ---
-  const [showJobPanel, setShowJobPanel] = useState(false);
+                                    // --- Trạng thái hiển thị job panel ---
+                                    const [showJobPanel, setShowJobPanel] = useState(false);
 
-  // --- Thực thể đã chọn ---
-  const selectedEntityData = useMemo(
-    () => entities.find((e) => e.key === selectedEntity) || null,
-    [entities, selectedEntity],
-  );
+                                    // --- Thực thể đã chọn ---
+                                    const selectedEntityData = useMemo(
+                                    () => entities.find((e) => e.key === selectedEntity) || null,
+                                    [entities, selectedEntity],
+                                    );
 
-  // --- Reset form khi mở dialog ---
-  useEffect(() => {
-    if (isOpen) {
-      // Không reset nếu đang có job đang chạy
-      if (!exportHook.job || ['completed', 'failed', 'cancelled'].includes(exportHook.job.status)) {
-        resetForm();
-      }
-    }
-  }, [isOpen]);
+                                    // --- Reset form khi mở dialog ---
+                                    useEffect(() => {
+                                    if (isOpen) {
+                                    // Không reset nếu đang có job đang chạy
+                                    if (!exportHook.job || ['completed', 'failed',
+                                    'cancelled'].includes(exportHook.job.status)) {
+                                    resetForm();
+                                    }
+                                    }
+                                    }, [isOpen]);
 
-  // --- Reset form về trạng thái ban đầu ---
-  const resetForm = useCallback(() => {
-    setSelectedEntity('');
-    setFormat(defaultFormat);
-    setSelectedColumns(new Set());
-    setFilterStatus('');
-    setStartDate('');
-    setEndDate('');
-    setShowFilters(false);
-    setPreviewData([]);
-    setPreviewColumns([]);
-    setPreviewTotal(0);
-    setShowJobPanel(false);
-    exportHook.reset();
-  }, [defaultFormat, exportHook]);
+                                    // --- Reset form về trạng thái ban đầu ---
+                                    const resetForm = useCallback(() => {
+                                    setSelectedEntity('');
+                                    setFormat(defaultFormat);
+                                    setSelectedColumns(new Set());
+                                    setFilterStatus('');
+                                    setStartDate('');
+                                    setEndDate('');
+                                    setShowFilters(false);
+                                    setPreviewData([]);
+                                    setPreviewColumns([]);
+                                    setPreviewTotal(0);
+                                    setShowJobPanel(false);
+                                    exportHook.reset();
+                                    }, [defaultFormat, exportHook]);
 
-  // --- Đóng dialog ---
-  const handleClose = useCallback(() => {
-    // Nếu có job đang chạy, không cho đóng
-    if (exportHook.job?.status === 'running') {
-      return;
-    }
-    resetForm();
-    onClose();
-  }, [exportHook.job?.status, resetForm, onClose]);
+                                    // --- Đóng dialog ---
+                                    const handleClose = useCallback(() => {
+                                    // Nếu có job đang chạy, không cho đóng
+                                    if (exportHook.job?.status === 'running') {
+                                    return;
+                                    }
+                                    resetForm();
+                                    onClose();
+                                    }, [exportHook.job?.status, resetForm, onClose]);
 
-  // --- Xử lý khi thay đổi thực thể ---
-  const handleEntityChange = useCallback((entityKey: string) => {
-    setSelectedEntity(entityKey);
-    // Tự động chọn tất cả cột
-    const entity = entities.find((e) => e.key === entityKey);
-    if (entity) {
-      setSelectedColumns(new Set(entity.fields.map((f) => f.key)));
-    } else {
-      setSelectedColumns(new Set());
-    }
-    // Reset preview
-    setPreviewData([]);
-    setPreviewColumns([]);
-    setPreviewTotal(0);
-  }, [entities]);
+                                    // --- Xử lý khi thay đổi thực thể ---
+                                    const handleEntityChange = useCallback((entityKey: string) => {
+                                    setSelectedEntity(entityKey);
+                                    // Tự động chọn tất cả cột
+                                    const entity = entities.find((e) => e.key === entityKey);
+                                    if (entity) {
+                                    setSelectedColumns(new Set(entity.fields.map((f) => f.key)));
+                                    } else {
+                                    setSelectedColumns(new Set());
+                                    }
+                                    // Reset preview
+                                    setPreviewData([]);
+                                    setPreviewColumns([]);
+                                    setPreviewTotal(0);
+                                    }, [entities]);
 
-  // --- Xử lý khi thay đổi checkbox cột ---
-  const handleColumnToggle = useCallback((columnKey: string) => {
-    setSelectedColumns((prev) => {
-      const next = new Set(prev);
-      if (next.has(columnKey)) {
-        next.delete(columnKey);
-      } else {
-        next.add(columnKey);
-      }
-      return next;
-    });
-  }, []);
+                                    // --- Xử lý khi thay đổi checkbox cột ---
+                                    const handleColumnToggle = useCallback((columnKey: string) => {
+                                    setSelectedColumns((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(columnKey)) {
+                                    next.delete(columnKey);
+                                    } else {
+                                    next.add(columnKey);
+                                    }
+                                    return next;
+                                    });
+                                    }, []);
 
-  // --- Chọn tất cả cột ---
-  const handleSelectAllColumns = useCallback(() => {
-    if (selectedEntityData) {
-      setSelectedColumns(new Set(selectedEntityData.fields.map((f) => f.key)));
-    }
-  }, [selectedEntityData]);
+                                    // --- Chọn tất cả cột ---
+                                    const handleSelectAllColumns = useCallback(() => {
+                                    if (selectedEntityData) {
+                                    setSelectedColumns(new Set(selectedEntityData.fields.map((f) => f.key)));
+                                    }
+                                    }, [selectedEntityData]);
 
-  // --- Bỏ chọn tất cả cột ---
-  const handleDeselectAllColumns = useCallback(() => {
-    setSelectedColumns(new Set());
-  }, []);
+                                    // --- Bỏ chọn tất cả cột ---
+                                    const handleDeselectAllColumns = useCallback(() => {
+                                    setSelectedColumns(new Set());
+                                    }, []);
 
-  // --- Xây dựng cấu hình export từ form ---
-  const buildExportConfig = useCallback((): CreateExportJobRequest => {
-    const config: CreateExportJobRequest = {
-      entity: selectedEntity,
-      format,
-      columns: Array.from(selectedColumns),
-    };
+                                    // --- Xây dựng cấu hình export từ form ---
+                                    const buildExportConfig = useCallback((): CreateExportJobRequest => {
+                                    const config: CreateExportJobRequest = {
+                                    entity: selectedEntity,
+                                    format,
+                                    columns: Array.from(selectedColumns),
+                                    };
 
-    // Thêm bộ lọc
-    const filter: Record<string, unknown> = {};
-    if (filterStatus) {
-      filter.status = filterStatus;
-    }
-    if (startDate) {
-      filter.startDate = startDate;
-    }
-    if (endDate) {
-      filter.endDate = endDate;
-    }
-    if (Object.keys(filter).length > 0) {
-      config.filter = filter;
-    }
+                                    // Thêm bộ lọc
+                                    const filter: Record<string, unknown> = {};
+                                        if (filterStatus) {
+                                        filter.status = filterStatus;
+                                        }
+                                        if (startDate) {
+                                        filter.startDate = startDate;
+                                        }
+                                        if (endDate) {
+                                        filter.endDate = endDate;
+                                        }
+                                        if (Object.keys(filter).length > 0) {
+                                        config.filter = filter;
+                                        }
 
-    if (startDate) config.startDate = startDate;
-    if (endDate) config.endDate = endDate;
-    if (filterStatus) config.statusFilter = filterStatus;
+                                        if (startDate) config.startDate = startDate;
+                                        if (endDate) config.endDate = endDate;
+                                        if (filterStatus) config.statusFilter = filterStatus;
 
-    return config;
-  }, [selectedEntity, format, selectedColumns, filterStatus, startDate, endDate]);
+                                        return config;
+                                        }, [selectedEntity, format, selectedColumns, filterStatus, startDate, endDate]);
 
-  // --- Xem trước dữ liệu ---
-  const handlePreview = useCallback(async () => {
-    if (!selectedEntity) return;
+                                        // --- Xem trước dữ liệu ---
+                                        const handlePreview = useCallback(async () => {
+                                        if (!selectedEntity) return;
 
-    setPreviewLoading(true);
-    try {
-      const config = buildExportConfig();
-      const response = await ExportService.previewFromConfig(config, 10);
-      setPreviewData(response.rows);
-      setPreviewColumns(response.columns);
-      setPreviewTotal(response.totalCount);
-    } catch (err) {
-      // Lỗi sẽ được hook xử lý
-    } finally {
-      setPreviewLoading(false);
-    }
-  }, [selectedEntity, buildExportConfig]);
+                                        setPreviewLoading(true);
+                                        try {
+                                        const config = buildExportConfig();
+                                        const response = await ExportService.previewFromConfig(config, 10);
+                                        setPreviewData(response.rows);
+                                        setPreviewColumns(response.columns);
+                                        setPreviewTotal(response.totalCount);
+                                        } catch (err) {
+                                        // Lỗi sẽ được hook xử lý
+                                        } finally {
+                                        setPreviewLoading(false);
+                                        }
+                                        }, [selectedEntity, buildExportConfig]);
 
-  // --- Export dữ liệu ---
-  const handleExport = useCallback(async () => {
-    if (!selectedEntity || selectedColumns.size === 0) return;
+                                        // --- Export dữ liệu ---
+                                        const handleExport = useCallback(async () => {
+                                        if (!selectedEntity || selectedColumns.size === 0) return;
 
-    try {
-      const config = buildExportConfig();
-      const job = await exportHook.createJob(config);
-      setShowJobPanel(true);
+                                        try {
+                                        const config = buildExportConfig();
+                                        const job = await exportHook.createJob(config);
+                                        setShowJobPanel(true);
 
-      // Callback thành công
-      onSuccess?.(job.jobKey);
-    } catch (err) {
-      // Lỗi sẽ được hook xử lý
-    }
-  }, [selectedEntity, selectedColumns, buildExportConfig, exportHook, onSuccess]);
+                                        // Callback thành công
+                                        onSuccess?.(job.jobKey);
+                                        } catch (err) {
+                                        // Lỗi sẽ được hook xử lý
+                                        }
+                                        }, [selectedEntity, selectedColumns, buildExportConfig, exportHook, onSuccess]);
 
-  // --- Tải file export về máy ---
-  const handleDownload = useCallback(async () => {
-    try {
-      const ext = exportHook.job?.format || 'csv';
-      const fileName = `export-${selectedEntity}.${ext}`;
-      await exportHook.downloadExport(fileName);
-    } catch (err) {
-      // Lỗi sẽ được hook xửldata
-    }
-  }, [exportHook, selectedEntity]);
+                                        // --- Tải file export về máy ---
+                                        const handleDownload = useCallback(async () => {
+                                        try {
+                                        const ext = exportHook.job?.format || 'csv';
+                                        const fileName = `export-${selectedEntity}.${ext}`;
+                                        await exportHook.downloadExport(fileName);
+                                        } catch (err) {
+                                        // Lỗi sẽ được hook xửldata
+                                        }
+                                        }, [exportHook, selectedEntity]);
 
-  // --- Hủy job đang chạy ---
-  const handleCancelJob = useCallback(async () => {
-    try {
-      await exportHook.cancelJob();
-    } catch (err) {
-      // Lỗi sẽ được hook xử lý
-    }
-  }, [exportHook]);
+                                        // --- Hủy job đang chạy ---
+                                        const handleCancelJob = useCallback(async () => {
+                                        try {
+                                        await exportHook.cancelJob();
+                                        } catch (err) {
+                                        // Lỗi sẽ được hook xử lý
+                                        }
+                                        }, [exportHook]);
 
-  // --- Kiểm tra có thể export không ---
-  const canExport = useMemo(() => {
-    return (
-      !!selectedEntity &&
-      selectedColumns.size > 0 &&
-      !exportHook.loading &&
-      !exportHook.job
-    );
-  }, [selectedEntity, selectedColumns, exportHook.loading, exportHook.job]);
+                                        // --- Kiểm tra có thể export không ---
+                                        const canExport = useMemo(() => {
+                                        return (
+                                        !!selectedEntity &&
+                                        selectedColumns.size > 0 &&
+                                        !exportHook.loading &&
+                                        !exportHook.job
+                                        );
+                                        }, [selectedEntity, selectedColumns, exportHook.loading, exportHook.job]);
 
-  // --- Không hiển thị nếu dialog đóng ---
-  if (!isOpen) return null;
+                                        // --- Không hiển thị nếu dialog đóng ---
+                                        if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
-        aria-hidden="true"
-      />
+                                        return (
+                                        <div className="fixed inset-0 z-50 flex items-center justify-center"
+                                            role="dialog" aria-modal="true">
+                                            {/* Backdrop */}
+                                            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+                                                onClick={handleClose} aria-hidden="true" />
 
-      {/* Dialog content */}
-      <div
-        className={`relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col ${className}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* ===== Header ===== */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Export dữ liệu</h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Chọn thực thể và cấu hình để xuất dữ liệu
-            </p>
-          </div>
-          <button
-            onClick={handleClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            aria-label="Đóng dialog"
-            disabled={exportHook.job?.status === 'running'}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+                                            {/* Dialog content */}
+                                            <div className={`relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl
+                                                mx-4 max-h-[90vh] flex flex-col ${className}`} onClick={(e)=>
+                                                e.stopPropagation()}
+                                                >
+                                                {/* ===== Header ===== */}
+                                                <div
+                                                    className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                                                    <div>
+                                                        <h2 className="text-lg font-semibold text-gray-900">Export dữ
+                                                            liệu</h2>
+                                                        <p className="text-xs text-gray-500 mt-0.5">
+                                                            Chọn thực thể và cấu hình để xuất dữ liệu
+                                                        </p>
+                                                    </div>
+                                                    <button onClick={handleClose}
+                                                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                                        aria-label="Đóng dialog"
+                                                        disabled={exportHook.job?.status==='running' }>
+                                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24"
+                                                            stroke="currentColor" strokeWidth={2}>
+                                                            <path strokeLinecap="round" strokeLinejoin="round"
+                                                                d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
 
-        {/* ===== Body ===== */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {/* --- Job Status Panel (khi job đang chạy/hoàn thành) --- */}
-          {showJobPanel && exportHook.job ? (
-            <div className="space-y-4">
-              <JobStatusPanel
-                job={
-                  {
-                    jobKey: exportHook.job.jobKey,
-                    status: exportHook.job.status,
-                    progress: exportHook.job.progress,
-                    totalRows: exportHook.job.totalRows,
-                    successRows: exportHook.job.processedRows,
-                    failedRows: 0,
-                    skippedRows: 0,
-                    startedAt: exportHook.job.startedAt,
-                    completedAt: exportHook.job.completedAt,
-                    errorMessage: exportHook.job.errorMessage,
-                    entity: exportHook.job.entity,
-                  } as JobStatusData
-                }
-                loading={exportHook.loading}
-                onCancel={handleCancelJob}
-                onRefresh={exportHook.refresh}
-                onAutoRefresh={async () => {
-                  const job = await exportHook.getStatus();
-                  return {
-                    jobKey: job.jobKey,
-                    status: job.status,
-                    progress: job.progress,
-                    totalRows: job.totalRows,
-                    successRows: job.processedRows,
-                    failedRows: 0,
-                    skippedRows: 0,
-                    startedAt: job.startedAt,
-                    completedAt: job.completedAt,
-                    errorMessage: job.errorMessage,
-                    entity: job.entity,
-                  } as JobStatusData;
-                }}
-              />
+                                                {/* ===== Body ===== */}
+                                                <div className="flex-1 overflow-y-auto px-6 py-5">
+                                                    {/* --- Job Status Panel (khi job đang chạy/hoàn thành) --- */}
+                                                    {showJobPanel && exportHook.job ? (
+                                                    <div className="space-y-4">
+                                                        <JobStatusPanel job={ { jobKey: exportHook.job.jobKey, status:
+                                                            exportHook.job.status, progress: exportHook.job.progress,
+                                                            totalRows: exportHook.job.totalRows, successRows:
+                                                            exportHook.job.processedRows, failedRows: 0, skippedRows: 0,
+                                                            startedAt: exportHook.job.startedAt, completedAt:
+                                                            exportHook.job.completedAt, errorMessage:
+                                                            exportHook.job.errorMessage, entity: exportHook.job.entity,
+                                                            } as JobStatusData } loading={exportHook.loading}
+                                                            onCancel={handleCancelJob} onRefresh={exportHook.refresh}
+                                                            onAutoRefresh={async ()=> {
+                                                            const job = await exportHook.getStatus();
+                                                            return {
+                                                            jobKey: job.jobKey,
+                                                            status: job.status,
+                                                            progress: job.progress,
+                                                            totalRows: job.totalRows,
+                                                            successRows: job.processedRows,
+                                                            failedRows: 0,
+                                                            skippedRows: 0,
+                                                            startedAt: job.startedAt,
+                                                            completedAt: job.completedAt,
+                                                            errorMessage: job.errorMessage,
+                                                            entity: job.entity,
+                                                            } as JobStatusData;
+                                                            }}
+                                                            />
 
-              {/* Nút tải về khi hoàn thành */}
-              {exportHook.job.status === 'completed' && (
-                <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    onClick={handleDownload}
-                    disabled={exportHook.loading}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    {exportHook.loading ? 'Đang tải...' : 'Tải file về'}
-                  </button>
+                                                            {/* Nút tải về khi hoàn thành */}
+                                                            {exportHook.job.status === 'completed' && (
+                                                            <div
+                                                                className="flex items-center gap-3 pt-4 border-t border-gray-200">
+                                                                <button onClick={handleDownload}
+                                                                    disabled={exportHook.loading}
+                                                                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2">
+                                                                    <svg className="w-4 h-4" fill="none"
+                                                                        viewBox="0 0 24 24" stroke="currentColor"
+                                                                        strokeWidth={2}>
+                                                                        <path strokeLinecap="round"
+                                                                            strokeLinejoin="round"
+                                                                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                                                    </svg>
+                                                                    {exportHook.loading ? 'Đang tải...' : 'Tải file về'}
+                                                                </button>
 
-                  {/* Hiển thị kích thước file */}
-                  {exportHook.job.fileSize && (
-                    <span className="text-sm text-gray-500">
-                      ({ExportService.formatFileSize(exportHook.job.fileSize)})
-                    </span>
-                  )}
-                </div>
-              )}
+                                                                {/* Hiển thị kích thước file */}
+                                                                {exportHook.job.fileSize && (
+                                                                <span className="text-sm text-gray-500">
+                                                                    ({ExportService.formatFileSize(exportHook.job.fileSize)})
+                                                                </span>
+                                                                )}
+                                                            </div>
+                                                            )}
 
-              {/* Nút export mới khi đã hoàn thành hoặc thất bại */}
-              {['completed', 'failed', 'cancelled'].includes(exportHook.job.status) && (
-                <div className="pt-4 border-t border-gray-200 text-center">
-                  <button
-                    onClick={() => {
-                      setShowJobPanel(false);
-                      setPreviewData([]);
-                    }}
-                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    Export một bản khác
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            /* --- Form export --- */
-            <div className="space-y-5">
-              {/* 1. Chọn thực thể */}
-              <div>
-                <label htmlFor="export-entity" className="block text-sm font-medium text-gray-700 mb-2">
-                  Thực thể <span className="text-red-500">*</span>
-                </label>
-                <select
-                  id="export-entity"
-                  value={selectedEntity}
-                  onChange={(e) => handleEntityChange(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm"
-                >
-                  <option value="">— Chọn thực thể —</option>
-                  {entities.map((entity) => (
-                    <option key={entity.key} value={entity.key}>
-                      {entity.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                                                            {/* Nút export mới khi đã hoàn thành hoặc thất bại */}
+                                                            {['completed', 'failed',
+                                                            'cancelled'].includes(exportHook.job.status) && (
+                                                            <div className="pt-4 border-t border-gray-200 text-center">
+                                                                <button onClick={()=> {
+                                                                    setShowJobPanel(false);
+                                                                    setPreviewData([]);
+                                                                    }}
+                                                                    className="text-sm text-blue-600 hover:text-blue-700
+                                                                    font-medium"
+                                                                    >
+                                                                    Export một bản khác
+                                                                </button>
+                                                            </div>
+                                                            )}
+                                                    </div>
+                                                    ) : (
+                                                    /* --- Form export --- */
+                                                    <div className="space-y-5">
+                                                        {/* 1. Chọn thực thể */}
+                                                        <div>
+                                                            <label htmlFor="export-entity"
+                                                                className="block text-sm font-medium text-gray-700 mb-2">
+                                                                Thực thể <span className="text-red-500">*</span>
+                                                            </label>
+                                                            <select id="export-entity" value={selectedEntity}
+                                                                onChange={(e)=> handleEntityChange(e.target.value)}
+                                                                className="w-full px-4 py-2.5 border border-gray-300
+                                                                rounded-lg focus:outline-none focus:ring-2
+                                                                focus:ring-blue-500 focus:border-blue-500 bg-white
+                                                                text-sm"
+                                                                >
+                                                                <option value="">— Chọn thực thể —</option>
+                                                                {entities.map((entity) => (
+                                                                <option key={entity.key} value={entity.key}>
+                                                                    {entity.label}
+                                                                </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
 
-              {/* 2. Chọn định dạng */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Định dạng file
-                </label>
-                <div className="flex gap-4">
-                  {/* Radio CSV */}
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="export-format"
-                      value="csv"
-                      checked={format === 'csv'}
-                      onChange={(e) => setFormat(e.target.value as 'csv' | 'json')}
-                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700">CSV</span>
-                  </label>
-                  {/* Radio JSON */}
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="export-format"
-                      value="json"
-                      checked={format === 'json'}
-                      onChange={(e) => setFormat(e.target.value as 'csv' | 'json')}
-                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700">JSON</span>
-                  </label>
-                </div>
-              </div>
+                                                        {/* 2. Chọn định dạng */}
+                                                        <div>
+                                                            <label
+                                                                className="block text-sm font-medium text-gray-700 mb-2">
+                                                                Định dạng file
+                                                            </label>
+                                                            <div className="flex gap-4">
+                                                                {/* Radio CSV */}
+                                                                <label
+                                                                    className="flex items-center gap-2 cursor-pointer">
+                                                                    <input type="radio" name="export-format" value="csv"
+                                                                        checked={format==='csv' } onChange={(e)=>
+                                                                    setFormat(e.target.value as 'csv' | 'json')}
+                                                                    className="w-4 h-4 text-blue-600 border-gray-300
+                                                                    focus:ring-blue-500"
+                                                                    />
+                                                                    <span className="text-sm text-gray-700">CSV</span>
+                                                                </label>
+                                                                {/* Radio JSON */}
+                                                                <label
+                                                                    className="flex items-center gap-2 cursor-pointer">
+                                                                    <input type="radio" name="export-format"
+                                                                        value="json" checked={format==='json' }
+                                                                        onChange={(e)=> setFormat(e.target.value as
+                                                                    'csv' | 'json')}
+                                                                    className="w-4 h-4 text-blue-600 border-gray-300
+                                                                    focus:ring-blue-500"
+                                                                    />
+                                                                    <span className="text-sm text-gray-700">JSON</span>
+                                                                </label>
+                                                            </div>
+                                                        </div>
 
-              {/* 3. Chọn cột */}
-              {selectedEntityData && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Cột cần export ({selectedColumns.size}/{selectedEntityData.fields.length})
-                    </label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleSelectAllColumns}
-                        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                      >
-                        Chọn tất cả
-                      </button>
-                      <span className="text-xs text-gray-400">|</span>
-                      <button
-                        onClick={handleDeselectAllColumns}
-                        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                      >
-                        Bỏ tất cả
-                      </button>
-                    </div>
-                  </div>
+                                                        {/* 3. Chọn cột */}
+                                                        {selectedEntityData && (
+                                                        <div>
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <label
+                                                                    className="block text-sm font-medium text-gray-700">
+                                                                    Cột cần export
+                                                                    ({selectedColumns.size}/{selectedEntityData.fields.length})
+                                                                </label>
+                                                                <div className="flex gap-2">
+                                                                    <button onClick={handleSelectAllColumns}
+                                                                        className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                                                                        Chọn tất cả
+                                                                    </button>
+                                                                    <span className="text-xs text-gray-400">|</span>
+                                                                    <button onClick={handleDeselectAllColumns}
+                                                                        className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                                                                        Bỏ tất cả
+                                                                    </button>
+                                                                </div>
+                                                            </div>
 
-                  {/* Grid checkbox cột */}
-                  <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3 bg-gray-50">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {selectedEntityData.fields.map((field) => (
-                        <label
-                          key={field.key}
-                          className="flex items-center gap-2 cursor-pointer hover:bg-white hover:rounded-md hover:p-1 hover:shadow-sm transition-all"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedColumns.has(field.key)}
-                            onChange={() => handleColumnToggle(field.key)}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700 truncate" title={field.label}>
-                            {field.label}
-                          </span>
-                          <span className="text-xs text-gray-400">({field.type})</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+                                                            {/* Grid checkbox cột */}
+                                                            <div
+                                                                className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3 bg-gray-50">
+                                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                                                    {selectedEntityData.fields.map((field) => (
+                                                                    <label key={field.key}
+                                                                        className="flex items-center gap-2 cursor-pointer hover:bg-white hover:rounded-md hover:p-1 hover:shadow-sm transition-all">
+                                                                        <input type="checkbox"
+                                                                            checked={selectedColumns.has(field.key)}
+                                                                            onChange={()=>
+                                                                        handleColumnToggle(field.key)}
+                                                                        className="w-4 h-4 text-blue-600 border-gray-300
+                                                                        rounded focus:ring-blue-500"
+                                                                        />
+                                                                        <span className="text-sm text-gray-700 truncate"
+                                                                            title={field.label}>
+                                                                            {field.label}
+                                                                        </span>
+                                                                        <span
+                                                                            className="text-xs text-gray-400">({field.type})</span>
+                                                                    </label>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        )}
 
-              {/* 4. Bộ lọc (mở rộng) */}
-              <div>
-                <button
-                  onClick={() => setShowFilters((prev) => !prev)}
-                  className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
-                  aria-expanded={showFilters}
-                >
-                  <svg
-                    className={`w-4 h-4 transition-transform duration-200 ${
-                      showFilters ? 'rotate-90' : ''
-                    }`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                  Bộ lọc
-                  {((filterStatus && 1) || (startDate && 1) || (endDate && 1)) > 0 && (
-                    <span className="inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
-                      {[filterStatus, startDate, endDate].filter(Boolean).length}
-                    </span>
-                  )}
-                </button>
+                                                        {/* 4. Bộ lọc (mở rộng) */}
+                                                        <div>
+                                                            <button onClick={()=> setShowFilters((prev) => !prev)}
+                                                                className="flex items-center gap-2 text-sm font-medium
+                                                                text-gray-700 hover:text-gray-900"
+                                                                aria-expanded={showFilters}
+                                                                >
+                                                                <svg className={`w-4 h-4 transition-transform
+                                                                    duration-200 ${ showFilters ? 'rotate-90' : '' }`}
+                                                                    fill="none" viewBox="0 0 24 24"
+                                                                    stroke="currentColor" strokeWidth={2}>
+                                                                    <path strokeLinecap="round" strokeLinejoin="round"
+                                                                        d="M9 5l7 7-7 7" />
+                                                                </svg>
+                                                                Bộ lọc
+                                                                {((filterStatus && 1) || (startDate && 1) || (endDate &&
+                                                                1)) > 0 && (
+                                                                <span
+                                                                    className="inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
+                                                                    {[filterStatus, startDate,
+                                                                    endDate].filter(Boolean).length}
+                                                                </span>
+                                                                )}
+                                                            </button>
 
-                {showFilters && (
-                  <div className="mt-3 space-y-4 pl-6 border-l-2 border-gray-200">
-                    {/* Bộ lọc trạng thái */}
-                    {selectedEntityData?.availableFilters?.includes('status') && (
-                      <div>
-                        <label htmlFor="filter-status" className="block text-xs font-medium text-gray-600 mb-1">
-                          Trạng thái
-                        </label>
-                        <select
-                          id="filter-status"
-                          value={filterStatus}
-                          onChange={(e) => setFilterStatus(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Tất cả</option>
-                          <option value="active">Hoạt động</option>
-                          <option value="inactive">Không hoạt động</option>
-                          <option value="archived">Đã lưu trữ</option>
-                          <option value="draft">Bản nháp</option>
-                        </select>
-                      </div>
-                    )}
+                                                            {showFilters && (
+                                                            <div
+                                                                className="mt-3 space-y-4 pl-6 border-l-2 border-gray-200">
+                                                                {/* Bộ lọc trạng thái */}
+                                                                {selectedEntityData?.availableFilters?.includes('status')
+                                                                && (
+                                                                <div>
+                                                                    <label htmlFor="filter-status"
+                                                                        className="block text-xs font-medium text-gray-600 mb-1">
+                                                                        Trạng thái
+                                                                    </label>
+                                                                    <select id="filter-status" value={filterStatus}
+                                                                        onChange={(e)=> setFilterStatus(e.target.value)}
+                                                                        className="w-full px-3 py-2 border
+                                                                        border-gray-300 rounded-lg text-sm
+                                                                        focus:outline-none focus:ring-2
+                                                                        focus:ring-blue-500"
+                                                                        >
+                                                                        <option value="">Tất cả</option>
+                                                                        <option value="active">Hoạt động</option>
+                                                                        <option value="inactive">Không hoạt động
+                                                                        </option>
+                                                                        <option value="archived">Đã lưu trữ</option>
+                                                                        <option value="draft">Bản nháp</option>
+                                                                    </select>
+                                                                </div>
+                                                                )}
 
-                    {/* Bộ lọc ngày bắt đầu */}
-                    <div>
-                      <label htmlFor="filter-start-date" className="block text-xs font-medium text-gray-600 mb-1">
-                        Từ ngày
-                      </label>
-                      <input
-                        id="filter-start-date"
-                        type="date"
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
+                                                                {/* Bộ lọc ngày bắt đầu */}
+                                                                <div>
+                                                                    <label htmlFor="filter-start-date"
+                                                                        className="block text-xs font-medium text-gray-600 mb-1">
+                                                                        Từ ngày
+                                                                    </label>
+                                                                    <input id="filter-start-date" type="date"
+                                                                        value={startDate} onChange={(e)=>
+                                                                    setStartDate(e.target.value)}
+                                                                    className="w-full px-3 py-2 border border-gray-300
+                                                                    rounded-lg text-sm focus:outline-none focus:ring-2
+                                                                    focus:ring-blue-500"
+                                                                    />
+                                                                </div>
 
-                    {/* Bộ lọc ngày kết thúc */}
-                    <div>
-                      <label htmlFor="filter-end-date" className="block text-xs font-medium text-gray-600 mb-1">
-                        Đến ngày
-                      </label>
-                      <input
-                        id="filter-end-date"
-                        type="date"
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        min={startDate || undefined}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
+                                                                {/* Bộ lọc ngày kết thúc */}
+                                                                <div>
+                                                                    <label htmlFor="filter-end-date"
+                                                                        className="block text-xs font-medium text-gray-600 mb-1">
+                                                                        Đến ngày
+                                                                    </label>
+                                                                    <input id="filter-end-date" type="date"
+                                                                        value={endDate} onChange={(e)=>
+                                                                    setEndDate(e.target.value)}
+                                                                    min={startDate || undefined}
+                                                                    className="w-full px-3 py-2 border border-gray-300
+                                                                    rounded-lg text-sm focus:outline-none focus:ring-2
+                                                                    focus:ring-blue-500"
+                                                                    />
+                                                                </div>
 
-                    {/* Xóa bộ lọc */}
-                    {(filterStatus || startDate || endDate) && (
-                      <button
-                        onClick={() => {
-                          setFilterStatus('');
-                          setStartDate('');
-                          setEndDate('');
-                        }}
-                        className="text-xs text-red-600 hover:text-red-700 font-medium"
-                      >
-                        Xóa tất cả bộ lọc
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+                                                                {/* Xóa bộ lọc */}
+                                                                {(filterStatus || startDate || endDate) && (
+                                                                <button onClick={()=> {
+                                                                    setFilterStatus('');
+                                                                    setStartDate('');
+                                                                    setEndDate('');
+                                                                    }}
+                                                                    className="text-xs text-red-600 hover:text-red-700
+                                                                    font-medium"
+                                                                    >
+                                                                    Xóa tất cả bộ lọc
+                                                                </button>
+                                                                )}
+                                                            </div>
+                                                            )}
+                                                        </div>
 
-              {/* 5. Xem trước dữ liệu */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-medium text-gray-700">Xem trước dữ liệu</h4>
-                  <button
-                    onClick={handlePreview}
-                    disabled={previewLoading || !selectedEntity || selectedColumns.size === 0}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {previewLoading ? (
-                      <>
-                        <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                        Đang tải...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                        Xem trước
-                      </>
-                    )}
-                  </button>
-                </div>
+                                                        {/* 5. Xem trước dữ liệu */}
+                                                        <div>
+                                                            <div className="flex items-center justify-between mb-3">
+                                                                <h4 className="text-sm font-medium text-gray-700">Xem
+                                                                    trước dữ liệu</h4>
+                                                                <button onClick={handlePreview} disabled={previewLoading
+                                                                    || !selectedEntity || selectedColumns.size===0}
+                                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                                                                    {previewLoading ? (
+                                                                    <>
+                                                                        <svg className="w-3.5 h-3.5 animate-spin"
+                                                                            fill="none" viewBox="0 0 24 24">
+                                                                            <circle className="opacity-25" cx="12"
+                                                                                cy="12" r="10" stroke="currentColor"
+                                                                                strokeWidth="4" />
+                                                                            <path className="opacity-75"
+                                                                                fill="currentColor"
+                                                                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                                                        </svg>
+                                                                        Đang tải...
+                                                                    </>
+                                                                    ) : (
+                                                                    <>
+                                                                        <svg className="w-3.5 h-3.5" fill="none"
+                                                                            viewBox="0 0 24 24" stroke="currentColor"
+                                                                            strokeWidth={2}>
+                                                                            <path strokeLinecap="round"
+                                                                                strokeLinejoin="round"
+                                                                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                            <path strokeLinecap="round"
+                                                                                strokeLinejoin="round"
+                                                                                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                                        </svg>
+                                                                        Xem trước
+                                                                    </>
+                                                                    )}
+                                                                </button>
+                                                            </div>
 
-                {/* Bảng xem trước */}
-                {previewData.length > 0 ? (
-                  <div>
-                    <p className="text-xs text-gray-500 mb-2">
-                      Hiển thị {previewData.length} dòng đầu tiên từ{' '}
-                      {previewTotal.toLocaleString('vi-VN')} dòng phù hợp
-                    </p>
-                    <div className="max-h-48 overflow-x-auto overflow-y-auto border border-gray-200 rounded-lg">
-                      <table className="min-w-full text-xs">
-                        <thead className="bg-gray-50 sticky top-0">
-                          <tr>
-                            <th className="px-3 py-2 text-left font-medium text-gray-500 w-8">#</th>
-                            {previewColumns.map((col) => (
-                              <th key={col} className="px-3 py-2 text-left font-medium text-gray-500 whitespace-nowrap">
-                                {col}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-100">
-                          {previewData.map((row, index) => (
-                            <tr key={row.rowIndex} className="hover:bg-gray-50">
-                              <td className="px-3 py-1.5 text-gray-400 font-mono">{index + 1}</td>
-                              {previewColumns.map((col) => (
-                                <td
-                                  key={col}
-                                  className="px-3 py-1.5 text-gray-900 max-w-[200px] truncate"
-                                  title={String(row.data[col] ?? '')}
-                                >
-                                  {row.data[col] !== undefined && row.data[col] !== null
-                                    ? String(row.data[col])
-                                    : '—'}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ) : (
-                  !previewLoading && (
-                    <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-                      <p className="text-xs text-gray-400">
-                        Nhấn &ldquo;Xem trước&rdquo; để xem dữ liệu sẽ export
-                      </p>
-                    </div>
-                  )
-                )}
-              </div>
+                                                            {/* Bảng xem trước */}
+                                                            {previewData.length > 0 ? (
+                                                            <div>
+                                                                <p className="text-xs text-gray-500 mb-2">
+                                                                    Hiển thị {previewData.length} dòng đầu tiên từ{' '}
+                                                                    {previewTotal.toLocaleString('vi-VN')} dòng phù hợp
+                                                                </p>
+                                                                <div
+                                                                    className="max-h-48 overflow-x-auto overflow-y-auto border border-gray-200 rounded-lg">
+                                                                    <table className="min-w-full text-xs">
+                                                                        <thead className="bg-gray-50 sticky top-0">
+                                                                            <tr>
+                                                                                <th
+                                                                                    className="px-3 py-2 text-left font-medium text-gray-500 w-8">
+                                                                                    #</th>
+                                                                                {previewColumns.map((col) => (
+                                                                                <th key={col}
+                                                                                    className="px-3 py-2 text-left font-medium text-gray-500 whitespace-nowrap">
+                                                                                    {col}
+                                                                                </th>
+                                                                                ))}
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody
+                                                                            className="bg-white divide-y divide-gray-100">
+                                                                            {previewData.map((row, index) => (
+                                                                            <tr key={row.rowIndex}
+                                                                                className="hover:bg-gray-50">
+                                                                                <td
+                                                                                    className="px-3 py-1.5 text-gray-400 font-mono">
+                                                                                    {index + 1}</td>
+                                                                                {previewColumns.map((col) => (
+                                                                                <td key={col}
+                                                                                    className="px-3 py-1.5 text-gray-900 max-w-[200px] truncate"
+                                                                                    title={String(row.data[col] ?? ''
+                                                                                    )}>
+                                                                                    {row.data[col] !== undefined &&
+                                                                                    row.data[col] !== null
+                                                                                    ? String(row.data[col])
+                                                                                    : '—'}
+                                                                                </td>
+                                                                                ))}
+                                                                            </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                            ) : (
+                                                            !previewLoading && (
+                                                            <div
+                                                                className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                                                                <p className="text-xs text-gray-400">
+                                                                    Nhấn &ldquo;Xem trước&rdquo; để xem dữ liệu sẽ
+                                                                    export
+                                                                </p>
+                                                            </div>
+                                                            )
+                                                            )}
+                                                        </div>
 
-              {/* Lỗi từ hook */}
-              {exportHook.error && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <p className="text-sm font-medium text-red-800">Lỗi:</p>
-                  <p className="text-sm text-red-700 mt-1">{exportHook.error}</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+                                                        {/* Lỗi từ hook */}
+                                                        {exportHook.error && (
+                                                        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                                                            <p className="text-sm font-medium text-red-800">Lỗi:</p>
+                                                            <p className="text-sm text-red-700 mt-1">{exportHook.error}
+                                                            </p>
+                                                        </div>
+                                                        )}
+                                                    </div>
+                                                    )}
+                                                </div>
 
-        {/* ===== Footer ===== */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl">
-          {/* Nút đóng/hủy */}
-          <button
-            onClick={handleClose}
-            disabled={exportHook.job?.status === 'running'}
-            className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-1"
-          >
-            {exportHook.job?.status === 'running' ? 'Đang xử lý...' : 'Đóng'}
-          </button>
+                                                {/* ===== Footer ===== */}
+                                                <div
+                                                    className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl">
+                                                    {/* Nút đóng/hủy */}
+                                                    <button onClick={handleClose}
+                                                        disabled={exportHook.job?.status==='running' }
+                                                        className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-1">
+                                                        {exportHook.job?.status === 'running' ? 'Đang xử lý...' :
+                                                        'Đóng'}
+                                                    </button>
 
-          {/* Nút Export (chỉ hiển thị khi chưa có job) */}
-          {!showJobPanel && (
-            <button
-              onClick={handleExport}
-              disabled={!canExport || exportHook.loading}
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 shadow-sm"
-            >
-              {exportHook.loading ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Đang xử lý...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  Export
-                </>
-              )}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
+                                                    {/* Nút Export (chỉ hiển thị khi chưa có job) */}
+                                                    {!showJobPanel && (
+                                                    <button onClick={handleExport} disabled={!canExport ||
+                                                        exportHook.loading}
+                                                        className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 shadow-sm">
+                                                        {exportHook.loading ? (
+                                                        <>
+                                                            <svg className="w-4 h-4 animate-spin" fill="none"
+                                                                viewBox="0 0 24 24">
+                                                                <circle className="opacity-25" cx="12" cy="12" r="10"
+                                                                    stroke="currentColor" strokeWidth="4" />
+                                                                <path className="opacity-75" fill="currentColor"
+                                                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                                            </svg>
+                                                            Đang xử lý...
+                                                        </>
+                                                        ) : (
+                                                        <>
+                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
+                                                                stroke="currentColor" strokeWidth={2}>
+                                                                <path strokeLinecap="round" strokeLinejoin="round"
+                                                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                            </svg>
+                                                            Export
+                                                        </>
+                                                        )}
+                                                    </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        );
+                                        };
 
-export default ExportDialog;
+                                        export default ExportDialog;

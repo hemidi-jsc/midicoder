@@ -1,8 +1,25 @@
 /**
 * ApprovalDetails — chi tiet approval request: chain progress, phe duyet/tu choi, lich su quyet dinh.
 * Sinh boi CP42 ApprovalEmitter.
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 */
+{% if ui_framework == "material" %}
 import React, { useState, useCallback } from 'react';
+import { Button, Card, Typography, Chip, Box, Divider, TextField, Stepper, Step, StepLabel } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+import React, { useState, useCallback } from 'react';
+// Su dung Tailwind utility classes trong JSX
+{% elif ui_framework == "bootstrap" %}
+import React, { useState, useCallback } from 'react';
+import { Button, Card, Form, InputGroup, ProgressBar } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import React, { useState, useCallback } from 'react';
+import { Button, Card, Typography, Tag, Space, Steps, Input, Divider } from 'antd';
+{% elif ui_framework == "carbon" %}
+import React, { useState, useCallback } from 'react';
+import { Button, Layer, Tag, Tile, InlineNotification, TextInput, Steps, Step } from '@carbon/react';
+{% endif %}
 
 /* ---- Loai trang thai ---- */
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'escalated' | 'delegated' | 'expired' | 'cancelled';

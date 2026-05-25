@@ -1,8 +1,27 @@
 /**
 * ApprovalHistory — lich su approvals: table voi sort/filter/pagination, date range, export.
 * Sinh boi CP42 ApprovalEmitter.
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 */
+{% if ui_framework == "material" %}
 import React, { useState, useMemo, useCallback } from 'react';
+import { Button, Chip, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, TablePagination,
+TextField, MenuItem, InputLabel, FormControl, Select } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+import React, { useState, useMemo, useCallback } from 'react';
+// Su dung Tailwind utility classes trong JSX
+{% elif ui_framework == "bootstrap" %}
+import React, { useState, useMemo, useCallback } from 'react';
+import { Button, Table, Form, Badge as BsBadge, Pagination } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import React, { useState, useMemo, useCallback } from 'react';
+import { Button, Table, Tag, Space, Select, Input, Pagination } from 'antd';
+{% elif ui_framework == "carbon" %}
+import React, { useState, useMemo, useCallback } from 'react';
+import { Button, DataTable, DataTableBody, DataTableRow, TableHeader, TableHeaderCell, TableRow, Tag, TextInput, Select,
+SelectItem } from '@carbon/react';
+{% endif %}
 
 /* ---- Loai trang thai ---- */
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'escalated' | 'delegated' | 'expired' | 'cancelled';

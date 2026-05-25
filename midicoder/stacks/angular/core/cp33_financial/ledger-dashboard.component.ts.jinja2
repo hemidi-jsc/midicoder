@@ -2,12 +2,29 @@
 * Ledger Dashboard Component — bảng điều khiển sổ cái kế toán.
 *
 * Tự động sinh bởi Midicoder CE — CP33: Financial Engine.
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 *
 * Hiển thị:
 * - Danh sách giao dịch gần nhất
 * - Balance của các tài khoản
 * - Lọc theo tenant / currency / account type
 */
+
+{% if ui_framework == "material" %}
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatTableModule } from '@angular/material/table';
+import { MatSelectModule } from '@angular/material/select';
+import { MatIconModule } from '@angular/material/icon';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng lớp tiện ích Tailwind CSS trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng lớp Bootstrap trong template
+{% elif ui_framework == "antd" %}
+// Ant Design không áp dụng cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon không áp dụng cho Angular
+{% endif %}
 
 import {
 Component,
@@ -20,6 +37,18 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { map, catchError } from 'rxjs/operators';
 import { of } from 'rxjs';
+
+{% if ui_framework == "material" %}
+const UI_MODULES = [MatButtonModule, MatCardModule, MatTableModule, MatSelectModule, MatIconModule];
+{% elif ui_framework == "tailwind" %}
+const UI_MODULES = [];
+{% elif ui_framework == "bootstrap" %}
+const UI_MODULES = [];
+{% elif ui_framework == "antd" %}
+const UI_MODULES = [];
+{% elif ui_framework == "carbon" %}
+const UI_MODULES = [];
+{% endif %}
 
 /** Mô hình giao dịch. */
 export interface TransactionEntry {
@@ -73,9 +102,10 @@ const CURRENCY_CODES: string[] = [
 @Component({
 selector: 'app-ledger-dashboard',
 standalone: true,
-imports: [CommonModule, FormsModule],
+imports: [CommonModule, FormsModule, ...UI_MODULES],
 changeDetection: ChangeDetectionStrategy.OnPush,
 template: `
+{% if ui_framework == "material" %}
 <div class="ledger-dashboard">
     <header class="dashboard-header">
         <h1>Sổ Cái Kế Toán</h1>
@@ -83,6 +113,313 @@ template: `
     </header>
 
     <!-- Bộ lọc -->
+    <section class="filter-bar">
+        <mat-form-field appearance="outline">
+            <mat-label>Tenant</mat-label>
+            <mat-select [(value)]="selectedTenant" (selectionChange)="onFilterChange()">
+                <mat-option value="">Tất cả</mat-option>
+                <mat-option *ngFor="let t of tenants" [value]="t">{{ t }}</mat-option>
+            </mat-select>
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+            <mat-label>Currency</mat-label>
+            <mat-select [(value)]="selectedCurrency" (selectionChange)="onFilterChange()">
+                <mat-option value="">Tất cả</mat-option>
+                <mat-option *ngFor="let cur of currencies" [value]="cur">{{ cur }}</mat-option>
+            </mat-select>
+        </mat-form-field>
+    </section>
+
+    <!-- Account Balances -->
+    <mat-card class="balance-section">
+        <mat-card-header>
+            <mat-card-title>Balance Tài Khoản</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+            <div *ngIf="balances$ | async as balances; else loading">
+                <table mat-table [dataSource]="balances" class="balance-table">
+                    <ng-container matColumnDef="accountCode">
+                        <th mat-header-cell *matHeaderCellDef>Tài khoản</th>
+                        <td mat-cell *matCellDef="let b">{{ b.accountCode }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="balance">
+                        <th mat-header-cell *matHeaderCellDef>Balance</th>
+                        <td mat-cell *matCellDef="let b" [class.positive]="b.balance > 0"
+                            [class.negative]="b.balance < 0">{{ formatCurrency(b.balance) }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="totalDebit">
+                        <th mat-header-cell *matHeaderCellDef>Total Debit</th>
+                        <td mat-cell *matCellDef="let b">{{ formatCurrency(b.totalDebit) }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="totalCredit">
+                        <th mat-header-cell *matHeaderCellDef>Total Credit</th>
+                        <td mat-cell *matCellDef="let b">{{ formatCurrency(b.totalCredit) }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="entryCount">
+                        <th mat-header-cell *matHeaderCellDef>Số entries</th>
+                        <td mat-cell *matCellDef="let b">{{ b.entryCount }}</td>
+                    </ng-container>
+                    <tr mat-header-row
+                        *matHeaderRowDef="['accountCode', 'balance', 'totalDebit', 'totalCredit', 'entryCount']"></tr>
+                    <tr mat-row
+                        *matRowDef="let row; columns: ['accountCode', 'balance', 'totalDebit', 'totalCredit', 'entryCount']">
+                    </tr>
+                </table>
+            </div>
+            <ng-template #loading>
+                <p class="loading">Đang tải balance...</p>
+            </ng-template>
+        </mat-card-content>
+    </mat-card>
+
+    <!-- Giao dịch gần nhất -->
+    <mat-card class="transactions-section">
+        <mat-card-header>
+            <mat-card-title>Giao Dịch Gần Nhất</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+            <div *ngIf="transactions$ | async as transactions; else loading">
+                <table mat-table [dataSource]="transactions" class="transaction-table">
+                    <ng-container matColumnDef="id">
+                        <th mat-header-cell *matHeaderCellDef>ID</th>
+                        <td mat-cell *matCellDef="let t">{{ truncate(t.id) }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="description">
+                        <th mat-header-cell *matHeaderCellDef>Mô tả</th>
+                        <td mat-cell *matCellDef="let t">{{ t.description || '(không mô tả)' }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="totalDebit">
+                        <th mat-header-cell *matHeaderCellDef>Debit</th>
+                        <td mat-cell *matCellDef="let t">{{ formatCurrency(t.totalDebit) }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="totalCredit">
+                        <th mat-header-cell *matHeaderCellDef>Credit</th>
+                        <td mat-cell *matCellDef="let t">{{ formatCurrency(t.totalCredit) }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="entryCount">
+                        <th mat-header-cell *matHeaderCellDef>Entries</th>
+                        <td mat-cell *matCellDef="let t">{{ t.entryCount }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="status">
+                        <th mat-header-cell *matHeaderCellDef>Trạng thái</th>
+                        <td mat-cell *matCellDef="let t"><span class="status-badge"
+                                [class]="getStatusClass(t.status)">{{ t.status }}</span></td>
+                    </ng-container>
+                    <ng-container matColumnDef="createdAt">
+                        <th mat-header-cell *matHeaderCellDef>Ngày tạo</th>
+                        <td mat-cell *matCellDef="let t">{{ t.createdAt | date:'medium' }}</td>
+                    </ng-container>
+                    <tr mat-header-row
+                        *matHeaderRowDef="['id', 'description', 'totalDebit', 'totalCredit', 'entryCount', 'status', 'createdAt']">
+                    </tr>
+                    <tr mat-row
+                        *matRowDef="let row; columns: ['id', 'description', 'totalDebit', 'totalCredit', 'entryCount', 'status', 'createdAt']"
+                        (click)="onTransactionClick(row.id)" class="clickable"></tr>
+                </table>
+                <p *ngIf="!transactions.length" class="empty">Chưa có giao dịch nào.</p>
+            </div>
+            <ng-template #loading>
+                <p class="loading">Đang tải giao dịch...</p>
+            </ng-template>
+        </mat-card-content>
+    </mat-card>
+</div>
+{% elif ui_framework == "tailwind" %}
+<div class="ledger-dashboard p-4 max-w-7xl mx-auto">
+    <header class="dashboard-header mb-6">
+        <h1 class="text-2xl font-bold">Sổ Cái Kế Toán</h1>
+        <p class="subtitle mt-1 text-sm text-gray-500">CP33: Financial Engine</p>
+    </header>
+
+    <!-- Bộ lọc -->
+    <section class="filter-bar flex gap-4 mb-6 p-3 bg-gray-100 rounded">
+        <label class="flex items-center gap-2 text-sm">Tenant:
+            <select [(ngModel)]="selectedTenant" (change)="onFilterChange()" class="px-2 py-1 border rounded">
+                <option value="">Tất cả</option>
+                <option *ngFor="let t of tenants" [value]="t">{{ t }}</option>
+            </select>
+        </label>
+        <label class="flex items-center gap-2 text-sm">Currency:
+            <select [(ngModel)]="selectedCurrency" (change)="onFilterChange()" class="px-2 py-1 border rounded">
+                <option value="">Tất cả</option>
+                <option *ngFor="let cur of currencies" [value]="cur">{{ cur }}</option>
+            </select>
+        </label>
+    </section>
+
+    <!-- Account Balances -->
+    <section class="balance-section mb-8">
+        <h2 class="text-lg font-semibold mb-3">Balance Tài Khoản</h2>
+        <div *ngIf="balances$ | async as balances; else loading" class="border rounded-lg overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Tài khoản</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Balance</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Total Debit</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Total Credit</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Số entries</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <tr *ngFor="let b of balances">
+                        <td class="px-4 py-2 text-sm">{{ b.accountCode }}</td>
+                        <td class="px-4 py-2 text-sm" [class.text-green-700]="b.balance > 0"
+                            [class.text-red-700]="b.balance < 0">{{ formatCurrency(b.balance) }}</td>
+                        <td class="px-4 py-2 text-sm">{{ formatCurrency(b.totalDebit) }}</td>
+                        <td class="px-4 py-2 text-sm">{{ formatCurrency(b.totalCredit) }}</td>
+                        <td class="px-4 py-2 text-sm">{{ b.entryCount }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <ng-template #loading>
+            <p class="loading text-center text-gray-500 py-4">Đang tải balance...</p>
+        </ng-template>
+    </section>
+
+    <!-- Giao dịch gần nhất -->
+    <section class="transactions-section">
+        <h2 class="text-lg font-semibold mb-3">Giao Dịch Gần Nhất</h2>
+        <div *ngIf="transactions$ | async as transactions; else loading" class="border rounded-lg overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">ID</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Mô tả</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Debit</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Credit</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Entries</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Trạng thái</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Ngày tạo</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <tr *ngFor="let t of transactions" (click)="onTransactionClick(t.id)"
+                        class="clickable cursor-pointer hover:bg-gray-50">
+                        <td class="px-4 py-2 text-sm font-mono">{{ truncate(t.id) }}</td>
+                        <td class="px-4 py-2 text-sm">{{ t.description || '(không mô tả)' }}</td>
+                        <td class="px-4 py-2 text-sm">{{ formatCurrency(t.totalDebit) }}</td>
+                        <td class="px-4 py-2 text-sm">{{ formatCurrency(t.totalCredit) }}</td>
+                        <td class="px-4 py-2 text-sm">{{ t.entryCount }}</td>
+                        <td class="px-4 py-2 text-sm">
+                            <span class="status-badge inline-block px-2 py-0.5 text-xs rounded-full"
+                                [class]="getStatusClass(t.status)">{{ t.status }}</span>
+                        </td>
+                        <td class="px-4 py-2 text-sm">{{ t.createdAt | date:'medium' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p *ngIf="!transactions.length" class="empty text-center text-gray-500 py-6">Chưa có giao dịch nào.</p>
+        </div>
+        <ng-template #loading>
+            <p class="loading text-center text-gray-500 py-4">Đang tải giao dịch...</p>
+        </ng-template>
+    </section>
+</div>
+{% elif ui_framework == "bootstrap" %}
+<div class="ledger-dashboard container">
+    <header class="dashboard-header mb-4">
+        <h1>Sổ Cái Kế Toán</h1>
+        <p class="subtitle text-muted">CP33: Financial Engine</p>
+    </header>
+
+    <!-- Bộ lọc -->
+    <section class="filter-bar mb-4">
+        <div class="row">
+            <div class="col-md-4">
+                <label>Tenant:
+                    <select class="form-select" [(ngModel)]="selectedTenant" (change)="onFilterChange()">
+                        <option value="">Tất cả</option>
+                        <option *ngFor="let t of tenants" [value]="t">{{ t }}</option>
+                    </select>
+                </label>
+            </div>
+            <div class="col-md-4">
+                <label>Currency:
+                    <select class="form-select" [(ngModel)]="selectedCurrency" (change)="onFilterChange()">
+                        <option value="">Tất cả</option>
+                        <option *ngFor="let cur of currencies" [value]="cur">{{ cur }}</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+    </section>
+
+    <!-- Account Balances -->
+    <section class="balance-section mb-4">
+        <h2>Balance Tài Khoản</h2>
+        <div *ngIf="balances$ | async as balances; else loading">
+            <table class="table table-striped table-bordered">
+                <thead class="table-light">
+                    <tr>
+                        <th>Tài khoản</th>
+                        <th>Balance</th>
+                        <th>Total Debit</th>
+                        <th>Total Credit</th>
+                        <th>Số entries</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let b of balances">
+                        <td>{{ b.accountCode }}</td>
+                        <td [class.text-success]="b.balance > 0" [class.text-danger]="b.balance < 0">{{
+                            formatCurrency(b.balance) }}</td>
+                        <td>{{ formatCurrency(b.totalDebit) }}</td>
+                        <td>{{ formatCurrency(b.totalCredit) }}</td>
+                        <td>{{ b.entryCount }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <ng-template #loading>
+            <p class="loading text-muted">Đang tải balance...</p>
+        </ng-template>
+    </section>
+
+    <!-- Giao dịch gần nhất -->
+    <section class="transactions-section">
+        <h2>Giao Dịch Gần Nhất</h2>
+        <div *ngIf="transactions$ | async as transactions; else loading">
+            <table class="table table-striped table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Mô tả</th>
+                        <th>Debit</th>
+                        <th>Credit</th>
+                        <th>Entries</th>
+                        <th>Trạng thái</th>
+                        <th>Ngày tạo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let t of transactions" (click)="onTransactionClick(t.id)" class="clickable">
+                        <td class="tx-id font-monospace">{{ truncate(t.id) }}</td>
+                        <td>{{ t.description || '(không mô tả)' }}</td>
+                        <td>{{ formatCurrency(t.totalDebit) }}</td>
+                        <td>{{ formatCurrency(t.totalCredit) }}</td>
+                        <td>{{ t.entryCount }}</td>
+                        <td><span class="status-badge badge" [class]="getStatusClass(t.status)">{{ t.status }}</span>
+                        </td>
+                        <td>{{ t.createdAt | date:'medium' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p *ngIf="!transactions.length" class="empty text-muted text-center">Chưa có giao dịch nào.</p>
+        </div>
+        <ng-template #loading>
+            <p class="loading text-muted">Đang tải giao dịch...</p>
+        </ng-template>
+    </section>
+</div>
+{% elif ui_framework == "antd" %}
+<!-- Ant Design không áp dụng cho Angular — sử dụng template mặc định -->
+<div class="ledger-dashboard">
+    <header class="dashboard-header">
+        <h1>Sổ Cái Kế Toán</h1>
+        <p class="subtitle">CP33: Financial Engine</p>
+    </header>
     <section class="filter-bar">
         <label>Tenant:
             <select [(ngModel)]="selectedTenant" (change)="onFilterChange()">
@@ -97,8 +434,6 @@ template: `
             </select>
         </label>
     </section>
-
-    <!-- Account Balances -->
     <section class="balance-section">
         <h2>Balance Tài Khoản</h2>
         <div *ngIf="balances$ | async as balances; else loading">
@@ -115,9 +450,7 @@ template: `
                 <tbody>
                     <tr *ngFor="let b of balances">
                         <td>{{ b.accountCode }}</td>
-                        <td [class.positive]="b.balance > 0" [class.negative]="b.balance < 0">
-                            {{ formatCurrency(b.balance) }}
-                        </td>
+                        <td>{{ formatCurrency(b.balance) }}</td>
                         <td>{{ formatCurrency(b.totalDebit) }}</td>
                         <td>{{ formatCurrency(b.totalCredit) }}</td>
                         <td>{{ b.entryCount }}</td>
@@ -129,8 +462,6 @@ template: `
             <p class="loading">Đang tải balance...</p>
         </ng-template>
     </section>
-
-    <!-- Giao dịch gần nhất -->
     <section class="transactions-section">
         <h2>Giao Dịch Gần Nhất</h2>
         <div *ngIf="transactions$ | async as transactions; else loading">
@@ -147,28 +478,106 @@ template: `
                     </tr>
                 </thead>
                 <tbody>
-                    <tr *ngFor="let t of transactions" (click)="onTransactionClick(t.id)" class="clickable">
-                        <td class="tx-id">{{ truncate(t.id) }}</td>
-                        <td>{{ t.description || '(không mô tả)' }}</td>
+                    <tr *ngFor="let t of transactions" (click)="onTransactionClick(t.id)">
+                        <td>{{ truncate(t.id) }}</td>
+                        <td>{{ t.description }}</td>
                         <td>{{ formatCurrency(t.totalDebit) }}</td>
                         <td>{{ formatCurrency(t.totalCredit) }}</td>
                         <td>{{ t.entryCount }}</td>
-                        <td>
-                            <span class="status-badge" [class]="getStatusClass(t.status)">
-                                {{ t.status }}
-                            </span>
-                        </td>
+                        <td>{{ t.status }}</td>
                         <td>{{ t.createdAt | date:'medium' }}</td>
                     </tr>
                 </tbody>
             </table>
-            <p *ngIf="!transactions.length" class="empty">Chưa có giao dịch nào.</p>
         </div>
         <ng-template #loading>
             <p class="loading">Đang tải giao dịch...</p>
         </ng-template>
     </section>
 </div>
+{% elif ui_framework == "carbon" %}
+<!-- Carbon không áp dụng cho Angular — sử dụng template mặc định -->
+<div class="ledger-dashboard">
+    <header class="dashboard-header">
+        <h1>Sổ Cái Kế Toán</h1>
+        <p class="subtitle">CP33: Financial Engine</p>
+    </header>
+    <section class="filter-bar">
+        <label>Tenant:
+            <select [(ngModel)]="selectedTenant" (change)="onFilterChange()">
+                <option value="">Tất cả</option>
+                <option *ngFor="let t of tenants" [value]="t">{{ t }}</option>
+            </select>
+        </label>
+        <label>Currency:
+            <select [(ngModel)]="selectedCurrency" (change)="onFilterChange()">
+                <option value="">Tất cả</option>
+                <option *ngFor="let cur of currencies" [value]="cur">{{ cur }}</option>
+            </select>
+        </label>
+    </section>
+    <section class="balance-section">
+        <h2>Balance Tài Khoản</h2>
+        <div *ngIf="balances$ | async as balances; else loading">
+            <table class="balance-table">
+                <thead>
+                    <tr>
+                        <th>Tài khoản</th>
+                        <th>Balance</th>
+                        <th>Total Debit</th>
+                        <th>Total Credit</th>
+                        <th>Số entries</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let b of balances">
+                        <td>{{ b.accountCode }}</td>
+                        <td>{{ formatCurrency(b.balance) }}</td>
+                        <td>{{ formatCurrency(b.totalDebit) }}</td>
+                        <td>{{ formatCurrency(b.totalCredit) }}</td>
+                        <td>{{ b.entryCount }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <ng-template #loading>
+            <p class="loading">Đang tải balance...</p>
+        </ng-template>
+    </section>
+    <section class="transactions-section">
+        <h2>Giao Dịch Gần Nhất</h2>
+        <div *ngIf="transactions$ | async as transactions; else loading">
+            <table class="transaction-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Mô tả</th>
+                        <th>Debit</th>
+                        <th>Credit</th>
+                        <th>Entries</th>
+                        <th>Trạng thái</th>
+                        <th>Ngày tạo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let t of transactions" (click)="onTransactionClick(t.id)">
+                        <td>{{ truncate(t.id) }}</td>
+                        <td>{{ t.description }}</td>
+                        <td>{{ formatCurrency(t.totalDebit) }}</td>
+                        <td>{{ formatCurrency(t.totalCredit) }}</td>
+                        <td>{{ t.entryCount }}</td>
+                        <td>{{ t.status }}</td>
+                        <td>{{ t.createdAt | date:'medium' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <ng-template #loading>
+            <p class="loading">Đang tải giao dịch...</p>
+        </ng-template>
+    </section>
+</div>
+{% endif %}
 `,
 styles: [`
 .ledger-dashboard {

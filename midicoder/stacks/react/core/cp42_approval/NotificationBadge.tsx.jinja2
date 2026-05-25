@@ -4,8 +4,26 @@
 *
 * Su dung events: {{ use_events }}
 * Cong hieu thong bao: {{ notification_config }}
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 */
+{% if ui_framework == "material" %}
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Badge, Button, Chip, Box, Menu, MenuItem, List, ListItem, ListItemText, IconButton, Tooltip } from
+'@mui/material';
+{% elif ui_framework == "tailwind" %}
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+// Su dung Tailwind utility classes trong JSX
+{% elif ui_framework == "bootstrap" %}
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Button, Badge as BsBadge, Dropdown } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Badge, Button, Tag, Space, Dropdown, List } from 'antd';
+{% elif ui_framework == "carbon" %}
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Button, Notification, Tag, OverflowMenu, OverflowMenuItem, Layer } from '@carbon/react';
+{% endif %}
 
 /* ---- Loai trang thai ---- */
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'escalated' | 'delegated' | 'expired' | 'cancelled';

@@ -2,214 +2,669 @@
 Mô-đun Transaction Detail cho CP33: Financial Engine.
 
 Tự động sinh bởi Midicoder — không sửa thủ công.
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 """
 
 import React, { useState, useEffect } from 'react';
 
+{% if ui_framework == "material" %}
+import {
+Card,
+CardContent,
+Table,
+TableBody,
+TableCell,
+TableContainer,
+TableHead,
+TableRow,
+Typography,
+Chip,
+Paper,
+Grid,
+} from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng lớp tiện ích Tailwind CSS inline
+{% elif ui_framework == "bootstrap" %}
+import { Button, Card, Table, Badge } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Card, Table, Typography, Tag, Descriptions } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, Title, Subtitle, StructuredList } from '@carbon/react';
+{% endif %}
+
 /**
- * Interface cho ledger entry.
- */
+* Interface cho ledger entry.
+*/
 interface LedgerEntry {
-  id: string;
-  transaction_id: string;
-  entry_type: string;
-  account_code: string;
-  amount: string;
-  currency: string;
-  description: string;
-  previous_hash?: string;
+id: string;
+transaction_id: string;
+entry_type: string;
+account_code: string;
+amount: string;
+currency: string;
+description: string;
+previous_hash?: string;
 }
 
 /**
- * Interface cho giao dịch tài chính.
- */
+* Interface cho giao dịch tài chính.
+*/
 interface Transaction {
-  id: string;
-  transaction_type: string;
-  status: string;
-  tenant_id: string;
-  total_debit: string;
-  total_credit: string;
-  description: string;
-  created_at: string;
-  entries: LedgerEntry[];
+id: string;
+transaction_type: string;
+status: string;
+tenant_id: string;
+total_debit: string;
+total_credit: string;
+description: string;
+created_at: string;
+entries: LedgerEntry[];
 }
 
 /**
- * Props cho component TransactionDetail.
- */
+* Props cho component TransactionDetail.
+*/
 interface TransactionDetailProps {
-  transactionId: string;
+transactionId: string;
 }
 
 /**
- * TransactionDetail — Chi tiết giao dịch.
- *
- * Hiển thị:
- * - Thông tin giao dịch (ID, loại, trạng thái)
- * - Danh sách entries (nợ/có)
- * - Trạng thái hash chain
- * - Kiểm tra cân bằng double-entry
- */
+* TransactionDetail — Chi tiết giao dịch.
+*
+* Hiển thị:
+* - Thông tin giao dịch (ID, loại, trạng thái)
+* - Danh sách entries (nợ/có)
+* - Trạng thái hash chain
+* - Kiểm tra cân bằng double-entry
+*/
 const TransactionDetail: React.FC<TransactionDetailProps> = ({ transactionId }) => {
-  const [transaction, setTransaction] = useState<Transaction | null>(null);
-  const [chainVerified, setChainVerified] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
+    const [transaction, setTransaction] = useState<Transaction | null>(null);
+        const [chainVerified, setChainVerified] = useState<boolean | null>(null);
+            const [loading, setLoading] = useState(true);
 
-  // TODO: Kết nối API backend
-  useEffect(() => {
-    if (!transactionId) return;
-    setLoading(true);
-    // fetch transaction detail từ API
-    // fetch hash chain verification từ API
-    setLoading(false);
-  }, [transactionId]);
+            // TODO: Kết nối API backend
+            useEffect(() => {
+            if (!transactionId) return;
+            setLoading(true);
+            // fetch transaction detail từ API
+            // fetch hash chain verification từ API
+            setLoading(false);
+            }, [transactionId]);
 
-  /**
-   * Định dạng số tiền hiển thị.
-   */
-  const formatAmount = (amount: string, currency: string = 'USD'): string => {
-    const num = parseFloat(amount);
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency,
-    }).format(num);
-  };
+            /**
+            * Định dạng số tiền hiển thị.
+            */
+            const formatAmount = (amount: string, currency: string = 'USD'): string => {
+            const num = parseFloat(amount);
+            return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: currency,
+            }).format(num);
+            };
 
-  /**
-   * Kiểm tra giao dịch có cân bằng không (double-entry).
-   */
-  const isBalanced = (txn: Transaction): boolean => {
-    if (txn.transaction_type !== 'double_entry') return true;
-    return txn.total_debit === txn.total_credit;
-  };
+            /**
+            * Kiểm tra giao dịch có cân bằng không (double-entry).
+            */
+            const isBalanced = (txn: Transaction): boolean => {
+            if (txn.transaction_type !== 'double_entry') return true;
+            return txn.total_debit === txn.total_credit;
+            };
 
-  if (loading) {
-    return <div className="loading">Đang tải chi tiết giao dịch...</div>;
-  }
+            {% if ui_framework == "material" %}
+            // Render với MUI components
+            if (loading) {
+            return <Typography className="loading">Đang tải chi tiết giao dịch...</Typography>;
+            }
 
-  if (!transaction) {
-    return <div className="not-found">Không tìm thấy giao dịch {transactionId}</div>;
-  }
+            if (!transaction) {
+            return <Typography className="not-found">Không tìm thấy giao dịch {transactionId}</Typography>;
+            }
 
-  return (
-    <div className="transaction-detail" data-testid="transaction-detail">
-      <h2>Chi tiết giao dịch</h2>
+            return (
+            <div className="transaction-detail" data-testid="transaction-detail">
+                <Typography variant="h4" component="h2" gutterBottom>Chi tiết giao dịch</Typography>
 
-      {/* Thông tin giao dịch */}
-      <div className="transaction-info">
-        <table>
-          <tbody>
-            <tr>
-              <th>ID Giao dịch</th>
-              <td>{transaction.id}</td>
-            </tr>
-            <tr>
-              <th>Loại</th>
-              <td>
-                <span className={`badge badge-${transaction.transaction_type}`}>
-                  {transaction.transaction_type}
-                </span>
-              </td>
-            </tr>
-            <tr>
-              <th>Trạng thái</th>
-              <td>
-                <span className={`badge badge-${transaction.status}`}>
-                  {transaction.status}
-                </span>
-              </td>
-            </tr>
-            <tr>
-              <th>Tổng Nợ</th>
-              <td className="debit">{formatAmount(transaction.total_debit)}</td>
-            </tr>
-            <tr>
-              <th>Tổng Có</th>
-              <td className="credit">{formatAmount(transaction.total_credit)}</td>
-            </tr>
-            <tr>
-              <th>Cân bằng</th>
-              <td>
-                {isBalanced(transaction) ? (
-                  <span className="balanced">✓ Cân bằng</span>
-                ) : (
-                  <span className="imbalanced">✗ Không cân bằng</span>
-                )}
-              </td>
-            </tr>
-            <tr>
-              <th>Mô tả</th>
-              <td>{transaction.description || '—'}</td>
-            </tr>
-            <tr>
-              <th>Ngày tạo</th>
-              <td>{new Date(transaction.created_at).toLocaleString('vi-VN')}</td>
-            </tr>
-            <tr>
-              <th>Tenant</th>
-              <td>{transaction.tenant_id || '—'}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                {/* Thông tin giao dịch */}
+                <Card sx={{ mb: 2 }}>
+                    <CardContent>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2">ID Giao dịch</Typography>
+                                <Typography>{transaction.id}</Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2">Loại</Typography>
+                                <Chip label={transaction.transaction_type} />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2">Trạng thái</Typography>
+                                <Chip label={transaction.status} color={transaction.status==='completed' ? 'success'
+                                    : 'default' } />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2">Tổng Nợ</Typography>
+                                <Typography sx={{ color: '#2e7d32' }}>{formatAmount(transaction.total_debit)}
+                                </Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2">Tổng Có</Typography>
+                                <Typography sx={{ color: '#c62828' }}>{formatAmount(transaction.total_credit)}
+                                </Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2">Cân bằng</Typography>
+                                <Chip label={isBalanced(transaction) ? 'Cân bằng' : 'Không cân bằng' }
+                                    color={isBalanced(transaction) ? 'success' : 'error' } />
+                            </Grid>
+                            <Grid item xs={12}>
+                                <Typography variant="subtitle2">Mô tả</Typography>
+                                <Typography>{transaction.description || '—'}</Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2">Ngày tạo</Typography>
+                                <Typography>{new Date(transaction.created_at).toLocaleString('vi-VN')}</Typography>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <Typography variant="subtitle2">Tenant</Typography>
+                                <Typography>{transaction.tenant_id || '—'}</Typography>
+                            </Grid>
+                        </Grid>
+                    </CardContent>
+                </Card>
 
-      {/* Trạng thái hash chain */}
-      <div className="hash-chain-status">
-        <h3>Hash Chain</h3>
-        {chainVerified === null ? (
-          <span className="pending">Đang xác minh...</span>
-        ) : chainVerified ? (
-          <span className="verified">✓ Hash chain hợp lệ</span>
-        ) : (
-          <span className="tampered">✗ Hash chain bị hỏng</span>
-        )}
-      </div>
+                {/* Trạng thái hash chain */}
+                <Card sx={{ mb: 2 }}>
+                    <CardContent>
+                        <Typography variant="h6">Hash Chain</Typography>
+                        {chainVerified === null ? (
+                        <Chip label="Đang xác minh..." color="warning" />
+                        ) : chainVerified ? (
+                        <Chip label="Hash chain hợp lệ" color="success" />
+                        ) : (
+                        <Chip label="Hash chain bị hỏng" color="error" />
+                        )}
+                    </CardContent>
+                </Card>
 
-      {/* Danh sách entries */}
-      <div className="entries-list">
-        <h3>Các Entries ({transaction.entries.length})</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>ID Entry</th>
-              <th>Loại</th>
-              <th>Tài khoản</th>
-              <th>Số tiền</th>
-              <th>Tiền tệ</th>
-              <th>Mô tả</th>
-              <th>Hash trước</th>
-            </tr>
-          </thead>
-          <tbody>
-            {transaction.entries.map((entry) => (
-              <tr key={entry.id}>
-                <td className="entry-id">{entry.id}</td>
-                <td>
-                  <span className={`entry-type entry-${entry.entry_type}`}>
-                    {entry.entry_type === 'debit' ? 'Nợ' : 'Có'}
-                  </span>
-                </td>
-                <td>{entry.account_code}</td>
-                <td className={entry.entry_type}>
-                  {formatAmount(entry.amount, entry.currency)}
-                </td>
-                <td>{entry.currency}</td>
-                <td>{entry.description || '—'}</td>
-                <td className="hash">
-                  {entry.previous_hash ? (
-                    <code>{entry.previous_hash.substring(0, 8)}...</code>
-                  ) : (
-                    <span className="no-hash">Root</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
+                {/* Danh sách entries */}
+                <Card>
+                    <CardContent>
+                        <Typography variant="h6">Các Entries ({transaction.entries.length})</Typography>
+                        <TableContainer component={Paper} sx={{ mt: 1 }}>
+                            <Table>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell>ID Entry</TableCell>
+                                        <TableCell>Loại</TableCell>
+                                        <TableCell>Tài khoản</TableCell>
+                                        <TableCell>Số tiền</TableCell>
+                                        <TableCell>Tiền tệ</TableCell>
+                                        <TableCell>Mô tả</TableCell>
+                                        <TableCell>Hash trước</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {transaction.entries.map((entry) => (
+                                    <TableRow key={entry.id}>
+                                        <TableCell>
+                                            <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{entry.id}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Chip label={entry.entry_type==='debit' ? 'Nợ' : 'Có' } size="small"
+                                                color={entry.entry_type==='debit' ? 'success' : 'error' } />
+                                        </TableCell>
+                                        <TableCell>{entry.account_code}</TableCell>
+                                        <TableCell>{formatAmount(entry.amount, entry.currency)}</TableCell>
+                                        <TableCell>{entry.currency}</TableCell>
+                                        <TableCell>{entry.description || '—'}</TableCell>
+                                        <TableCell>
+                                            {entry.previous_hash ? (
+                                            <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                                                {entry.previous_hash.substring(0, 8)}...</Typography>
+                                            ) : (
+                                            <Typography variant="body2">Root</Typography>
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    </CardContent>
+                </Card>
+            </div>
+            );
+            {% elif ui_framework == "tailwind" %}
+            // Render với Tailwind CSS utility classes
+            if (loading) {
+            return <div className="text-center py-8 text-gray-500">Đang tải chi tiết giao dịch...</div>;
+            }
 
-export default TransactionDetail;
+            if (!transaction) {
+            return <div className="text-center py-8 text-red-500">Không tìm thấy giao dịch {transactionId}</div>;
+            }
+
+            return (
+            <div className="p-6 max-w-5xl mx-auto" data-testid="transaction-detail">
+                <h2 className="text-2xl font-bold mb-4">Chi tiết giao dịch</h2>
+
+                {/* Thông tin giao dịch */}
+                <div className="bg-white border rounded-lg shadow p-4 mb-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <p className="text-xs text-gray-500">ID Giao dịch</p>
+                            <p className="text-sm">{transaction.id}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs text-gray-500">Loại</p>
+                            <span
+                                className="inline-block px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">{transaction.transaction_type}</span>
+                        </div>
+                        <div>
+                            <p className="text-xs text-gray-500">Trạng thái</p>
+                            <span className={`inline-block px-2 py-1 text-xs rounded-full
+                                ${transaction.status==='completed' ? 'bg-green-100 text-green-800'
+                                : 'bg-gray-100 text-gray-800' }`}>{transaction.status}</span>
+                        </div>
+                        <div>
+                            <p className="text-xs text-gray-500">Tổng Nợ</p>
+                            <p className="text-sm text-green-700">{formatAmount(transaction.total_debit)}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs text-gray-500">Tổng Có</p>
+                            <p className="text-sm text-red-700">{formatAmount(transaction.total_credit)}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs text-gray-500">Cân bằng</p>
+                            <span className={`inline-block px-2 py-1 text-xs rounded-full ${isBalanced(transaction)
+                                ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }`}>
+                                {isBalanced(transaction) ? 'Cân bằng' : 'Không cân bằng'}
+                            </span>
+                        </div>
+                        <div className="sm:col-span-2">
+                            <p className="text-xs text-gray-500">Mô tả</p>
+                            <p className="text-sm">{transaction.description || '—'}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs text-gray-500">Ngày tạo</p>
+                            <p className="text-sm">{new Date(transaction.created_at).toLocaleString('vi-VN')}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs text-gray-500">Tenant</p>
+                            <p className="text-sm">{transaction.tenant_id || '—'}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Trạng thái hash chain */}
+                <div className="bg-white border rounded-lg shadow p-4 mb-4">
+                    <h3 className="text-lg font-semibold mb-2">Hash Chain</h3>
+                    {chainVerified === null ? (
+                    <span className="inline-block px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">Đang xác
+                        minh...</span>
+                    ) : chainVerified ? (
+                    <span className="inline-block px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Hash chain
+                        hợp lệ</span>
+                    ) : (
+                    <span className="inline-block px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">Hash chain bị
+                        hỏng</span>
+                    )}
+                </div>
+
+                {/* Danh sách entries */}
+                <div className="bg-white border rounded-lg shadow p-4">
+                    <h3 className="text-lg font-semibold mb-2">Các Entries ({transaction.entries.length})</h3>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">ID Entry</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Loại</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Tài khoản</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Số tiền</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Tiền tệ</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Mô tả</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Hash trước
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {transaction.entries.map((entry) => (
+                                <tr key={entry.id}>
+                                    <td className="px-3 py-2 text-sm font-mono">{entry.id}</td>
+                                    <td className="px-3 py-2 text-sm">
+                                        <span className={`inline-block px-2 py-0.5 text-xs rounded-full
+                                            ${entry.entry_type==='debit' ? 'bg-green-100 text-green-800'
+                                            : 'bg-red-100 text-red-800' }`}>
+                                            {entry.entry_type === 'debit' ? 'Nợ' : 'Có'}
+                                        </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-sm">{entry.account_code}</td>
+                                    <td className="px-3 py-2 text-sm">{formatAmount(entry.amount, entry.currency)}</td>
+                                    <td className="px-3 py-2 text-sm">{entry.currency}</td>
+                                    <td className="px-3 py-2 text-sm">{entry.description || '—'}</td>
+                                    <td className="px-3 py-2 text-sm font-mono">
+                                        {entry.previous_hash ? (
+                                        <code>{entry.previous_hash.substring(0, 8)}...</code>
+                                        ) : (
+                                        <span>Root</span>
+                                        )}
+                                    </td>
+                                </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            );
+            {% elif ui_framework == "bootstrap" %}
+            // Render với react-bootstrap components
+            if (loading) {
+            return <div className="loading">Đang tải chi tiết giao dịch...</div>;
+            }
+
+            if (!transaction) {
+            return <div className="not-found">Không tìm thấy giao dịch {transactionId}</div>;
+            }
+
+            return (
+            <div className="container transaction-detail" data-testid="transaction-detail">
+                <h2>Chi tiết giao dịch</h2>
+
+                {/* Thông tin giao dịch */}
+                <Card className="mb-3">
+                    <Card.Body>
+                        <div className="row">
+                            <div className="col-md-6 mb-2">
+                                <small className="text-muted">ID Giao dịch</small>
+                                <p>{transaction.id}</p>
+                            </div>
+                            <div className="col-md-6 mb-2">
+                                <small className="text-muted">Loại</small>
+                                <Badge bg="primary">{transaction.transaction_type}</Badge>
+                            </div>
+                            <div className="col-md-6 mb-2">
+                                <small className="text-muted">Trạng thái</small>
+                                <Badge bg={transaction.status==='completed' ? 'success' : 'secondary' }>
+                                    {transaction.status}</Badge>
+                            </div>
+                            <div className="col-md-6 mb-2">
+                                <small className="text-muted">Tổng Nợ</small>
+                                <p className="text-success">{formatAmount(transaction.total_debit)}</p>
+                            </div>
+                            <div className="col-md-6 mb-2">
+                                <small className="text-muted">Tổng Có</small>
+                                <p className="text-danger">{formatAmount(transaction.total_credit)}</p>
+                            </div>
+                            <div className="col-md-6 mb-2">
+                                <small className="text-muted">Cân bằng</small>
+                                <Badge bg={isBalanced(transaction) ? 'success' : 'danger' }>
+                                    {isBalanced(transaction) ? 'Cân bằng' : 'Không cân bằng'}
+                                </Badge>
+                            </div>
+                            <div className="col-12 mb-2">
+                                <small className="text-muted">Mô tả</small>
+                                <p>{transaction.description || '—'}</p>
+                            </div>
+                            <div className="col-md-6 mb-2">
+                                <small className="text-muted">Ngày tạo</small>
+                                <p>{new Date(transaction.created_at).toLocaleString('vi-VN')}</p>
+                            </div>
+                            <div className="col-md-6 mb-2">
+                                <small className="text-muted">Tenant</small>
+                                <p>{transaction.tenant_id || '—'}</p>
+                            </div>
+                        </div>
+                    </Card.Body>
+                </Card>
+
+                {/* Trạng thái hash chain */}
+                <Card className="mb-3">
+                    <Card.Body>
+                        <h3>Hash Chain</h3>
+                        {chainVerified === null ? (
+                        <Badge bg="warning">Đang xác minh...</Badge>
+                        ) : chainVerified ? (
+                        <Badge bg="success">Hash chain hợp lệ</Badge>
+                        ) : (
+                        <Badge bg="danger">Hash chain bị hỏng</Badge>
+                        )}
+                    </Card.Body>
+                </Card>
+
+                {/* Danh sách entries */}
+                <Card>
+                    <Card.Body>
+                        <h3>Các Entries ({transaction.entries.length})</h3>
+                        <Table striped bordered hover responsive>
+                            <thead>
+                                <tr>
+                                    <th>ID Entry</th>
+                                    <th>Loại</th>
+                                    <th>Tài khoản</th>
+                                    <th>Số tiền</th>
+                                    <th>Tiền tệ</th>
+                                    <th>Mô tả</th>
+                                    <th>Hash trước</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {transaction.entries.map((entry) => (
+                                <tr key={entry.id}>
+                                    <td className="entry-id" style={{ fontFamily: 'monospace' }}>{entry.id}</td>
+                                    <td>
+                                        <Badge bg={entry.entry_type==='debit' ? 'success' : 'danger' }>
+                                            {entry.entry_type === 'debit' ? 'Nợ' : 'Có'}
+                                        </Badge>
+                                    </td>
+                                    <td>{entry.account_code}</td>
+                                    <td>{formatAmount(entry.amount, entry.currency)}</td>
+                                    <td>{entry.currency}</td>
+                                    <td>{entry.description || '—'}</td>
+                                    <td>
+                                        {entry.previous_hash ? (
+                                        <code>{entry.previous_hash.substring(0, 8)}...</code>
+                                        ) : (
+                                        <span>Root</span>
+                                        )}
+                                    </td>
+                                </tr>
+                                ))}
+                            </tbody>
+                        </Table>
+                    </Card.Body>
+                </Card>
+            </div>
+            );
+            {% elif ui_framework == "antd" %}
+            // Render với Ant Design components
+            if (loading) {
+            return <div className="loading">Đang tải chi tiết giao dịch...</div>;
+            }
+
+            if (!transaction) {
+            return <div className="not-found">Không tìm thấy giao dịch {transactionId}</div>;
+            }
+
+            return (
+            <div className="transaction-detail" data-testid="transaction-detail">
+                <Typography.Title level={2}>Chi tiết giao dịch</Typography.Title>
+
+                {/* Thông tin giao dịch */}
+                <Card className="mb-3">
+                    <Descriptions column={{ xs: 1, sm: 2 }} bordered>
+                        <Descriptions.Item label="ID Giao dịch">{transaction.id}</Descriptions.Item>
+                        <Descriptions.Item label="Loại">
+                            <Tag color="blue">{transaction.transaction_type}</Tag>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Trạng thái">
+                            <Tag color={transaction.status==='completed' ? 'green' : 'default' }>{transaction.status}
+                            </Tag>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Tổng Nợ" style={{ color: '#2e7d32' }}>
+                            {formatAmount(transaction.total_debit)}</Descriptions.Item>
+                        <Descriptions.Item label="Tổng Có" style={{ color: '#c62828' }}>
+                            {formatAmount(transaction.total_credit)}</Descriptions.Item>
+                        <Descriptions.Item label="Cân bằng">
+                            <Tag color={isBalanced(transaction) ? 'green' : 'red' }>
+                                {isBalanced(transaction) ? 'Cân bằng' : 'Không cân bằng'}
+                            </Tag>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Mô tả" span={2}>{transaction.description || '—'}</Descriptions.Item>
+                        <Descriptions.Item label="Ngày tạo">{new Date(transaction.created_at).toLocaleString('vi-VN')}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Tenant">{transaction.tenant_id || '—'}</Descriptions.Item>
+                    </Descriptions>
+                </Card>
+
+                {/* Trạng thái hash chain */}
+                <Card title="Hash Chain" className="mb-3">
+                    {chainVerified === null ? (
+                    <Tag color="orange">Đang xác minh...</Tag>
+                    ) : chainVerified ? (
+                    <Tag color="green">Hash chain hợp lệ</Tag>
+                    ) : (
+                    <Tag color="red">Hash chain bị hỏng</Tag>
+                    )}
+                </Card>
+
+                {/* Danh sách entries */}
+                <Card title={`Các Entries (${transaction.entries.length})`}>
+                    <Table dataSource={transaction.entries} rowKey="id" columns={[ { title: 'ID Entry' , dataIndex: 'id'
+                        , key: 'id' , render: (v: string)=> <code>{v}</code> },
+                        {
+                        title: 'Loại', dataIndex: 'entry_type', key: 'type',
+                        render: (v: string) => <Tag color={v==='debit' ? 'green' : 'red' }>{v === 'debit' ? 'Nợ' : 'Có'}
+                        </Tag>,
+                        },
+                        { title: 'Tài khoản', dataIndex: 'account_code', key: 'account' },
+                        { title: 'Số tiền', dataIndex: 'amount', key: 'amount', render: (v: string, r: LedgerEntry) =>
+                        formatAmount(v, r.currency) },
+                        { title: 'Tiền tệ', dataIndex: 'currency', key: 'currency' },
+                        { title: 'Mô tả', dataIndex: 'description', key: 'desc' },
+                        {
+                        title: 'Hash trước', dataIndex: 'previous_hash', key: 'hash',
+                        render: (v: string) => v ? <code>{v.substring(0, 8)}...</code> : <span>Root</span>,
+                        },
+                        ]}
+                        />
+                </Card>
+            </div>
+            );
+            {% elif ui_framework == "carbon" %}
+            // Render với Carbon Design components
+            if (loading) {
+            return <Layer className="loading">Đang tải chi tiết giao dịch...</Layer>;
+            }
+
+            if (!transaction) {
+            return <Layer className="not-found">Không tìm thấy giao dịch {transactionId}</Layer>;
+            }
+
+            return (
+            <Layer className="transaction-detail" data-testid="transaction-detail">
+                <Title level="2">Chi tiết giao dịch</Title>
+
+                {/* Thông tin giao dịch */}
+                <div className="cds--grid cds--grid--full-width mb-3">
+                    <div className="cds--col-lg-6 cds--col-md-4">
+                        <p className="cds--label">ID Giao dịch</p>
+                        <p>{transaction.id}</p>
+                    </div>
+                    <div className="cds--col-lg-6 cds--col-md-4">
+                        <p className="cds--label">Loại</p>
+                        <p>{transaction.transaction_type}</p>
+                    </div>
+                    <div className="cds--col-lg-6 cds--col-md-4">
+                        <p className="cds--label">Trạng thái</p>
+                        <p>{transaction.status}</p>
+                    </div>
+                    <div className="cds--col-lg-6 cds--col-md-4">
+                        <p className="cds--label">Tổng Nợ</p>
+                        <p style={{ color: '#2e7d32' }}>{formatAmount(transaction.total_debit)}</p>
+                    </div>
+                    <div className="cds--col-lg-6 cds--col-md-4">
+                        <p className="cds--label">Tổng Có</p>
+                        <p style={{ color: '#c62828' }}>{formatAmount(transaction.total_credit)}</p>
+                    </div>
+                    <div className="cds--col-lg-6 cds--col-md-4">
+                        <p className="cds--label">Cân bằng</p>
+                        <p style={{ color: isBalanced(transaction) ? '#2e7d32' : '#c62828' }}>
+                            {isBalanced(transaction) ? 'Cân bằng' : 'Không cân bằng'}
+                        </p>
+                    </div>
+                    <div className="cds--col-lg-12 cds--col-md-4">
+                        <p className="cds--label">Mô tả</p>
+                        <p>{transaction.description || '—'}</p>
+                    </div>
+                    <div className="cds--col-lg-6 cds--col-md-4">
+                        <p className="cds--label">Ngày tạo</p>
+                        <p>{new Date(transaction.created_at).toLocaleString('vi-VN')}</p>
+                    </div>
+                    <div className="cds--col-lg-6 cds--col-md-4">
+                        <p className="cds--label">Tenant</p>
+                        <p>{transaction.tenant_id || '—'}</p>
+                    </div>
+                </div>
+
+                {/* Trạng thái hash chain */}
+                <Subtitle setHeading level="3">Hash Chain</Subtitle>
+                <div className="mb-3">
+                    {chainVerified === null ? (
+                    <span className="cds--tag cds--tag--warning">Đang xác minh...</span>
+                    ) : chainVerified ? (
+                    <span className="cds--tag cds--tag--green">Hash chain hợp lệ</span>
+                    ) : (
+                    <span className="cds--tag cds--tag--red">Hash chain bị hỏng</span>
+                    )}
+                </div>
+
+                {/* Danh sách entries */}
+                <Subtitle setHeading level="3">Các Entries ({transaction.entries.length})</Subtitle>
+                <StructuredList>
+                    <StructuredList.Head>
+                        <StructuredList.Row>
+                            <StructuredList.Header>ID Entry</StructuredList.Header>
+                            <StructuredList.Header>Loại</StructuredList.Header>
+                            <StructuredList.Header>Tài khoản</StructuredList.Header>
+                            <StructuredList.Header>Số tiền</StructuredList.Header>
+                            <StructuredList.Header>Tiền tệ</StructuredList.Header>
+                            <StructuredList.Header>Mô tả</StructuredList.Header>
+                            <StructuredList.Header>Hash trước</StructuredList.Header>
+                        </StructuredList.Row>
+                    </StructuredList.Head>
+                    <StructuredList.Body>
+                        <StructuredList.BodyRows>
+                            {transaction.entries.map((entry) => (
+                            <StructuredList.Row key={entry.id}>
+                                <StructuredList.Cell><code>{entry.id}</code></StructuredList.Cell>
+                                <StructuredList.Cell>
+                                    <span className={`cds--tag ${entry.entry_type==='debit' ? 'cds--tag--green'
+                                        : 'cds--tag--red' }`}>
+                                        {entry.entry_type === 'debit' ? 'Nợ' : 'Có'}
+                                    </span>
+                                </StructuredList.Cell>
+                                <StructuredList.Cell>{entry.account_code}</StructuredList.Cell>
+                                <StructuredList.Cell>{formatAmount(entry.amount, entry.currency)}</StructuredList.Cell>
+                                <StructuredList.Cell>{entry.currency}</StructuredList.Cell>
+                                <StructuredList.Cell>{entry.description || '—'}</StructuredList.Cell>
+                                <StructuredList.Cell>
+                                    {entry.previous_hash ? (
+                                    <code>{entry.previous_hash.substring(0, 8)}...</code>
+                                    ) : (
+                                    <span>Root</span>
+                                    )}
+                                </StructuredList.Cell>
+                            </StructuredList.Row>
+                            ))}
+                        </StructuredList.BodyRows>
+                    </StructuredList.Body>
+                </StructuredList>
+            </Layer>
+            );
+            {% endif %}
+            };
+
+            export default TransactionDetail;

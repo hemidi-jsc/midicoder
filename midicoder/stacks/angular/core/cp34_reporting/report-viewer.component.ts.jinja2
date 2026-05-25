@@ -1,12 +1,38 @@
 // Report Viewer Component — Hiển thị report trong browser.
 // CP34: Report & Document Generator (Angular)
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 // Hỗ trợ: PDF embed (iframe), Excel/CSV download.
+
+{% if ui_framework == "material" %}
+import { MatButtonModule } from '@angular/material/button';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng lớp tiện ích Tailwind CSS trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng lớp Bootstrap trong template
+{% elif ui_framework == "antd" %}
+// Ant Design không áp dụng cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon không áp dụng cho Angular
+{% endif %}
 
 import { Component, Input, OnInit, OnDestroy } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { HttpClient } from "@angular/common/http";
 import { DomSanitizer, SafeResourceUrl } from "@angular/platform-browser";
 import { Subscription } from "rxjs";
+
+{% if ui_framework == "material" %}
+const UI_MODULES = [MatButtonModule, MatProgressSpinnerModule];
+{% elif ui_framework == "tailwind" %}
+const UI_MODULES = [];
+{% elif ui_framework == "bootstrap" %}
+const UI_MODULES = [];
+{% elif ui_framework == "antd" %}
+const UI_MODULES = [];
+{% elif ui_framework == "carbon" %}
+const UI_MODULES = [];
+{% endif %}
 
 export interface ViewerConfig {
 reportId: string;
@@ -17,7 +43,7 @@ autoGenerate?: boolean;
 @Component({
 selector: "app-report-viewer",
 standalone: true,
-imports: [CommonModule],
+imports: [CommonModule, ...UI_MODULES],
 template: `
 <div class="report-viewer">
     <div class="viewer-header">

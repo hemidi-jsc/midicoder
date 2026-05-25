@@ -2,163 +2,486 @@
 Mô-đun Ledger Dashboard cho CP33: Financial Engine.
 
 Tự động sinh bởi Midicoder — không sửa thủ công.
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 """
 
 import React, { useState, useEffect } from 'react';
 
+{% if ui_framework == "material" %}
+import {
+Button,
+Card,
+CardContent,
+Table,
+TableBody,
+TableCell,
+TableContainer,
+TableHead,
+TableRow,
+Typography,
+FormControl,
+Select,
+MenuItem,
+Paper,
+} from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng lớp tiện ích Tailwind CSS inline
+{% elif ui_framework == "bootstrap" %}
+import { Button, Card, Form, Table } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Card, Table, Typography, Select } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, Title, Subtitle, ComboBox } from '@carbon/react';
+{% endif %}
+
 /**
- * Interface cho tài khoản kế toán.
- */
+* Interface cho tài khoản kế toán.
+*/
 interface Account {
-  code: string;
-  name: string;
-  account_type: string;
-  balance?: number;
+code: string;
+name: string;
+account_type: string;
+balance?: number;
 }
 
 /**
- * Interface cho giao dịch tài chính.
- */
+* Interface cho giao dịch tài chính.
+*/
 interface Transaction {
-  id: string;
-  transaction_type: string;
-  status: string;
-  tenant_id: string;
-  total_debit: string;
-  total_credit: string;
-  description: string;
-  created_at: string;
-  entries: LedgerEntry[];
+id: string;
+transaction_type: string;
+status: string;
+tenant_id: string;
+total_debit: string;
+total_credit: string;
+description: string;
+created_at: string;
+entries: LedgerEntry[];
 }
 
 /**
- * Interface cho ledger entry.
- */
+* Interface cho ledger entry.
+*/
 interface LedgerEntry {
-  id: string;
-  transaction_id: string;
-  entry_type: string;
-  account_code: string;
-  amount: string;
-  currency: string;
-  description: string;
+id: string;
+transaction_id: string;
+entry_type: string;
+account_code: string;
+amount: string;
+currency: string;
+description: string;
 }
 
 /**
- * LedgerDashboard — Bảng điều khiển ledger.
- *
- * Hiển thị:
- * - Danh sách giao dịch (lọc theo ngày, loại)
- * - Số dư tài khoản
- * - Trạng thái hash chain
- */
+* LedgerDashboard — Bảng điều khiển ledger.
+*
+* Hiển thị:
+* - Danh sách giao dịch (lọc theo ngày, loại)
+* - Số dư tài khoản
+* - Trạng thái hash chain
+*/
 const LedgerDashboard: React.FC = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [selectedTxn, setSelectedTxn] = useState<string | null>(null);
-  const [filterType, setFilterType] = useState<string>('all');
+const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [accounts, setAccounts] = useState<Account[]>([]);
+        const [selectedTxn, setSelectedTxn] = useState<string | null>(null);
+            const [filterType, setFilterType] = useState<string>('all');
 
-  // TODO: Kết nối API backend
-  useEffect(() => {
-    // fetch transactions và accounts từ API
-  }, []);
+                // TODO: Kết nối API backend
+                useEffect(() => {
+                // fetch transactions và accounts từ API
+                }, []);
 
-  /**
-   * Lọc giao dịch theo loại.
-   */
-  const filteredTransactions = transactions.filter((t) => {
-    if (filterType === 'all') return true;
-    return t.transaction_type === filterType;
-  });
+                /**
+                * Lọc giao dịch theo loại.
+                */
+                const filteredTransactions = transactions.filter((t) => {
+                if (filterType === 'all') return true;
+                return t.transaction_type === filterType;
+                });
 
-  /**
-   * Định dạng số tiền hiển thị.
-   */
-  const formatAmount = (amount: string, currency: string = 'USD'): string => {
-    const num = parseFloat(amount);
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency,
-    }).format(num);
-  };
+                /**
+                * Định dạng số tiền hiển thị.
+                */
+                const formatAmount = (amount: string, currency: string = 'USD'): string => {
+                const num = parseFloat(amount);
+                return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: currency,
+                }).format(num);
+                };
 
-  return (
-    <div className="ledger-dashboard" data-testid="ledger-dashboard">
-      <h1>Financial Ledger</h1>
+                {% if ui_framework == "material" %}
+                // Render với MUI components
+                return (
+                <Paper className="ledger-dashboard" data-testid="ledger-dashboard">
+                    <Typography variant="h4" component="h1" gutterBottom>Financial Ledger</Typography>
 
-      {/* Bộ lọc */}
-      <div className="filters">
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          aria-label="Lọc theo loại giao dịch"
-        >
-          <option value="all">Tất cả</option>
-          <option value="single_entry">Single Entry</option>
-          <option value="double_entry">Double Entry</option>
-        </select>
-      </div>
+                    {/* Bộ lọc */}
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                        <Select value={filterType} onChange={(e)=> setFilterType(e.target.value)}
+                            aria-label="Lọc theo loại giao dịch"
+                            >
+                            <MenuItem value="all">Tất cả</MenuItem>
+                            <MenuItem value="single_entry">Single Entry</MenuItem>
+                            <MenuItem value="double_entry">Double Entry</MenuItem>
+                        </Select>
+                    </FormControl>
 
-      {/* Danh sách giao dịch */}
-      <div className="transaction-list">
-        <h2>Giao dịch</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Loại</th>
-              <th>Trạng thái</th>
-              <th>Nợ</th>
-              <th>Có</th>
-              <th>Ngày</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTransactions.map((txn) => (
-              <tr
-                key={txn.id}
-                onClick={() => setSelectedTxn(txn.id)}
-                style={{ cursor: 'pointer' }}
-                className={selectedTxn === txn.id ? 'selected' : ''}
-              >
-                <td>{txn.id.substring(0, 8)}</td>
-                <td>{txn.transaction_type}</td>
-                <td>{txn.status}</td>
-                <td>{formatAmount(txn.total_debit)}</td>
-                <td>{formatAmount(txn.total_credit)}</td>
-                <td>{new Date(txn.created_at).toLocaleDateString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                    {/* Danh sách giao dịch */}
+                    <Card sx={{ mb: 2 }}>
+                        <CardContent>
+                            <Typography variant="h6">Giao dịch</Typography>
+                            <TableContainer>
+                                <Table>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>ID</TableCell>
+                                            <TableCell>Loại</TableCell>
+                                            <TableCell>Trạng thái</TableCell>
+                                            <TableCell>Nợ</TableCell>
+                                            <TableCell>Có</TableCell>
+                                            <TableCell>Ngày</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {filteredTransactions.map((txn) => (
+                                        <TableRow key={txn.id} onClick={()=> setSelectedTxn(txn.id)}
+                                            sx={{ cursor: 'pointer' }}
+                                            selected={selectedTxn === txn.id}
+                                            >
+                                            <TableCell>{txn.id.substring(0, 8)}</TableCell>
+                                            <TableCell>{txn.transaction_type}</TableCell>
+                                            <TableCell>{txn.status}</TableCell>
+                                            <TableCell>{formatAmount(txn.total_debit)}</TableCell>
+                                            <TableCell>{formatAmount(txn.total_credit)}</TableCell>
+                                            <TableCell>{new Date(txn.created_at).toLocaleDateString()}</TableCell>
+                                        </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </CardContent>
+                    </Card>
 
-      {/* Số dư tài khoản */}
-      <div className="account-balances">
-        <h2>Số dư tài khoản</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Mã</th>
-              <th>Tên</th>
-              <th>Loại</th>
-              <th>Số dư</th>
-            </tr>
-          </thead>
-          <tbody>
-            {accounts.map((acct) => (
-              <tr key={acct.code}>
-                <td>{acct.code}</td>
-                <td>{acct.name}</td>
-                <td>{acct.account_type}</td>
-                <td>{acct.balance ? formatAmount(String(acct.balance)) : '0.00'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
+                    {/* Số dư tài khoản */}
+                    <Card>
+                        <CardContent>
+                            <Typography variant="h6">Số dư tài khoản</Typography>
+                            <TableContainer>
+                                <Table>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>Mã</TableCell>
+                                            <TableCell>Tên</TableCell>
+                                            <TableCell>Loại</TableCell>
+                                            <TableCell>Số dư</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {accounts.map((acct) => (
+                                        <TableRow key={acct.code}>
+                                            <TableCell>{acct.code}</TableCell>
+                                            <TableCell>{acct.name}</TableCell>
+                                            <TableCell>{acct.account_type}</TableCell>
+                                            <TableCell>{acct.balance ? formatAmount(String(acct.balance)) : '0.00'}
+                                            </TableCell>
+                                        </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </CardContent>
+                    </Card>
+                </Paper>
+                );
+                {% elif ui_framework == "tailwind" %}
+                // Render với Tailwind CSS utility classes
+                return (
+                <div className="p-6 max-w-7xl mx-auto" data-testid="ledger-dashboard">
+                    <h1 className="text-2xl font-bold mb-4">Financial Ledger</h1>
 
-export default LedgerDashboard;
+                    {/* Bộ lọc */}
+                    <div className="mb-4">
+                        <select value={filterType} onChange={(e)=> setFilterType(e.target.value)}
+                            aria-label="Lọc theo loại giao dịch"
+                            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm"
+                            >
+                            <option value="all">Tất cả</option>
+                            <option value="single_entry">Single Entry</option>
+                            <option value="double_entry">Double Entry</option>
+                        </select>
+                    </div>
+
+                    {/* Danh sách giao dịch */}
+                    <div className="mb-6">
+                        <h2 className="text-xl font-semibold mb-2">Giao dịch</h2>
+                        <div className="overflow-x-auto border rounded-lg shadow">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            ID</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Loại</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Trạng thái</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Nợ</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Có</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Ngày</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {filteredTransactions.map((txn) => (
+                                    <tr key={txn.id} onClick={()=> setSelectedTxn(txn.id)}
+                                        className={`cursor-pointer hover:bg-gray-50 ${selectedTxn === txn.id ?
+                                        'bg-blue-50' : ''}`}
+                                        >
+                                        <td className="px-4 py-2 text-sm">{txn.id.substring(0, 8)}</td>
+                                        <td className="px-4 py-2 text-sm">{txn.transaction_type}</td>
+                                        <td className="px-4 py-2 text-sm">{txn.status}</td>
+                                        <td className="px-4 py-2 text-sm">{formatAmount(txn.total_debit)}</td>
+                                        <td className="px-4 py-2 text-sm">{formatAmount(txn.total_credit)}</td>
+                                        <td className="px-4 py-2 text-sm">{new
+                                            Date(txn.created_at).toLocaleDateString()}</td>
+                                    </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Số dư tài khoản */}
+                    <div>
+                        <h2 className="text-xl font-semibold mb-2">Số dư tài khoản</h2>
+                        <div className="overflow-x-auto border rounded-lg shadow">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Mã</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Tên</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Loại</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Số dư</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {accounts.map((acct) => (
+                                    <tr key={acct.code}>
+                                        <td className="px-4 py-2 text-sm">{acct.code}</td>
+                                        <td className="px-4 py-2 text-sm">{acct.name}</td>
+                                        <td className="px-4 py-2 text-sm">{acct.account_type}</td>
+                                        <td className="px-4 py-2 text-sm">{acct.balance ?
+                                            formatAmount(String(acct.balance)) : '0.00'}</td>
+                                    </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                );
+                {% elif ui_framework == "bootstrap" %}
+                // Render với react-bootstrap components
+                return (
+                <div className="container ledger-dashboard" data-testid="ledger-dashboard">
+                    <h1 className="mb-4">Financial Ledger</h1>
+
+                    {/* Bộ lọc */}
+                    <div className="mb-3">
+                        <Form.Select value={filterType} onChange={(e)=> setFilterType(e.target.value)}
+                            aria-label="Lọc theo loại giao dịch"
+                            >
+                            <option value="all">Tất cả</option>
+                            <option value="single_entry">Single Entry</option>
+                            <option value="double_entry">Double Entry</option>
+                        </Form.Select>
+                    </div>
+
+                    {/* Danh sách giao dịch */}
+                    <Card className="mb-4">
+                        <Card.Body>
+                            <h2 className="card-title">Giao dịch</h2>
+                            <Table striped bordered hover responsive>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Loại</th>
+                                        <th>Trạng thái</th>
+                                        <th>Nợ</th>
+                                        <th>Có</th>
+                                        <th>Ngày</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredTransactions.map((txn) => (
+                                    <tr key={txn.id} onClick={()=> setSelectedTxn(txn.id)}
+                                        style={{ cursor: 'pointer' }}
+                                        className={selectedTxn === txn.id ? 'table-active' : ''}
+                                        >
+                                        <td>{txn.id.substring(0, 8)}</td>
+                                        <td>{txn.transaction_type}</td>
+                                        <td>{txn.status}</td>
+                                        <td>{formatAmount(txn.total_debit)}</td>
+                                        <td>{formatAmount(txn.total_credit)}</td>
+                                        <td>{new Date(txn.created_at).toLocaleDateString()}</td>
+                                    </tr>
+                                    ))}
+                                </tbody>
+                            </Table>
+                        </Card.Body>
+                    </Card>
+
+                    {/* Số dư tài khoản */}
+                    <Card>
+                        <Card.Body>
+                            <h2 className="card-title">Số dư tài khoản</h2>
+                            <Table striped bordered hover responsive>
+                                <thead>
+                                    <tr>
+                                        <th>Mã</th>
+                                        <th>Tên</th>
+                                        <th>Loại</th>
+                                        <th>Số dư</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {accounts.map((acct) => (
+                                    <tr key={acct.code}>
+                                        <td>{acct.code}</td>
+                                        <td>{acct.name}</td>
+                                        <td>{acct.account_type}</td>
+                                        <td>{acct.balance ? formatAmount(String(acct.balance)) : '0.00'}</td>
+                                    </tr>
+                                    ))}
+                                </tbody>
+                            </Table>
+                        </Card.Body>
+                    </Card>
+                </div>
+                );
+                {% elif ui_framework == "antd" %}
+                // Render với Ant Design components
+                return (
+                <div className="ledger-dashboard" data-testid="ledger-dashboard">
+                    <Typography.Title level={2}>Financial Ledger</Typography.Title>
+
+                    {/* Bộ lọc */}
+                    <div className="mb-3">
+                        <Select value={filterType} onChange={(value)=> setFilterType(value)}
+                            aria-label="Lọc theo loại giao dịch"
+                            style={{ width: 200 }}
+                            >
+                            <Select.Option value="all">Tất cả</Select.Option>
+                            <Select.Option value="single_entry">Single Entry</Select.Option>
+                            <Select.Option value="double_entry">Double Entry</Select.Option>
+                        </Select>
+                    </div>
+
+                    {/* Danh sách giao dịch */}
+                    <Card title="Giao dịch" className="mb-4">
+                        <Table dataSource={filteredTransactions} rowKey="id" onRow={(txn)=> ({ onClick: () =>
+                            setSelectedTxn(txn.id) })}
+                            rowClassName={(txn) => selectedTxn === txn.id ? 'selected-row' : ''}
+                            columns={[
+                            { title: 'ID', dataIndex: 'id', key: 'id', render: (v: string) => v.substring(0, 8) },
+                            { title: 'Loại', dataIndex: 'transaction_type', key: 'type' },
+                            { title: 'Trạng thái', dataIndex: 'status', key: 'status' },
+                            { title: 'Nợ', dataIndex: 'total_debit', key: 'debit', render: (v: string) =>
+                            formatAmount(v) },
+                            { title: 'Có', dataIndex: 'total_credit', key: 'credit', render: (v: string) =>
+                            formatAmount(v) },
+                            { title: 'Ngày', dataIndex: 'created_at', key: 'date', render: (v: string) => new
+                            Date(v).toLocaleDateString() },
+                            ]}
+                            />
+                    </Card>
+
+                    {/* Số dư tài khoản */}
+                    <Card title="Số dư tài khoản">
+                        <Table dataSource={accounts} rowKey="code" columns={[ { title: 'Mã' , dataIndex: 'code' ,
+                            key: 'code' }, { title: 'Tên' , dataIndex: 'name' , key: 'name' }, { title: 'Loại' ,
+                            dataIndex: 'account_type' , key: 'type' }, { title: 'Số dư' , dataIndex: 'balance' ,
+                            key: 'balance' , render: (v)=> v ? formatAmount(String(v)) : '0.00' },
+                            ]}
+                            />
+                    </Card>
+                </div>
+                );
+                {% elif ui_framework == "carbon" %}
+                // Render với Carbon Design components
+                return (
+                <Layer className="ledger-dashboard" data-testid="ledger-dashboard">
+                    <Title level="1">Financial Ledger</Title>
+
+                    {/* Bộ lọc */}
+                    <div className="cds--grid cds--grid--full-width mb-3">
+                        <ComboBox labelText="Lọc theo loại giao dịch" items={[ { id: 'all' , label: 'Tất cả' }, {
+                            id: 'single_entry' , label: 'Single Entry' }, { id: 'double_entry' , label: 'Double Entry'
+                            }, ]} initialSelectedItem={filterType} onChange={({ selectedItem })=>
+                            setFilterType(selectedItem?.id || 'all')}
+                            />
+                    </div>
+
+                    {/* Danh sách giao dịch */}
+                    <Subtitle setHeading level="2">Giao dịch</Subtitle>
+                    <table className="cds--data-table" style={{ marginBottom: '1rem' }}>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Loại</th>
+                                <th>Trạng thái</th>
+                                <th>Nợ</th>
+                                <th>Có</th>
+                                <th>Ngày</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredTransactions.map((txn) => (
+                            <tr key={txn.id} onClick={()=> setSelectedTxn(txn.id)}
+                                className={selectedTxn === txn.id ? 'cds--data-table-row--selected' : ''}
+                                >
+                                <td>{txn.id.substring(0, 8)}</td>
+                                <td>{txn.transaction_type}</td>
+                                <td>{txn.status}</td>
+                                <td>{formatAmount(txn.total_debit)}</td>
+                                <td>{formatAmount(txn.total_credit)}</td>
+                                <td>{new Date(txn.created_at).toLocaleDateString()}</td>
+                            </tr>
+                            ))}
+                        </tbody>
+                    </table>
+
+                    {/* Số dư tài khoản */}
+                    <Subtitle setHeading level="2">Số dư tài khoản</Subtitle>
+                    <table className="cds--data-table">
+                        <thead>
+                            <tr>
+                                <th>Mã</th>
+                                <th>Tên</th>
+                                <th>Loại</th>
+                                <th>Số dư</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {accounts.map((acct) => (
+                            <tr key={acct.code}>
+                                <td>{acct.code}</td>
+                                <td>{acct.name}</td>
+                                <td>{acct.account_type}</td>
+                                <td>{acct.balance ? formatAmount(String(acct.balance)) : '0.00'}</td>
+                            </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </Layer>
+                );
+                {% endif %}
+                };
+
+                export default LedgerDashboard;

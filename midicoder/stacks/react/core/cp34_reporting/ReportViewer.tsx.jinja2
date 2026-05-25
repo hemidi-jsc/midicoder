@@ -1,7 +1,20 @@
 // Report Viewer — Hiển thị report trong browser.
 // CP34: Report & Document Generator (React)
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 
 import React, { useState, useEffect } from "react";
+
+{% if ui_framework == "material" %}
+import { Button, Card, CardContent, CircularProgress, Typography } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng lớp tiện ích Tailwind CSS inline
+{% elif ui_framework == "bootstrap" %}
+import { Button, Spinner } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Card, Typography, Spin } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, Title, Loading } from '@carbon/react';
+{% endif %}
 
 export interface ReportViewerProps {
 reportId: string;
@@ -43,14 +56,65 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
                 generate();
                 }, [reportId]);
 
+                {% if ui_framework == "material" %}
+                // Render với MUI components
                 return (
-                <div className="report-viewer">
-                    <h2>{title}</h2>
-                    {format === "pdf" && url && <iframe src={url} width="100%" height="600px" />}
-                    <button onClick={()=> url && window.open(url, "_blank")}>Tải xuống</button>
-                    {loading && <p>Đang tạo báo cáo...</p>}
+                <Card className="report-viewer">
+                    <CardContent>
+                        <Typography variant="h6" gutterBottom>{title}</Typography>
+                        {format === "pdf" && url && <iframe src={url} width="100%" height="600px" />}
+                        <Button variant="contained" onClick={()=> url && window.open(url, "_blank")}>Tải xuống</Button>
+                        {loading &&
+                        <CircularProgress />}
+                    </CardContent>
+                </Card>
+                );
+                {% elif ui_framework == "tailwind" %}
+                // Render với Tailwind CSS utility classes
+                return (
+                <div className="p-4 border rounded-lg" data-testid="report-viewer">
+                    <h2 className="text-xl font-bold mb-4">{title}</h2>
+                    {format === "pdf" && url && <iframe src={url} width="100%" height="600px"
+                        className="border rounded" />}
+                    <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={()=> url &&
+                        window.open(url, "_blank")}
+                        >Tải xuống</button>
+                    {loading && <p className="text-gray-500 mt-2">Đang tạo báo cáo...</p>}
                 </div>
                 );
+                {% elif ui_framework == "bootstrap" %}
+                // Render với react-bootstrap components
+                return (
+                <div className="report-viewer">
+                    <h2 className="mb-3">{title}</h2>
+                    {format === "pdf" && url && <iframe src={url} width="100%" height="600px" />}
+                    <Button variant="primary" onClick={()=> url && window.open(url, "_blank")}>Tải xuống</Button>
+                    {loading &&
+                    <Spinner animation="border" size="sm" />}
+                </div>
+                );
+                {% elif ui_framework == "antd" %}
+                // Render với Ant Design components
+                return (
+                <Card title={title} className="report-viewer">
+                    {format === "pdf" && url && <iframe src={url} width="100%" height="600px" />}
+                    <Button type="primary" onClick={()=> url && window.open(url, "_blank")}>Tải xuống</Button>
+                    {loading &&
+                    <Spin />}
+                </Card>
+                );
+                {% elif ui_framework == "carbon" %}
+                // Render với Carbon Design components
+                return (
+                <Layer className="report-viewer">
+                    <Title level="2">{title}</Title>
+                    {format === "pdf" && url && <iframe src={url} width="100%" height="600px" />}
+                    <Button onClick={()=> url && window.open(url, "_blank")}>Tải xuống</Button>
+                    {loading &&
+                    <Loading description="Đang tạo báo cáo..." />}
+                </Layer>
+                );
+                {% endif %}
                 };
 
                 export default ReportViewer;

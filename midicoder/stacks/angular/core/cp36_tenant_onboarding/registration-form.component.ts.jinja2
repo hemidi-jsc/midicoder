@@ -1,437 +1,452 @@
 /**
- * Registration Form Component — form đăng ký tenant mới.
- *
- * Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
- *
- * Chức năng:
- * - Nhập email, tên công ty, chọn plan
- * - Xác thực form với Angular Reactive Forms
- * - Gửi đăng ký qua OnboardingService
- * - Hiển thị trạng thái thành công/lỗi
- */
+* Registration Form Component — form đăng ký tenant mới.
+*{% raw %}
+* UI Framework: {{{ ui_framework }}}{% endraw %}
+*
+* Tự động sinh bởi Midicoder CE — CP36: Tenant Onboarding & Subscription.
+*
+* Chức năng:
+* - Nhập email, tên công ty, chọn plan
+* - Xác thực form với Angular Reactive Forms
+* - Gửi đăng ký qua OnboardingService
+* - Hiển thị trạng thái thành công/lỗi
+*/
 
 import {
-  Component,
-  Input,
-  OnInit,
-  OnDestroy,
-  ChangeDetectionStrategy,
+Component,
+Input,
+OnInit,
+OnDestroy,
+ChangeDetectionStrategy,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
-  FormBuilder,
-  FormGroup,
-  FormControl,
-  Validators,
-  ReactiveFormsModule,
+FormBuilder,
+FormGroup,
+FormControl,
+Validators,
+ReactiveFormsModule,
 } from '@angular/forms';
 import { Subject, Subscription } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
+
+{% if ui_framework == "material" %}
+import { MatButtonModule } from '@angular/material/button';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+import { MatCardModule } from '@angular/material/card';
+import { MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+// Su dung Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+// Ant Design khong ung dung cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon khong ung dung cho Angular
+{% endif %}
 {% raw %}
 /** Mô hình plan pricing — cấu hình gói đăng ký */
 export interface PlanPricing {
-  plan: string;
-  label: string;
-  monthly_price: string;
-  yearly_price: string;
-  features: string[];
-  max_users: number;
-  max_storage_gb: number;
+plan: string;
+label: string;
+monthly_price: string;
+yearly_price: string;
+features: string[];
+max_users: number;
+max_storage_gb: number;
 }
 
 /** Response từ API đăng ký */
 export interface RegistrationResponse {
-  tenant_id: string;
-  email: string;
-  company_name: string;
-  status: string;
-  verification_token?: string;
+tenant_id: string;
+email: string;
+company_name: string;
+status: string;
+verification_token?: string;
 }
 
 /** Dữ liệu plan từ server */
 const PLANS_DATA: PlanPricing[] = [
 {% endraw %}
 {% for plan in plans %}
-  {
-    plan: '{{ plan.plan }}',
-    label: '{{ plan.label }}',
-    monthly_price: '{{ plan.monthly_price }}',
-    yearly_price: '{{ plan.yearly_price }}',
-    features: {{ plan.features | tojson }},
-    max_users: {{ plan.max_users }},
-    max_storage_gb: {{ plan.max_storage_gb }},
-  },
+{
+plan: '{{ plan.plan }}',
+label: '{{ plan.label }}',
+monthly_price: '{{ plan.monthly_price }}',
+yearly_price: '{{ plan.yearly_price }}',
+features: {{ plan.features | tojson }},
+max_users: {{ plan.max_users }},
+max_storage_gb: {{ plan.max_storage_gb }},
+},
 {% endfor %}
 {% raw %}
 ];
 
 @Component({
-  selector: 'app-registration-form',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <div class="registration-form">
-      <header class="form-header">
+selector: 'app-registration-form',
+standalone: true,
+imports: [
+CommonModule,
+ReactiveFormsModule,
+{% if ui_framework == "material" %}
+MatButtonModule,
+MatFormFieldModule,
+MatInputModule,
+MatSelectModule,
+MatCardModule,
+MatSnackBarModule,
+MatProgressBarModule,
+{% elif ui_framework == "antd" %}
+NzFormModule,
+NzInputModule,
+NzSelectModule,
+NzCardModule,
+{% elif ui_framework == "carbon" %}
+{% endif %}
+],
+changeDetection: ChangeDetectionStrategy.OnPush,
+template: `
+<div class="registration-form">
+    <header class="form-header">
         <h1>Đăng Ký Tenant</h1>
         <p class="subtitle">Tạo tài khoản công ty mới và chọn gói phù hợp</p>
-      </header>
+    </header>
 
-      <!-- Thông báo lỗi tổng -->
-      <div *ngIf="errorMessage" class="alert alert-error">
+    <!-- Thông báo lỗi tổng -->
+    <div *ngIf="errorMessage" class="alert alert-error">
         <span class="alert-icon">&#9888;</span>
         {{ errorMessage }}
-      </div>
+    </div>
 
-      <!-- Thông báo thành công -->
-      <div *ngIf="registrationSuccess" class="alert alert-success">
+    <!-- Thông báo thành công -->
+    <div *ngIf="registrationSuccess" class="alert alert-success">
         <span class="alert-icon">&#10004;</span>
         Đăng ký thành công! Vui lòng kiểm tra email để xác minh tài khoản.
-      </div>
+    </div>
 
-      <!-- Form đăng ký -->
-      <form [formGroup]="registrationForm" (ngSubmit)="onSubmit()" *ngIf="!registrationSuccess">
+    <!-- Form đăng ký -->
+    <form [formGroup]="registrationForm" (ngSubmit)="onSubmit()" *ngIf="!registrationSuccess">
         <!-- Email -->
         <div class="form-group">
-          <label for="email">Email <span class="required">*</span></label>
-          <input
-            id="email"
-            type="email"
-            formControlName="email"
-            placeholder="example@company.com"
-            [class.ng-invalid]="email?.invalid && email?.touched"
-          />
-          <div *ngIf="email?.invalid && email?.touched" class="field-error">
-            <span *ngIf="email?.errors?.['required']">Email là bắt buộc</span>
-            <span *ngIf="email?.errors?.['email']">Email không hợp lệ</span>
-          </div>
+            <label for="email">Email <span class="required">*</span></label>
+            <input id="email" type="email" formControlName="email" placeholder="example@company.com"
+                [class.ng-invalid]="email?.invalid && email?.touched" />
+            <div *ngIf="email?.invalid && email?.touched" class="field-error">
+                <span *ngIf="email?.errors?.['required']">Email là bắt buộc</span>
+                <span *ngIf="email?.errors?.['email']">Email không hợp lệ</span>
+            </div>
         </div>
 
         <!-- Tên công ty -->
         <div class="form-group">
-          <label for="companyName">Tên Công Ty <span class="required">*</span></label>
-          <input
-            id="companyName"
-            type="text"
-            formControlName="companyName"
-            placeholder="Nhập tên công ty của bạn"
-            [class.ng-invalid]="companyName?.invalid && companyName?.touched"
-          />
-          <div *ngIf="companyName?.invalid && companyName?.touched" class="field-error">
-            <span *ngIf="companyName?.errors?.['required']">Tên công ty là bắt buộc</span>
-            <span *ngIf="companyName?.errors?.['minlength']">Tên công ty phải có ít nhất 2 ký tự</span>
-          </div>
+            <label for="companyName">Tên Công Ty <span class="required">*</span></label>
+            <input id="companyName" type="text" formControlName="companyName" placeholder="Nhập tên công ty của bạn"
+                [class.ng-invalid]="companyName?.invalid && companyName?.touched" />
+            <div *ngIf="companyName?.invalid && companyName?.touched" class="field-error">
+                <span *ngIf="companyName?.errors?.['required']">Tên công ty là bắt buộc</span>
+                <span *ngIf="companyName?.errors?.['minlength']">Tên công ty phải có ít nhất 2 ký tự</span>
+            </div>
         </div>
 
         <!-- Chọn gói -->
         <div class="form-group">
-          <label>Chọn Gói <span class="required">*</span></label>
-          <div class="plan-cards">
-            <div
-              *ngFor="let plan of plans"
-              class="plan-card"
-              [class.selected]="selectedPlan === plan.plan"
-              (click)="selectPlan(plan.plan)"
-            >
-              <div class="plan-header">
-                <h3>{{ plan.label }}</h3>
-                <span class="plan-price">
-                  ${{ plan.monthly_price }}/{{ 'tháng' }}
-                </span>
-              </div>
-              <ul class="plan-features">
-                <li *ngFor="let feature of plan.features">{{ feature }}</li>
-                <li>Người dùng: tối đa {{ plan.max_users }}</li>
-                <li>Storage: {{ plan.max_storage_gb }} GB</li>
-              </ul>
-              <input
-                type="radio"
-                name="plan"
-                [value]="plan.plan"
-                [checked]="selectedPlan === plan.plan"
-                class="plan-radio"
-              />
+            <label>Chọn Gói <span class="required">*</span></label>
+            <div class="plan-cards">
+                <div *ngFor="let plan of plans" class="plan-card" [class.selected]="selectedPlan === plan.plan"
+                    (click)="selectPlan(plan.plan)">
+                    <div class="plan-header">
+                        <h3>{{ plan.label }}</h3>
+                        <span class="plan-price">
+                            ${{ plan.monthly_price }}/{{ 'tháng' }}
+                        </span>
+                    </div>
+                    <ul class="plan-features">
+                        <li *ngFor="let feature of plan.features">{{ feature }}</li>
+                        <li>Người dùng: tối đa {{ plan.max_users }}</li>
+                        <li>Storage: {{ plan.max_storage_gb }} GB</li>
+                    </ul>
+                    <input type="radio" name="plan" [value]="plan.plan" [checked]="selectedPlan === plan.plan"
+                        class="plan-radio" />
+                </div>
             </div>
-          </div>
-          <div *ngIf="form.get('plan')?.invalid && form.get('plan')?.touched" class="field-error">
-            Vui lòng chọn một gói
-          </div>
+            <div *ngIf="form.get('plan')?.invalid && form.get('plan')?.touched" class="field-error">
+                Vui lòng chọn một gói
+            </div>
         </div>
 
         <!-- Nút submit -->
         <div class="form-actions">
-          <button
-            type="submit"
-            [disabled]="registrationForm.invalid || isLoading"
-            class="submit-btn"
-          >
-            <span *ngIf="isLoading">Đang đăng ký...</span>
-            <span *ngIf="!isLoading">Đăng Ký Ngay</span>
-          </button>
+            <button type="submit" [disabled]="registrationForm.invalid || isLoading" class="submit-btn">
+                <span *ngIf="isLoading">Đang đăng ký...</span>
+                <span *ngIf="!isLoading">Đăng Ký Ngay</span>
+            </button>
         </div>
-      </form>
+    </form>
 
-      <!-- Hiển thị sau khi đăng ký thành công -->
-      <div *ngIf="registrationSuccess" class="success-message">
+    <!-- Hiển thị sau khi đăng ký thành công -->
+    <div *ngIf="registrationSuccess" class="success-message">
         <p>Tenant ID: <strong>{{ tenantId }}</strong></p>
         <p>Chúng tôi đã gửi email xác minh đến <strong>{{ submittedEmail }}</strong></p>
-      </div>
     </div>
-  `,
-  styles: [`
-    .registration-form {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 24px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-    .form-header {
-      text-align: center;
-      margin-bottom: 32px;
-    }
-    .form-header h1 {
-      font-size: 28px;
-      color: #1a1a1a;
-      margin: 0 0 8px 0;
-    }
-    .subtitle {
-      color: #666;
-      font-size: 16px;
-    }
-    .alert {
-      padding: 12px 16px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .alert-error {
-      background: #ffebee;
-      color: #c62828;
-      border: 1px solid #ef9a9a;
-    }
-    .alert-success {
-      background: #e8f5e9;
-      color: #2e7d32;
-      border: 1px solid #a5d6a7;
-    }
-    .alert-icon {
-      font-size: 18px;
-    }
-    .form-group {
-      margin-bottom: 24px;
-    }
-    .form-group label {
-      display: block;
-      font-weight: 600;
-      margin-bottom: 8px;
-      color: #333;
-    }
-    .required {
-      color: #c62828;
-    }
-    .form-group input[type="email"],
-    .form-group input[type="text"] {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      font-size: 14px;
-      box-sizing: border-box;
-    }
-    .form-group input.ng-invalid {
-      border-color: #c62828;
-    }
-    .field-error {
-      color: #c62828;
-      font-size: 12px;
-      margin-top: 4px;
-    }
-    .plan-cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-    }
-    .plan-card {
-      border: 2px solid #e0e0e0;
-      border-radius: 12px;
-      padding: 16px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      position: relative;
-    }
-    .plan-card:hover {
-      border-color: #42a5f5;
-      box-shadow: 0 2px 8px rgba(66, 165, 245, 0.2);
-    }
-    .plan-card.selected {
-      border-color: #1976d2;
-      background: #e3f2fd;
-      box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
-    }
-    .plan-header {
-      margin-bottom: 12px;
-    }
-    .plan-header h3 {
-      margin: 0 0 4px 0;
-      font-size: 18px;
-      color: #1a1a1a;
-    }
-    .plan-price {
-      font-size: 14px;
-      color: #1976d2;
-      font-weight: 600;
-    }
-    .plan-features {
-      list-style: none;
-      padding: 0;
-      margin: 0 0 12px 0;
-    }
-    .plan-features li {
-      font-size: 13px;
-      color: #555;
-      padding: 2px 0;
-      padding-left: 16px;
-      position: relative;
-    }
-    .plan-features li::before {
-      content: '✓';
-      position: absolute;
-      left: 0;
-      color: #4caf50;
-    }
-    .plan-radio {
-      position: absolute;
-      opacity: 0;
-    }
-    .form-actions {
-      text-align: center;
-      margin-top: 32px;
-    }
-    .submit-btn {
-      padding: 12px 48px;
-      background: #1976d2;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s ease;
-    }
-    .submit-btn:hover:not(:disabled) {
-      background: #1565c0;
-    }
-    .submit-btn:disabled {
-      background: #bdbdbd;
-      cursor: not-allowed;
-    }
-    .success-message {
-      text-align: center;
-      padding: 32px;
-      background: #e8f5e9;
-      border-radius: 12px;
-      margin-top: 16px;
-    }
-    .success-message p {
-      margin: 8px 0;
-      color: #2e7d32;
-    }
-  `],
+</div>
+`,
+styles: [`
+.registration-form {
+max-width: 900px;
+margin: 0 auto;
+padding: 24px;
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.form-header {
+text-align: center;
+margin-bottom: 32px;
+}
+.form-header h1 {
+font-size: 28px;
+color: #1a1a1a;
+margin: 0 0 8px 0;
+}
+.subtitle {
+color: #666;
+font-size: 16px;
+}
+.alert {
+padding: 12px 16px;
+border-radius: 8px;
+margin-bottom: 20px;
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.alert-error {
+background: #ffebee;
+color: #c62828;
+border: 1px solid #ef9a9a;
+}
+.alert-success {
+background: #e8f5e9;
+color: #2e7d32;
+border: 1px solid #a5d6a7;
+}
+.alert-icon {
+font-size: 18px;
+}
+.form-group {
+margin-bottom: 24px;
+}
+.form-group label {
+display: block;
+font-weight: 600;
+margin-bottom: 8px;
+color: #333;
+}
+.required {
+color: #c62828;
+}
+.form-group input[type="email"],
+.form-group input[type="text"] {
+width: 100%;
+padding: 10px 12px;
+border: 1px solid #ccc;
+border-radius: 6px;
+font-size: 14px;
+box-sizing: border-box;
+}
+.form-group input.ng-invalid {
+border-color: #c62828;
+}
+.field-error {
+color: #c62828;
+font-size: 12px;
+margin-top: 4px;
+}
+.plan-cards {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+gap: 16px;
+}
+.plan-card {
+border: 2px solid #e0e0e0;
+border-radius: 12px;
+padding: 16px;
+cursor: pointer;
+transition: all 0.2s ease;
+position: relative;
+}
+.plan-card:hover {
+border-color: #42a5f5;
+box-shadow: 0 2px 8px rgba(66, 165, 245, 0.2);
+}
+.plan-card.selected {
+border-color: #1976d2;
+background: #e3f2fd;
+box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+}
+.plan-header {
+margin-bottom: 12px;
+}
+.plan-header h3 {
+margin: 0 0 4px 0;
+font-size: 18px;
+color: #1a1a1a;
+}
+.plan-price {
+font-size: 14px;
+color: #1976d2;
+font-weight: 600;
+}
+.plan-features {
+list-style: none;
+padding: 0;
+margin: 0 0 12px 0;
+}
+.plan-features li {
+font-size: 13px;
+color: #555;
+padding: 2px 0;
+padding-left: 16px;
+position: relative;
+}
+.plan-features li::before {
+content: '✓';
+position: absolute;
+left: 0;
+color: #4caf50;
+}
+.plan-radio {
+position: absolute;
+opacity: 0;
+}
+.form-actions {
+text-align: center;
+margin-top: 32px;
+}
+.submit-btn {
+padding: 12px 48px;
+background: #1976d2;
+color: white;
+border: none;
+border-radius: 8px;
+font-size: 16px;
+font-weight: 600;
+cursor: pointer;
+transition: background 0.2s ease;
+}
+.submit-btn:hover:not(:disabled) {
+background: #1565c0;
+}
+.submit-btn:disabled {
+background: #bdbdbd;
+cursor: not-allowed;
+}
+.success-message {
+text-align: center;
+padding: 32px;
+background: #e8f5e9;
+border-radius: 12px;
+margin-top: 16px;
+}
+.success-message p {
+margin: 8px 0;
+color: #2e7d32;
+}
+`],
 })
 export class RegistrationFormComponent implements OnInit, OnDestroy {
-  /** Danh sách plan nhận từ parent qua @Input */
-  @Input() plans: PlanPricing[] = PLANS_DATA;
+/** Danh sách plan nhận từ parent qua @Input */
+@Input() plans: PlanPricing[] = PLANS_DATA;
 
-  /** Form đăng ký với Reactive Forms */
-  registrationForm: FormGroup;
+/** Form đăng ký với Reactive Forms */
+registrationForm: FormGroup;
 
-  /** Subject để cleanup subscriptions khi component bị phá hủy */
-  private destroy$ = new Subject<void>();
+/** Subject để cleanup subscriptions khi component bị phá hủy */
+private destroy$ = new Subject<void>();
 
-  /** Subscription để hủy đăng ký trong ngOnDestroy */
-  private submitSubscription: Subscription | null = null;
+    /** Subscription để hủy đăng ký trong ngOnDestroy */
+    private submitSubscription: Subscription | null = null;
 
-  /** Trạng thái đang tải */
-  isLoading: boolean = false;
+    /** Trạng thái đang tải */
+    isLoading: boolean = false;
 
-  /** Thông báo lỗi */
-  errorMessage: string = '';
+    /** Thông báo lỗi */
+    errorMessage: string = '';
 
-  /** Đăng ký thành công */
-  registrationSuccess: boolean = false;
+    /** Đăng ký thành công */
+    registrationSuccess: boolean = false;
 
-  /** Plan được chọn */
-  selectedPlan: string = '';
+    /** Plan được chọn */
+    selectedPlan: string = '';
 
-  /** Tenant ID trả về sau khi đăng ký */
-  tenantId: string = '';
+    /** Tenant ID trả về sau khi đăng ký */
+    tenantId: string = '';
 
-  /** Email đã submit */
-  submittedEmail: string = '';
+    /** Email đã submit */
+    submittedEmail: string = '';
 
-  constructor(
+    constructor(
     private fb: FormBuilder,
     private onboardingService: any
-  ) {
+    ) {
     // Khởi tạo form với Validators
     this.registrationForm = this.fb.group({
-      email: new FormControl('', [
-        Validators.required,
-        Validators.email,
-      ]),
-      companyName: new FormControl('', [
-        Validators.required,
-        Validators.minLength(2),
-      ]),
-      plan: new FormControl('', [Validators.required]),
+    email: new FormControl('', [
+    Validators.required,
+    Validators.email,
+    ]),
+    companyName: new FormControl('', [
+    Validators.required,
+    Validators.minLength(2),
+    ]),
+    plan: new FormControl('', [Validators.required]),
     });
-  }
+    }
 
-  ngOnInit(): void {
+    ngOnInit(): void {
     // Chọn plan đầu tiên mặc định nếu có
     if (this.plans.length > 0) {
-      this.selectPlan(this.plans[0].plan);
+    this.selectPlan(this.plans[0].plan);
     }
-  }
+    }
 
-  ngOnDestroy(): void {
+    ngOnDestroy(): void {
     // Cleanup: hủy subject và subscription để tránh memory leak
     this.destroy$.next();
     this.destroy$.complete();
     if (this.submitSubscription) {
-      this.submitSubscription.unsubscribe();
+    this.submitSubscription.unsubscribe();
     }
-  }
+    }
 
-  /** Getter cho các form control để dùng trong template */
-  get email() {
+    /** Getter cho các form control để dùng trong template */
+    get email() {
     return this.registrationForm.get('email');
-  }
+    }
 
-  get companyName() {
+    get companyName() {
     return this.registrationForm.get('companyName');
-  }
+    }
 
-  get form() {
+    get form() {
     return this.registrationForm;
-  }
+    }
 
-  /** Chọn plan và cập nhật form control */
-  selectPlan(plan: string): void {
+    /** Chọn plan và cập nhật form control */
+    selectPlan(plan: string): void {
     this.selectedPlan = plan;
     this.registrationForm.patchValue({ plan });
-  }
+    }
 
-  /** Xử lý submit form đăng ký */
-  onSubmit(): void {
+    /** Xử lý submit form đăng ký */
+    onSubmit(): void {
     // Ngăn submit nếu form không hợp lệ
     if (this.registrationForm.invalid) {
-      // Đánh dấu tất cả controls để hiển thị lỗi
-      this.registrationForm.markAllAsTouched();
-      this.errorMessage = 'Vui lòng điền đầy đủ thông tin và chọn một gói';
-      return;
+    // Đánh dấu tất cả controls để hiển thị lỗi
+    this.registrationForm.markAllAsTouched();
+    this.errorMessage = 'Vui lòng điền đầy đủ thông tin và chọn một gói';
+    return;
     }
 
     this.isLoading = true;
@@ -441,31 +456,31 @@ export class RegistrationFormComponent implements OnInit, OnDestroy {
 
     // Gọi API đăng ký tenant
     this.submitSubscription = this.onboardingService
-      .register({
-        email: formData.email,
-        company_name: formData.companyName,
-        plan: formData.plan,
-        trial_days: {{ default_trial_days }},
-      })
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (response: RegistrationResponse) => {
-          this.isLoading = false;
-          this.registrationSuccess = true;
-          this.tenantId = response.tenant_id;
-          this.submittedEmail = response.email;
-        },
-        error: (error) => {
-          this.isLoading = false;
-          if (error.status === 409) {
-            this.errorMessage = 'Email này đã được đăng ký';
-          } else if (error.status === 400) {
-            this.errorMessage = error.message || 'Thông tin đăng ký không hợp lệ';
-          } else {
-            this.errorMessage = 'Đăng ký thất bại, vui lòng thử lại sau';
-          }
-        },
-      });
-  }
-}
-{% endraw %}
+    .register({
+    email: formData.email,
+    company_name: formData.companyName,
+    plan: formData.plan,
+    trial_days: {{ default_trial_days }},
+    })
+    .pipe(takeUntil(this.destroy$))
+    .subscribe({
+    next: (response: RegistrationResponse) => {
+    this.isLoading = false;
+    this.registrationSuccess = true;
+    this.tenantId = response.tenant_id;
+    this.submittedEmail = response.email;
+    },
+    error: (error) => {
+    this.isLoading = false;
+    if (error.status === 409) {
+    this.errorMessage = 'Email này đã được đăng ký';
+    } else if (error.status === 400) {
+    this.errorMessage = error.message || 'Thông tin đăng ký không hợp lệ';
+    } else {
+    this.errorMessage = 'Đăng ký thất bại, vui lòng thử lại sau';
+    }
+    },
+    });
+    }
+    }
+    {% endraw %}

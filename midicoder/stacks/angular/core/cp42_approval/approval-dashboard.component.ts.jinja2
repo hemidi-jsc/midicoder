@@ -1,13 +1,15 @@
 /**
-* ApprovalDashboardComponent — Bảng điều khiển tổng quan phê duyệt.
+* ApprovalDashboardComponent — Bang dieu khien tong quan phe duyet.
 *
-* Hiển thị tổng quan các yêu cầu phê duyệt đang chờ xử lý. Thống kê nhanh
-* theo trạng thái (pending/approved/rejected/escalated). Nút hành động nhanh.
-* Lọc theo loại phê duyệt và trạng thái. Tích hợp WebSocket cho cập nhật realtime.
+* Hien thi tong quan cac yeu cau phe duyet dang cho xu ly. Thong ke nhanh
+* theo trang thai (pending/approved/rejected/escalated). Nut hanh dong nhanh.
+* Loc theo loai phe duyet va trang thai. Tap hop WebSocket cho cap nhat realtime.
 *
-* Tạo tự động bởi CP42 — không sửa thủ công.
+* Tao tu dong boi CP42 — khong sua thu cong.
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 */
-
+{% if ui_framework == "material" %}
 import {
 Component,
 OnInit,
@@ -21,6 +23,72 @@ computed
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatTabsModule } from '@angular/material/tabs';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+{% elif ui_framework == "tailwind" %}
+import {
+Component,
+OnInit,
+OnDestroy,
+ChangeDetectorRef,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+// Su dung Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+import {
+Component,
+OnInit,
+OnDestroy,
+ChangeDetectorRef,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+// Su dung Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+import {
+Component,
+OnInit,
+OnDestroy,
+ChangeDetectorRef,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+// Ant Design khong dung cho Angular
+{% elif ui_framework == "carbon" %}
+import {
+Component,
+OnInit,
+OnDestroy,
+ChangeDetectorRef,
+ChangeDetectionStrategy,
+inject,
+signal,
+computed
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+// Carbon khong dung cho Angular
+{% endif %}
 
 import { ApprovalService } from './approval.service';
 import { ApprovalStore } from './approval.store';

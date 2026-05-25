@@ -1,751 +1,604 @@
 {% raw %}
 /**
- * CP50 Catalog & Taxonomy Engine — Trang danh sách sản phẩm
- *
- * Hiển thị danh sách sản phẩm dưới dạng lưới (grid) với thanh bộ lọc
- * và phân trang. Hỗ trợ lọc theo trạng thái, danh mục, khoảng giá,
- * và tìm kiếm theo từ khóa.
- */
+* UI Framework: {{{ ui_framework }}}
+* CP50 Catalog & Taxonomy Engine — Trang danh sách sản phẩm
+*
+* Hiển thị danh sách sản phẩm dưới dạng lưới (grid) với thanh bộ lọc
+* và phân trang. Hỗ trợ lọc theo trạng thái, danh mục, khoảng giá,
+* và tìm kiếm theo từ khóa.
+*/
+{% endraw %}
+{% if ui_framework == "material" %}
+import { Button, Card, Grid, Chip, Table, TableBody, TableCell, TableHead, TableRow, Pagination as MuiPagination } from
+'@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Su? dung Tailwind CSS utility classes inline — kh?ong ca?n import thanh pha?n UI
+{% elif ui_framework == "bootstrap" %}
+import { Button, Card, Badge, Pagination } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Card, Tag, Pagination, Space } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Layer, Tag, Accordion } from '@carbon/react';
+{% endif %}
+{% raw %}
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 /* ========================================================================
-   Kiểu dữ liệu
-   ======================================================================== */
+Kiểu dữ liệu
+======================================================================== */
 
 /** Các trạng thái có thể có của một sản phẩm */
 export enum ProductStatus {
-  DRAFT = 'DRAFT',
-  ACTIVE = 'ACTIVE',
-  INACTIVE = 'INACTIVE',
-  ARCHIVED = 'ARCHIVED',
+DRAFT = 'DRAFT',
+ACTIVE = 'ACTIVE',
+INACTIVE = 'INACTIVE',
+ARCHIVED = 'ARCHIVED',
 }
 
 /** Nhãn hiển thị tiếng Việt cho từng trạng thái */
 const STATUS_LABELS: Record<ProductStatus, string> = {
-  [ProductStatus.DRAFT]: 'Nháp',
-  [ProductStatus.ACTIVE]: 'Hoạt động',
-  [ProductStatus.INACTIVE]: 'Tạm dừng',
-  [ProductStatus.ARCHIVED]: 'Lưu trữ',
-};
-
-/** Màu nền badge cho từng trạng thái */
-const STATUS_COLORS: Record<ProductStatus, string> = {
-  [ProductStatus.DRAFT]: '#94a3b8',
-  [ProductStatus.ACTIVE]: '#22c55e',
-  [ProductStatus.INACTIVE]: '#f59e0b',
-  [ProductStatus.ARCHIVED]: '#6b7280',
-};
-
-/** Ảnh đại diện của sản phẩm */
-export interface ProductImage {
-  url: string;
-  alt_text: string;
-  is_primary: boolean;
-  sort_order: number;
-}
-
-/** Giao diện sản phẩm */
-export interface Product {
-  product_id: string;
-  name: string;
-  slug: string;
-  sku: string;
-  description: string;
-  category_id: string | null;
-  brand_id: string | null;
-  price: number;
-  cost_price: number;
-  compare_at_price: number | null;
-  currency: string;
-  weight: number | null;
-  status: ProductStatus;
-  visibility: string;
-  tags: string[];
-  images: ProductImage[];
-  is_deleted: boolean;
-  created_at: string;
-}
-
-/** Bộ lọc áp dụng lên danh sách sản phẩm */
-export interface ProductFilters {
-  status: ProductStatus | '';
-  categoryId: string;
-  priceMin: number | '';
-  priceMax: number | '';
-  searchQuery: string;
-}
-
-/** Kết quả phân trang */
-interface PaginationInfo {
-  page: number;
-  pageSize: number;
-  totalItems: number;
-  totalPages: number;
-}
-
-/* ========================================================================
-   Props
-   ======================================================================== */
-
-export interface ProductListProps {
-  /** URL cơ sở của API (mặc định '/api/v1') */
-  apiBaseUrl?: string;
-  /** Hàm gọi khi người dùng nhấp vào sản phẩm */
-  onProductClick?: (id: string) => void;
-}
-
-/* ========================================================================
-   Thành phần: Badge trạng thái
-   ======================================================================== */
-
-/** Hiển thị badge tròn nhỏ thể hiện trạng thái sản phẩm */
-function StatusBadge({ status }: { status: ProductStatus }) {
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 10px',
-        borderRadius: '9999px',
-        fontSize: '12px',
-        fontWeight: 600,
-        color: '#fff',
-        backgroundColor: STATUS_COLORS[status],
-      }}
-    >
-      {STATUS_LABELS[status]}
-    </span>
-  );
-}
-
-/* ========================================================================
-   Thành phần: Card sản phẩm
-   ======================================================================== */
-
-/** Card hiển thị thông tin tóm tắt của một sản phẩm */
-function ProductCard({
-  product,
-  onClick,
-}: {
-  product: Product;
-  onClick: (id: string) => void;
-}) {
-  /* Lấy ảnh chính; nếu không có thì dùng ảnh placeholder */
-  const primaryImage = product.images.find((img) => img.is_primary);
-  const imageUrl = primaryImage?.url ?? 'https://placehold.co/400x300/e2e8f0/94a3b8?text=Không+có+ảnh';
-
-  /** Tính phần trăm giảm giá (nếu có so sánh với giá gốc) */
-  const discountPercent = useMemo(() => {
-    if (product.compare_at_price && product.compare_at_price > product.price) {
-      return Math.round(
-        ((product.compare_at_price - product.price) / product.compare_at_price) * 100
-      );
-    }
-    return null;
-  }, [product.price, product.compare_at_price]);
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onClick(product.product_id)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick(product.product_id);
-        }
-      }}
-      style={{
-        border: '1px solid #e2e8f0',
-        borderRadius: '12px',
-        overflow: 'hidden',
-        cursor: 'pointer',
-        transition: 'box-shadow 0.2s, transform 0.2s',
-        backgroundColor: '#fff',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.12)';
-        e.currentTarget.style.transform = 'translateY(-4px)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = 'none';
-        e.currentTarget.style.transform = 'translateY(0)';
-      }}
-    >
-      {/* Hình ảnh */}
-      <div style={{ position: 'relative', paddingTop: '75%' }}>
-        <img
-          src={imageUrl}
-          alt={primaryImage?.alt_text ?? product.name}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-          }}
-        />
-        {/* Overlay giảm giá */}
-        {discountPercent && (
-          <span
-            style={{
-              position: 'absolute',
-              top: '8px',
-              right: '8px',
-              backgroundColor: '#ef4444',
-              color: '#fff',
-              padding: '4px 8px',
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontWeight: 700,
-            }}
-          >
-            -{discountPercent}%
-          </span>
-        )}
-      </div>
-
-      {/* Nội dung */}
-      <div style={{ padding: '12px 16px' }}>
-        {/* Tên sản phẩm */}
-        <h3
-          style={{
-            margin: '0 0 8px',
-            fontSize: '15px',
-            fontWeight: 600,
-            color: '#1e293b',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            lineHeight: '1.4',
-          }}
-        >
-          {product.name}
-        </h3>
-
-        {/* SKU */}
-        <p
-          style={{
-            margin: '0 0 8px',
-            fontSize: '12px',
-            color: '#94a3b8',
-            fontFamily: 'monospace',
-          }}
-        >
-          {product.sku}
-        </p>
-
-        {/* Giá */}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '8px' }}>
-          <span style={{ fontSize: '18px', fontWeight: 700, color: '#dc2626' }}>
-            {product.price.toLocaleString('vi-VN')}₫
-          </span>
-          {product.compare_at_price && product.compare_at_price > product.price && (
-            <span
-              style={{
-                fontSize: '13px',
-                color: '#94a3b8',
-                textDecoration: 'line-through',
-              }}
-            >
-              {product.compare_at_price.toLocaleString('vi-VN')}₫
-            </span>
-          )}
-        </div>
-
-        {/* Trạng thái & Tags */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <StatusBadge status={product.status} />
-          {product.tags.length > 0 && (
-            <span style={{ fontSize: '11px', color: '#64748b' }}>
-              #{product.tags.slice(0, 2).join(' #')}
-              {product.tags.length > 2 ? ` +${product.tags.length - 2}` : ''}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ========================================================================
-   Thành phần: Thanh bộ lọc bên cạnh
-   ======================================================================== */
-
-/** Sidebar hiển thị các bộ lọc: trạng thái, danh mục, khoảng giá */
-function FilterSidebar({
-  filters,
-  onFilterChange,
-  categoryOptions,
-}: {
-  filters: ProductFilters;
-  onFilterChange: (filters: ProductFilters) => void;
-  categoryOptions: { value: string; label: string }[];
-}) {
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '8px 10px',
-    border: '1px solid #d1d5db',
-    borderRadius: '8px',
-    fontSize: '14px',
-    outline: 'none',
-    boxSizing: 'border-box',
-  };
-
-  const labelStyle: React.CSSProperties = {
-    display: 'block',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#374151',
-    marginBottom: '6px',
-  };
-
-  const sectionGap = '20px';
-
-  return (
-    <aside
-      style={{
-        width: '260px',
-        flexShrink: 0,
-        padding: '16px',
-        borderRight: '1px solid #e2e8f0',
-        backgroundColor: '#f8fafc',
-      }}
-    >
-      {/* Tìm kiếm */}
-      <div style={{ marginBottom: sectionGap }}>
-        <label style={labelStyle}>Tìm kiếm</label>
-        <input
-          type="text"
-          placeholder="Tên, SKU, mô tả..."
-          value={filters.searchQuery}
-          onChange={(e) =>
-            onFilterChange({ ...filters, searchQuery: e.target.value })
-          }
-          style={inputStyle}
-        />
-      </div>
-
-      {/* Trạng thái */}
-      <div style={{ marginBottom: sectionGap }}>
-        <label style={labelStyle}>Trạng thái</label>
-        <select
-          value={filters.status}
-          onChange={(e) =>
-            onFilterChange({ ...filters, status: e.target.value as ProductStatus | '' })
-          }
-          style={inputStyle}
-        >
-          <option value="">Tất cả</option>
-          {Object.values(ProductStatus).map((status) => (
-            <option key={status} value={status}>
-              {STATUS_LABELS[status]}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Danh mục */}
-      <div style={{ marginBottom: sectionGap }}>
-        <label style={labelStyle}>Danh mục</label>
-        <select
-          value={filters.categoryId}
-          onChange={(e) =>
-            onFilterChange({ ...filters, categoryId: e.target.value })
-          }
-          style={inputStyle}
-        >
-          <option value="">Tất cả danh mục</option>
-          {categoryOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Khoảng giá */}
-      <div style={{ marginBottom: sectionGap }}>
-        <label style={labelStyle}>Khoảng giá (₫)</label>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <input
-            type="number"
-            placeholder="Từ"
-            min={0}
-            value={filters.priceMin}
-            onChange={(e) =>
-              onFilterChange({
-                ...filters,
-                priceMin: e.target.value ? Number(e.target.value) : '',
-              })
-            }
-            style={inputStyle}
-          />
-          <input
-            type="number"
-            placeholder="Đến"
-            min={0}
-            value={filters.priceMax}
-            onChange={(e) =>
-              onFilterChange({
-                ...filters,
-                priceMax: e.target.value ? Number(e.target.value) : '',
-              })
-            }
-            style={inputStyle}
-          />
-        </div>
-      </div>
-
-      {/* Nút xoá bộ lọc */}
-      <button
-        onClick={() =>
-          onFilterChange({
-            status: '',
-            categoryId: '',
-            priceMin: '',
-            priceMax: '',
-            searchQuery: '',
-          })
-        }
-        style={{
-          width: '100%',
-          padding: '8px',
-          border: '1px solid #d1d5db',
-          borderRadius: '8px',
-          backgroundColor: '#fff',
-          color: '#374151',
-          fontSize: '13px',
-          fontWeight: 600,
-          cursor: 'pointer',
-        }}
-      >
-        Xóa tất cả bộ lọc
-      </button>
-    </aside>
-  );
-}
-
-/* ========================================================================
-   Thành phần: Phân trang
-   ======================================================================== */
-
-/** Điều hướng phân trang ở cuối danh sách */
-function Pagination({
-  pagination,
-  onPageChange,
-}: {
-  pagination: PaginationInfo;
-  onPageChange: (page: number) => void;
-}) {
-  const pageNumbers: number[] = [];
-  /* Hiển thị tối đa 7 số trang, ưu tiên các trang gần trang hiện tại */
-  const maxVisible = 7;
-  let start = Math.max(1, pagination.page - 3);
-  let end = Math.min(pagination.totalPages, start + maxVisible - 1);
-  if (end - start < maxVisible - 1) {
-    start = Math.max(1, end - maxVisible + 1);
-  }
-  for (let i = start; i <= end; i++) {
-    pageNumbers.push(i);
-  }
-
-  const buttonBase: React.CSSProperties = {
-    padding: '6px 12px',
-    border: '1px solid #d1d5db',
-    borderRadius: '6px',
-    backgroundColor: '#fff',
-    cursor: 'pointer',
-    fontSize: '13px',
-    minWidth: '36px',
-    textAlign: 'center',
-  };
-
-  const activeButton: React.CSSProperties = {
-    ...buttonBase,
-    backgroundColor: '#3b82f6',
-    color: '#fff',
-    borderColor: '#3b82f6',
-  };
-
-  const disabledButton: React.CSSProperties = {
-    ...buttonBase,
-    opacity: 0.4,
-    cursor: 'not-allowed',
-  };
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '4px',
-        marginTop: '24px',
-        paddingBottom: '16px',
-      }}
-    >
-      {/* Trang trước */}
-      <button
-        disabled={pagination.page <= 1}
-        onClick={() => onPageChange(pagination.page - 1)}
-        style={pagination.page <= 1 ? disabledButton : buttonBase}
-      >
-        ‹
-      </button>
-
-      {/* Số trang */}
-      {pageNumbers.map((num) => (
-        <button
-          key={num}
-          onClick={() => onPageChange(num)}
-          style={num === pagination.page ? activeButton : buttonBase}
-        >
-          {num}
-        </button>
-      ))}
-
-      {/* Trang sau */}
-      <button
-        disabled={pagination.page >= pagination.totalPages}
-        onClick={() => onPageChange(pagination.page + 1)}
-        style={pagination.page >= pagination.totalPages ? disabledButton : buttonBase}
-      >
-        ›
-      </button>
-
-      {/* Thông tin */}
-      <span style={{ marginLeft: '12px', fontSize: '13px', color: '#64748b' }}>
-        Tổng {pagination.totalItems} sản phẩm
-      </span>
-    </div>
-  );
-}
-
-/* ========================================================================
-   Thành phần chính: Danh sách sản phẩm
-   ======================================================================== */
-
-/**
- * Trang danh sách sản phẩm chính.
- *
- * Xử lý tải dữ liệu từ API, áp dụng bộ lọc ở phía máy chủ,
- * và hiển thị lưới sản phẩm với phân trang.
- */
-export function ProductList({ apiBaseUrl = '/api/v1', onProductClick }: ProductListProps) {
-  /* --- Trạng thái --- */
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const [filters, setFilters] = useState<ProductFilters>({
-    status: '',
-    categoryId: '',
-    priceMin: '',
-    priceMax: '',
-    searchQuery: '',
-  });
-
-  const [pagination, setPagination] = useState<PaginationInfo>({
-    page: 1,
-    pageSize: 12,
-    totalItems: 0,
-    totalPages: 0,
-  });
-
-  /** Danh sách danh mục dùng để điền vào bộ lọc (mock) */
-  const [categoryOptions, setCategoryOptions] = useState<
-    { value: string; label: string }[]
-  >([]);
-
-  /* --- Tải danh mục (một lần khi mount) --- */
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${apiBaseUrl}/categories?is_active=true`);
-        if (!res.ok) return;
-        const data = await res.json();
-        setCategoryOptions(
-          (data as any[]).map((c: any) => ({ value: c.category_id, label: c.name }))
-        );
-      } catch {
-        /* Danh mục không tải được — tiếp tục với danh sách rỗng */
-      }
-    })();
-  }, [apiBaseUrl]);
-
-  /* --- Tải sản phẩm khi filters hoặc page thay đổi --- */
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const params = new URLSearchParams();
-        params.set('page', String(pagination.page));
-        params.set('page_size', String(pagination.pageSize));
-        if (filters.status) params.set('status', filters.status);
-        if (filters.categoryId) params.set('category_id', filters.categoryId);
-        if (filters.priceMin !== '') params.set('price_min', String(filters.priceMin));
-        if (filters.priceMax !== '') params.set('price_max', String(filters.priceMax));
-        if (filters.searchQuery) params.set('q', filters.searchQuery);
-
-        const res = await fetch(`${apiBaseUrl}/products?${params}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}: Không thể tải danh sách sản phẩm`);
-        const body = await res.json();
-
-        if (cancelled) return;
-
-        /* Giả định API trả về { items: Product[], total: number } */
-        setProducts(body.items ?? []);
-        setPagination((prev) => ({
-          ...prev,
-          totalItems: body.total ?? 0,
-          totalPages: Math.ceil((body.total ?? 0) / prev.pageSize),
-        }));
-      } catch (err: any) {
-        if (!cancelled) {
-          setError(err.message ?? 'Lỗi không xác định khi tải sản phẩm');
-          setProducts([]);
-        }
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
+    [ProductStatus.DRAFT]: 'Nháp',
+    [ProductStatus.ACTIVE]: 'Hoạt động',
+    [ProductStatus.INACTIVE]: 'Tạm dừng',
+    [ProductStatus.ARCHIVED]: 'Lưu trữ',
     };
-  }, [apiBaseUrl, filters, pagination.page, pagination.pageSize]);
 
-  /* --- Xử lý nhấp vào sản phẩm --- */
-  const handleProductClick = useCallback(
-    (id: string) => {
-      onProductClick?.(id);
-    },
-    [onProductClick]
-  );
+    /** Màu nền badge cho từng trạng thái */
+    const STATUS_COLORS: Record<ProductStatus, string> = {
+        [ProductStatus.DRAFT]: '#94a3b8',
+        [ProductStatus.ACTIVE]: '#22c55e',
+        [ProductStatus.INACTIVE]: '#f59e0b',
+        [ProductStatus.ARCHIVED]: '#6b7280',
+        };
 
-  /* --- Xử lý thay đổi trang --- */
-  const handlePageChange = useCallback((page: number) => {
-    setPagination((prev) => ({ ...prev, page }));
-    /* Cuộn về đầu danh sách */
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+        /** Ảnh đại diện của sản phẩm */
+        export interface ProductImage {
+        url: string;
+        alt_text: string;
+        is_primary: boolean;
+        sort_order: number;
+        }
 
-  /* ====================================================================
-     Render
-     ==================================================================== */
+        /** Giao diện sản phẩm */
+        export interface Product {
+        product_id: string;
+        name: string;
+        slug: string;
+        sku: string;
+        description: string;
+        category_id: string | null;
+        brand_id: string | null;
+        price: number;
+        cost_price: number;
+        compare_at_price: number | null;
+        currency: string;
+        weight: number | null;
+        status: ProductStatus;
+        visibility: string;
+        tags: string[];
+        images: ProductImage[];
+        is_deleted: boolean;
+        created_at: string;
+        }
 
-  return (
-    <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'system-ui, sans-serif' }}>
-      {/* Sidebar bộ lọc */}
-      <FilterSidebar
-        filters={filters}
-        onFilterChange={setFilters}
-        categoryOptions={categoryOptions}
-      />
+        /** Bộ lọc áp dụng lên danh sách sản phẩm */
+        export interface ProductFilters {
+        status: ProductStatus | '';
+        categoryId: string;
+        priceMin: number | '';
+        priceMax: number | '';
+        searchQuery: string;
+        }
 
-      {/* Khu vực nội dung chính */}
-      <main style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
-        {/* Tiêu đề */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '20px',
-          }}
-        >
-          <h1 style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
-            Danh sách sản phẩm
-          </h1>
-          <span style={{ fontSize: '14px', color: '#64748b' }}>
-            {pagination.totalItems} sản phẩm
-          </span>
-        </div>
+        /** Kết quả phân trang */
+        interface PaginationInfo {
+        page: number;
+        pageSize: number;
+        totalItems: number;
+        totalPages: number;
+        }
 
-        {/* Trạng thái tải */}
-        {isLoading && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '60px 0',
-              color: '#94a3b8',
-              fontSize: '15px',
+        /* ========================================================================
+        Props
+        ======================================================================== */
+
+        export interface ProductListProps {
+        /** URL cơ sở của API (mặc định '/api/v1') */
+        apiBaseUrl?: string;
+        /** Hàm gọi khi người dùng nhấp vào sản phẩm */
+        onProductClick?: (id: string) => void;
+        }
+
+        /* ========================================================================
+        Thành phần: Badge trạng thái
+        ======================================================================== */
+
+        /** Hiển thị badge tròn nhỏ thể hiện trạng thái sản phẩm */
+        function StatusBadge({ status }: { status: ProductStatus }) {
+        return (
+        <span style={{ display: 'inline-block' , padding: '2px 10px' , borderRadius: '9999px' , fontSize: '12px' ,
+            fontWeight: 600, color: '#fff' , backgroundColor: STATUS_COLORS[status], }}>
+            {STATUS_LABELS[status]}
+        </span>
+        );
+        }
+
+        /* ========================================================================
+        Thành phần: Card sản phẩm
+        ======================================================================== */
+
+        /** Card hiển thị thông tin tóm tắt của một sản phẩm */
+        function ProductCard({
+        product,
+        onClick,
+        }: {
+        product: Product;
+        onClick: (id: string) => void;
+        }) {
+        /* Lấy ảnh chính; nếu không có thì dùng ảnh placeholder */
+        const primaryImage = product.images.find((img) => img.is_primary);
+        const imageUrl = primaryImage?.url ?? 'https://placehold.co/400x300/e2e8f0/94a3b8?text=Không+có+ảnh';
+
+        /** Tính phần trăm giảm giá (nếu có so sánh với giá gốc) */
+        const discountPercent = useMemo(() => {
+        if (product.compare_at_price && product.compare_at_price > product.price) {
+        return Math.round(
+        ((product.compare_at_price - product.price) / product.compare_at_price) * 100
+        );
+        }
+        return null;
+        }, [product.price, product.compare_at_price]);
+
+        return (
+        <div role="button" tabIndex={0} onClick={()=> onClick(product.product_id)}
+            onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick(product.product_id);
+            }
             }}
-          >
-            <span style={{ marginRight: '8px' }}>⏳</span> Đang tải sản phẩm...
-          </div>
-        )}
-
-        {/* Trạng thái lỗi */}
-        {error && (
-          <div
-            role="alert"
             style={{
-              padding: '12px 16px',
-              backgroundColor: '#fef2f2',
-              border: '1px solid #fecaca',
-              borderRadius: '8px',
-              color: '#991b1b',
-              fontSize: '14px',
-              marginBottom: '16px',
+            border: '1px solid #e2e8f0',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            cursor: 'pointer',
+            transition: 'box-shadow 0.2s, transform 0.2s',
+            backgroundColor: '#fff',
             }}
-          >
-            ❌ {error}
-          </div>
-        )}
-
-        {/* Lưới sản phẩm */}
-        {!isLoading && !error && products.length === 0 && (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '60px 0',
-              color: '#94a3b8',
+            onMouseEnter={(e) => {
+            e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.12)';
+            e.currentTarget.style.transform = 'translateY(-4px)';
             }}
-          >
-            <p style={{ fontSize: '15px' }}>Không tìm thấy sản phẩm nào.</p>
-            <p style={{ fontSize: '13px' }}>Thử điều chỉnh bộ lọc hoặc từ khóa tìm kiếm.</p>
-          </div>
-        )}
-
-        {!isLoading && products.length > 0 && (
-          <>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                gap: '20px',
-              }}
+            onMouseLeave={(e) => {
+            e.currentTarget.style.boxShadow = 'none';
+            e.currentTarget.style.transform = 'translateY(0)';
+            }}
             >
-              {products.map((product) => (
-                <ProductCard
-                  key={product.product_id}
-                  product={product}
-                  onClick={handleProductClick}
-                />
-              ))}
+            {/* Hình ảnh */}
+            <div style={{ position: 'relative' , paddingTop: '75%' }}>
+                <img src={imageUrl} alt={primaryImage?.alt_text ?? product.name} style={{ position: 'absolute' , top: 0,
+                    left: 0, width: '100%' , height: '100%' , objectFit: 'cover' , }} />
+                {/* Overlay giảm giá */}
+                {discountPercent && (
+                <span style={{ position: 'absolute' , top: '8px' , right: '8px' , backgroundColor: '#ef4444' ,
+                    color: '#fff' , padding: '4px 8px' , borderRadius: '6px' , fontSize: '12px' , fontWeight: 700, }}>
+                    -{discountPercent}%
+                </span>
+                )}
             </div>
 
-            <Pagination pagination={pagination} onPageChange={handlePageChange} />
-          </>
-        )}
-      </main>
-    </div>
-  );
-}
+            {/* Nội dung */}
+            <div style={{ padding: '12px 16px' }}>
+                {/* Tên sản phẩm */}
+                <h3 style={{ margin: '0 0 8px' , fontSize: '15px' , fontWeight: 600, color: '#1e293b' ,
+                    display: '-webkit-box' , WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' , overflow: 'hidden' ,
+                    lineHeight: '1.4' , }}>
+                    {product.name}
+                </h3>
 
-export default ProductList;
-{% endraw %}
+                {/* SKU */}
+                <p style={{ margin: '0 0 8px' , fontSize: '12px' , color: '#94a3b8' , fontFamily: 'monospace' , }}>
+                    {product.sku}
+                </p>
+
+                {/* Giá */}
+                <div style={{ display: 'flex' , alignItems: 'baseline' , gap: '8px' , marginBottom: '8px' }}>
+                    <span style={{ fontSize: '18px' , fontWeight: 700, color: '#dc2626' }}>
+                        {product.price.toLocaleString('vi-VN')}₫
+                    </span>
+                    {product.compare_at_price && product.compare_at_price > product.price && (
+                    <span style={{ fontSize: '13px' , color: '#94a3b8' , textDecoration: 'line-through' , }}>
+                        {product.compare_at_price.toLocaleString('vi-VN')}₫
+                    </span>
+                    )}
+                </div>
+
+                {/* Trạng thái & Tags */}
+                <div style={{ display: 'flex' , alignItems: 'center' , justifyContent: 'space-between' , }}>
+                    <StatusBadge status={product.status} />
+                    {product.tags.length > 0 && (
+                    <span style={{ fontSize: '11px' , color: '#64748b' }}>
+                        #{product.tags.slice(0, 2).join(' #')}
+                        {product.tags.length > 2 ? ` +${product.tags.length - 2}` : ''}
+                    </span>
+                    )}
+                </div>
+            </div>
+        </div>
+        );
+        }
+
+        /* ========================================================================
+        Thành phần: Thanh bộ lọc bên cạnh
+        ======================================================================== */
+
+        /** Sidebar hiển thị các bộ lọc: trạng thái, danh mục, khoảng giá */
+        function FilterSidebar({
+        filters,
+        onFilterChange,
+        categoryOptions,
+        }: {
+        filters: ProductFilters;
+        onFilterChange: (filters: ProductFilters) => void;
+        categoryOptions: { value: string; label: string }[];
+        }) {
+        const inputStyle: React.CSSProperties = {
+        width: '100%',
+        padding: '8px 10px',
+        border: '1px solid #d1d5db',
+        borderRadius: '8px',
+        fontSize: '14px',
+        outline: 'none',
+        boxSizing: 'border-box',
+        };
+
+        const labelStyle: React.CSSProperties = {
+        display: 'block',
+        fontSize: '13px',
+        fontWeight: 600,
+        color: '#374151',
+        marginBottom: '6px',
+        };
+
+        const sectionGap = '20px';
+
+        return (
+        <aside style={{ width: '260px' , flexShrink: 0, padding: '16px' , borderRight: '1px solid #e2e8f0' ,
+            backgroundColor: '#f8fafc' , }}>
+            {/* Tìm kiếm */}
+            <div style={{ marginBottom: sectionGap }}>
+                <label style={labelStyle}>Tìm kiếm</label>
+                <input type="text" placeholder="Tên, SKU, mô tả..." value={filters.searchQuery} onChange={(e)=>
+                onFilterChange({ ...filters, searchQuery: e.target.value })
+                }
+                style={inputStyle}
+                />
+            </div>
+
+            {/* Trạng thái */}
+            <div style={{ marginBottom: sectionGap }}>
+                <label style={labelStyle}>Trạng thái</label>
+                <select value={filters.status} onChange={(e)=>
+                    onFilterChange({ ...filters, status: e.target.value as ProductStatus | '' })
+                    }
+                    style={inputStyle}
+                    >
+                    <option value="">Tất cả</option>
+                    {Object.values(ProductStatus).map((status) => (
+                    <option key={status} value={status}>
+                        {STATUS_LABELS[status]}
+                    </option>
+                    ))}
+                </select>
+            </div>
+
+            {/* Danh mục */}
+            <div style={{ marginBottom: sectionGap }}>
+                <label style={labelStyle}>Danh mục</label>
+                <select value={filters.categoryId} onChange={(e)=>
+                    onFilterChange({ ...filters, categoryId: e.target.value })
+                    }
+                    style={inputStyle}
+                    >
+                    <option value="">Tất cả danh mục</option>
+                    {categoryOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                    </option>
+                    ))}
+                </select>
+            </div>
+
+            {/* Khoảng giá */}
+            <div style={{ marginBottom: sectionGap }}>
+                <label style={labelStyle}>Khoảng giá (₫)</label>
+                <div style={{ display: 'flex' , gap: '8px' }}>
+                    <input type="number" placeholder="Từ" min={0} value={filters.priceMin} onChange={(e)=>
+                    onFilterChange({
+                    ...filters,
+                    priceMin: e.target.value ? Number(e.target.value) : '',
+                    })
+                    }
+                    style={inputStyle}
+                    />
+                    <input type="number" placeholder="Đến" min={0} value={filters.priceMax} onChange={(e)=>
+                    onFilterChange({
+                    ...filters,
+                    priceMax: e.target.value ? Number(e.target.value) : '',
+                    })
+                    }
+                    style={inputStyle}
+                    />
+                </div>
+            </div>
+
+            {/* Nút xoá bộ lọc */}
+            <button onClick={()=>
+                onFilterChange({
+                status: '',
+                categoryId: '',
+                priceMin: '',
+                priceMax: '',
+                searchQuery: '',
+                })
+                }
+                style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '8px',
+                backgroundColor: '#fff',
+                color: '#374151',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                }}
+                >
+                Xóa tất cả bộ lọc
+            </button>
+        </aside>
+        );
+        }
+
+        /* ========================================================================
+        Thành phần: Phân trang
+        ======================================================================== */
+
+        /** Điều hướng phân trang ở cuối danh sách */
+        function Pagination({
+        pagination,
+        onPageChange,
+        }: {
+        pagination: PaginationInfo;
+        onPageChange: (page: number) => void;
+        }) {
+        const pageNumbers: number[] = [];
+        /* Hiển thị tối đa 7 số trang, ưu tiên các trang gần trang hiện tại */
+        const maxVisible = 7;
+        let start = Math.max(1, pagination.page - 3);
+        let end = Math.min(pagination.totalPages, start + maxVisible - 1);
+        if (end - start < maxVisible - 1) { start=Math.max(1, end - maxVisible + 1); } for (let i=start; i <=end; i++) {
+            pageNumbers.push(i); } const buttonBase: React.CSSProperties={ padding: '6px 12px' ,
+            border: '1px solid #d1d5db' , borderRadius: '6px' , backgroundColor: '#fff' , cursor: 'pointer' ,
+            fontSize: '13px' , minWidth: '36px' , textAlign: 'center' , }; const activeButton: React.CSSProperties={
+            ...buttonBase, backgroundColor: '#3b82f6' , color: '#fff' , borderColor: '#3b82f6' , }; const
+            disabledButton: React.CSSProperties={ ...buttonBase, opacity: 0.4, cursor: 'not-allowed' , }; return ( <div
+            style={{ display: 'flex' , alignItems: 'center' , justifyContent: 'center' , gap: '4px' , marginTop: '24px'
+            , paddingBottom: '16px' , }}>
+            {/* Trang trước */}
+            <button disabled={pagination.page <=1} onClick={()=> onPageChange(pagination.page - 1)}
+                style={pagination.page <= 1 ? disabledButton : buttonBase}>
+                    ‹
+            </button>
+
+            {/* Số trang */}
+            {pageNumbers.map((num) => (
+            <button key={num} onClick={()=> onPageChange(num)}
+                style={num === pagination.page ? activeButton : buttonBase}
+                >
+                {num}
+            </button>
+            ))}
+
+            {/* Trang sau */}
+            <button disabled={pagination.page>= pagination.totalPages}
+                onClick={() => onPageChange(pagination.page + 1)}
+                style={pagination.page >= pagination.totalPages ? disabledButton : buttonBase}
+                >
+                ›
+            </button>
+
+            {/* Thông tin */}
+            <span style={{ marginLeft: '12px' , fontSize: '13px' , color: '#64748b' }}>
+                Tổng {pagination.totalItems} sản phẩm
+            </span>
+            </div>
+            );
+            }
+
+            /* ========================================================================
+            Thành phần chính: Danh sách sản phẩm
+            ======================================================================== */
+
+            /**
+            * Trang danh sách sản phẩm chính.
+            *
+            * Xử lý tải dữ liệu từ API, áp dụng bộ lọc ở phía máy chủ,
+            * và hiển thị lưới sản phẩm với phân trang.
+            */
+            export function ProductList({ apiBaseUrl = '/api/v1', onProductClick }: ProductListProps) {
+            /* --- Trạng thái --- */
+            const [products, setProducts] = useState<Product[]>([]);
+                const [isLoading, setIsLoading] = useState<boolean>(true);
+                    const [error, setError] = useState<string | null>(null);
+
+                        const [filters, setFilters] = useState<ProductFilters>({
+                            status: '',
+                            categoryId: '',
+                            priceMin: '',
+                            priceMax: '',
+                            searchQuery: '',
+                            });
+
+                            const [pagination, setPagination] = useState<PaginationInfo>({
+                                page: 1,
+                                pageSize: 12,
+                                totalItems: 0,
+                                totalPages: 0,
+                                });
+
+                                /** Danh sách danh mục dùng để điền vào bộ lọc (mock) */
+                                const [categoryOptions, setCategoryOptions] = useState< { value: string; label: string
+                                    }[]>([]);
+
+                                    /* --- Tải danh mục (một lần khi mount) --- */
+                                    useEffect(() => {
+                                    (async () => {
+                                    try {
+                                    const res = await fetch(`${apiBaseUrl}/categories?is_active=true`);
+                                    if (!res.ok) return;
+                                    const data = await res.json();
+                                    setCategoryOptions(
+                                    (data as any[]).map((c: any) => ({ value: c.category_id, label: c.name }))
+                                    );
+                                    } catch {
+                                    /* Danh mục không tải được — tiếp tục với danh sách rỗng */
+                                    }
+                                    })();
+                                    }, [apiBaseUrl]);
+
+                                    /* --- Tải sản phẩm khi filters hoặc page thay đổi --- */
+                                    useEffect(() => {
+                                    let cancelled = false;
+
+                                    (async () => {
+                                    setIsLoading(true);
+                                    setError(null);
+                                    try {
+                                    const params = new URLSearchParams();
+                                    params.set('page', String(pagination.page));
+                                    params.set('page_size', String(pagination.pageSize));
+                                    if (filters.status) params.set('status', filters.status);
+                                    if (filters.categoryId) params.set('category_id', filters.categoryId);
+                                    if (filters.priceMin !== '') params.set('price_min', String(filters.priceMin));
+                                    if (filters.priceMax !== '') params.set('price_max', String(filters.priceMax));
+                                    if (filters.searchQuery) params.set('q', filters.searchQuery);
+
+                                    const res = await fetch(`${apiBaseUrl}/products?${params}`);
+                                    if (!res.ok) throw new Error(`HTTP ${res.status}: Không thể tải danh sách sản
+                                    phẩm`);
+                                    const body = await res.json();
+
+                                    if (cancelled) return;
+
+                                    /* Giả định API trả về { items: Product[], total: number } */
+                                    setProducts(body.items ?? []);
+                                    setPagination((prev) => ({
+                                    ...prev,
+                                    totalItems: body.total ?? 0,
+                                    totalPages: Math.ceil((body.total ?? 0) / prev.pageSize),
+                                    }));
+                                    } catch (err: any) {
+                                    if (!cancelled) {
+                                    setError(err.message ?? 'Lỗi không xác định khi tải sản phẩm');
+                                    setProducts([]);
+                                    }
+                                    } finally {
+                                    if (!cancelled) setIsLoading(false);
+                                    }
+                                    })();
+
+                                    return () => {
+                                    cancelled = true;
+                                    };
+                                    }, [apiBaseUrl, filters, pagination.page, pagination.pageSize]);
+
+                                    /* --- Xử lý nhấp vào sản phẩm --- */
+                                    const handleProductClick = useCallback(
+                                    (id: string) => {
+                                    onProductClick?.(id);
+                                    },
+                                    [onProductClick]
+                                    );
+
+                                    /* --- Xử lý thay đổi trang --- */
+                                    const handlePageChange = useCallback((page: number) => {
+                                    setPagination((prev) => ({ ...prev, page }));
+                                    /* Cuộn về đầu danh sách */
+                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }, []);
+
+                                    /* ====================================================================
+                                    Render
+                                    ==================================================================== */
+
+                                    return (
+                                    <div style={{ display: 'flex' , minHeight: '100vh' ,
+                                        fontFamily: 'system-ui, sans-serif' }}>
+                                        {/* Sidebar bộ lọc */}
+                                        <FilterSidebar filters={filters} onFilterChange={setFilters}
+                                            categoryOptions={categoryOptions} />
+
+                                        {/* Khu vực nội dung chính */}
+                                        <main style={{ flex: 1, padding: '24px' , overflowY: 'auto' }}>
+                                            {/* Tiêu đề */}
+                                            <div style={{ display: 'flex' , alignItems: 'center' ,
+                                                justifyContent: 'space-between' , marginBottom: '20px' , }}>
+                                                <h1 style={{ fontSize: '24px' , fontWeight: 700, color: '#1e293b' ,
+                                                    margin: 0 }}>
+                                                    Danh sách sản phẩm
+                                                </h1>
+                                                <span style={{ fontSize: '14px' , color: '#64748b' }}>
+                                                    {pagination.totalItems} sản phẩm
+                                                </span>
+                                            </div>
+
+                                            {/* Trạng thái tải */}
+                                            {isLoading && (
+                                            <div style={{ display: 'flex' , alignItems: 'center' ,
+                                                justifyContent: 'center' , padding: '60px 0' , color: '#94a3b8' ,
+                                                fontSize: '15px' , }}>
+                                                <span style={{ marginRight: '8px' }}>⏳</span> Đang tải sản phẩm...
+                                            </div>
+                                            )}
+
+                                            {/* Trạng thái lỗi */}
+                                            {error && (
+                                            <div role="alert" style={{ padding: '12px 16px' , backgroundColor: '#fef2f2'
+                                                , border: '1px solid #fecaca' , borderRadius: '8px' , color: '#991b1b' ,
+                                                fontSize: '14px' , marginBottom: '16px' , }}>
+                                                ❌ {error}
+                                            </div>
+                                            )}
+
+                                            {/* Lưới sản phẩm */}
+                                            {!isLoading && !error && products.length === 0 && (
+                                            <div style={{ textAlign: 'center' , padding: '60px 0' , color: '#94a3b8' ,
+                                                }}>
+                                                <p style={{ fontSize: '15px' }}>Không tìm thấy sản phẩm nào.</p>
+                                                <p style={{ fontSize: '13px' }}>Thử điều chỉnh bộ lọc hoặc từ khóa tìm
+                                                    kiếm.</p>
+                                            </div>
+                                            )}
+
+                                            {!isLoading && products.length > 0 && (
+                                            <>
+                                                <div style={{ display: 'grid' ,
+                                                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' ,
+                                                    gap: '20px' , }}>
+                                                    {products.map((product) => (
+                                                    <ProductCard key={product.product_id} product={product}
+                                                        onClick={handleProductClick} />
+                                                    ))}
+                                                </div>
+
+                                                <Pagination pagination={pagination} onPageChange={handlePageChange} />
+                                            </>
+                                            )}
+                                        </main>
+                                    </div>
+                                    );
+                                    }
+
+                                    export default ProductList;
+                                    {% endraw %}

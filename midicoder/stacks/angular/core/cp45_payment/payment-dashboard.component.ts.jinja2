@@ -1,22 +1,59 @@
-{% raw %}
 /**
 * CP45 Payment Gateway — Dashboard Component
 *
-* Hiển thị bảng điều khiển thanh toán với:
-* - Các chỉ số chính (tổng doanh thu, số giao dịch, tỷ lệ thành công)
-* - Biểu đồ phân bổ theo phương thức thanh toán
-* - Biểu đồ xu hướng theo thời gian
-* - Trạng thái phương thức mặc định
+* Hien thi bang dieu khien thanh toan voi:
+* - Cac chi so chinh (tong doanh thu, so giao dich, ty le thanh cong)
+* - Bieu do phan bo theo phuong thuc thanh toan
+* - Bieu do xu huong theo thoi gian
+* - Trang thai phuong thuc mac dinh
 *
-* Sử dụng Signal Store và Angular signals hiện đại.
+* Su dung Signal Store va Angular signals hien dai.
+*
+{% raw %} * UI Framework: {{{ ui_framework }}}{% endraw %}
 */
-
+{% if ui_framework == "material" %}
 import {
 Component,
 ChangeDetectionStrategy,
 inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+{% elif ui_framework == "tailwind" %}
+import {
+Component,
+ChangeDetectionStrategy,
+inject,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+// Su dung Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+import {
+Component,
+ChangeDetectionStrategy,
+inject,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+// Su dung Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+import {
+Component,
+ChangeDetectionStrategy,
+inject,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+// Ant Design khong dung cho Angular
+{% elif ui_framework == "carbon" %}
+import {
+Component,
+ChangeDetectionStrategy,
+inject,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+// Carbon khong dung cho Angular
+{% endif %}
 
 import { PaymentStore } from './payment.store';
 import { PaymentMethodBreakdown, PaymentPeriodBreakdown, PaymentStats } from './payment-types';

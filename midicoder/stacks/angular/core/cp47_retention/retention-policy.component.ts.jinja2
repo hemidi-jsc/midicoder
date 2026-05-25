@@ -1,20 +1,21 @@
 {% raw %}/**
- * CP47 — Thành phần quản lý chính sách lưu trữ
- *
- * CRUD hoàn chỉnh cho chính sách lưu trữ: danh sách, tìm kiếm,
- * lọc, sắp xếp, dialog tạo/sửa/xem, chip trạng thái, xác nhận xóa.
- *
- * Sử dụng Angular Signals, OnPush, Material Dialog, Material Table.
- */
+* UI Framework: {{{ ui_framework }}}
+* CP47 — Thành phần quản lý chính sách lưu trữ
+*
+* CRUD hoàn chỉnh cho chính sách lưu trữ: danh sách, tìm kiếm,
+* lọc, sắp xếp, dialog tạo/sửa/xem, chip trạng thái, xác nhận xóa.
+*
+* Sử dụng Angular Signals, OnPush, Material Dialog, Material Table.
+*/
 
 import {
-  Component,
-  ChangeDetectionStrategy,
-  signal,
-  computed,
-  effect,
-  OnInit,
-  inject,
+Component,
+ChangeDetectionStrategy,
+signal,
+computed,
+effect,
+OnInit,
+inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
@@ -43,18 +44,18 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 
 // Nội bộ
 import {
-  RetentionPolicy,
-  RetentionPolicyForm,
-  RetentionPolicyFilters,
-  RetentionPolicyStatus,
-  RetentionDataType,
-  SortDirection,
-  PolicyDialogMode,
-  POLICY_COLUMNS,
-  POLICY_STATUS_LABELS,
-  POLICY_STATUS_COLORS,
-  DATA_TYPE_LABELS,
-  DEFAULT_PAGE_SIZE,
+RetentionPolicy,
+RetentionPolicyForm,
+RetentionPolicyFilters,
+RetentionPolicyStatus,
+RetentionDataType,
+SortDirection,
+PolicyDialogMode,
+POLICY_COLUMNS,
+POLICY_STATUS_LABELS,
+POLICY_STATUS_COLORS,
+DATA_TYPE_LABELS,
+DEFAULT_PAGE_SIZE,
 } from './retention-types';
 import { RetentionStore } from './retention.store';
 
@@ -63,16 +64,16 @@ import { RetentionStore } from './retention.store';
 // ──────────────────────────────────────────────
 
 function formatShortDate(isoString: string | null): string {
-  if (!isoString) return '—';
-  const d = new Date(isoString);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}/${mm}/${d.getFullYear()}`;
+if (!isoString) return '—';
+const d = new Date(isoString);
+const dd = String(d.getDate()).padStart(2, '0');
+const mm = String(d.getMonth() + 1).padStart(2, '0');
+return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
 function formatSizeMB(mb: number): string {
-  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
-  return `${Math.round(mb)} MB`;
+if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+return `${Math.round(mb)} MB`;
 }
 
 // ──────────────────────────────────────────────
@@ -80,799 +81,735 @@ function formatSizeMB(mb: number): string {
 // ──────────────────────────────────────────────
 
 /**
- * Dialog form cho CRUD chính sách.
- * Standalone component — được mở qua MatDialog.
- */
+* Dialog form cho CRUD chính sách.
+* Standalone component — được mở qua MatDialog.
+*/
 @Component({
-  selector: 'cp47-policy-dialog',
-  standalone: true,
-  imports: [
-    CommonModule,
-    FormsModule,
-    ReactiveFormsModule,
-    MatCardModule,
-    MatInputModule,
-    MatSelectModule,
-    MatFormFieldModule,
-    MatButtonModule,
-    MatCheckboxModule,
-    MatSlideToggleModule,
-    MatDividerModule,
-  ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: `
-    :host {
-      display: block;
-      width: 520px;
-      max-width: 100vw;
-    }
-    .dialog-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 24px 8px;
-    }
-    .dialog-header h2 {
-      margin: 0;
-      font-size: 20px;
-      font-weight: 500;
-    }
-    .form-body {
-      padding: 16px 24px;
-    }
-    .form-row {
-      margin-bottom: 16px;
-    }
-    .form-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      padding: 16px 24px;
-      border-top: 1px solid #eee;
-    }
-    mat-form-field {
-      width: 100%;
-    }
-    .readonly-value {
-      padding: 12px 0;
-      font-size: 14px;
-      color: #424242;
-    }
-    .readonly-label {
-      font-size: 11px;
-      color: #9e9e9e;
-      text-transform: uppercase;
-    }
-  `,
-  template: `
-    <div class="dialog-header">
-      <h2>{{ dialogTitle() }}</h2>
-      <button mat-icon-button (click)="closeDialog()" matTooltip="Đóng">
+selector: 'cp47-policy-dialog',
+standalone: true,
+imports: [
+CommonModule,
+FormsModule,
+ReactiveFormsModule,
+MatCardModule,
+MatInputModule,
+MatSelectModule,
+MatFormFieldModule,
+MatButtonModule,
+MatCheckboxModule,
+MatSlideToggleModule,
+MatDividerModule,
+],
+changeDetection: ChangeDetectionStrategy.OnPush,
+styles: `
+:host {
+display: block;
+width: 520px;
+max-width: 100vw;
+}
+.dialog-header {
+display: flex;
+align-items: center;
+justify-content: space-between;
+padding: 16px 24px 8px;
+}
+.dialog-header h2 {
+margin: 0;
+font-size: 20px;
+font-weight: 500;
+}
+.form-body {
+padding: 16px 24px;
+}
+.form-row {
+margin-bottom: 16px;
+}
+.form-actions {
+display: flex;
+justify-content: flex-end;
+gap: 8px;
+padding: 16px 24px;
+border-top: 1px solid #eee;
+}
+mat-form-field {
+width: 100%;
+}
+.readonly-value {
+padding: 12px 0;
+font-size: 14px;
+color: #424242;
+}
+.readonly-label {
+font-size: 11px;
+color: #9e9e9e;
+text-transform: uppercase;
+}
+`,
+template: `
+<div class="dialog-header">
+    <h2>{{ dialogTitle() }}</h2>
+    <button mat-icon-button (click)="closeDialog()" matTooltip="Đóng">
         <mat-icon>close</mat-icon>
-      </button>
+    </button>
+</div>
+
+<!-- Chế độ Xem (chỉ đọc) -->
+@if (mode() === 'view' && policy(); as p) {
+<div class="form-body">
+    <div class="readonly-value">
+        <div class="readonly-label">Tên</div>
+        <strong>{{ p.name }}</strong>
+    </div>
+    <div class="readonly-value">
+        <div class="readonly-label">Mô tả</div>
+        {{ p.description }}
+    </div>
+    <div class="readonly-value">
+        <div class="readonly-label">Loại dữ liệu</div>
+        {{ dataTypeLabels()[p.dataType] }}
+    </div>
+    <div class="readonly-value">
+        <div class="readonly-label">Chu kỳ</div>
+        {{ p.periodCount }} {{ p.periodUnit }}
+    </div>
+    <div class="readonly-value">
+        <div class="readonly-label">Hành động khi hết hạn</div>
+        {{ p.onExpiration === 'archive' ? 'Lưu trữ' : p.onExpiration === 'delete' ? 'Xóa' : 'Thông báo' }}
+    </div>
+    <div class="readonly-value">
+        <div class="readonly-label">Trạng thái</div>
+        <mat-chip [color]="statusColorMap()[p.status]" selected>
+            {{ statusLabels()[p.status] }}
+        </mat-chip>
+    </div>
+    <mat-divider />
+    <div class="readonly-value">
+        <div class="readonly-label">Số bản ghi</div>
+        {{ p.recordCount | number }}
+    </div>
+    <div class="readonly-value">
+        <div class="readonly-label">Dung lượng</div>
+        {{ formatSizeMB(p.dataUsageMB) }}
+    </div>
+    <div class="readonly-value">
+        <div class="readonly-label">Người tạo</div>
+        {{ p.createdBy }}
+    </div>
+    <div class="readonly-value">
+        <div class="readonly-label">Tạo lúc</div>
+        {{ p.createdAt | date:'dd/MM/yyyy HH:mm' }}
+    </div>
+</div>
+<div class="form-actions">
+    <button mat-button (click)="closeDialog()">Đóng</button>
+    <button mat-flat-button color="primary" (click)="switchToEdit()">
+        <mat-icon>edit</mat-icon>
+        Chỉnh sửa
+    </button>
+</div>
+}
+
+<!-- Chế độ Tạo / Sửa (form) -->
+@if (mode() !== 'view') {
+<form [formGroup]="policyForm" class="form-body">
+    <div class="form-row">
+        <mat-form-field appearance="outline">
+            <mat-label>Tên chính sách</mat-label>
+            <input matInput formControlName="name" placeholder="VD: Lưu trữ nhật ký 90 ngày" />
+            @if (policyForm.get('name')?.hasError('required')) {
+            <mat-error>Tên là bắt buộc</mat-error>
+            }
+        </mat-form-field>
     </div>
 
-    <!-- Chế độ Xem (chỉ đọc) -->
-    @if (mode() === 'view' && policy(); as p) {
-      <div class="form-body">
-        <div class="readonly-value">
-          <div class="readonly-label">Tên</div>
-          <strong>{{ p.name }}</strong>
-        </div>
-        <div class="readonly-value">
-          <div class="readonly-label">Mô tả</div>
-          {{ p.description }}
-        </div>
-        <div class="readonly-value">
-          <div class="readonly-label">Loại dữ liệu</div>
-          {{ dataTypeLabels()[p.dataType] }}
-        </div>
-        <div class="readonly-value">
-          <div class="readonly-label">Chu kỳ</div>
-          {{ p.periodCount }} {{ p.periodUnit }}
-        </div>
-        <div class="readonly-value">
-          <div class="readonly-label">Hành động khi hết hạn</div>
-          {{ p.onExpiration === 'archive' ? 'Lưu trữ' : p.onExpiration === 'delete' ? 'Xóa' : 'Thông báo' }}
-        </div>
-        <div class="readonly-value">
-          <div class="readonly-label">Trạng thái</div>
-          <mat-chip [color]="statusColorMap()[p.status]" selected>
-            {{ statusLabels()[p.status] }}
-          </mat-chip>
-        </div>
-        <mat-divider />
-        <div class="readonly-value">
-          <div class="readonly-label">Số bản ghi</div>
-          {{ p.recordCount | number }}
-        </div>
-        <div class="readonly-value">
-          <div class="readonly-label">Dung lượng</div>
-          {{ formatSizeMB(p.dataUsageMB) }}
-        </div>
-        <div class="readonly-value">
-          <div class="readonly-label">Người tạo</div>
-          {{ p.createdBy }}
-        </div>
-        <div class="readonly-value">
-          <div class="readonly-label">Tạo lúc</div>
-          {{ p.createdAt | date:'dd/MM/yyyy HH:mm' }}
-        </div>
-      </div>
-      <div class="form-actions">
-        <button mat-button (click)="closeDialog()">Đóng</button>
-        <button mat-flat-button color="primary" (click)="switchToEdit()">
-          <mat-icon>edit</mat-icon>
-          Chỉnh sửa
-        </button>
-      </div>
-    }
-
-    <!-- Chế độ Tạo / Sửa (form) -->
-    @if (mode() !== 'view') {
-      <form [formGroup]="policyForm" class="form-body">
-        <div class="form-row">
-          <mat-form-field appearance="outline">
-            <mat-label>Tên chính sách</mat-label>
-            <input
-              matInput
-              formControlName="name"
-              placeholder="VD: Lưu trữ nhật ký 90 ngày"
-            />
-            @if (policyForm.get('name')?.hasError('required')) {
-              <mat-error>Tên là bắt buộc</mat-error>
-            }
-          </mat-form-field>
-        </div>
-
-        <div class="form-row">
-          <mat-form-field appearance="outline">
+    <div class="form-row">
+        <mat-form-field appearance="outline">
             <mat-label>Mô tả</mat-label>
-            <textarea
-              matInput
-              formControlName="description"
-              rows="3"
-              placeholder="Mô tả chi tiết chính sách..."
-            />
-          </mat-form-field>
-        </div>
+            <textarea matInput formControlName="description" rows="3" placeholder="Mô tả chi tiết chính sách..." />
+        </mat-form-field>
+    </div>
 
-        <div class="form-row">
-          <mat-form-field appearance="outline">
+    <div class="form-row">
+        <mat-form-field appearance="outline">
             <mat-label>Loại dữ liệu</mat-label>
             <mat-select formControlName="dataType">
-              @for (dt of dataTypes(); track dt.value) {
+                @for (dt of dataTypes(); track dt.value) {
                 <mat-option [value]="dt.value">
-                  {{ dt.label }}
+                    {{ dt.label }}
                 </mat-option>
-              }
+                }
             </mat-select>
-          </mat-form-field>
-        </div>
+        </mat-form-field>
+    </div>
 
-        <div style="display:flex;gap:16px">
-          <div class="form-row" style="flex:1">
+    <div style="display:flex;gap:16px">
+        <div class="form-row" style="flex:1">
             <mat-form-field appearance="outline">
-              <mat-label>Số chu kỳ</mat-label>
-              <input
-                matInput
-                type="number"
-                min="1"
-                formControlName="periodCount"
-              />
+                <mat-label>Số chu kỳ</mat-label>
+                <input matInput type="number" min="1" formControlName="periodCount" />
             </mat-form-field>
-          </div>
-          <div class="form-row" style="flex:1">
-            <mat-form-field appearance="outline">
-              <mat-label>Đơn vị</mat-label>
-              <mat-select formControlName="periodUnit">
-                <mat-option value="days">Ngày</mat-option>
-                <mat-option value="weeks">Tuần</mat-option>
-                <mat-option value="months">Tháng</mat-option>
-                <mat-option value="years">Năm</mat-option>
-              </mat-select>
-            </mat-form-field>
-          </div>
         </div>
+        <div class="form-row" style="flex:1">
+            <mat-form-field appearance="outline">
+                <mat-label>Đơn vị</mat-label>
+                <mat-select formControlName="periodUnit">
+                    <mat-option value="days">Ngày</mat-option>
+                    <mat-option value="weeks">Tuần</mat-option>
+                    <mat-option value="months">Tháng</mat-option>
+                    <mat-option value="years">Năm</mat-option>
+                </mat-select>
+            </mat-form-field>
+        </div>
+    </div>
 
-        <div class="form-row">
-          <mat-form-field appearance="outline">
+    <div class="form-row">
+        <mat-form-field appearance="outline">
             <mat-label>Hành động khi hết hạn</mat-label>
             <mat-select formControlName="onExpiration">
-              <mat-option value="archive">Lưu trữ</mat-option>
-              <mat-option value="delete">Xóa vĩnh viễn</mat-option>
-              <mat-option value="notify">Chỉ thông báo</mat-option>
+                <mat-option value="archive">Lưu trữ</mat-option>
+                <mat-option value="delete">Xóa vĩnh viễn</mat-option>
+                <mat-option value="notify">Chỉ thông báo</mat-option>
             </mat-select>
-          </mat-form-field>
-        </div>
+        </mat-form-field>
+    </div>
 
-        <div class="form-row">
-          <mat-checkbox formControlName="enforceImmediately">
+    <div class="form-row">
+        <mat-checkbox formControlName="enforceImmediately">
             Áp dụng ngay cho bản ghi hiện có
-          </mat-checkbox>
-        </div>
+        </mat-checkbox>
+    </div>
 
-        <div class="form-row">
-          <mat-form-field appearance="outline">
+    <div class="form-row">
+        <mat-form-field appearance="outline">
             <mat-label>Cảnh báo trước (ngày)</mat-label>
-            <input
-              matInput
-              type="number"
-              min="0"
-              formControlName="notifyBeforeDays"
-            />
-          </mat-form-field>
-        </div>
-      </form>
+            <input matInput type="number" min="0" formControlName="notifyBeforeDays" />
+        </mat-form-field>
+    </div>
+</form>
 
-      <div class="form-actions">
-        <button mat-button (click)="closeDialog()">Hủy bỏ</button>
-        <button
-          mat-flat-button
-          color="primary"
-          (click)="handleSubmit()"
-          [disabled]="policyForm.invalid || submitting()"
-        >
-          @if (submitting()) {
-            <mat-progress-spinner diameter="18" mode="indeterminate" />
-          } @else {
-            <mat-icon>{{ mode() === 'create' ? 'add' : 'save' }}</mat-icon>
-          }
-          {{ mode() === 'create' ? 'Tạo chính sách' : 'Lưu thay đổi' }}
-        </button>
-      </div>
-    }
-  `,
+<div class="form-actions">
+    <button mat-button (click)="closeDialog()">Hủy bỏ</button>
+    <button mat-flat-button color="primary" (click)="handleSubmit()" [disabled]="policyForm.invalid || submitting()">
+        @if (submitting()) {
+        <mat-progress-spinner diameter="18" mode="indeterminate" />
+        } @else {
+        <mat-icon>{{ mode() === 'create' ? 'add' : 'save' }}</mat-icon>
+        }
+        {{ mode() === 'create' ? 'Tạo chính sách' : 'Lưu thay đổi' }}
+    </button>
+</div>
+}
+`,
 })
 export class RetentionPolicyDialogComponent {
-  private readonly fb = inject(FormBuilder);
-  private readonly dialog = inject(MatDialog);
-  private readonly store = inject(RetentionStore);
+private readonly fb = inject(FormBuilder);
+private readonly dialog = inject(MatDialog);
+private readonly store = inject(RetentionStore);
 
-  readonly mode = signal<PolicyDialogMode>(PolicyDialogMode.Create);
-  readonly submitting = signal<boolean>(false);
+readonly mode = signal<PolicyDialogMode>(PolicyDialogMode.Create);
+    readonly submitting = signal<boolean>(false);
 
-  readonly dataTypes = signal<Array<{ value: RetentionDataType; label: string }>>([
-    { value: RetentionDataType.Logs, label: 'Nhật ký hệ thống' },
-    { value: RetentionDataType.Sessions, label: 'Phiên người dùng' },
-    { value: RetentionDataType.CodeDrafts, label: 'Bản nháp mã nguồn' },
-    { value: RetentionDataType.Analytics, label: 'Kết quả phân tích' },
-    { value: RetentionDataType.DatabaseBackups, label: 'Sao lưu CSDL' },
-    { value: RetentionDataType.MediaAssets, label: 'Tệp đa phương tiện' },
-    { value: RetentionDataType.InternalMessages, label: 'Nhắn tin nội bộ' },
-    { value: RetentionDataType.PersonalData, label: 'Dữ liệu cá nhân (PII)' },
-  ]);
+        readonly dataTypes = signal<Array<{ value: RetentionDataType; label: string }>>([
+            { value: RetentionDataType.Logs, label: 'Nhật ký hệ thống' },
+            { value: RetentionDataType.Sessions, label: 'Phiên người dùng' },
+            { value: RetentionDataType.CodeDrafts, label: 'Bản nháp mã nguồn' },
+            { value: RetentionDataType.Analytics, label: 'Kết quả phân tích' },
+            { value: RetentionDataType.DatabaseBackups, label: 'Sao lưu CSDL' },
+            { value: RetentionDataType.MediaAssets, label: 'Tệp đa phương tiện' },
+            { value: RetentionDataType.InternalMessages, label: 'Nhắn tin nội bộ' },
+            { value: RetentionDataType.PersonalData, label: 'Dữ liệu cá nhân (PII)' },
+            ]);
 
-  readonly dataTypeLabels = computed(() => DATA_TYPE_LABELS);
-  readonly statusLabels = computed(() => POLICY_STATUS_LABELS);
-  readonly statusColorMap = computed(() => POLICY_STATUS_COLORS);
+            readonly dataTypeLabels = computed(() => DATA_TYPE_LABELS);
+            readonly statusLabels = computed(() => POLICY_STATUS_LABELS);
+            readonly statusColorMap = computed(() => POLICY_STATUS_COLORS);
 
-  get policy(): RetentionPolicy | null {
-    return this.store.policyDialogPolicy();
-  }
+            get policy(): RetentionPolicy | null {
+            return this.store.policyDialogPolicy();
+            }
 
-  get dialogTitle(): string {
-    switch (this.mode()) {
-      case PolicyDialogMode.Create: return 'Tạo chính sách mới';
-      case PolicyDialogMode.Edit: return 'Chỉnh sửa chính sách';
-      case PolicyDialogMode.View: return 'Chi tiết chính sách';
-    }
-  }
+            get dialogTitle(): string {
+            switch (this.mode()) {
+            case PolicyDialogMode.Create: return 'Tạo chính sách mới';
+            case PolicyDialogMode.Edit: return 'Chỉnh sửa chính sách';
+            case PolicyDialogMode.View: return 'Chi tiết chính sách';
+            }
+            }
 
-  policyForm: FormGroup = this.fb.group({
-    name: ['', [Validators.required, Validators.minLength(3)]],
-    description: [''],
-    dataType: [RetentionDataType.Logs],
-    periodCount: [90, [Validators.min(1)]],
-    periodUnit: ['days'],
-    onExpiration: ['archive'],
-    enforceImmediately: [false],
-    notifyBeforeDays: [14],
-  });
+            policyForm: FormGroup = this.fb.group({
+            name: ['', [Validators.required, Validators.minLength(3)]],
+            description: [''],
+            dataType: [RetentionDataType.Logs],
+            periodCount: [90, [Validators.min(1)]],
+            periodUnit: ['days'],
+            onExpiration: ['archive'],
+            enforceImmediately: [false],
+            notifyBeforeDays: [14],
+            });
 
-  ngOnInit(): void {
-    // Nếu Edit hoặc View, populate form từ policy hiện tại
-    const policy = this.policy;
-    if (policy && this.mode() === PolicyDialogMode.Edit) {
-      this.policyForm.patchValue({
-        name: policy.name,
-        description: policy.description,
-        dataType: policy.dataType,
-        periodCount: policy.periodCount,
-        periodUnit: policy.periodUnit,
-        onExpiration: policy.onExpiration,
-        enforceImmediately: policy.enforceImmediately,
-        notifyBeforeDays: policy.notifyBeforeDays,
-      });
-    }
-  }
+            ngOnInit(): void {
+            // Nếu Edit hoặc View, populate form từ policy hiện tại
+            const policy = this.policy;
+            if (policy && this.mode() === PolicyDialogMode.Edit) {
+            this.policyForm.patchValue({
+            name: policy.name,
+            description: policy.description,
+            dataType: policy.dataType,
+            periodCount: policy.periodCount,
+            periodUnit: policy.periodUnit,
+            onExpiration: policy.onExpiration,
+            enforceImmediately: policy.enforceImmediately,
+            notifyBeforeDays: policy.notifyBeforeDays,
+            });
+            }
+            }
 
-  handleSubmit(): void {
-    if (this.policyForm.invalid) return;
-    this.submitting.set(true);
+            handleSubmit(): void {
+            if (this.policyForm.invalid) return;
+            this.submitting.set(true);
 
-    const formValue = this.policyForm.value as RetentionPolicyForm;
+            const formValue = this.policyForm.value as RetentionPolicyForm;
 
-    if (this.mode() === PolicyDialogMode.Create) {
-      this.store.createPolicy(formValue);
-    } else {
-      const policyId = this.policy?.id;
-      if (policyId) {
-        this.store.updatePolicy(policyId, formValue);
-      }
-    }
-  }
+            if (this.mode() === PolicyDialogMode.Create) {
+            this.store.createPolicy(formValue);
+            } else {
+            const policyId = this.policy?.id;
+            if (policyId) {
+            this.store.updatePolicy(policyId, formValue);
+            }
+            }
+            }
 
-  switchToEdit(): void {
-    this.mode.set(PolicyDialogMode.Edit);
-    if (this.policy) {
-      this.policyForm.patchValue({
-        name: this.policy.name,
-        description: this.policy.description,
-        dataType: this.policy.dataType,
-        periodCount: this.policy.periodCount,
-        periodUnit: this.policy.periodUnit,
-        onExpiration: this.policy.onExpiration,
-        enforceImmediately: this.policy.enforceImmediately,
-        notifyBeforeDays: this.policy.notifyBeforeDays,
-      });
-    }
-  }
+            switchToEdit(): void {
+            this.mode.set(PolicyDialogMode.Edit);
+            if (this.policy) {
+            this.policyForm.patchValue({
+            name: this.policy.name,
+            description: this.policy.description,
+            dataType: this.policy.dataType,
+            periodCount: this.policy.periodCount,
+            periodUnit: this.policy.periodUnit,
+            onExpiration: this.policy.onExpiration,
+            enforceImmediately: this.policy.enforceImmediately,
+            notifyBeforeDays: this.policy.notifyBeforeDays,
+            });
+            }
+            }
 
-  closeDialog(): void {
-    this.store.closePolicyDialog();
-  }
+            closeDialog(): void {
+            this.store.closePolicyDialog();
+            }
 
-  formatSizeMB(mb: number): string {
-    return formatSizeMB(mb);
-  }
-}
+            formatSizeMB(mb: number): string {
+            return formatSizeMB(mb);
+            }
+            }
 
-// ──────────────────────────────────────────────
-// Component chính — Quản lý chính sách
-// ──────────────────────────────────────────────
+            // ──────────────────────────────────────────────
+            // Component chính — Quản lý chính sách
+            // ──────────────────────────────────────────────
 
-@Component({
-  selector: 'cp47-retention-policy',
-  standalone: true,
-  imports: [
-    CommonModule,
-    FormsModule,
-    RouterLink,
-    MatCardModule,
-    MatTableModule,
-    MatPaginatorModule,
-    MatSortModule,
-    MatProgressSpinnerModule,
-    MatChipsModule,
-    MatTooltipModule,
-    MatIconModule,
-    MatButtonModule,
-    MatInputModule,
-    MatSelectModule,
-    MatFormFieldModule,
-    MatDividerModule,
-    MatSnackBarModule,
-    MatDialogModule,
-    MatMenuModule,
-  ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: `
-    :host {
-      display: block;
-      padding: 24px;
-      background: #fafafa;
-      min-height: 100vh;
-    }
-    .page-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 24px;
-    }
-    .page-header h1 {
-      margin: 0;
-      font-size: 22px;
-      font-weight: 500;
-    }
-    .filters-bar {
-      display: flex;
-      gap: 16px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-    .filters-bar mat-form-field {
-      flex: 1;
-      min-width: 200px;
-    }
-    table {
-      width: 100%;
-    }
-    .status-chip {
-      font-weight: 500;
-    }
-    .row-hover:hover {
-      background: #f5f5f5;
-    }
-    .empty-state {
-      text-align: center;
-      padding: 48px 16px;
-      color: #757575;
-    }
-    .loading-overlay {
-      display: flex;
-      justify-content: center;
-      padding: 48px;
-    }
-    mat-paginator {
-      border-top: 1px solid #eee;
-    }
-  `,
-  template: `
-    <!-- Header -->
-    <div class="page-header">
-      <div style="display:flex;align-items:center;gap:12px">
-        <button mat-icon-button routerLink="/retention/dashboard">
-          <mat-icon>arrow_back</mat-icon>
-        </button>
-        <h1>Quản lý chính sách lưu trữ</h1>
-      </div>
-      <button
-        mat-flat-button
-        color="primary"
-        (click)="handleCreate()"
-      >
-        <mat-icon>add</mat-icon>
-        Tạo chính sách mới
-      </button>
-    </div>
-
-    <!-- Thanh lọc -->
-    <div class="filters-bar">
-      <mat-form-field appearance="outline">
-        <mat-label>Tìm kiếm</mat-label>
-        <input
-          matInput
-          placeholder="Tìm theo tên hoặc mô tả..."
-          (input)="onSearch($event)"
-          [value]="searchQuery()"
-        />
-        <mat-icon matSuffix>search</mat-icon>
-      </mat-form-field>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Loại dữ liệu</mat-label>
-        <mat-select (selectionChange)="onDataTypeFilter($event.value)">
-          <mat-option value="all">Tất cả</mat-option>
-          @for (dt of dataTypes(); track dt.value) {
-            <mat-option [value]="dt.value">{{ dt.label }}</mat-option>
-          }
-        </mat-select>
-      </mat-form-field>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Trạng thái</mat-label>
-        <mat-select (selectionChange)="onStatusFilter($event.value)">
-          <mat-option value="all">Tất cả</mat-option>
-          @for (status of statusOptions(); track status.value) {
-            <mat-option [value]="status.value">
-              {{ status.label }}
-            </mat-option>
-          }
-        </mat-select>
-      </mat-form-field>
-    </div>
-
-    <!-- Bảng chính sách -->
-    <mat-card>
-      @if (policiesLoading()) {
-        <div class="loading-overlay">
-          <mat-progress-spinner diameter="32" mode="indeterminate" />
-        </div>
-      } @else if (policies().length === 0) {
-        <div class="empty-state">
-          <mat-icon style="font-size:48px;width:48px;height:48px;color:#bdbdbd">policy</mat-icon>
-          <p>Chưa có chính sách nào</p>
-          <button mat-stroked-button color="primary" (click)="handleCreate()">
-            Tạo chính sách đầu tiên
-          </button>
-        </div>
-      } @else {
-        <div style="overflow-x:auto">
-          <table
-            mat-table
-            [dataSource]="policies()"
-            matSort
-            (matSortChange)="onSortChange($event)"
-          >
-            <!-- Tên -->
-            <ng-container matColumnDef="name">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Tên chính sách</th>
-              <td mat-cell *matCellDef="let p">
-                <strong style="cursor:pointer;color:#1976d2" (click)="handleView(p)">
-                  {{ p.name }}
-                </strong>
-              </td>
-            </ng-container>
-
-            <!-- Loại -->
-            <ng-container matColumnDef="dataType">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Loại dữ liệu</th>
-              <td mat-cell *matCellDef="let p">
-                <mat-chip-set>
-                  <mat-chip selected color="primary" variant="filled">
-                    {{ dataTypeLabels()[p.dataType] }}
-                  </mat-chip>
-                </mat-chip-set>
-              </td>
-            </ng-container>
-
-            <!-- Trạng thái -->
-            <ng-container matColumnDef="status">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Trạng thái</th>
-              <td mat-cell *matCellDef="let p">
-                <mat-chip-set>
-                  <mat-chip
-                    class="status-chip"
-                    [color]="statusColorMap()[p.status]"
-                    selected
-                    variant="filled"
-                  >
-                    {{ statusLabels()[p.status] }}
-                  </mat-chip>
-                </mat-chip-set>
-              </td>
-            </ng-container>
-
-            <!-- Chu kỳ -->
-            <ng-container matColumnDef="periodCount">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Chu kỳ</th>
-              <td mat-cell *matCellDef="let p">
-                {{ p.periodCount }} {{ p.periodUnit }}
-              </td>
-            </ng-container>
-
-            <!-- Số bản ghi -->
-            <ng-container matColumnDef="recordCount">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Bản ghi</th>
-              <td mat-cell *matCellDef="let p">
-                {{ p.recordCount | number }}
-              </td>
-            </ng-container>
-
-            <!-- Dung lượng -->
-            <ng-container matColumnDef="dataUsageMB">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Dung lượng</th>
-              <td mat-cell *matCellDef="let p">
-                {{ formatSizeMB(p.dataUsageMB) }}
-              </td>
-            </ng-container>
-
-            <!-- Hết hạn -->
-            <ng-container matColumnDef="expirationDate">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Hết hạn</th>
-              <td mat-cell *matCellDef="let p">
-                {{ formatShortDate(p.expirationDate) }}
-              </td>
-            </ng-container>
-
-            <!-- Cập nhật -->
-            <ng-container matColumnDef="updatedAt">
-              <th mat-header-cell *matHeaderCellDef mat-sort-header>Cập nhật</th>
-              <td mat-cell *matCellDef="let p">
-                {{ p.updatedAt | date:'dd/MM/yyyy' }}
-              </td>
-            </ng-container>
-
-            <!-- Hành động -->
-            <ng-container matColumnDef="actions">
-              <th mat-header-cell *matHeaderCellDef>Hành động</th>
-              <td mat-cell *matCellDef="let p">
-                <button
-                  mat-icon-button
-                  color="primary"
-                  (click)="handleView(p)"
-                  matTooltip="Xem chi tiết"
-                >
-                  <mat-icon>visibility</mat-icon>
+            @Component({
+            selector: 'cp47-retention-policy',
+            standalone: true,
+            imports: [
+            CommonModule,
+            FormsModule,
+            RouterLink,
+            MatCardModule,
+            MatTableModule,
+            MatPaginatorModule,
+            MatSortModule,
+            MatProgressSpinnerModule,
+            MatChipsModule,
+            MatTooltipModule,
+            MatIconModule,
+            MatButtonModule,
+            MatInputModule,
+            MatSelectModule,
+            MatFormFieldModule,
+            MatDividerModule,
+            MatSnackBarModule,
+            MatDialogModule,
+            MatMenuModule,
+            ],
+            changeDetection: ChangeDetectionStrategy.OnPush,
+            styles: `
+            :host {
+            display: block;
+            padding: 24px;
+            background: #fafafa;
+            min-height: 100vh;
+            }
+            .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            }
+            .page-header h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 500;
+            }
+            .filters-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            align-items: center;
+            }
+            .filters-bar mat-form-field {
+            flex: 1;
+            min-width: 200px;
+            }
+            table {
+            width: 100%;
+            }
+            .status-chip {
+            font-weight: 500;
+            }
+            .row-hover:hover {
+            background: #f5f5f5;
+            }
+            .empty-state {
+            text-align: center;
+            padding: 48px 16px;
+            color: #757575;
+            }
+            .loading-overlay {
+            display: flex;
+            justify-content: center;
+            padding: 48px;
+            }
+            mat-paginator {
+            border-top: 1px solid #eee;
+            }
+            `,
+            template: `
+            <!-- Header -->
+            <div class="page-header">
+                <div style="display:flex;align-items:center;gap:12px">
+                    <button mat-icon-button routerLink="/retention/dashboard">
+                        <mat-icon>arrow_back</mat-icon>
+                    </button>
+                    <h1>Quản lý chính sách lưu trữ</h1>
+                </div>
+                <button mat-flat-button color="primary" (click)="handleCreate()">
+                    <mat-icon>add</mat-icon>
+                    Tạo chính sách mới
                 </button>
-                <button
-                  mat-icon-button
-                  color="accent"
-                  (click)="handleEdit(p)"
-                  matTooltip="Chỉnh sửa"
-                >
-                  <mat-icon>edit</mat-icon>
-                </button>
-                <button
-                  mat-icon-button
-                  color="warn"
-                  (click)="handleDelete(p)"
-                  matTooltip="Xóa"
-                >
-                  <mat-icon>delete</mat-icon>
-                </button>
-              </td>
-            </ng-container>
+            </div>
 
-            <tr mat-header-row *matHeaderRowDef="displayedColumns" />
-            <tr
-              mat-row
-              *matRowDef="let row; columns: displayedColumns"
-              class="row-hover"
-            />
-          </table>
-        </div>
+            <!-- Thanh lọc -->
+            <div class="filters-bar">
+                <mat-form-field appearance="outline">
+                    <mat-label>Tìm kiếm</mat-label>
+                    <input matInput placeholder="Tìm theo tên hoặc mô tả..." (input)="onSearch($event)"
+                        [value]="searchQuery()" />
+                    <mat-icon matSuffix>search</mat-icon>
+                </mat-form-field>
 
-        <!-- Phân trang -->
-        @if (pagination(); as pag) {
-          <mat-paginator
-            [length]="pag.total"
-            [pageSize]="pag.pageSize"
-            [pageIndex]="pag.page - 1"
-            [pageSizeOptions]="[10, 20, 50, 100]"
-            showFirstLastButtons
-            (page)="onPageChange($event)"
-          />
-        }
-      }
-    </mat-card>
-  `,
-})
-export class RetentionPolicyComponent implements OnInit {
-  // ── Inject ──
-  private readonly store = inject(RetentionStore);
-  private readonly dialog = inject(MatDialog);
-  private readonly snackBar = inject(MatSnackBar);
+                <mat-form-field appearance="outline">
+                    <mat-label>Loại dữ liệu</mat-label>
+                    <mat-select (selectionChange)="onDataTypeFilter($event.value)">
+                        <mat-option value="all">Tất cả</mat-option>
+                        @for (dt of dataTypes(); track dt.value) {
+                        <mat-option [value]="dt.value">{{ dt.label }}</mat-option>
+                        }
+                    </mat-select>
+                </mat-form-field>
 
-  // ── Signals ──
-  readonly searchQuery = signal<string>('');
-  private readonly debounceTimer = signal<ReturnType<typeof setTimeout> | null>(null);
+                <mat-form-field appearance="outline">
+                    <mat-label>Trạng thái</mat-label>
+                    <mat-select (selectionChange)="onStatusFilter($event.value)">
+                        <mat-option value="all">Tất cả</mat-option>
+                        @for (status of statusOptions(); track status.value) {
+                        <mat-option [value]="status.value">
+                            {{ status.label }}
+                        </mat-option>
+                        }
+                    </mat-select>
+                </mat-form-field>
+            </div>
 
-  // ── Computed từ store ──
-  readonly policies = this.store.policies;
-  readonly policiesLoading = this.store.policiesLoading;
-  readonly pagination = this.store.policiesPagination;
+            <!-- Bảng chính sách -->
+            <mat-card>
+                @if (policiesLoading()) {
+                <div class="loading-overlay">
+                    <mat-progress-spinner diameter="32" mode="indeterminate" />
+                </div>
+                } @else if (policies().length === 0) {
+                <div class="empty-state">
+                    <mat-icon style="font-size:48px;width:48px;height:48px;color:#bdbdbd">policy</mat-icon>
+                    <p>Chưa có chính sách nào</p>
+                    <button mat-stroked-button color="primary" (click)="handleCreate()">
+                        Tạo chính sách đầu tiên
+                    </button>
+                </div>
+                } @else {
+                <div style="overflow-x:auto">
+                    <table mat-table [dataSource]="policies()" matSort (matSortChange)="onSortChange($event)">
+                        <!-- Tên -->
+                        <ng-container matColumnDef="name">
+                            <th mat-header-cell *matHeaderCellDef mat-sort-header>Tên chính sách</th>
+                            <td mat-cell *matCellDef="let p">
+                                <strong style="cursor:pointer;color:#1976d2" (click)="handleView(p)">
+                                    {{ p.name }}
+                                </strong>
+                            </td>
+                        </ng-container>
 
-  // ── Dữ liệu tĩnh ──
-  readonly displayedColumns: string[] = [
-    'name', 'dataType', 'status', 'periodCount',
-    'recordCount', 'dataUsageMB', 'expirationDate',
-    'updatedAt', 'actions',
-  ];
+                        <!-- Loại -->
+                        <ng-container matColumnDef="dataType">
+                            <th mat-header-cell *matHeaderCellDef mat-sort-header>Loại dữ liệu</th>
+                            <td mat-cell *matCellDef="let p">
+                                <mat-chip-set>
+                                    <mat-chip selected color="primary" variant="filled">
+                                        {{ dataTypeLabels()[p.dataType] }}
+                                    </mat-chip>
+                                </mat-chip-set>
+                            </td>
+                        </ng-container>
 
-  readonly dataTypes = computed(() =>
-    Object.entries(DATA_TYPE_LABELS).map(([value, label]) => ({
-      value: value as RetentionDataType,
-      label,
-    }))
-  );
+                        <!-- Trạng thái -->
+                        <ng-container matColumnDef="status">
+                            <th mat-header-cell *matHeaderCellDef mat-sort-header>Trạng thái</th>
+                            <td mat-cell *matCellDef="let p">
+                                <mat-chip-set>
+                                    <mat-chip class="status-chip" [color]="statusColorMap()[p.status]" selected
+                                        variant="filled">
+                                        {{ statusLabels()[p.status] }}
+                                    </mat-chip>
+                                </mat-chip-set>
+                            </td>
+                        </ng-container>
 
-  readonly statusOptions = computed(() =>
-    Object.entries(POLICY_STATUS_LABELS).map(([value, label]) => ({
-      value: value as RetentionPolicyStatus,
-      label,
-    }))
-  );
+                        <!-- Chu kỳ -->
+                        <ng-container matColumnDef="periodCount">
+                            <th mat-header-cell *matHeaderCellDef mat-sort-header>Chu kỳ</th>
+                            <td mat-cell *matCellDef="let p">
+                                {{ p.periodCount }} {{ p.periodUnit }}
+                            </td>
+                        </ng-container>
 
-  readonly dataTypeLabels = computed(() => DATA_TYPE_LABELS);
-  readonly statusLabels = computed(() => POLICY_STATUS_LABELS);
-  readonly statusColorMap = computed(() => POLICY_STATUS_COLORS);
+                        <!-- Số bản ghi -->
+                        <ng-container matColumnDef="recordCount">
+                            <th mat-header-cell *matHeaderCellDef mat-sort-header>Bản ghi</th>
+                            <td mat-cell *matCellDef="let p">
+                                {{ p.recordCount | number }}
+                            </td>
+                        </ng-container>
 
-  // ── Lifecycle ──
-  ngOnInit(): void {
-    this.store.loadPolicies();
+                        <!-- Dung lượng -->
+                        <ng-container matColumnDef="dataUsageMB">
+                            <th mat-header-cell *matHeaderCellDef mat-sort-header>Dung lượng</th>
+                            <td mat-cell *matCellDef="let p">
+                                {{ formatSizeMB(p.dataUsageMB) }}
+                            </td>
+                        </ng-container>
 
-    // Effect: cảnh báo lỗi
-    effect(() => {
-      const err = this.store.policiesError();
-      if (err) {
-        this.showWarning(`Lỗi: ${err.message}`);
-      }
-    });
-  }
+                        <!-- Hết hạn -->
+                        <ng-container matColumnDef="expirationDate">
+                            <th mat-header-cell *matHeaderCellDef mat-sort-header>Hết hạn</th>
+                            <td mat-cell *matCellDef="let p">
+                                {{ formatShortDate(p.expirationDate) }}
+                            </td>
+                        </ng-container>
 
-  // ── Event handlers ──
+                        <!-- Cập nhật -->
+                        <ng-container matColumnDef="updatedAt">
+                            <th mat-header-cell *matHeaderCellDef mat-sort-header>Cập nhật</th>
+                            <td mat-cell *matCellDef="let p">
+                                {{ p.updatedAt | date:'dd/MM/yyyy' }}
+                            </td>
+                        </ng-container>
 
-  handleCreate(): void {
-    this.store.openCreatePolicyDialog();
-    this.openDialog(PolicyDialogMode.Create);
-  }
+                        <!-- Hành động -->
+                        <ng-container matColumnDef="actions">
+                            <th mat-header-cell *matHeaderCellDef>Hành động</th>
+                            <td mat-cell *matCellDef="let p">
+                                <button mat-icon-button color="primary" (click)="handleView(p)"
+                                    matTooltip="Xem chi tiết">
+                                    <mat-icon>visibility</mat-icon>
+                                </button>
+                                <button mat-icon-button color="accent" (click)="handleEdit(p)" matTooltip="Chỉnh sửa">
+                                    <mat-icon>edit</mat-icon>
+                                </button>
+                                <button mat-icon-button color="warn" (click)="handleDelete(p)" matTooltip="Xóa">
+                                    <mat-icon>delete</mat-icon>
+                                </button>
+                            </td>
+                        </ng-container>
 
-  handleEdit(policy: RetentionPolicy): void {
-    this.store.openEditPolicyDialog(policy);
-    this.openDialog(PolicyDialogMode.Edit);
-  }
+                        <tr mat-header-row *matHeaderRowDef="displayedColumns" />
+                        <tr mat-row *matRowDef="let row; columns: displayedColumns" class="row-hover" />
+                    </table>
+                </div>
 
-  handleView(policy: RetentionPolicy): void {
-    this.store.openViewPolicyDialog(policy);
-    this.openDialog(PolicyDialogMode.View);
-  }
+                <!-- Phân trang -->
+                @if (pagination(); as pag) {
+                <mat-paginator [length]="pag.total" [pageSize]="pag.pageSize" [pageIndex]="pag.page - 1"
+                    [pageSizeOptions]="[10, 20, 50, 100]" showFirstLastButtons (page)="onPageChange($event)" />
+                }
+                }
+            </mat-card>
+            `,
+            })
+            export class RetentionPolicyComponent implements OnInit {
+            // ── Inject ──
+            private readonly store = inject(RetentionStore);
+            private readonly dialog = inject(MatDialog);
+            private readonly snackBar = inject(MatSnackBar);
 
-  handleDelete(policy: RetentionPolicy): void {
-    const confirmed = window.confirm(
-      `Bạn có chắc muốn xóa chính sách "${policy.name}"?\n\n` +
-      `Hành động này không thể hoàn tác. ${policy.recordCount} bản ghi đang được quản lý bởi chính sách này.`
-    );
-    if (confirmed) {
-      this.store.deletePolicy(policy.id);
-      this.showSuccess(`Đã xóa chính sách "${policy.name}"`);
-    }
-  }
+            // ── Signals ──
+            readonly searchQuery = signal<string>('');
+                private readonly debounceTimer = signal<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Filter handlers ──
+                    // ── Computed từ store ──
+                    readonly policies = this.store.policies;
+                    readonly policiesLoading = this.store.policiesLoading;
+                    readonly pagination = this.store.policiesPagination;
 
-  onSearch(event: Event): void {
-    const target = event.target as HTMLInputElement;
-    const value = target.value;
-    this.searchQuery.set(value);
+                    // ── Dữ liệu tĩnh ──
+                    readonly displayedColumns: string[] = [
+                    'name', 'dataType', 'status', 'periodCount',
+                    'recordCount', 'dataUsageMB', 'expirationDate',
+                    'updatedAt', 'actions',
+                    ];
 
-    // Debounce 300ms
-    if (this.debounceTimer()) {
-      clearTimeout(this.debounceTimer());
-    }
-    this.debounceTimer.set(
-      setTimeout(() => {
-        this.store.setPolicyFilters({ search: value, page: 1 });
-      }, 300)
-    );
-  }
+                    readonly dataTypes = computed(() =>
+                    Object.entries(DATA_TYPE_LABELS).map(([value, label]) => ({
+                    value: value as RetentionDataType,
+                    label,
+                    }))
+                    );
 
-  onDataTypeFilter(dataType: RetentionDataType | 'all'): void {
-    this.store.setPolicyFilters({ dataType, page: 1 });
-  }
+                    readonly statusOptions = computed(() =>
+                    Object.entries(POLICY_STATUS_LABELS).map(([value, label]) => ({
+                    value: value as RetentionPolicyStatus,
+                    label,
+                    }))
+                    );
 
-  onStatusFilter(status: RetentionPolicyStatus | 'all'): void {
-    this.store.setPolicyFilters({ status, page: 1 });
-  }
+                    readonly dataTypeLabels = computed(() => DATA_TYPE_LABELS);
+                    readonly statusLabels = computed(() => POLICY_STATUS_LABELS);
+                    readonly statusColorMap = computed(() => POLICY_STATUS_COLORS);
 
-  onSortChange(sort: Sort): void {
-    if (sort.active && sort.direction) {
-      this.store.sortPolicies(sort.active as keyof RetentionPolicy);
-    }
-  }
+                    // ── Lifecycle ──
+                    ngOnInit(): void {
+                    this.store.loadPolicies();
 
-  onPageChange(event: PageEvent): void {
-    this.store.setPolicyFilters({ page: event.pageIndex + 1, pageSize: event.pageSize });
-  }
+                    // Effect: cảnh báo lỗi
+                    effect(() => {
+                    const err = this.store.policiesError();
+                    if (err) {
+                    this.showWarning(`Lỗi: ${err.message}`);
+                    }
+                    });
+                    }
 
-  // ── Dialog ──
+                    // ── Event handlers ──
 
-  private openDialog(mode: PolicyDialogMode): void {
-    this.dialog.open(RetentionPolicyDialogComponent, {
-      width: '560px',
-      maxWidth: '95vw',
-      disableClose: false,
-      data: { mode },
-    });
-  }
+                    handleCreate(): void {
+                    this.store.openCreatePolicyDialog();
+                    this.openDialog(PolicyDialogMode.Create);
+                    }
 
-  // ── Helpers ──
+                    handleEdit(policy: RetentionPolicy): void {
+                    this.store.openEditPolicyDialog(policy);
+                    this.openDialog(PolicyDialogMode.Edit);
+                    }
 
-  formatSizeMB(mb: number): string {
-    return formatSizeMB(mb);
-  }
+                    handleView(policy: RetentionPolicy): void {
+                    this.store.openViewPolicyDialog(policy);
+                    this.openDialog(PolicyDialogMode.View);
+                    }
 
-  formatShortDate(iso: string | null): string {
-    return formatShortDate(iso);
-  }
+                    handleDelete(policy: RetentionPolicy): void {
+                    const confirmed = window.confirm(
+                    `Bạn có chắc muốn xóa chính sách "${policy.name}"?\n\n` +
+                    `Hành động này không thể hoàn tác. ${policy.recordCount} bản ghi đang được quản lý bởi chính sách
+                    này.`
+                    );
+                    if (confirmed) {
+                    this.store.deletePolicy(policy.id);
+                    this.showSuccess(`Đã xóa chính sách "${policy.name}"`);
+                    }
+                    }
 
-  private showSuccess(msg: string): void {
-    this.snackBar.open(msg, 'Đóng', {
-      duration: 3000,
-      horizontalPosition: 'end',
-      verticalPosition: 'bottom',
-    });
-  }
+                    // ── Filter handlers ──
 
-  private showWarning(msg: string): void {
-    this.snackBar.open(msg, 'Đóng', {
-      duration: 5000,
-      panelClass: ['cp47-snackbar-warn'],
-      horizontalPosition: 'end',
-      verticalPosition: 'bottom',
-    });
-  }
-}
-{% endraw %}
+                    onSearch(event: Event): void {
+                    const target = event.target as HTMLInputElement;
+                    const value = target.value;
+                    this.searchQuery.set(value);
+
+                    // Debounce 300ms
+                    if (this.debounceTimer()) {
+                    clearTimeout(this.debounceTimer());
+                    }
+                    this.debounceTimer.set(
+                    setTimeout(() => {
+                    this.store.setPolicyFilters({ search: value, page: 1 });
+                    }, 300)
+                    );
+                    }
+
+                    onDataTypeFilter(dataType: RetentionDataType | 'all'): void {
+                    this.store.setPolicyFilters({ dataType, page: 1 });
+                    }
+
+                    onStatusFilter(status: RetentionPolicyStatus | 'all'): void {
+                    this.store.setPolicyFilters({ status, page: 1 });
+                    }
+
+                    onSortChange(sort: Sort): void {
+                    if (sort.active && sort.direction) {
+                    this.store.sortPolicies(sort.active as keyof RetentionPolicy);
+                    }
+                    }
+
+                    onPageChange(event: PageEvent): void {
+                    this.store.setPolicyFilters({ page: event.pageIndex + 1, pageSize: event.pageSize });
+                    }
+
+                    // ── Dialog ──
+
+                    private openDialog(mode: PolicyDialogMode): void {
+                    this.dialog.open(RetentionPolicyDialogComponent, {
+                    width: '560px',
+                    maxWidth: '95vw',
+                    disableClose: false,
+                    data: { mode },
+                    });
+                    }
+
+                    // ── Helpers ──
+
+                    formatSizeMB(mb: number): string {
+                    return formatSizeMB(mb);
+                    }
+
+                    formatShortDate(iso: string | null): string {
+                    return formatShortDate(iso);
+                    }
+
+                    private showSuccess(msg: string): void {
+                    this.snackBar.open(msg, 'Đóng', {
+                    duration: 3000,
+                    horizontalPosition: 'end',
+                    verticalPosition: 'bottom',
+                    });
+                    }
+
+                    private showWarning(msg: string): void {
+                    this.snackBar.open(msg, 'Đóng', {
+                    duration: 5000,
+                    panelClass: ['cp47-snackbar-warn'],
+                    horizontalPosition: 'end',
+                    verticalPosition: 'bottom',
+                    });
+                    }
+                    }
+                    {% endraw %}

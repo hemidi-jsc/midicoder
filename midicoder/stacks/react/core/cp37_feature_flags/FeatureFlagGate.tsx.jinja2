@@ -2,31 +2,34 @@ import React from 'react';
 import { useFeatureFlag } from '../hooks/useFeatureFlag';
 
 /**
- * Component FeatureFlagGate — conditional rendering theo flag.
- *
- * Usage:
- *   <FeatureFlagGate flagKey="dark_mode">
- *     <DarkModeContent />
- *   </FeatureFlagGate>
- *
- *   <FeatureFlagGate flagKey="beta_feature" fallback={<ComingSoon />}>
- *     <BetaFeature />
- *   </FeatureFlagGate>
- *
- * Tạo tự động bởi CP37 — không sửa thủ công.
- */
-export const FeatureFlagGate: React.FC<{
-  flagKey: string;
-  children: React.ReactNode;
-  fallback?: React.ReactNode;
-  inverse?: boolean;
-}> = ({ flagKey, children, fallback, inverse = false }) => {
-  const enabled = useFeatureFlag(flagKey);
-  const shouldShow = inverse ? !enabled : enabled;
+* Component FeatureFlagGate — conditional rendering theo flag.
+*{% raw %}
+* UI Framework: {{{ ui_framework }}}
+{% endraw %}
+* Usage:
+* <FeatureFlagGate flagKey="dark_mode">
+    *
+    <DarkModeContent />
+    *
+</FeatureFlagGate>
+*
+*
+<FeatureFlagGate flagKey="beta_feature" fallback={<ComingSoon />}>
+*
+<BetaFeature />
+* </FeatureFlagGate>
+*
+* Tạo tự động bởi CP37 — không sửa thủ công.
+* Lưu ý: Component nay la gate logic, khong su dung framework UI cu the.
+*/
+export const FeatureFlagGate: React.FC<{ flagKey: string; children: React.ReactNode; fallback?: React.ReactNode;
+    inverse?: boolean; }> = ({ flagKey, children, fallback, inverse = false }) => {
+    const enabled = useFeatureFlag(flagKey);
+    const shouldShow = inverse ? !enabled : enabled;
 
-  if (!shouldShow) {
+    if (!shouldShow) {
     return <>{fallback ?? null}</>;
-  }
+    }
 
-  return <>{children}</>;
-};
+    return <>{children}</>;
+    };
