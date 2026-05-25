@@ -677,5 +677,78 @@ class TestFileContributionsLoaderIntegration:
             )
 
 
+class TestFrontendWidgetContributions:
+    """Tests cho per_widget file contributions trong frontend plan (CP22)."""
+
+    def test_plan_frontend_includes_per_widget_files(self, sample_mir):
+        """Kiểm tra per_widget files từ CP22 có mặt trong frontend plan.
+
+        Đây là regression test cho bug P0-1: _plan_frontend_files() không gọi
+        resolve_all_per_widget() → widget templates không được emit.
+        """
+        # Patch frontend_stack để test với react (CP22 có widget cho react)
+        with patch(
+            "midicoder.pipeline.commands.code._get_frontend_stack", return_value="react"
+        ):
+            frontend_files = _plan_frontend_files(sample_mir)
+            paths = [f["path"] for f in frontend_files]
+
+            # CP22 declare 5 widget types: presence, live_feed, live_counter,
+            # live_cursor, notification_toast → các file .tsx
+            widget_files = [p for p in paths if p.endswith(".tsx") and any(
+                w in p.lower() for w in [
+                    "presence", "livefeed", "livecounter",
+                    "livecursor", "notificationtoast"
+                ]
+            )]
+
+            # PHẢI có ít nhất một widget file — nếu không thì resolve_all_per_widget chưa được gọi
+            assert len(widget_files) > 0, (
+                f"Không có widget file trong frontend plan. "
+                f"resolve_all_per_widget() có thể chưa được gọi. "
+                f"Paths: {paths[:20]}..."
+            )
+
+    def test_widget_files_have_stack_metadata(self, sample_mir):
+        """Kiểm tra widget files có metadata['stack'] được set đúng."""
+        with patch(
+            "midicoder.pipeline.commands.code._get_frontend_stack", return_value="react"
+        ):
+            frontend_files = _plan_frontend_files(sample_mir)
+
+            widget_files = [
+                f for f in frontend_files
+                if f.get("type") == "widget"
+            ]
+
+            for wf in widget_files:
+                assert wf.get("metadata", {}).get("stack") == "react", (
+                    f"Widget file {wf['path']} thiếu metadata['stack'] = 'react'"
+                )
+
+    def test_widget_files_for_angular_stack(self, sample_mir):
+        """Kiểm tra widget files cho Angular stack (kebab-case components)."""
+        with patch(
+            "midicoder.pipeline.commands.code._get_frontend_stack", return_value="angular"
+        ):
+            frontend_files = _plan_frontend_files(sample_mir)
+            paths = [f["path"] for f in frontend_files]
+
+            # Angular widgets dùng kebab-case .component.ts pattern
+            angular_widgets = [
+                p for p in paths
+                if p.endswith(".component.ts") and any(
+                    w in p.lower() for w in [
+                        "presence", "live-feed", "live-counter",
+                        "live-cursor", "notification-toast"
+                    ]
+                )
+            ]
+
+            assert len(angular_widgets) > 0, (
+                f"Không có Angular widget file trong frontend plan. Paths: {paths[:20]}..."
+            )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

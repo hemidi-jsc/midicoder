@@ -683,6 +683,13 @@ def _plan_frontend_files(mir: dict) -> List[dict]:
         f.setdefault("metadata", {})["stack"] = frontend_stack
     _merge_files(files, per_ui_component_files)
 
+    # --- Pack-declared per-widget files (CP22 realtime widgets) ---
+    # Resolve widget types (presence, live_feed, live_counter, ...) — not per-entity
+    per_widget_files = loader.resolve_all_per_widget(frontend_stack, None)
+    for f in per_widget_files:
+        f.setdefault("metadata", {})["stack"] = frontend_stack
+    _merge_files(files, per_widget_files)
+
     # --- Inject ui_framework into all frontend file contexts ---
     ui_framework = _get_ui_framework(frontend_stack)
     for f in files:
