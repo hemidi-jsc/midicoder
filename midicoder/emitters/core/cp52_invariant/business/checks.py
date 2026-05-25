@@ -24,7 +24,7 @@ from midicoder.emitters.core.cp52_invariant.models import (
 from midicoder.emitters.core.cp52_invariant.registry import InvariantRegistry
 
 if TYPE_CHECKING:
-    from midicoder.contracts.graph import CapabilityGraph
+    from midicoder.contracts import CapabilityGraph
 
 
 def check_entity_reference_integrity(graph: CapabilityGraph) -> list[InvariantResult]:

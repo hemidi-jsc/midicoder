@@ -32,7 +32,7 @@ from midicoder.emitters.core.cp52_invariant.compliance.checks import register_co
 from midicoder.emitters.core.cp52_invariant.failure_mode.checks import register_failure_mode_invariants
 
 if TYPE_CHECKING:
-    from midicoder.contracts.graph import CapabilityGraph
+    from midicoder.contracts import CapabilityGraph
 
 
 class InvariantManager:

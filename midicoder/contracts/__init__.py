@@ -70,6 +70,7 @@ from .artifact import (
 # ============================================================================
 
 from midicoder.emitters.core.cp51_blueprint.models import (
+    CapabilityGraph,
     CompositionNode,
     CompositionPlan,
     PackResolution,
@@ -117,6 +118,7 @@ __all__ = [
     "compute_content_hash",
     "compute_file_hash",
     # Composition (CP51)
+    "CapabilityGraph",
     "CompositionNode",
     "PackResolution",
     "TemplateBinding",
