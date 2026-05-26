@@ -220,6 +220,24 @@ pack:
         stacks: ["react"]
         pack_emitter: null
         context_keys: []
+      - path: "src/consent/components/ConsentBanner.tsx"
+        file_type: "consent_banner"
+        template: "cp49_consent/ConsentBanner.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["ui_framework"]
+      - path: "src/consent/providers/ConsentProvider.tsx"
+        file_type: "consent_provider"
+        template: "cp49_consent/ConsentProvider.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/app/consent/components/consent-banner.component.ts"
+        file_type: "consent_banner"
+        template: "cp49_consent/consent-banner.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["ui_framework"]
   frontend_integration:
     react:
       - PrivacyCenter
@@ -227,11 +245,14 @@ pack:
       - ConsentManager
       - CommunicationPreferences
       - PreferenceCenter
+      - ConsentBanner
+      - ConsentProvider
     angular:
       - PrivacyCenterComponent
       - CookieBannerComponent
       - ConsentManagerComponent
       - PreferenceCenterComponent
+      - ConsentBannerComponent
   recipes:
     - basic_consent_recipe
     - full_consent_recipe

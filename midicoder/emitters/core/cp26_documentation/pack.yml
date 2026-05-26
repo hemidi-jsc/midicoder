@@ -55,6 +55,19 @@ pack:
         stacks: ["fastapi"]
         pack_emitter: null
         context_keys: ["entities", "commands", "queries"]
+      # B1: Swagger/OpenAPI UI (FastAPI)
+      - path: "docs/swagger_config.py"
+        file_type: "swagger_config"
+        template: "cp26_documentation/swagger_config.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["app_title", "app_description"]
+      - path: "docs/redoc_page.py"
+        file_type: "redoc_page"
+        template: "cp26_documentation/redoc_page.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["app_title"]
       - path: "docs/nav.md"
         file_type: "docs_nav"
         template: "cp26_documentation/nav.md.jinja2"
@@ -62,6 +75,13 @@ pack:
         pack_emitter: null
         context_keys: []
       # NestJS — Swagger + Docusaurus
+      # B1: Swagger UI Module (NestJS)
+      - path: "src/docs/swagger-ui.module.ts"
+        file_type: "swagger_ui_module"
+        template: "cp26_documentation/swagger-ui.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["app_title", "app_description"]
       - path: "swagger-config.ts"
         file_type: "swagger_config"
         template: "cp26_documentation/swagger_config.ts.jinja2"

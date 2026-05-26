@@ -224,6 +224,12 @@ pack:
         stacks: ["angular"]
         pack_emitter: null
         context_keys: []
+      - path: "src/app/shared/data-import/components/bulk-import-preview.component.ts"
+        file_type: "bulk_import_preview"
+        template: "cp38_data_etl/bulk-import-preview.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["import_jobs"]
       # ------------------------------------------------------------------
       # React — Frontend (7 files)
       # ------------------------------------------------------------------
@@ -269,6 +275,12 @@ pack:
         stacks: ["react"]
         pack_emitter: null
         context_keys: []
+      - path: "src/data-import/components/BulkImportPreview.tsx"
+        file_type: "bulk_import_preview"
+        template: "cp38_data_etl/BulkImportPreview.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["import_jobs"]
   frontend_integration:
     angular:
       - ImportWizardComponent

@@ -307,6 +307,12 @@ pack:
         stacks: ["angular"]
         pack_emitter: null
         context_keys: []
+      - path: "src/app/admin/feature-flags/feature-flag-admin.component.ts"
+        file_type: "flag_admin"
+        template: "cp37_feature_flags/feature-flag-admin.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["flags", "experiments"]
       # ------------------------------------------------------------------
       # React — Frontend
       # ------------------------------------------------------------------
@@ -352,6 +358,12 @@ pack:
         stacks: ["react"]
         pack_emitter: null
         context_keys: []
+      - path: "src/admin/feature-flags/FeatureFlagAdmin.tsx"
+        file_type: "flag_admin"
+        template: "cp37_feature_flags/FeatureFlagAdmin.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["flags", "experiments"]
   frontend_integration:
     angular:
       - FlagProviderService

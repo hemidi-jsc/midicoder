@@ -156,10 +156,26 @@ pack:
         template: "cp10_search/useVectorSearch.ts.jinja2"
         stacks: ["react"]
         pack_emitter: "cp10.search.react"
+      # Angular — Faceted Search (B28 addin)
+      - path: "src/app/search/components/faceted-search.component.ts"
+        file_type: "component"
+        template: "cp10_search/faceted-search.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: ["facets"]
+      # React — Faceted Search (B28 addin)
+      - path: "src/search/FacetedSearch.tsx"
+        file_type: "component"
+        template: "cp10_search/FacetedSearch.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: ["facets"]
   frontend_integration:
     angular:
       - SearchService
       - SearchComponent
+      - FacetedSearchComponent
     react:
       - useSearch
       - SearchProvider
+      - FacetedSearch

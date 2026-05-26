@@ -158,6 +158,60 @@ pack:
         template: "cp08_database/tenant.decorators.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
+      # B4: Pagination & Filtering (FastAPI)
+      - path: "app/database/pagination.py"
+        file_type: "pagination"
+        template: "cp08_database/pagination.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/database/filter_builder.py"
+        file_type: "filter_builder"
+        template: "cp08_database/filter_builder.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # B4: Pagination & Filtering (NestJS)
+      - path: "src/database/pagination.utils.ts"
+        file_type: "pagination"
+        template: "cp08_database/pagination.utils.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/database/filter-builder.ts"
+        file_type: "filter_builder"
+        template: "cp08_database/filter-builder.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      # B4: Pagination & Filtering (Angular)
+      - path: "src/app/shared/pagination/pagination.service.ts"
+        file_type: "pagination_service"
+        template: "cp08_database/pagination.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
+      # B4: Pagination & Filtering (React)
+      - path: "src/hooks/use-pagination.ts"
+        file_type: "use_pagination"
+        template: "cp08_database/use-pagination.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
+      # B5: Soft Delete Standard (FastAPI)
+      - path: "app/models/soft_delete_mixin.py"
+        file_type: "soft_delete_mixin"
+        template: "cp08_database/soft_delete_mixin.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # B5: Soft Delete Standard (NestJS)
+      - path: "src/database/soft-delete.mixin.ts"
+        file_type: "soft_delete_mixin"
+        template: "cp08_database/soft-delete.mixin.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
     per_entity:
       - path_pattern: "app/repositories/{entity_snake}_repo.py"
         file_type: "repository"

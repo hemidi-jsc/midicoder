@@ -17,8 +17,6 @@ pack:
     - projection_tree_build
     - ir_build
     - domain_model_recipes
-    - cqrs_recipes
-    - event_sourcing_recipes
   capabilities:
     - id: "entity_modeling"
       emitter: "fastapi, nestjs"
@@ -117,6 +115,68 @@ pack:
         file_type: "command_module"
         template: "cp01_domain_model/command.module.ts.jinja2"
         stacks: ["nestjs"]
+        pack_emitter: null
+      # B3: Standardized Error Response
+      - path: "app/middleware/error_handler.py"
+        file_type: "error_handler"
+        template: "cp01_domain_model/error_handler.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/models/problem_details.py"
+        file_type: "problem_details"
+        template: "cp01_domain_model/problem_details.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/common/filters/exception.filter.ts"
+        file_type: "error_handler"
+        template: "cp01_domain_model/exception.filter.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/common/dto/problem-details.dto.ts"
+        file_type: "problem_details"
+        template: "cp01_domain_model/problem-details.dto.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/interceptors/error-interceptor.service.ts"
+        file_type: "error_handler"
+        template: "cp01_domain_model/error-interceptor.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/components/error-boundary.tsx"
+        file_type: "error_handler"
+        template: "cp01_domain_model/error-boundary.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      # B6: Input Validation & Sanitization
+      - path: "app/utils/validation_decorator.py"
+        file_type: "validation_decorator"
+        template: "cp01_domain_model/validation_decorator.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/utils/input_sanitizer.py"
+        file_type: "input_sanitizer"
+        template: "cp01_domain_model/input_sanitizer.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/common/pipes/validation.pipe.ts"
+        file_type: "validation_pipe"
+        template: "cp01_domain_model/validation.pipe.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/common/utils/sanitization.utils.ts"
+        file_type: "sanitization_utils"
+        template: "cp01_domain_model/sanitization.utils.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/utils/validation.module.ts"
+        file_type: "validation_module"
+        template: "cp01_domain_model/validation.module.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/hooks/use-validation.ts"
+        file_type: "validation_hook"
+        template: "cp01_domain_model/use-validation.ts.jinja2"
+        stacks: ["react"]
         pack_emitter: null
     per_entity:
       - path_pattern: "app/models/{entity_snake}.py"

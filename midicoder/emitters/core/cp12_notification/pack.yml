@@ -168,12 +168,35 @@ pack:
         template: "cp12_notification/types.ts.jinja2"
         stacks: ["react"]
         pack_emitter: null
+      - path: "src/notifications/NotificationPreference.tsx"
+        file_type: "notification_preference_component"
+        template: "cp12_notification/NotificationPreference.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      # Notification preference
+      - path: "app/notifications/notification_preference.py"
+        file_type: "notification_preference_service"
+        template: "cp12_notification/notification_preference.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/notifications/notification-preference.service.ts"
+        file_type: "notification_preference_service"
+        template: "cp12_notification/notification-preference.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/shared/components/notification-preference/notification-preference.component.ts"
+        file_type: "notification_preference_component"
+        template: "cp12_notification/notification-preference.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - NotificationService
       - NotificationToastComponent
+      - NotificationPreferenceComponent
       - NotificationTypes
     react:
       - useNotification
       - NotificationContext
+      - NotificationPreference
       - NotificationTypes

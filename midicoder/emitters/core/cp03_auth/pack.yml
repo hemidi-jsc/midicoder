@@ -33,10 +33,6 @@ pack:
       emitter: "fastapi, nestjs, angular, react"
     - id: "rate_limiting"
       emitter: "fastapi, nestjs"
-    - id: "mfa_totp"
-      emitter: "fastapi, nestjs, angular, react"
-    - id: "mfa_webauthn"
-      emitter: "fastapi, nestjs, angular, react"
   definitions:
     - name: "AuthProviderType"
       description: "Authentication provider type enum (JWT, OAuth2, SAML, LDAP, mTLS, Session)"

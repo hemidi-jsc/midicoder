@@ -75,7 +75,8 @@ pack:
         template: "cp47_retention/retention_service.py.jinja2"
         stacks: ["fastapi"]
         pack_emitter: null
-        context_keys: ["policies", "enable_archival", "enable_purge", "enable_erasure"]
+        context_keys:
+          ["policies", "enable_archival", "enable_purge", "enable_erasure"]
       - path: "app/api/retention_router.py"
         file_type: "retention_router"
         template: "cp47_retention/retention_router.py.jinja2"
@@ -94,6 +95,18 @@ pack:
         stacks: ["fastapi"]
         pack_emitter: null
         context_keys: ["enable_scheduler", "batch_size"]
+      - path: "app/services/data_export_service.py"
+        file_type: "data_export_service"
+        template: "cp47_retention/data_export_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["entities", "tenant_enabled"]
+      - path: "app/api/data_export_router.py"
+        file_type: "data_export_routes"
+        template: "cp47_retention/data_export_routes.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["tenant_enabled"]
       # ------------------------------------------------------------------
       # NestJS — Backend
       # ------------------------------------------------------------------
@@ -130,6 +143,18 @@ pack:
       - path: "src/retention/retention.module.ts"
         file_type: "retention_module"
         template: "cp47_retention/retention.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/retention/data-export.service.ts"
+        file_type: "data_export_service"
+        template: "cp47_retention/data-export.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["entities"]
+      - path: "src/retention/data-export.controller.ts"
+        file_type: "data_export_controller"
+        template: "cp47_retention/data-export.controller.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
         context_keys: []

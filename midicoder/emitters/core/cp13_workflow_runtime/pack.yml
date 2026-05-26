@@ -137,6 +137,11 @@ pack:
         template: "cp13_workflow_runtime/job-status.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: null
+      - path: "src/app/shared/components/workflow-visualizer/workflow-visualizer.component.ts"
+        file_type: "workflow_visualizer_component"
+        template: "cp13_workflow_runtime/workflow-visualizer.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
       - path: "src/workflow/WorkflowContext.tsx"
         file_type: "workflow_context"
         template: "cp13_workflow_runtime/WorkflowContext.tsx.jinja2"
@@ -157,11 +162,18 @@ pack:
         template: "cp13_workflow_runtime/types.ts.jinja2"
         stacks: ["react"]
         pack_emitter: null
+      - path: "src/workflow/WorkflowVisualizer.tsx"
+        file_type: "workflow_visualizer_component"
+        template: "cp13_workflow_runtime/WorkflowVisualizer.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
   frontend_integration:
     angular:
       - WorkflowService
       - JobStatusComponent
+      - WorkflowVisualizerComponent
     react:
       - useWorkflow
       - useJobStatus
       - WorkflowContext
+      - WorkflowVisualizer

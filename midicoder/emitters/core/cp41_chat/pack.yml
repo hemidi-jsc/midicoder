@@ -166,6 +166,12 @@ pack:
         stacks: ["angular"]
         pack_emitter: null
         context_keys: []
+      - path: "src/app/chat/components/rich-message.component.ts"
+        file_type: "rich_message_component"
+        template: "cp41_chat/rich-message.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
       - path: "src/app/core/chat/chat.service.ts"
         file_type: "chat_service"
         template: "cp41_chat/chat.service.ts.jinja2"
@@ -205,6 +211,12 @@ pack:
         stacks: ["react"]
         pack_emitter: null
         context_keys: []
+      - path: "src/chat/components/RichMessage.tsx"
+        file_type: "rich_message_component"
+        template: "cp41_chat/RichMessage.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
       - path: "src/chat/hooks/useChat.ts"
         file_type: "chat_hook"
         template: "cp41_chat/useChat.ts.jinja2"
@@ -228,6 +240,7 @@ pack:
       - ChatWindowComponent
       - ChatConversationListComponent
       - ChatNotificationComponent
+      - RichMessageComponent
       - ChatService
       - ChatStore
       - ChatTypes
@@ -235,6 +248,7 @@ pack:
       - ChatWindow
       - ConversationList
       - NotificationBell
+      - RichMessage
       - useChat
       - useNotifications
       - chatService

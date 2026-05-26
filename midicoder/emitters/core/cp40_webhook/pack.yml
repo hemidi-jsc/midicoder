@@ -109,6 +109,12 @@ pack:
         stacks: ["fastapi"]
         pack_emitter: null
         context_keys: []
+      - path: "app/webhook/webhook_verification.py"
+        file_type: "webhook_verification"
+        template: "cp40_webhook/webhook_verification.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
       # ------------------------------------------------------------------
       # NestJS — Backend
       # ------------------------------------------------------------------
@@ -154,6 +160,12 @@ pack:
         stacks: ["nestjs"]
         pack_emitter: null
         context_keys: ["redis_url"]
+      - path: "src/webhook/pipes/webhook-verification.pipe.ts"
+        file_type: "webhook_verification_pipe"
+        template: "cp40_webhook/webhook-verification.pipe.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
       # ------------------------------------------------------------------
       # Angular — Frontend
       # ------------------------------------------------------------------

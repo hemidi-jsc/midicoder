@@ -100,6 +100,13 @@ pack:
         stacks: ["angular"]
         pack_emitter: null
         context_keys: []
+      # ── B30: Dark Mode Support ──
+      - path: "src/app/shared/ui/dark-mode.service.ts"
+        file_type: "dark_mode_service"
+        template: "cp19_ui_components/dark-mode.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
       # ── React: Phase 3 — FormBuilder (dynamic from JSON schema) ──
       - path: "src/components/ui/FormBuilder.tsx"
         file_type: "form_builder"

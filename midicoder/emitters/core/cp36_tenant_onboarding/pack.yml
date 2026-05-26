@@ -175,6 +175,11 @@ pack:
         template: "cp36_tenant_onboarding/useOnboarding.ts.jinja2"
         stacks: ["react"]
         pack_emitter: null
+      - path: "src/admin/tenant/TenantAdminDashboard.tsx"
+        file_type: "component"
+        template: "cp36_tenant_onboarding/TenantAdminDashboard.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
       # Angular infrastructure
       - path: "src/app/onboarding/registration-form/registration-form.component.ts"
         file_type: "component"
@@ -189,6 +194,11 @@ pack:
       - path: "src/app/onboarding/trial-banner/trial-banner.component.ts"
         file_type: "component"
         template: "cp36_tenant_onboarding/trial-banner.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/app/admin/tenant/tenant-admin-dashboard.component.ts"
+        file_type: "component"
+        template: "cp36_tenant_onboarding/tenant-admin-dashboard.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: null
       - path: "src/app/onboarding/onboarding.service.ts"

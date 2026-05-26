@@ -99,6 +99,20 @@ pack:
         template: "cp11_file_media/cdn.service.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
+      # B8: File Versioning (FastAPI)
+      - path: "app/storage/file_versioning.py"
+        file_type: "file_versioning"
+        template: "cp11_storage/file_versioning.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # B8: File Versioning (NestJS)
+      - path: "src/storage/file-versioning.service.ts"
+        file_type: "file_versioning_service"
+        template: "cp11_storage/file-versioning.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
       # === Angular ===
       - path: "src/app/core/storage/file-storage.module.ts"
         file_type: "storage_module"

@@ -149,6 +149,20 @@ pack:
         template: "cp09_cache/multi_tier.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
+      # B7: Response Cache Headers (FastAPI)
+      - path: "app/cache/response_cache.py"
+        file_type: "response_cache"
+        template: "cp09_cache/response_cache.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # B7: Response Cache Headers (NestJS)
+      - path: "src/cache/response-cache.interceptor.ts"
+        file_type: "response_cache_interceptor"
+        template: "cp09_cache/response-cache.interceptor.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
       # Angular infrastructure
       - path: "src/app/core/cache/cache.module.ts"
         file_type: "cache_module"

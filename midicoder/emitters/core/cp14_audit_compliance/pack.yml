@@ -124,6 +124,12 @@ pack:
         stacks: ["angular"]
         pack_emitter: null
         context_keys: []
+      - path: "src/app/shared/components/compliance-dashboard/compliance-dashboard.component.ts"
+        file_type: "compliance_dashboard_component"
+        template: "cp14_audit_compliance/compliance-dashboard.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+        context_keys: []
       - path: "src/audit/AuditLogList.tsx"
         file_type: "audit_log_component"
         template: "cp14_audit_compliance/AuditLogList.tsx.jinja2"
@@ -142,13 +148,21 @@ pack:
         stacks: ["react"]
         pack_emitter: null
         context_keys: []
+      - path: "src/audit/ComplianceDashboard.tsx"
+        file_type: "compliance_dashboard_component"
+        template: "cp14_audit_compliance/ComplianceDashboard.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+        context_keys: []
   frontend_integration:
     angular:
       - AuditLoggerService
       - AuditLogListComponent
+      - ComplianceDashboardComponent
     react:
       - useAudit
       - AuditLogList
+      - ComplianceDashboard
   recipes:
     - basic_audit_recipe
     - immutable_ledger_recipe

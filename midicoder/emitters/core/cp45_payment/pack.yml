@@ -94,6 +94,18 @@ pack:
         stacks: ["fastapi"]
         pack_emitter: null
         context_keys: []
+      - path: "app/services/webhook_handler.py"
+        file_type: "webhook_handler"
+        template: "cp45_payment/webhook_handler.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["providers", "events"]
+      - path: "app/api/webhook_routes.py"
+        file_type: "webhook_routes"
+        template: "cp45_payment/webhook_routes.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["providers"]
       # ------------------------------------------------------------------
       # NestJS — Backend
       # ------------------------------------------------------------------
@@ -133,6 +145,18 @@ pack:
         stacks: ["nestjs"]
         pack_emitter: null
         context_keys: []
+      - path: "src/payment/services/webhook.handler.ts"
+        file_type: "webhook_handler"
+        template: "cp45_payment/webhook.handler.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["providers"]
+      - path: "src/payment/controllers/webhook.controller.ts"
+        file_type: "webhook_controller"
+        template: "cp45_payment/webhook.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["providers"]
       # ------------------------------------------------------------------
       # Angular — Frontend
       # ------------------------------------------------------------------

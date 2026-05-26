@@ -81,7 +81,21 @@ pack:
         template: "cp16_monitoring/monitoring.controller.ts.jinja2"
         stacks: ["nestjs"]
         pack_emitter: null
-      # Angular (2 files)
+      # B2: Health Check Endpoints (FastAPI)
+      - path: "app/monitoring/health_check.py"
+        file_type: "health_check"
+        template: "cp16_monitoring/health_check.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # B2: Health Check Endpoints (NestJS)
+      - path: "src/monitoring/health.controller.ts"
+        file_type: "health_controller"
+        template: "cp16_monitoring/health.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      # Angular (3 files)
       - path: "src/app/core/monitoring/alert_panel.component.ts"
         file_type: "alert_component"
         template: "cp16_monitoring/alert_panel.component.ts.jinja2"
@@ -92,7 +106,12 @@ pack:
         template: "cp16_monitoring/dashboard_widget.component.ts.jinja2"
         stacks: ["angular"]
         pack_emitter: null
-      # React (3 files)
+      - path: "src/app/core/monitoring/slo-dashboard.component.ts"
+        file_type: "slo_dashboard_component"
+        template: "cp16_monitoring/slo-dashboard.component.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      # React (4 files)
       - path: "src/monitoring/AlertBanner.tsx"
         file_type: "alert_component"
         template: "cp16_monitoring/AlertBanner.tsx.jinja2"
@@ -101,6 +120,11 @@ pack:
       - path: "src/monitoring/DashboardPanel.tsx"
         file_type: "dashboard_component"
         template: "cp16_monitoring/DashboardPanel.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      - path: "src/monitoring/SLODashboard.tsx"
+        file_type: "slo_dashboard_component"
+        template: "cp16_monitoring/SLODashboard.tsx.jinja2"
         stacks: ["react"]
         pack_emitter: null
       - path: "src/monitoring/types.ts"
@@ -112,6 +136,8 @@ pack:
     angular:
       - DashboardWidget
       - AlertPanel
+      - SLODashboard
     react:
       - DashboardPanel
       - AlertBanner
+      - SLODashboard
