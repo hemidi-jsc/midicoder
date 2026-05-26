@@ -1,0 +1,119 @@
+# ===========================================================================
+# CP57 — GraphQL Schema Federation
+# ===========================================================================
+# File contributions declaration cho 2 stacks: FastAPI, NestJS
+#
+# Capabilities:
+# - graphql_federation: GraphQL Federation với @key directive và entity resolution
+# - federated_type: Định nghĩa federated types share giữa nhiều service
+# - gateway_aggregation: Apollo Gateway aggregation với persisted queries
+# - persisted_queries: Persisted query support cho performance và security
+# - schema_stitching: Schema stitching để merge nhiều subschemas
+#
+# Storage: In-memory schema registry + remote GraphQL subschemas
+# ===========================================================================
+
+pack:
+  id: "CP57"
+  name: "GraphQL Schema Federation"
+  internal_id: "cp57_graphql_federation"
+  version: "1.0.0"
+  status: "stable"
+  category: "integration"
+  depends_on: ["CP01", "CP05", "CP06"]
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP57"
+    range: "MDC-CP57-001 to MDC-CP57-010"
+  capabilities_provided:
+    - graphql_federation
+    - federated_type
+    - gateway_aggregation
+    - persisted_queries
+    - schema_stitching
+  capabilities:
+    - id: "graphql_federation"
+      emitter: "fastapi, nestjs"
+    - id: "federated_type"
+      emitter: "fastapi, nestjs"
+    - id: "gateway_aggregation"
+      emitter: "fastapi, nestjs"
+    - id: "persisted_queries"
+      emitter: "fastapi, nestjs"
+    - id: "schema_stitching"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "FederationService"
+      description: "Dịch vụ trong federated graph với @key directive"
+    - name: "FederatedType"
+      description: "Kiểu dữ liệu được share giữa các service với key fields"
+    - name: "FederatedResolver"
+      description: "Resolver cho __resolveReference để resolve entity reference"
+    - name: "GatewayConfig"
+      description: "Cấu hình Apollo Gateway aggregation"
+  obligations:
+    - name: "EntityKeyResolution"
+      description: "Mọi federated entity cần có @key directive và __resolveReference"
+    - name: "GatewayHealthCheck"
+      description: "Gateway phải health check tất cả subservices trước khi serve"
+  file_contributions:
+    infrastructure:
+      # ------------------------------------------------------------------
+      # FastAPI — Backend
+      # ------------------------------------------------------------------
+      - path: "app/graphql/graphql_schema.py"
+        file_type: "graphql_schema"
+        template: "cp57_graphql_federation/graphql_schema.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["types"]
+      - path: "app/graphql/graphql_resolvers.py"
+        file_type: "graphql_resolvers"
+        template: "cp57_graphql_federation/graphql_resolvers.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["resolvers", "types"]
+      - path: "app/graphql/graphql_federation.py"
+        file_type: "graphql_federation"
+        template: "cp57_graphql_federation/graphql_federation.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["services"]
+      - path: "app/graphql/graphql_gateway.py"
+        file_type: "graphql_gateway"
+        template: "cp57_graphql_federation/graphql_gateway.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["gateway_config"]
+      # ------------------------------------------------------------------
+      # NestJS — Backend
+      # ------------------------------------------------------------------
+      - path: "src/graphql/graphql-federation.module.ts"
+        file_type: "federation_module"
+        template: "cp57_graphql_federation/graphql-federation.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["services"]
+      - path: "src/graphql/graphql.resolvers.ts"
+        file_type: "graphql_resolvers"
+        template: "cp57_graphql_federation/graphql.resolvers.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["resolvers", "types"]
+      - path: "src/graphql/graphql.entities.ts"
+        file_type: "graphql_entities"
+        template: "cp57_graphql_federation/graphql.entities.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["types"]
+      - path: "src/graphql/gateway-config.ts"
+        file_type: "gateway_config"
+        template: "cp57_graphql_federation/gateway-config.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["gateway_config"]
+  recipes:
+    - basic_federation_recipe
+    - multi_service_recipe
+    - full_federation_recipe

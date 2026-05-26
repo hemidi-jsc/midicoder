@@ -1,0 +1,134 @@
+# ===========================================================================
+# CP60 — Service Discovery & Config Center
+# ===========================================================================
+# File contributions declaration cho 2 stacks: FastAPI, NestJS
+#
+# Capabilities:
+# - service_registration: Đăng ký service vào registry (Consul, etcd, ZooKeeper, Eureka)
+# - service_discovery: Phát hiện service instances và health status
+# - config_management: Quản lý config entries theo environment với versioning
+# - dynamic_config: Runtime config updates với watcher callbacks
+# - load_balancing: Phân phối traffic giữa service instances
+#
+# Storage: In-memory + Registry Provider APIs
+# ===========================================================================
+
+pack:
+  id: "CP60"
+  name: "Service Discovery & Config Center"
+  internal_id: "cp60_service_discovery"
+  version: "1.0.0"
+  status: "stable"
+  category: "integration"
+  depends_on: ["CP01", "CP05", "CP14"]
+  definitions_count: 5
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP60"
+    range: "MDC-CP60-001 to MDC-CP60-010"
+  capabilities_provided:
+    - service_registration
+    - service_discovery
+    - config_management
+    - dynamic_config
+    - load_balancing
+  capabilities:
+    - id: "service_registration"
+      emitter: "fastapi, nestjs"
+    - id: "service_discovery"
+      emitter: "fastapi, nestjs"
+    - id: "config_management"
+      emitter: "fastapi, nestjs"
+    - id: "dynamic_config"
+      emitter: "fastapi, nestjs"
+    - id: "load_balancing"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "ServiceInstance"
+      description: "Thực thể service với host, port, protocol, và health check"
+    - name: "ServiceRegistry"
+      description: "Registry provider (Consul, etcd, ZooKeeper, Eureka)"
+    - name: "ConfigEntry"
+      description: "Mục cấu hình theo environment với encryption và versioning"
+    - name: "ConfigWatch"
+      description: "Watcher theo dõi config changes và gọi callback URL"
+    - name: "LoadBalancingConfig"
+      description: "Cấu hình load balancing strategy và health check"
+  obligations:
+    - name: "HealthCheckRequired"
+      description: "Mọi service instance phải có health check path"
+    - name: "ConfigEncryption"
+      description: "Các config entry nhạy cảm phải được encrypted"
+  file_contributions:
+    infrastructure:
+      # ------------------------------------------------------------------
+      # FastAPI — Backend
+      # ------------------------------------------------------------------
+      - path: "app/models/discovery_models.py"
+        file_type: "discovery_models"
+        template: "cp60_service_discovery/discovery_models.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["instances", "registries"]
+      - path: "app/services/discovery_service.py"
+        file_type: "discovery_service"
+        template: "cp60_service_discovery/discovery_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["instances", "registries"]
+      - path: "app/services/config_service.py"
+        file_type: "config_service"
+        template: "cp60_service_discovery/config_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["configs", "watches"]
+      - path: "app/api/discovery_router.py"
+        file_type: "discovery_router"
+        template: "cp60_service_discovery/discovery_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/middleware/discovery_middleware.py"
+        file_type: "discovery_middleware"
+        template: "cp60_service_discovery/discovery_middleware.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["load_balancers"]
+      # ------------------------------------------------------------------
+      # NestJS — Backend
+      # ------------------------------------------------------------------
+      - path: "src/discovery/entities/discovery.entity.ts"
+        file_type: "discovery_entity"
+        template: "cp60_service_discovery/discovery.entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["instances"]
+      - path: "src/discovery/dtos/discovery.dto.ts"
+        file_type: "discovery_dto"
+        template: "cp60_service_discovery/discovery.dto.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["instances"]
+      - path: "src/discovery/services/discovery.service.ts"
+        file_type: "discovery_service"
+        template: "cp60_service_discovery/discovery.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["instances", "registries"]
+      - path: "src/discovery/controllers/discovery.controller.ts"
+        file_type: "discovery_controller"
+        template: "cp60_service_discovery/discovery.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/discovery/discovery.module.ts"
+        file_type: "discovery_module"
+        template: "cp60_service_discovery/discovery.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+  recipes:
+    - consul_service_discovery_recipe
+    - config_center_recipe
+    - dynamic_config_recipe
+    - load_balancing_recipe

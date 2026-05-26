@@ -1,0 +1,140 @@
+# ===========================================================================
+# CP59 — Tenant Billing & Invoicing
+# ===========================================================================
+# File contributions declaration cho 2 stacks: FastAPI, NestJS
+#
+# Capabilities:
+# - billing_plan_manage: Quản lý billing plans (CRUD, tier, pricing, features)
+# - billing_cycle_manage: Quản lý billing cycles (monthly, quarterly, annual)
+# - usage_meter_track: Theo dõi usage meters (api_calls, storage_gb, users, bandwidth_gb)
+# - invoice_generate: Sinh hóa đơn với line items, multi-currency
+#
+# Storage: SQLite/PostgreSQL + Payment Gateway APIs (Stripe, PayPal, Adyen)
+# ===========================================================================
+
+pack:
+  id: "CP59"
+  name: "Tenant Billing & Invoicing"
+  internal_id: "cp59_tenant_billing"
+  version: "1.0.0"
+  status: "stable"
+  category: "financial"
+  depends_on: ["CP01", "CP02", "CP05", "CP14", "CP33", "CP45"]
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP59"
+    range: "MDC-CP59-001 to MDC-CP59-010"
+  capabilities_provided:
+    - billing_plan_manage
+    - billing_cycle_manage
+    - usage_meter_track
+    - invoice_generate
+  capabilities:
+    - id: "billing_plan_manage"
+      emitter: "fastapi, nestjs"
+    - id: "billing_cycle_manage"
+      emitter: "fastapi, nestjs"
+    - id: "usage_meter_track"
+      emitter: "fastapi, nestjs"
+    - id: "invoice_generate"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "BillingPlan"
+      description: "Kế hoạch thanh toán với tier, giá cả, features, usage limits"
+    - name: "BillingCycle"
+      description: "Chu kỳ thanh toán (tháng, quý, năm) với auto-renew"
+    - name: "InvoiceConfig"
+      description: "Cấu hình hóa đơn với line items, currency, state machine"
+    - name: "UsageMeter"
+      description: "Thiết bị đo lường sử dụng (API calls, storage, users, bandwidth)"
+  obligations:
+    - name: "BillingAuditTrail"
+      description: "Ghi audit log cho mọi billing action (CP14 integration)"
+    - name: "UsageThresholdAlerting"
+      description: "Cảnh báo khi usage đạt ngưỡng threshold (CP12 integration)"
+  file_contributions:
+    infrastructure:
+      # ------------------------------------------------------------------
+      # FastAPI — Backend
+      # ------------------------------------------------------------------
+      - path: "app/models/billing_models.py"
+        file_type: "billing_models"
+        template: "cp59_tenant_billing/billing_models.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["plans", "cycles", "meters"]
+      - path: "app/schemas/billing_schemas.py"
+        file_type: "billing_schemas"
+        template: "cp59_tenant_billing/billing_schemas.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["plans", "meters"]
+      - path: "app/services/billing_service.py"
+        file_type: "billing_service"
+        template: "cp59_tenant_billing/billing_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["plans", "cycles", "meters", "gateways"]
+      - path: "app/api/billing_router.py"
+        file_type: "billing_router"
+        template: "cp59_tenant_billing/billing_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      - path: "app/services/invoice_generator.py"
+        file_type: "invoice_generator"
+        template: "cp59_tenant_billing/invoice_generator.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["invoice_configs", "plans"]
+      - path: "app/services/billing_events.py"
+        file_type: "billing_events"
+        template: "cp59_tenant_billing/billing_events.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # ------------------------------------------------------------------
+      # NestJS — Backend
+      # ------------------------------------------------------------------
+      - path: "src/billing/entities/billing.entity.ts"
+        file_type: "billing_entity"
+        template: "cp59_tenant_billing/billing.entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["plans", "cycles", "meters"]
+      - path: "src/billing/dtos/billing.dto.ts"
+        file_type: "billing_dto"
+        template: "cp59_tenant_billing/billing.dto.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["plans", "meters"]
+      - path: "src/billing/services/billing.service.ts"
+        file_type: "billing_service"
+        template: "cp59_tenant_billing/billing.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["plans", "cycles", "meters", "gateways"]
+      - path: "src/billing/controllers/billing.controller.ts"
+        file_type: "billing_controller"
+        template: "cp59_tenant_billing/billing.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+      - path: "src/billing/services/invoice.service.ts"
+        file_type: "invoice_service"
+        template: "cp59_tenant_billing/invoice.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["invoice_configs", "plans"]
+      - path: "src/billing/billing.module.ts"
+        file_type: "billing_module"
+        template: "cp59_tenant_billing/billing.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+  recipes:
+    - saas_billing_recipe
+    - usage_based_billing_recipe
+    - multi_tier_billing_recipe
+    - invoice_generation_recipe

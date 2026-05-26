@@ -1,0 +1,134 @@
+# ===========================================================================
+# CP61 — Distributed Tracing & Correlation ID
+# ===========================================================================
+# File contributions declaration cho 2 stacks: FastAPI, NestJS
+#
+# Capabilities:
+# - distributed_tracing: OpenTelemetry/Jaeger/Zipkin distributed tracing
+# - correlation_id: X-Correlation-ID / X-Request-ID middleware + propagation
+# - span_propagation: W3C/B3/Jaeger context propagation across services
+# - trace_export: Trace data export (OTel Collector, Jaeger, Zipkin, Datadog)
+# - log_trace_correlation: Inject trace_id/span_id vào logs để correlate
+#
+# Storage: Trace backend (Jaeger/Zipkin/OTel/Datadog) + Log aggregator
+# ===========================================================================
+
+pack:
+  id: "CP61"
+  name: "Distributed Tracing & Correlation ID"
+  internal_id: "cp61_distributed_tracing"
+  version: "1.0.0"
+  status: "stable"
+  category: "observability"
+  depends_on: ["CP01", "CP05", "CP14", "CP15"]
+  definitions_count: 5
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP61"
+    range: "MDC-CP61-001 to MDC-CP61-010"
+  capabilities_provided:
+    - distributed_tracing
+    - correlation_id
+    - span_propagation
+    - trace_export
+    - log_trace_correlation
+  capabilities:
+    - id: "distributed_tracing"
+      emitter: "fastapi, nestjs"
+    - id: "correlation_id"
+      emitter: "fastapi, nestjs"
+    - id: "span_propagation"
+      emitter: "fastapi, nestjs"
+    - id: "trace_export"
+      emitter: "fastapi, nestjs"
+    - id: "log_trace_correlation"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "TraceConfig"
+      description: "Cấu hình distributed tracing (sampler, exporter, propagation format)"
+    - name: "CorrelationField"
+      description: "Cấu hình correlation ID header và propagation giữa services"
+    - name: "SpanDefinition"
+      description: "Định nghĩa span cho các operation (server/client/producer/consumer)"
+    - name: "TraceExporter"
+      description: "Cấu hình trace exporter (Jaeger, Zipkin, OTel Collector, Datadog)"
+    - name: "LogCorrelationConfig"
+      description: "Cấu hình inject trace_id/span_id vào logs"
+  obligations:
+    - name: "TraceContextPropagation"
+      description: "Tất cả request phải propagate trace context qua HTTP headers (W3C/B3/Jaeger)"
+    - name: "LogTraceCorrelation"
+      description: "Logs phải chứa trace_id và span_id để correlate với distributed traces"
+  file_contributions:
+    infrastructure:
+      # ------------------------------------------------------------------
+      # FastAPI — Backend
+      # ------------------------------------------------------------------
+      - path: "app/config/tracing_config.py"
+        file_type: "tracing_config"
+        template: "cp61_distributed_tracing/tracing_config.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["configs", "exporters"]
+      - path: "app/middleware/correlation_middleware.py"
+        file_type: "correlation_middleware"
+        template: "cp61_distributed_tracing/correlation_middleware.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["correlation_fields"]
+      - path: "app/utils/span_decorators.py"
+        file_type: "span_decorators"
+        template: "cp61_distributed_tracing/span_decorators.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["spans"]
+      - path: "app/utils/log_correlation.py"
+        file_type: "log_correlation"
+        template: "cp61_distributed_tracing/log_correlation.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["log_correlation"]
+      - path: "app/integrations/tracing_integration.py"
+        file_type: "tracing_integration"
+        template: "cp61_distributed_tracing/tracing_integration.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["configs", "exporters"]
+      # ------------------------------------------------------------------
+      # NestJS — Backend
+      # ------------------------------------------------------------------
+      - path: "src/config/tracing.config.ts"
+        file_type: "tracing_config"
+        template: "cp61_distributed_tracing/tracing.config.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["configs", "exporters"]
+      - path: "src/tracing/tracing.module.ts"
+        file_type: "tracing_module"
+        template: "cp61_distributed_tracing/tracing.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["configs", "exporters"]
+      - path: "src/tracing/correlation.interceptor.ts"
+        file_type: "correlation_interceptor"
+        template: "cp61_distributed_tracing/correlation.interceptor.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["correlation_fields"]
+      - path: "src/tracing/span.decorator.ts"
+        file_type: "span_decorator"
+        template: "cp61_distributed_tracing/span.decorator.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["spans"]
+      - path: "src/tracing/log-correlation.service.ts"
+        file_type: "log_correlation"
+        template: "cp61_distributed_tracing/log-correlation.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["log_correlation"]
+  recipes:
+    - opentelemetry_tracing_recipe
+    - correlation_id_recipe
+    - jaeger_exporter_recipe
+    - full_tracing_recipe

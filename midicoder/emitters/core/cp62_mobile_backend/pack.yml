@@ -1,0 +1,147 @@
+# ===========================================================================
+# CP62 — Mobile Backend (FCM/APNs Push, Deep Linking, Mobile Auth, OTA)
+# ===========================================================================
+# File contributions declaration cho 2 stacks: FastAPI, NestJS
+#
+# Capabilities:
+# - push_notification: Gửi push notification qua FCM/APNs (topic/multicast)
+# - deep_linking: Deep link với Universal Link/App Link và pattern matching
+# - mobile_auth: OAuth2 mobile authentication (Apple/Google/Facebook)
+# - ota_update: OTA update config với forced update và gradual rollout
+# - device_registration: Đăng ký và quản lý thiết bị mobile
+#
+# Storage: SQLite + FCM/APNs APIs
+# ===========================================================================
+
+pack:
+  id: "CP62"
+  name: "Mobile Backend"
+  internal_id: "cp62_mobile_backend"
+  version: "1.0.0"
+  status: "stable"
+  category: "communication"
+  depends_on: ["CP01", "CP03", "CP12"]
+  definitions_count: 5
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP62"
+    range: "MDC-CP62-001 to MDC-CP62-010"
+  capabilities_provided:
+    - push_notification
+    - deep_linking
+    - mobile_auth
+    - ota_update
+    - device_registration
+  capabilities:
+    - id: "push_notification"
+      emitter: "fastapi, nestjs"
+    - id: "deep_linking"
+      emitter: "fastapi, nestjs"
+    - id: "mobile_auth"
+      emitter: "fastapi, nestjs"
+    - id: "ota_update"
+      emitter: "fastapi, nestjs"
+    - id: "device_registration"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "PushNotificationConfig"
+      description: "Cấu hình push notification (FCM/APNs) với topic/multicast"
+    - name: "DeepLinkRoute"
+      description: "Deep link route với pattern matching và Universal Link/App Link"
+    - name: "MobileAuthProvider"
+      description: "OAuth2 mobile auth provider (Apple/Google/Facebook)"
+    - name: "OTAUpdateConfig"
+      description: "Cấu hình OTA update với forced update và rollout percentage"
+    - name: "DeviceRegistration"
+      description: "Đăng ký thiết bị mobile với push token và deep link handler"
+  obligations:
+    - name: "PushTokenEncryption"
+      description: "Device token phải được mã hóa khi lưu trữ trong database"
+    - name: "DeepLinkValidation"
+      description: "Deep link URL phải được validate và sanitize trước khi xử lý"
+  file_contributions:
+    infrastructure:
+      # ------------------------------------------------------------------
+      # FastAPI — Backend
+      # ------------------------------------------------------------------
+      - path: "app/services/push_service.py"
+        file_type: "push_service"
+        template: "cp62_mobile_backend/push_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["push_configs"]
+      - path: "app/api/push_router.py"
+        file_type: "push_router"
+        template: "cp62_mobile_backend/push_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["push_configs"]
+      - path: "app/services/deep_link_resolver.py"
+        file_type: "deep_link_resolver"
+        template: "cp62_mobile_backend/deep_link_resolver.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["deep_links"]
+      - path: "app/api/mobile_auth_router.py"
+        file_type: "mobile_auth_router"
+        template: "cp62_mobile_backend/mobile_auth_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["auth_providers"]
+      - path: "app/api/ota_router.py"
+        file_type: "ota_router"
+        template: "cp62_mobile_backend/ota_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["ota_configs"]
+      - path: "app/services/device_service.py"
+        file_type: "device_service"
+        template: "cp62_mobile_backend/device_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: []
+      # ------------------------------------------------------------------
+      # NestJS — Backend
+      # ------------------------------------------------------------------
+      - path: "src/mobile/push/push.service.ts"
+        file_type: "push_service"
+        template: "cp62_mobile_backend/push.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["push_configs"]
+      - path: "src/mobile/push/push.controller.ts"
+        file_type: "push_controller"
+        template: "cp62_mobile_backend/push.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["push_configs"]
+      - path: "src/mobile/deep-link/deep-link.service.ts"
+        file_type: "deep_link_service"
+        template: "cp62_mobile_backend/deep-link.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["deep_links"]
+      - path: "src/mobile/auth/mobile-auth.controller.ts"
+        file_type: "mobile_auth_controller"
+        template: "cp62_mobile_backend/mobile-auth.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["auth_providers"]
+      - path: "src/mobile/ota/ota.controller.ts"
+        file_type: "ota_controller"
+        template: "cp62_mobile_backend/ota.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["ota_configs"]
+      - path: "src/mobile/mobile-backend.module.ts"
+        file_type: "mobile_backend_module"
+        template: "cp62_mobile_backend/mobile-backend.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: []
+  recipes:
+    - fcm_push_notification_recipe
+    - apns_push_notification_recipe
+    - deep_linking_recipe
+    - mobile_auth_recipe
+    - ota_update_recipe
