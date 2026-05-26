@@ -1084,6 +1084,48 @@ class ErrorCode(str, Enum):
     CP53_INVALID_BINDING_ID = "MDC-CP53-004"
     CP53_INVOKER_CONFIG_EMPTY = "MDC-CP53-005"
 
+    # =========================================================================
+    # CP56: Environment & Secret Management Errors
+    # =========================================================================
+    CP56_ENV_CONFIG_INVALID = "MDC-CP56-001"
+    CP56_SECRET_CONFIG_INVALID = "MDC-CP56-002"
+    CP56_VAULT_CONFIG_INVALID = "MDC-CP56-003"
+    CP56_KMS_CONFIG_INVALID = "MDC-CP56-004"
+    CP56_CONFIGMAP_REF_INVALID = "MDC-CP56-005"
+    CP56_ENV_VAR_MISSING = "MDC-CP56-006"
+    CP56_SECRET_NOT_FOUND = "MDC-CP56-007"
+    CP56_VAULT_CONNECTION_FAILED = "MDC-CP56-008"
+    CP56_KMS_ENCRYPTION_FAILED = "MDC-CP56-009"
+    CP56_TEMPLATE_NOT_FOUND = "MDC-CP56-010"
+
+    # =========================================================================
+    # CP57: GraphQL Schema Federation Errors
+    # =========================================================================
+    CP57_FEDERATION_SERVICE_NOT_FOUND = "MDC-CP57-001"
+    CP57_INVALID_FEDERATED_TYPE = "MDC-CP57-002"
+    CP57_INVALID_GATEWAY_CONFIG = "MDC-CP57-003"
+    CP57_INVALID_RESOLVER = "MDC-CP57-004"
+    CP57_KEY_FIELD_MISSING = "MDC-CP57-005"
+    CP57_SUBSCHEMA_REGISTER_FAILED = "MDC-CP57-006"
+    CP57_GATEWAY_START_FAILED = "MDC-CP57-007"
+    CP57_SCHEMA_STITCHING_FAILED = "MDC-CP57-008"
+    CP57_PERSISTED_QUERY_NOT_FOUND = "MDC-CP57-009"
+    CP57_HEALTH_CHECK_FAILED = "MDC-CP57-010"
+
+    # =========================================================================
+    # CP59: Tenant Billing & Invoicing Errors
+    # =========================================================================
+    CP59_BILLING_PLAN_NOT_FOUND = "MDC-CP59-001"
+    CP59_BILLING_CYCLE_NOT_FOUND = "MDC-CP59-002"
+    CP59_INVOICE_NOT_FOUND = "MDC-CP59-003"
+    CP59_INVALID_BILLING_AMOUNT = "MDC-CP59-004"
+    CP59_USAGE_METER_NOT_FOUND = "MDC-CP59-005"
+    CP59_INVALID_BILLING_CYCLE = "MDC-CP59-006"
+    CP59_PAYMENT_GATEWAY_NOT_FOUND = "MDC-CP59-007"
+    CP59_INVOICE_ALREADY_PAID = "MDC-CP59-008"
+    CP59_SUBSCRIPTION_NOT_FOUND = "MDC-CP59-009"
+    CP59_BILLING_GATEWAY_TIMEOUT = "MDC-CP59-010"
+
 
 class ExitCode(Enum):
     """

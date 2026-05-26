@@ -683,6 +683,123 @@ def load_projection_tree(dsl_path: Path) -> ProjectionTree:
     if consent_file.exists():
         add_nodes(_load_consent(consent_file))
 
+    # === Phase 0 S2: DSL Loaders cho 13 CP còn thiếu ===
+
+    # CP02: Load tenancy configuration
+    tenancy_file = dsl_path / "tenancy.yaml"
+    if tenancy_file.exists():
+        add_nodes(_load_tenancy(tenancy_file))
+
+    # CP03: Load auth providers
+    auth_file = dsl_path / "auth.yaml"
+    if auth_file.exists():
+        add_nodes(_load_auth(auth_file))
+
+    # CP07: Load infrastructure as code
+    infrastructure_file = dsl_path / "infrastructure.yaml"
+    if infrastructure_file.exists():
+        add_nodes(_load_infrastructure(infrastructure_file))
+
+    # CP09: Load caching
+    caching_file = dsl_path / "caching.yaml"
+    if caching_file.exists():
+        add_nodes(_load_caching(caching_file))
+
+    # CP10: Load search
+    search_file = dsl_path / "search.yaml"
+    if search_file.exists():
+        add_nodes(_load_search(search_file))
+
+    # CP11: Load file & media storage
+    storage_file = dsl_path / "storage.yaml"
+    if storage_file.exists():
+        add_nodes(_load_storage(storage_file))
+
+    # CP16: Load monitoring
+    monitoring_file = dsl_path / "monitoring.yaml"
+    if monitoring_file.exists():
+        add_nodes(_load_monitoring(monitoring_file))
+
+    # CP20: Load API client
+    api_client_file = dsl_path / "api_client.yaml"
+    if api_client_file.exists():
+        add_nodes(_load_api_client(api_client_file))
+
+    # CP23: Load testing
+    testing_file = dsl_path / "testing.yaml"
+    if testing_file.exists():
+        add_nodes(_load_testing(testing_file))
+
+    # CP24: Load quality gates
+    quality_file = dsl_path / "quality.yaml"
+    if quality_file.exists():
+        add_nodes(_load_quality(quality_file))
+
+    # CP25: Load performance testing
+    performance_file = dsl_path / "performance.yaml"
+    if performance_file.exists():
+        add_nodes(_load_performance(performance_file))
+
+    # CP26: Load documentation
+    documentation_file = dsl_path / "documentation.yaml"
+    if documentation_file.exists():
+        add_nodes(_load_documentation(documentation_file))
+
+    # CP30: Load AI-assisted development
+    ai_assisted_file = dsl_path / "ai_assisted.yaml"
+    if ai_assisted_file.exists():
+        add_nodes(_load_ai_assisted(ai_assisted_file))
+
+    # CP54: Load Kubernetes
+    kubernetes_file = dsl_path / "kubernetes.yaml"
+    if kubernetes_file.exists():
+        add_nodes(_load_kubernetes(kubernetes_file))
+
+    # CP55: Load CI/CD Pipeline
+    cicd_file = dsl_path / "cicd.yaml"
+    if cicd_file.exists():
+        add_nodes(_load_cicd(cicd_file))
+
+    # CP56: Load environment & secrets
+    env_secrets_file = dsl_path / "env_secrets.yaml"
+    if env_secrets_file.exists():
+        add_nodes(_load_env_secrets(env_secrets_file))
+
+    # CP57: Load GraphQL Federation
+    federation_file = dsl_path / "graphql_federation.yaml"
+    if federation_file.exists():
+        add_nodes(_load_graphql_federation(federation_file))
+
+    # CP58: Load data encryption at rest
+    encryption_file = dsl_path / "encryption.yaml"
+    if encryption_file.exists():
+        add_nodes(_load_encryption(encryption_file))
+
+    # CP59: Load tenant billing & invoicing
+    tenant_billing_file = dsl_path / "tenant_billing.yaml"
+    if tenant_billing_file.exists():
+        add_nodes(_load_tenant_billing(tenant_billing_file))
+
+    # CP60: Load service discovery & config center
+    service_discovery_file = dsl_path / "service_discovery.yaml"
+    if service_discovery_file.exists():
+        add_nodes(_load_service_discovery(service_discovery_file))
+
+    # CP54: Load Kubernetes & Cloud Native
+    kubernetes_file = dsl_path / "kubernetes.yaml"
+    if kubernetes_file.exists():
+        add_nodes(_load_kubernetes(kubernetes_file))
+
+    # CP62: Load mobile backend
+    mobile_backend_file = dsl_path / "mobile_backend.yaml"
+    if mobile_backend_file.exists():
+        add_nodes(_load_mobile_backend(mobile_backend_file))
+
+    # CP63: Load recommendation engine
+    recommendation_file = dsl_path / "recommendation.yaml"
+    if recommendation_file.exists():
+        add_nodes(_load_recommendation(recommendation_file))
+
     return tree
 
 # ============================================================================
@@ -3142,7 +3259,1412 @@ def _load_consent(path: Path) -> list[ProjectionNode]:
 
 
 # ============================================================================
-# Extension Methods
+# Phase 0 S2: DSL Loaders cho 13 CP còn thiếu
+# ============================================================================
+
+# --- CP02: Multi-Tenancy Configuration ---
+
+def _load_tenancy(path: Path) -> list[ProjectionNode]:
+    """Load tenancy.yaml vào ProjectionNodes (CP02 — Multi-Tenancy).
+
+    Args:
+        path: Đường dẫn đến tenancy.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho tenancy config và isolation policy
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "tenancy_config" in data:
+        cfg = data["tenancy_config"]
+        node = ProjectionNode(
+            id=cfg.get("id", "default_tenancy"),
+            kind=NodeKind.TENANCY_CONFIG,
+            params={
+                "id": cfg.get("id", "default_tenancy"),
+                "description": cfg.get("description"),
+                "isolation_strategy": cfg.get("isolation_strategy", "row_level"),
+                "tenant_id_field": cfg.get("tenant_id_field", "tenant_id"),
+                "auto_provision": cfg.get("auto_provision", False),
+                "max_tenants": cfg.get("max_tenants", 1000),
+                "tags": cfg.get("tags", []),
+                "source": "tenancy.yaml",
+            },
+        )
+        nodes.append(node)
+
+    if "isolation_policies" in data:
+        for pol in data["isolation_policies"]:
+            node = ProjectionNode(
+                id=pol.get("id", ""),
+                kind=NodeKind.TENANT_ISOLATION_POLICY,
+                params={
+                    "id": pol.get("id"),
+                    "description": pol.get("description"),
+                    "policy_type": pol.get("policy_type", "strict"),
+                    "data_leakage_prevention": pol.get("data_leakage_prevention", True),
+                    "cross_tenant_query_allowed": pol.get("cross_tenant_query_allowed", False),
+                    "tags": pol.get("tags", []),
+                    "source": "tenancy.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP03: Auth Providers ---
+
+def _load_auth(path: Path) -> list[ProjectionNode]:
+    """Load auth.yaml vào ProjectionNodes (CP03 — Authentication).
+
+    Args:
+        path: Đường dẫn đến auth.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho auth providers
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "providers" in data:
+        for prov in data["providers"]:
+            node = ProjectionNode(
+                id=prov.get("id", ""),
+                kind=NodeKind.AUTH_PROVIDER,
+                params={
+                    "id": prov.get("id"),
+                    "description": prov.get("description"),
+                    "type": prov.get("type", "oauth2"),
+                    "provider": prov.get("provider", ""),
+                    "client_id": prov.get("client_id", ""),
+                    "scopes": prov.get("scopes", []),
+                    "auth_endpoint": prov.get("auth_endpoint", ""),
+                    "tags": prov.get("tags", []),
+                    "source": "auth.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP07: Infrastructure as Code ---
+
+def _load_infrastructure(path: Path) -> list[ProjectionNode]:
+    """Load infrastructure.yaml vào ProjectionNodes (CP07 — IAC).
+
+    Args:
+        path: Đường dẫn đến infrastructure.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho IAC resource và network
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "resources" in data:
+        for res in data["resources"]:
+            node = ProjectionNode(
+                id=res.get("id", ""),
+                kind=NodeKind.IAC_RESOURCE,
+                params={
+                    "id": res.get("id"),
+                    "description": res.get("description"),
+                    "resource_type": res.get("resource_type", "compute"),
+                    "provider": res.get("provider", "aws"),
+                    "region": res.get("region", "us-east-1"),
+                    "configuration": res.get("configuration", {}),
+                    "tags": res.get("tags", []),
+                    "source": "infrastructure.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "networks" in data:
+        for net in data["networks"]:
+            node = ProjectionNode(
+                id=net.get("id", ""),
+                kind=NodeKind.IAC_NETWORK,
+                params={
+                    "id": net.get("id"),
+                    "description": net.get("description"),
+                    "vpc_cidr": net.get("vpc_cidr", "10.0.0.0/16"),
+                    "subnets": net.get("subnets", []),
+                    "security_groups": net.get("security_groups", []),
+                    "tags": net.get("tags", []),
+                    "source": "infrastructure.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP09: Cache ---
+
+def _load_caching(path: Path) -> list[ProjectionNode]:
+    """Load caching.yaml vào ProjectionNodes (CP09 — Cache).
+
+    Args:
+        path: Đường dẫn đến caching.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho cache config
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "caches" in data:
+        for cache in data["caches"]:
+            node = ProjectionNode(
+                id=cache.get("id", ""),
+                kind=NodeKind.CACHE,
+                params={
+                    "id": cache.get("id"),
+                    "description": cache.get("description"),
+                    "backend": cache.get("backend", "redis"),
+                    "ttl_seconds": cache.get("ttl_seconds", 300),
+                    "max_size": cache.get("max_size", 10000),
+                    "eviction_policy": cache.get("eviction_policy", "lru"),
+                    "tags": cache.get("tags", []),
+                    "source": "caching.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "strategies" in data:
+        for strat in data["strategies"]:
+            node = ProjectionNode(
+                id=strat.get("id", ""),
+                kind=NodeKind.CACHE_STRATEGY,
+                params={
+                    "id": strat.get("id"),
+                    "description": strat.get("description"),
+                    "strategy": strat.get("strategy", "read_through"),
+                    "invalidation": strat.get("invalidation", "ttl"),
+                    "tags": strat.get("tags", []),
+                    "source": "caching.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP10: Search ---
+
+def _load_search(path: Path) -> list[ProjectionNode]:
+    """Load search.yaml vào ProjectionNodes (CP10 — Search).
+
+    Args:
+        path: Đường dẫn đến search.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho search index và query
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "indexes" in data:
+        for idx in data["indexes"]:
+            node = ProjectionNode(
+                id=idx.get("id", ""),
+                kind=NodeKind.SEARCH_INDEX,
+                params={
+                    "id": idx.get("id"),
+                    "description": idx.get("description"),
+                    "engine": idx.get("engine", "elasticsearch"),
+                    "entity_id": idx.get("entity_id", ""),
+                    "fields": idx.get("fields", []),
+                    "tags": idx.get("tags", []),
+                    "source": "search.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "queries" in data:
+        for q in data["queries"]:
+            node = ProjectionNode(
+                id=q.get("id", ""),
+                kind=NodeKind.SEARCH_QUERY,
+                params={
+                    "id": q.get("id"),
+                    "description": q.get("description"),
+                    "index_id": q.get("index_id", ""),
+                    "query_type": q.get("query_type", "fulltext"),
+                    "filters": q.get("filters", []),
+                    "tags": q.get("tags", []),
+                    "source": "search.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP11: File & Media Storage ---
+
+def _load_storage(path: Path) -> list[ProjectionNode]:
+    """Load storage.yaml vào ProjectionNodes (CP11 — File & Media Storage).
+
+    Args:
+        path: Đường dẫn đến storage.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho file storage và media processing
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "buckets" in data:
+        for bucket in data["buckets"]:
+            node = ProjectionNode(
+                id=bucket.get("id", ""),
+                kind=NodeKind.FILE_STORAGE,
+                params={
+                    "id": bucket.get("id"),
+                    "description": bucket.get("description"),
+                    "provider": bucket.get("provider", "s3"),
+                    "bucket": bucket.get("bucket", ""),
+                    "region": bucket.get("region", ""),
+                    "max_file_size_mb": bucket.get("max_file_size_mb", 100),
+                    "allowed_mime_types": bucket.get("allowed_mime_types", []),
+                    "cdn_enabled": bucket.get("cdn_enabled", False),
+                    "tags": bucket.get("tags", []),
+                    "source": "storage.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "processing_pipelines" in data:
+        for pipe in data["processing_pipelines"]:
+            node = ProjectionNode(
+                id=pipe.get("id", ""),
+                kind=NodeKind.MEDIA_PROCESSING,
+                params={
+                    "id": pipe.get("id"),
+                    "description": pipe.get("description"),
+                    "media_type": pipe.get("media_type", "image"),
+                    "operations": pipe.get("operations", []),
+                    "output_format": pipe.get("output_format", ""),
+                    "quality": pipe.get("quality", "high"),
+                    "tags": pipe.get("tags", []),
+                    "source": "storage.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP16: Monitoring (metrics/alerts từ observability.yaml đã load rồi,
+#    nhưng CP16 cần dashboard riêng) ---
+
+def _load_monitoring(path: Path) -> list[ProjectionNode]:
+    """Load monitoring.yaml vào ProjectionNodes (CP16 — Monitoring).
+
+    Args:
+        path: Đường dẫn đến monitoring.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho metric, alert, dashboard
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "metrics" in data:
+        for metric in data["metrics"]:
+            node = ProjectionNode(
+                id=metric.get("id", ""),
+                kind=NodeKind.METRIC,
+                params={
+                    "id": metric.get("id"),
+                    "description": metric.get("description"),
+                    "type": metric.get("type", "counter"),
+                    "name": metric.get("name", ""),
+                    "unit": metric.get("unit", ""),
+                    "labels": metric.get("labels", []),
+                    "config": metric.get("config", {}),
+                    "tags": metric.get("tags", []),
+                    "source": "monitoring.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "alerts" in data:
+        for alert in data["alerts"]:
+            node = ProjectionNode(
+                id=alert.get("id", ""),
+                kind=NodeKind.ALERT,
+                params={
+                    "id": alert.get("id"),
+                    "description": alert.get("description"),
+                    "name": alert.get("name", ""),
+                    "condition": alert.get("condition", {}),
+                    "severity": alert.get("severity", "warning"),
+                    "channels": alert.get("channels", []),
+                    "cooldown": alert.get("cooldown", ""),
+                    "config": alert.get("config", {}),
+                    "tags": alert.get("tags", []),
+                    "source": "monitoring.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "dashboards" in data:
+        for dash in data["dashboards"]:
+            node = ProjectionNode(
+                id=dash.get("id", ""),
+                kind=NodeKind.DASHBOARD,
+                params={
+                    "id": dash.get("id"),
+                    "description": dash.get("description"),
+                    "title": dash.get("title", ""),
+                    "widgets": dash.get("widgets", []),
+                    "refresh_interval": dash.get("refresh_interval", 30),
+                    "tags": dash.get("tags", []),
+                    "source": "monitoring.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP20: API Client Generator ---
+
+def _load_api_client(path: Path) -> list[ProjectionNode]:
+    """Load api_client.yaml vào ProjectionNodes (CP20 — API Client Generator).
+
+    Args:
+        path: Đường dẫn đến api_client.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho API client và endpoints
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "clients" in data:
+        for client in data["clients"]:
+            node = ProjectionNode(
+                id=client.get("id", ""),
+                kind=NodeKind.API_CLIENT,
+                params={
+                    "id": client.get("id"),
+                    "description": client.get("description"),
+                    "base_url": client.get("base_url", ""),
+                    "protocol": client.get("protocol", "rest"),
+                    "auth_type": client.get("auth_type", "bearer"),
+                    "timeout_ms": client.get("timeout_ms", 5000),
+                    "retry_count": client.get("retry_count", 3),
+                    "tags": client.get("tags", []),
+                    "source": "api_client.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "endpoints" in data:
+        for ep in data["endpoints"]:
+            node = ProjectionNode(
+                id=ep.get("id", ""),
+                kind=NodeKind.API_CLIENT_ENDPOINT,
+                params={
+                    "id": ep.get("id"),
+                    "description": ep.get("description"),
+                    "client_id": ep.get("client_id", ""),
+                    "method": ep.get("method", "GET"),
+                    "path": ep.get("path", ""),
+                    "request_schema": ep.get("request_schema", {}),
+                    "response_schema": ep.get("response_schema", {}),
+                    "tags": ep.get("tags", []),
+                    "source": "api_client.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP23: Testing ---
+
+def _load_testing(path: Path) -> list[ProjectionNode]:
+    """Load testing.yaml vào ProjectionNodes (CP23 — Testing).
+
+    Args:
+        path: Đường dẫn đến testing.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho test suites
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "suites" in data:
+        for suite in data["suites"]:
+            node = ProjectionNode(
+                id=suite.get("id", ""),
+                kind=NodeKind.TEST_SUITE,
+                params={
+                    "id": suite.get("id"),
+                    "description": suite.get("description"),
+                    "test_type": suite.get("test_type", "unit"),
+                    "framework": suite.get("framework", "pytest"),
+                    "files": suite.get("files", []),
+                    "coverage_threshold": suite.get("coverage_threshold", 80),
+                    "parallel": suite.get("parallel", False),
+                    "tags": suite.get("tags", []),
+                    "source": "testing.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP24: Quality/Security ---
+
+def _load_quality(path: Path) -> list[ProjectionNode]:
+    """Load quality.yaml vào ProjectionNodes (CP24 — Quality/Security).
+
+    Args:
+        path: Đường dẫn đến quality.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho quality gates
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "gates" in data:
+        for gate in data["gates"]:
+            node = ProjectionNode(
+                id=gate.get("id", ""),
+                kind=NodeKind.QUALITY_GATE,
+                params={
+                    "id": gate.get("id"),
+                    "description": gate.get("description"),
+                    "gate_type": gate.get("gate_type", "code_quality"),
+                    "checks": gate.get("checks", []),
+                    "fail_threshold": gate.get("fail_threshold", 0),
+                    "tags": gate.get("tags", []),
+                    "source": "quality.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP25: Performance Testing ---
+
+def _load_performance(path: Path) -> list[ProjectionNode]:
+    """Load performance.yaml vào ProjectionNodes (CP25 — Performance Testing).
+
+    Args:
+        path: Đường dẫn đến performance.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho performance test và load profile
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "scenarios" in data:
+        for scenario in data["scenarios"]:
+            node = ProjectionNode(
+                id=scenario.get("id", ""),
+                kind=NodeKind.PERFORMANCE_TEST,
+                params={
+                    "id": scenario.get("id"),
+                    "description": scenario.get("description"),
+                    "test_type": scenario.get("test_type", "load"),
+                    "target_rps": scenario.get("target_rps", 1000),
+                    "duration_seconds": scenario.get("duration_seconds", 300),
+                    "endpoints": scenario.get("endpoints", []),
+                    "success_criteria": scenario.get("success_criteria", {}),
+                    "tags": scenario.get("tags", []),
+                    "source": "performance.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "load_profiles" in data:
+        for profile in data["load_profiles"]:
+            node = ProjectionNode(
+                id=profile.get("id", ""),
+                kind=NodeKind.LOAD_PROFILE,
+                params={
+                    "id": profile.get("id"),
+                    "description": profile.get("description"),
+                    "ramp_up_seconds": profile.get("ramp_up_seconds", 60),
+                    "steady_state_seconds": profile.get("steady_state_seconds", 300),
+                    "virtual_users": profile.get("virtual_users", 100),
+                    "think_time_ms": profile.get("think_time_ms", 1000),
+                    "tags": profile.get("tags", []),
+                    "source": "performance.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP26: Documentation Generator ---
+
+def _load_documentation(path: Path) -> list[ProjectionNode]:
+    """Load documentation.yaml vào ProjectionNodes (CP26 — Documentation Generator).
+
+    Args:
+        path: Đường dẫn đến documentation.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho documentation spec và API doc sections
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "specs" in data:
+        for spec in data["specs"]:
+            node = ProjectionNode(
+                id=spec.get("id", ""),
+                kind=NodeKind.DOCUMENTATION_SPEC,
+                params={
+                    "id": spec.get("id"),
+                    "description": spec.get("description"),
+                    "doc_type": spec.get("doc_type", "api_docs"),
+                    "format": spec.get("format", "openapi"),
+                    "entities": spec.get("entities", []),
+                    "output_path": spec.get("output_path", ""),
+                    "tags": spec.get("tags", []),
+                    "source": "documentation.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "sections" in data:
+        for section in data["sections"]:
+            node = ProjectionNode(
+                id=section.get("id", ""),
+                kind=NodeKind.API_DOC_SECTION,
+                params={
+                    "id": section.get("id"),
+                    "description": section.get("description"),
+                    "section_name": section.get("section_name", ""),
+                    "endpoints": section.get("endpoints", []),
+                    "examples": section.get("examples", []),
+                    "tags": section.get("tags", []),
+                    "source": "documentation.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# --- CP30: AI-Assisted Development ---
+
+def _load_ai_assisted(path: Path) -> list[ProjectionNode]:
+    """Load ai_assisted.yaml vào ProjectionNodes (CP30 — AI-Assisted Development).
+
+    Args:
+        path: Đường dẫn đến ai_assisted.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho AI service, prompt template, tool call
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "services" in data:
+        for svc in data["services"]:
+            node = ProjectionNode(
+                id=svc.get("id", ""),
+                kind=NodeKind.AI_SERVICE,
+                params={
+                    "id": svc.get("id"),
+                    "description": svc.get("description"),
+                    "service_type": svc.get("service_type", "llm"),
+                    "provider": svc.get("provider", "openai"),
+                    "model": svc.get("model", ""),
+                    "api_key_ref": svc.get("api_key_ref", ""),
+                    "max_tokens": svc.get("max_tokens", 2048),
+                    "temperature": svc.get("temperature", 0.7),
+                    "tags": svc.get("tags", []),
+                    "source": "ai_assisted.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "prompt_templates" in data:
+        for tmpl in data["prompt_templates"]:
+            node = ProjectionNode(
+                id=tmpl.get("id", ""),
+                kind=NodeKind.AI_PROMPT_TEMPLATE,
+                params={
+                    "id": tmpl.get("id"),
+                    "description": tmpl.get("description"),
+                    "template": tmpl.get("template", ""),
+                    "variables": tmpl.get("variables", []),
+                    "system_prompt": tmpl.get("system_prompt", ""),
+                    "max_tokens": tmpl.get("max_tokens", 2048),
+                    "tags": tmpl.get("tags", []),
+                    "source": "ai_assisted.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "tool_calls" in data:
+        for tool in data["tool_calls"]:
+            node = ProjectionNode(
+                id=tool.get("id", ""),
+                kind=NodeKind.AI_TOOL_CALL,
+                params={
+                    "id": tool.get("id"),
+                    "description": tool.get("description"),
+                    "tool_name": tool.get("tool_name", ""),
+                    "tool_description": tool.get("tool_description", ""),
+                    "parameters_schema": tool.get("parameters_schema", {}),
+                    "required": tool.get("required", False),
+                    "tags": tool.get("tags", []),
+                    "source": "ai_assisted.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# ============================================================================
+# CP55: CI/CD Pipeline Loader
+# ============================================================================
+
+def _load_cicd(path: Path) -> list[ProjectionNode]:
+    """Load cicd.yaml vào ProjectionNodes (CP55 — CI/CD Pipeline Generator).
+
+    Args:
+        path: Đường dẫn đến cicd.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho pipeline, stage, và job
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Load pipeline configurations
+    if "pipelines" in data:
+        for pipeline in data["pipelines"]:
+            node = ProjectionNode(
+                id=pipeline.get("id", ""),
+                kind=NodeKind.CI_PIPELINE,
+                params={
+                    "id": pipeline.get("id"),
+                    "name": pipeline.get("name", pipeline.get("id", "")),
+                    "description": pipeline.get("description", ""),
+                    "platform": pipeline.get("platform", "github_actions"),
+                    "triggers": pipeline.get("triggers", ["push"]),
+                    "branches": pipeline.get("branches", ["main"]),
+                    "env_vars": pipeline.get("env_vars", {}),
+                    "tags": pipeline.get("tags", []),
+                    "source": "cicd.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Load pipeline stages
+    if "stages" in data:
+        for stage in data["stages"]:
+            node = ProjectionNode(
+                id=stage.get("id", ""),
+                kind=NodeKind.CI_STAGE,
+                params={
+                    "id": stage.get("id"),
+                    "name": stage.get("name", stage.get("id", "")),
+                    "description": stage.get("description", ""),
+                    "steps": stage.get("steps", []),
+                    "needs": stage.get("needs", []),
+                    "allow_failure": stage.get("allow_failure", False),
+                    "tags": stage.get("tags", []),
+                    "source": "cicd.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Load pipeline jobs/steps
+    if "jobs" in data:
+        for job in data["jobs"]:
+            node = ProjectionNode(
+                id=job.get("id", ""),
+                kind=NodeKind.CI_JOB,
+                params={
+                    "id": job.get("id"),
+                    "name": job.get("name", job.get("id", "")),
+                    "description": job.get("description", ""),
+                    "image": job.get("image", ""),
+                    "commands": job.get("commands", []),
+                    "env": job.get("env", {}),
+                    "timeout_minutes": job.get("timeout_minutes", 30),
+                    "artifacts": job.get("artifacts", []),
+                    "tags": job.get("tags", []),
+                    "source": "cicd.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# ============================================================================
+# CP56: Environment & Secret Management Loader
+# ============================================================================
+
+def _load_env_secrets(path: Path) -> list[ProjectionNode]:
+    """Load env_secrets.yaml vào ProjectionNodes (CP56 — Environment & Secret Management).
+
+    Args:
+        path: Đường dẫn đến env_secrets.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho env config, secret config, và vault config
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    if "env_configs" in data:
+        for e in data["env_configs"]:
+            node = ProjectionNode(
+                id=e.get("id", ""),
+                kind=NodeKind.ENV_CONFIG,
+                params={
+                    "id": e.get("id"),
+                    "name": e.get("name", e.get("id", "")),
+                    "env_name": e.get("env_name", "dev"),
+                    "variables": e.get("variables", {}),
+                    "required_vars": e.get("required_vars", []),
+                    "export_to_dotenv": e.get("export_to_dotenv", True),
+                    "tags": e.get("tags", []),
+                    "source": "env_secrets.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "secret_configs" in data:
+        for s in data["secret_configs"]:
+            node = ProjectionNode(
+                id=s.get("id", ""),
+                kind=NodeKind.SECRET_CONFIG,
+                params={
+                    "id": s.get("id"),
+                    "name": s.get("name", s.get("id", "")),
+                    "secret_type": s.get("secret_type", "local"),
+                    "key_path": s.get("key_path", ""),
+                    "engine_version": s.get("engine_version", 2),
+                    "path": s.get("path", ""),
+                    "access_policy": s.get("access_policy", "read-only"),
+                    "tags": s.get("tags", []),
+                    "source": "env_secrets.yaml",
+                },
+            )
+            nodes.append(node)
+
+    if "vault_configs" in data:
+        for v in data["vault_configs"]:
+            node = ProjectionNode(
+                id=v.get("id", ""),
+                kind=NodeKind.VAULT_CONFIG,
+                params={
+                    "id": v.get("id"),
+                    "address": v.get("address", ""),
+                    "engine_version": v.get("engine_version", 2),
+                    "paths": v.get("paths", []),
+                    "auto_auth": v.get("auto_auth", {}),
+                    "tags": v.get("tags", []),
+                    "source": "env_secrets.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# ============================================================================
+# CP58: Data Encryption at Rest Loader
+# ============================================================================
+
+def _load_encryption(path: Path) -> list[ProjectionNode]:
+    """Load encryption.yaml vào ProjectionNodes (CP58 — Data Encryption at Rest).
+
+    Parse encryption configs, encrypted fields, encryption keys,
+    và encryption policies từ YAML.
+
+    Args:
+        path: Đường dẫn đến encryption.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho encryption nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Encryption configs
+    if "configs" in data or "encryption_configs" in data:
+        configs = data.get("configs", data.get("encryption_configs", []))
+        for c in configs:
+            node = ProjectionNode(
+                id=c.get("id", ""),
+                kind=NodeKind.ENCRYPTION_CONFIG,
+                params={
+                    "id": c.get("id"),
+                    "name": c.get("name", c.get("id", "")),
+                    "algorithm": c.get("algorithm", "AES256_GCM"),
+                    "key_size": c.get("key_size", 256),
+                    "mode": c.get("mode", "GCM"),
+                    "key_management": c.get("key_management", "local"),
+                    "tags": c.get("tags", []),
+                    "source": "encryption.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Encrypted fields
+    if "fields" in data or "encrypted_fields" in data:
+        fields = data.get("fields", data.get("encrypted_fields", []))
+        for f in fields:
+            node = ProjectionNode(
+                id=f.get("id", ""),
+                kind=NodeKind.ENCRYPTED_FIELD,
+                params={
+                    "id": f.get("id"),
+                    "entity_id": f.get("entity_id", ""),
+                    "field_name": f.get("field_name", ""),
+                    "algorithm": f.get("algorithm", "AES256_GCM"),
+                    "key_id": f.get("key_id", ""),
+                    "auto_encrypt": f.get("auto_encrypt", True),
+                    "auto_decrypt": f.get("auto_decrypt", True),
+                    "tags": f.get("tags", []),
+                    "source": "encryption.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Encryption policies
+    if "policies" in data or "encryption_policies" in data:
+        policies = data.get("policies", data.get("encryption_policies", []))
+        for p in policies:
+            node = ProjectionNode(
+                id=p.get("id", ""),
+                kind=NodeKind.ENCRYPTION_POLICY,
+                params={
+                    "id": p.get("id"),
+                    "name": p.get("name", p.get("id", "")),
+                    "at_rest": p.get("at_rest", True),
+                    "in_transit": p.get("in_transit", True),
+                    "algorithm": p.get("algorithm", "AES256_GCM"),
+                    "key_rotation_days": p.get("key_rotation_days", 90),
+                    "compliance_standards": p.get("compliance_standards", []),
+                    "tags": p.get("tags", []),
+                    "source": "encryption.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# ============================================================================
+# CP57: GraphQL Schema Federation Loader
+# ============================================================================
+
+def _load_graphql_federation(path: Path) -> list[ProjectionNode]:
+    """Load graphql_federation.yaml vào ProjectionNodes (CP57 — GraphQL Schema Federation).
+
+    Parse federation services, federated types, resolvers, và gateway config từ YAML.
+
+    Args:
+        path: Đường dẫn đến graphql_federation.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho GraphQL Federation nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Federation services
+    if "services" in data:
+        for service in data["services"]:
+            node = ProjectionNode(
+                id=service.get("id", ""),
+                kind=NodeKind.FEDERATION_SERVICE,
+                params={
+                    "id": service.get("id"),
+                    "name": service.get("name", service.get("id", "")),
+                    "url": service.get("url", ""),
+                    "schema_path": service.get("schema_path", ""),
+                    "health_check": service.get("health_check", "/health"),
+                    "port": service.get("port", 4001),
+                    "entity_ownerships": service.get("entity_ownerships", []),
+                    "tags": service.get("tags", []),
+                    "source": "graphql_federation.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Federated types
+    if "types" in data:
+        for ft in data["types"]:
+            node = ProjectionNode(
+                id=ft.get("id", ""),
+                kind=NodeKind.FEDERATED_TYPE,
+                params={
+                    "id": ft.get("id"),
+                    "name": ft.get("name", ft.get("id", "")),
+                    "fields": ft.get("fields", []),
+                    "key_fields": ft.get("key_fields", []),
+                    "owning_service": ft.get("owning_service", ""),
+                    "extensions": ft.get("extensions", []),
+                    "tags": ft.get("tags", []),
+                    "source": "graphql_federation.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Federated resolvers
+    if "resolvers" in data:
+        for resolver in data["resolvers"]:
+            node = ProjectionNode(
+                id=resolver.get("id", ""),
+                kind=NodeKind.FEDERATED_RESOLVER,
+                params={
+                    "id": resolver.get("id"),
+                    "entity_type": resolver.get("entity_type", ""),
+                    "resolve_reference_query": resolver.get("resolve_reference_query", ""),
+                    "resolve_reference_service": resolver.get("resolve_reference_service", ""),
+                    "tags": resolver.get("tags", []),
+                    "source": "graphql_federation.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Gateway config
+    if "gateway_config" in data:
+        gw = data["gateway_config"]
+        node = ProjectionNode(
+            id=gw.get("id", "default_gateway"),
+            kind=NodeKind.GATEWAY_CONFIG,
+            params={
+                "id": gw.get("id", "default_gateway"),
+                "services": gw.get("services", []),
+                "persisted_queries_enabled": gw.get("persisted_queries_enabled", False),
+                "introspection_enabled": gw.get("introspection_enabled", True),
+                "cors_origins": gw.get("cors_origins", []),
+                "rate_limit_rps": gw.get("rate_limit_rps", 100),
+                "tags": gw.get("tags", []),
+                "source": "graphql_federation.yaml",
+            },
+        )
+        nodes.append(node)
+
+    return nodes
+
+
+# ============================================================================
+# CP60: Service Discovery & Config Center Loader
+# ============================================================================
+
+def _load_service_discovery(path: Path) -> list[ProjectionNode]:
+    """Load service_discovery.yaml vào ProjectionNodes (CP60 — Service Discovery & Config Center).
+
+    Args:
+        path: Đường dẫn đến service_discovery.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho service instance, registry, config entry, và load balancing
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Service instances
+    if "instances" in data:
+        for inst in data["instances"]:
+            node = ProjectionNode(
+                id=inst.get("instance_id", inst.get("id", "")),
+                kind=NodeKind.SERVICE_INSTANCE,
+                params={
+                    "id": inst.get("instance_id", inst.get("id", "")),
+                    "service_name": inst.get("service_name", inst.get("name", "")),
+                    "host": inst.get("host", ""),
+                    "port": inst.get("port", 8080),
+                    "protocol": inst.get("protocol", "http"),
+                    "metadata": inst.get("metadata", {}),
+                    "health_check_path": inst.get("health_check_path", "/health"),
+                    "tags": inst.get("tags", []),
+                    "source": "service_discovery.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Service registries
+    if "registries" in data:
+        for reg in data["registries"]:
+            node = ProjectionNode(
+                id=reg.get("registry_id", reg.get("id", "")),
+                kind=NodeKind.SERVICE_REGISTRY,
+                params={
+                    "id": reg.get("registry_id", reg.get("id", "")),
+                    "name": reg.get("name", ""),
+                    "provider": reg.get("provider", "consul"),
+                    "quorum_size": reg.get("quorum_size", 3),
+                    "session_ttl": reg.get("session_ttl", 30),
+                    "peer_nodes": reg.get("peer_nodes", []),
+                    "metadata": reg.get("metadata", {}),
+                    "source": "service_discovery.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Config entries
+    if "configs" in data:
+        for cfg in data["configs"]:
+            node = ProjectionNode(
+                id=cfg.get("entry_id", cfg.get("id", "")),
+                kind=NodeKind.CONFIG_ENTRY,
+                params={
+                    "id": cfg.get("entry_id", cfg.get("id", "")),
+                    "key": cfg.get("key", ""),
+                    "value": cfg.get("value", ""),
+                    "environment": cfg.get("environment", "dev"),
+                    "encrypted": cfg.get("encrypted", False),
+                    "version": cfg.get("version", 1),
+                    "watchers": cfg.get("watchers", []),
+                    "metadata": cfg.get("metadata", {}),
+                    "source": "service_discovery.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Load balancing configs
+    if "load_balancers" in data:
+        for lb in data["load_balancers"]:
+            node = ProjectionNode(
+                id=lb.get("config_id", lb.get("id", "")),
+                kind=NodeKind.LOAD_BALANCING_CONFIG,
+                params={
+                    "id": lb.get("config_id", lb.get("id", "")),
+                    "service_name": lb.get("service_name", ""),
+                    "strategy": lb.get("strategy", "round_robin"),
+                    "health_check_interval": lb.get("health_check_interval", 15),
+                    "max_retries": lb.get("max_retries", 3),
+                    "metadata": lb.get("metadata", {}),
+                    "source": "service_discovery.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# ============================================================================
+# CP62: Mobile Backend Loader
+# ============================================================================
+
+def _load_mobile_backend(path: Path) -> list[ProjectionNode]:
+    """Load mobile_backend.yaml vào ProjectionNodes (CP62 — Mobile Backend).
+
+    Parse push notification configs, deep link routes, mobile auth providers,
+    và OTA update configs từ YAML.
+
+    Args:
+        path: Đường dẫn đến mobile_backend.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho mobile backend nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Push notification configs
+    if "push_configs" in data:
+        for push in data["push_configs"]:
+            node = ProjectionNode(
+                id=push.get("id", ""),
+                kind=NodeKind.PUSH_NOTIFICATION_CONFIG,
+                params={
+                    "id": push.get("id"),
+                    "description": push.get("description"),
+                    "platform": push.get("platform", "both"),
+                    "server_key_ref": push.get("server_key_ref", ""),
+                    "bundle_id": push.get("bundle_id", ""),
+                    "topic": push.get("topic", ""),
+                    "sound": push.get("sound", True),
+                    "badge": push.get("badge", True),
+                    "data_payload": push.get("data_payload", True),
+                    "tags": push.get("tags", []),
+                    "source": "mobile_backend.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Deep link routes
+    if "deep_links" in data:
+        for link in data["deep_links"]:
+            node = ProjectionNode(
+                id=link.get("id", ""),
+                kind=NodeKind.DEEP_LINK_ROUTE,
+                params={
+                    "id": link.get("id"),
+                    "description": link.get("description"),
+                    "path_pattern": link.get("path_pattern", ""),
+                    "target_screen": link.get("target_screen", ""),
+                    "auth_required": link.get("auth_required", False),
+                    "params": link.get("params", {}),
+                    "fallback_url": link.get("fallback_url", ""),
+                    "universal_link_enabled": link.get("universal_link_enabled", False),
+                    "tags": link.get("tags", []),
+                    "source": "mobile_backend.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Mobile auth providers
+    if "auth_providers" in data:
+        for auth in data["auth_providers"]:
+            node = ProjectionNode(
+                id=auth.get("id", ""),
+                kind=NodeKind.MOBILE_AUTH_PROVIDER,
+                params={
+                    "id": auth.get("id"),
+                    "description": auth.get("description"),
+                    "type": auth.get("type", "google"),
+                    "client_id_ref": auth.get("client_id_ref", ""),
+                    "client_secret_ref": auth.get("client_secret_ref", ""),
+                    "redirect_uri": auth.get("redirect_uri", ""),
+                    "scopes": auth.get("scopes", []),
+                    "tags": auth.get("tags", []),
+                    "source": "mobile_backend.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # OTA update configs
+    if "ota_configs" in data:
+        for ota in data["ota_configs"]:
+            node = ProjectionNode(
+                id=ota.get("id", ""),
+                kind=NodeKind.OTA_UPDATE_CONFIG,
+                params={
+                    "id": ota.get("id"),
+                    "description": ota.get("description"),
+                    "platform": ota.get("platform", "both"),
+                    "forced_update": ota.get("forced_update", False),
+                    "minimum_version": ota.get("minimum_version", ""),
+                    "release_notes_url": ota.get("release_notes_url", ""),
+                    "download_url": ota.get("download_url", ""),
+                    "rollout_percentage": ota.get("rollout_percentage", 100),
+                    "tags": ota.get("tags", []),
+                    "source": "mobile_backend.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# ============================================================================
+# CP59: Tenant Billing & Invoicing Loader
+# ============================================================================
+
+def _load_tenant_billing(path: Path) -> list[ProjectionNode]:
+    """Load tenant_billing.yaml vào ProjectionNodes (CP59 — Tenant Billing & Invoicing).
+
+    Parse billing plans, billing cycles, usage meters, và invoice configs từ YAML.
+
+    Args:
+        path: Đường dẫn đến tenant_billing.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho tenant billing nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Billing plans
+    if "billing_plans" in data:
+        for plan in data["billing_plans"]:
+            node = ProjectionNode(
+                id=plan.get("id", ""),
+                kind=NodeKind.BILLING_PLAN,
+                params={
+                    "id": plan.get("id"),
+                    "description": plan.get("description"),
+                    "name": plan.get("name"),
+                    "tier": plan.get("tier", "free"),
+                    "monthly_price": plan.get("monthly_price", 0),
+                    "annual_price": plan.get("annual_price", 0),
+                    "features": plan.get("features", []),
+                    "usage_limits": plan.get("usage_limits", {}),
+                    "tags": plan.get("tags", []),
+                    "source": "tenant_billing.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Billing cycles
+    if "billing_cycles" in data:
+        for cycle in data["billing_cycles"]:
+            node = ProjectionNode(
+                id=cycle.get("id", ""),
+                kind=NodeKind.BILLING_CYCLE,
+                params={
+                    "id": cycle.get("id"),
+                    "description": cycle.get("description"),
+                    "type": cycle.get("type", "monthly"),
+                    "start_date": cycle.get("start_date"),
+                    "end_date": cycle.get("end_date"),
+                    "auto_renew": cycle.get("auto_renew", True),
+                    "metadata": cycle.get("metadata", {}),
+                    "tags": cycle.get("tags", []),
+                    "source": "tenant_billing.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Usage meters
+    if "usage_meters" in data:
+        for meter in data["usage_meters"]:
+            node = ProjectionNode(
+                id=meter.get("id", ""),
+                kind=NodeKind.USAGE_METER,
+                params={
+                    "id": meter.get("id"),
+                    "description": meter.get("description"),
+                    "metric_name": meter.get("metric_name", "api_calls"),
+                    "unit_price": meter.get("unit_price", 0),
+                    "billing_period": meter.get("billing_period", "monthly"),
+                    "threshold_alerts": meter.get("threshold_alerts", []),
+                    "metadata": meter.get("metadata", {}),
+                    "tags": meter.get("tags", []),
+                    "source": "tenant_billing.yaml",
+                },
+            )
+            nodes.append(node)
+
+    # Invoice configs
+    if "invoice_configs" in data:
+        for invoice in data["invoice_configs"]:
+            node = ProjectionNode(
+                id=invoice.get("id", ""),
+                kind=NodeKind.INVOICE_CONFIG,
+                params={
+                    "id": invoice.get("id"),
+                    "description": invoice.get("description"),
+                    "tenant_id": invoice.get("tenant_id", ""),
+                    "plan_id": invoice.get("plan_id", ""),
+                    "amount": invoice.get("amount", 0),
+                    "currency": invoice.get("currency", "USD"),
+                    "status": invoice.get("status", "draft"),
+                    "due_date": invoice.get("due_date"),
+                    "line_items": invoice.get("line_items", []),
+                    "metadata": invoice.get("metadata", {}),
+                    "tags": invoice.get("tags", []),
+                    "source": "tenant_billing.yaml",
+                },
+            )
+            nodes.append(node)
+
+    return nodes
+
+
+# ============================================================================
+# CP63: Recommendation Engine Loader
+# ============================================================================
+
+def _load_recommendation(path: Path) -> list[ProjectionNode]:
+    """Load recommendation.yaml vào ProjectionNodes (CP63 — Search & Recommendation Engine).
+
+    Parse recommendation configs, item embeddings, và user preferences từ YAML.
+
+    Args:
+        path: Đường dẫn đến recommendation.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho recommendation nodes
+    """
+    data, _ = load_yaml(path)
+    nodes = []
+
+    # Recommendation configs
+    if "configs" in data or "recommendation_configs" in data:
+        configs = data.get("configs", data.get("recommendation_configs", []))
+        for config in configs:
+            nodes.append(ProjectionNode(
+                id=config.get("id", ""),
+                kind=NodeKind.RECOMMENDATION_CONFIG,
+                params={
+                    "id": config.get("id"),
+                    "name": config.get("name", config.get("id", "")),
+                    "description": config.get("description"),
+                    "algorithm": config.get("algorithm", "hybrid"),
+                    "item_entity": config.get("item_entity", "Product"),
+                    "user_entity": config.get("user_entity", "User"),
+                    "rating_field": config.get("rating_field", "rating"),
+                    "top_k": config.get("top_k", 10),
+                    "min_interactions": config.get("min_interactions", 5),
+                    "ttl_seconds": config.get("ttl_seconds", 3600),
+                    "cache_enabled": config.get("cache_enabled", True),
+                    "metadata": config.get("metadata", {}),
+                    "tags": config.get("tags", []),
+                    "source": "recommendation.yaml",
+                },
+            ))
+
+    # Item embeddings
+    if "embeddings" in data or "item_embeddings" in data:
+        embeddings = data.get("embeddings", data.get("item_embeddings", []))
+        for embedding in embeddings:
+            nodes.append(ProjectionNode(
+                id=embedding.get("id", ""),
+                kind=NodeKind.ITEM_EMBEDDING,
+                params={
+                    "id": embedding.get("id"),
+                    "description": embedding.get("description"),
+                    "item_type": embedding.get("item_type", ""),
+                    "embedding_fields": embedding.get("embedding_fields", []),
+                    "similarity_metric": embedding.get("similarity_metric", "cosine"),
+                    "dimension": embedding.get("dimension", 128),
+                    "auto_train": embedding.get("auto_train", True),
+                    "metadata": embedding.get("metadata", {}),
+                    "tags": embedding.get("tags", []),
+                    "source": "recommendation.yaml",
+                },
+            ))
+
+    # User preferences
+    if "preferences" in data or "user_preferences" in data:
+        preferences = data.get("preferences", data.get("user_preferences", []))
+        for preference in preferences:
+            nodes.append(ProjectionNode(
+                id=preference.get("id", ""),
+                kind=NodeKind.USER_PREFERENCE,
+                params={
+                    "id": preference.get("id"),
+                    "description": preference.get("description"),
+                    "user_entity": preference.get("user_entity", "User"),
+                    "entity_type": preference.get("entity_type", "user"),
+                    "weight": preference.get("weight", 1.0),
+                    "history_window_days": preference.get("history_window_days", 30),
+                    "exclude_viewed": preference.get("exclude_viewed", True),
+                    "boost_categories": preference.get("boost_categories", []),
+                    "metadata": preference.get("metadata", {}),
+                    "tags": preference.get("tags", []),
+                    "source": "recommendation.yaml",
+                },
+            ))
+
+    return nodes
+
+
 # ============================================================================
 
 def extend(self: ProjectionTree, nodes: list[ProjectionNode]) -> None:

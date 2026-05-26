@@ -236,25 +236,25 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
     "cp19.angular": (
         "midicoder.emitters.core.cp19_ui_components.angular",
         "AngularUIEmitter",
-        "cp19_ui_component",
+        "cp19_ui_components",
     ),
     # CP19 – UI Components (React)
     "cp19.react": (
         "midicoder.emitters.core.cp19_ui_components.react",
         "ReactUIEmitter",
-        "cp19_ui_component",
+        "cp19_ui_components",
     ),
     # CP19 – UI Components (FastAPI)
     "cp19.fastapi": (
         "midicoder.emitters.core.cp19_ui_components.fastapi",
         "FastAPIUIEmitter",
-        "cp19_ui_component",
+        "cp19_ui_components",
     ),
     # CP19 – UI Components (NestJS)
     "cp19.nestjs": (
         "midicoder.emitters.core.cp19_ui_components.nestjs",
         "NestJSUIEmitter",
-        "cp19_ui_component",
+        "cp19_ui_components",
     ),
     # CP21 – Authentication UI (React)
     "cp21.react": (
@@ -496,6 +496,30 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "ReactPaymentEmitter",
         "cp45_payment",
     ),
+    # CP58 – Data Encryption (FastAPI)
+    "cp58.encryption.fastapi": (
+        "midicoder.emitters.core.cp58_encryption.fastapi",
+        "FastAPIEncryptionEmitter",
+        "cp58_encryption",
+    ),
+    # CP58 – Data Encryption (NestJS)
+    "cp58.encryption.nestjs": (
+        "midicoder.emitters.core.cp58_encryption.nestjs",
+        "NestJSEncryptionEmitter",
+        "cp58_encryption",
+    ),
+    # CP59 – Tenant Billing (FastAPI)
+    "cp59.billing.fastapi": (
+        "midicoder.emitters.core.cp59_tenant_billing.fastapi",
+        "FastAPITenantBillingEmitter",
+        "cp59_tenant_billing",
+    ),
+    # CP59 – Tenant Billing (NestJS)
+    "cp59.billing.nestjs": (
+        "midicoder.emitters.core.cp59_tenant_billing.nestjs",
+        "NestJSTenantBillingEmitter",
+        "cp59_tenant_billing",
+    ),
     # CP46 – MFA (FastAPI)
     "cp46.mfa.fastapi": (
         "midicoder.emitters.core.cp46_mfa.fastapi",
@@ -586,11 +610,263 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "AngularCatalogEmitter",
         "cp50_catalog",
     ),
-    # CP50 – Catalog (React)
-    "cp50.catalog.react": (
-        "midicoder.emitters.core.cp50_catalog.react",
-        "ReactCatalogEmitter",
-        "cp50_catalog",
+    # CP12 – Notification (FastAPI)
+    "cp12.notification.fastapi": (
+        "midicoder.emitters.core.cp12_notification.fastapi",
+        "FastAPINotificationEmitter",
+        "cp12_notification",
+    ),
+    # CP12 – Notification (NestJS)
+    "cp12.notification.nestjs": (
+        "midicoder.emitters.core.cp12_notification.nestjs",
+        "NestJSNotificationEmitter",
+        "cp12_notification",
+    ),
+    # CP12 – Notification (Angular)
+    "cp12.notification.angular": (
+        "midicoder.emitters.core.cp12_notification.angular",
+        "AngularNotificationEmitter",
+        "cp12_notification",
+    ),
+    # CP12 – Notification (React)
+    "cp12.notification.react": (
+        "midicoder.emitters.core.cp12_notification.react",
+        "ReactNotificationEmitter",
+        "cp12_notification",
+    ),
+    # CP13 – Workflow (FastAPI)
+    "cp13.workflow.fastapi": (
+        "midicoder.emitters.core.cp13_workflow_runtime.fastapi",
+        "WorkflowFastAPIEmitter",
+        None,
+    ),
+    # CP13 – Workflow (NestJS)
+    "cp13.workflow.nestjs": (
+        "midicoder.emitters.core.cp13_workflow_runtime.nestjs",
+        "WorkflowNestJSEmitter",
+        None,
+    ),
+    # CP14 – Audit Compliance (FastAPI)
+    "cp14.audit_compliance.fastapi": (
+        "midicoder.emitters.core.cp14_audit_compliance.fastapi",
+        "FastAPIAuditComplianceEmitter",
+        "cp14_audit_compliance",
+    ),
+    # CP14 – Audit Compliance (NestJS)
+    "cp14.audit_compliance.nestjs": (
+        "midicoder.emitters.core.cp14_audit_compliance.nestjs",
+        "NestJSAuditComplianceEmitter",
+        "cp14_audit_compliance",
+    ),
+    # CP14 – Audit Compliance (Angular)
+    "cp14.audit_compliance.angular": (
+        "midicoder.emitters.core.cp14_audit_compliance.angular",
+        "AngularAuditComplianceEmitter",
+        "cp14_audit_compliance",
+    ),
+    # CP14 – Audit Compliance (React)
+    "cp14.audit_compliance.react": (
+        "midicoder.emitters.core.cp14_audit_compliance.react",
+        "ReactAuditComplianceEmitter",
+        "cp14_audit_compliance",
+    ),
+    # CP15 – Observability (FastAPI)
+    "cp15.observability.fastapi": (
+        "midicoder.emitters.core.cp15_observability.fastapi",
+        "FastAPIObservabilityEmitter",
+        "cp15_observability",
+    ),
+    # CP15 – Observability (NestJS)
+    "cp15.observability.nestjs": (
+        "midicoder.emitters.core.cp15_observability.nestjs",
+        "NestJSObservabilityEmitter",
+        "cp15_observability",
+    ),
+    # CP15 – Observability (Angular)
+    "cp15.observability.angular": (
+        "midicoder.emitters.core.cp15_observability.angular",
+        "AngularObservabilityEmitter",
+        "cp15_observability",
+    ),
+    # CP15 – Observability (React)
+    "cp15.observability.react": (
+        "midicoder.emitters.core.cp15_observability.react",
+        "ReactObservabilityEmitter",
+        "cp15_observability",
+    ),
+    # CP40 – Webhook (FastAPI)
+    "cp40.webhook.fastapi": (
+        "midicoder.emitters.core.cp40_webhook.fastapi",
+        "FastAPIWebhookEmitter",
+        "cp40_webhook",
+    ),
+    # CP40 – Webhook (NestJS)
+    "cp40.webhook.nestjs": (
+        "midicoder.emitters.core.cp40_webhook.nestjs",
+        "NestJSWebhookEmitter",
+        "cp40_webhook",
+    ),
+    # CP40 – Webhook (Angular)
+    "cp40.webhook.angular": (
+        "midicoder.emitters.core.cp40_webhook.angular",
+        "AngularWebhookEmitter",
+        "cp40_webhook",
+    ),
+    # CP40 – Webhook (React)
+    "cp40.webhook.react": (
+        "midicoder.emitters.core.cp40_webhook.react",
+        "ReactWebhookEmitter",
+        "cp40_webhook",
+    ),
+    # CP42 – Approval (FastAPI)
+    "cp42.approval.fastapi": (
+        "midicoder.emitters.core.cp42_approval.fastapi",
+        "FastAPIApprovalEmitter",
+        "cp42_approval",
+    ),
+    # CP42 – Approval (NestJS)
+    "cp42.approval.nestjs": (
+        "midicoder.emitters.core.cp42_approval.nestjs",
+        "NestJSApprovalEmitter",
+        "cp42_approval",
+    ),
+    # CP42 – Approval (Angular)
+    "cp42.approval.angular": (
+        "midicoder.emitters.core.cp42_approval.angular",
+        "AngularApprovalEmitter",
+        "cp42_approval",
+    ),
+    # CP42 – Approval (React)
+    "cp42.approval.react": (
+        "midicoder.emitters.core.cp42_approval.react",
+        "ReactApprovalEmitter",
+        "cp42_approval",
+    ),
+    # CP47 – Retention (FastAPI)
+    "cp47.retention.fastapi": (
+        "midicoder.emitters.core.cp47_retention.fastapi",
+        "FastAPIRetentionEmitter",
+        "cp47_retention",
+    ),
+    # CP47 – Retention (NestJS)
+    "cp47.retention.nestjs": (
+        "midicoder.emitters.core.cp47_retention.nestjs",
+        "NestJSRetentionEmitter",
+        "cp47_retention",
+    ),
+    # CP47 – Retention (Angular)
+    "cp47.retention.angular": (
+        "midicoder.emitters.core.cp47_retention.angular",
+        "AngularRetentionEmitter",
+        "cp47_retention",
+    ),
+    # CP47 – Retention (React)
+    "cp47.retention.react": (
+        "midicoder.emitters.core.cp47_retention.react",
+        "ReactRetentionEmitter",
+        "cp47_retention",
+    ),
+    # CP56 – Environment & Secrets (FastAPI)
+    "cp56.env_secrets.fastapi": (
+        "midicoder.emitters.core.cp56_env_secrets.fastapi",
+        "FastAPIEnvEmitter",
+        "cp56_env_secrets",
+    ),
+    # CP56 – Environment & Secrets (NestJS)
+    "cp56.env_secrets.nestjs": (
+        "midicoder.emitters.core.cp56_env_secrets.nestjs",
+        "NestJSSEnvEmitter",
+        "cp56_env_secrets",
+    ),
+    # CP56 – Environment & Secrets (Infrastructure)
+    "cp56.env_secrets.infrastructure": (
+        "midicoder.emitters.core.cp56_env_secrets.infrastructure",
+        "EnvInfrastructureEmitter",
+        "cp56_env_secrets",
+    ),
+    # CP54 – Kubernetes (Infrastructure)
+    "cp54.kubernetes.infrastructure": (
+        "midicoder.emitters.core.cp54_kubernetes.infrastructure",
+        "K8sInfrastructureEmitter",
+        "cp54_kubernetes",
+    ),
+    # CP54 – Kubernetes (FastAPI)
+    "cp54.kubernetes.fastapi": (
+        "midicoder.emitters.core.cp54_kubernetes.fastapi",
+        "FastAPIK8sEmitter",
+        "cp54_kubernetes",
+    ),
+    # CP54 – Kubernetes (NestJS)
+    "cp54.kubernetes.nestjs": (
+        "midicoder.emitters.core.cp54_kubernetes.nestjs",
+        "NestJSK8sEmitter",
+        "cp54_kubernetes",
+    ),
+    # CP55 – CI/CD Pipeline (Infrastructure)
+    "cp55.cicd.infrastructure": (
+        "midicoder.emitters.core.cp55_cicd.infrastructure",
+        "CICDInfrastructureEmitter",
+        "cp55_cicd",
+    ),
+    # CP61 – Distributed Tracing (FastAPI)
+    "cp61.distributed_tracing.fastapi": (
+        "midicoder.emitters.core.cp61_distributed_tracing.fastapi",
+        "FastAPITracingEmitter",
+        "cp61_distributed_tracing",
+    ),
+    # CP61 – Distributed Tracing (NestJS)
+    "cp61.distributed_tracing.nestjs": (
+        "midicoder.emitters.core.cp61_distributed_tracing.nestjs",
+        "NestJSTracingEmitter",
+        "cp61_distributed_tracing",
+    ),
+    # CP57 – GraphQL Schema Federation (FastAPI)
+    "cp57.graphql_federation.fastapi": (
+        "midicoder.emitters.core.cp57_graphql_federation.fastapi",
+        "FastAPIFederationEmitter",
+        "cp57_graphql_federation",
+    ),
+    # CP57 – GraphQL Schema Federation (NestJS)
+    "cp57.graphql_federation.nestjs": (
+        "midicoder.emitters.core.cp57_graphql_federation.nestjs",
+        "NestJSFederationEmitter",
+        "cp57_graphql_federation",
+    ),
+    # CP60 – Service Discovery (FastAPI)
+    "cp60.service_discovery.fastapi": (
+        "midicoder.emitters.core.cp60_service_discovery.fastapi",
+        "FastAPIServiceDiscoveryEmitter",
+        "cp60_service_discovery",
+    ),
+    # CP60 – Service Discovery (NestJS)
+    "cp60.service_discovery.nestjs": (
+        "midicoder.emitters.core.cp60_service_discovery.nestjs",
+        "NestJSServiceDiscoveryEmitter",
+        "cp60_service_discovery",
+    ),
+    # CP62 – Mobile Backend (FastAPI)
+    "cp62.mobile_backend.fastapi": (
+        "midicoder.emitters.core.cp62_mobile_backend.fastapi",
+        "FastAPIMobileBackendEmitter",
+        "cp62_mobile_backend",
+    ),
+    # CP62 – Mobile Backend (NestJS)
+    "cp62.mobile_backend.nestjs": (
+        "midicoder.emitters.core.cp62_mobile_backend.nestjs",
+        "NestJSMobileBackendEmitter",
+        "cp62_mobile_backend",
+    ),
+    # CP63 – Recommendation (FastAPI)
+    "cp63.recommendation.fastapi": (
+        "midicoder.emitters.core.cp63_recommendation.fastapi",
+        "FastAPIRecommendationEmitter",
+        "cp63_recommendation",
+    ),
+    # CP63 – Recommendation (NestJS)
+    "cp63.recommendation.nestjs": (
+        "midicoder.emitters.core.cp63_recommendation.nestjs",
+        "NestJSRecommendationEmitter",
+        "cp63_recommendation",
     ),
 }
 
@@ -774,6 +1050,12 @@ def _parse_payment_dict(raw: dict[str, Any]) -> Any:
     return PaymentIR.from_dict(raw) if isinstance(raw, dict) else []
 
 
+def _parse_tenant_billing_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw tenant billing dict from DSL/MIR into CP59 BillingIR."""
+    from midicoder.emitters.core.cp59_tenant_billing.parser import BillingIR
+    return BillingIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
 def _parse_mfa_dict(raw: dict[str, Any]) -> Any:
     """Parse raw mfa dict from DSL/MIR into CP46 MFAIR."""
     from midicoder.emitters.core.cp46_mfa.parser import MFAIR
@@ -792,10 +1074,113 @@ def _parse_consent_dict(raw: dict[str, Any]) -> Any:
     return ConsentIR.from_dict(raw) if isinstance(raw, dict) else []
 
 
+def _parse_notification_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw notification dict from DSL/MIR into CP12 Notification list."""
+    from midicoder.emitters.core.cp12_notification.parser import (
+        parse_channels,
+        parse_notifications,
+        parse_providers,
+    )
+    return {
+        "notifications": parse_notifications(raw) if isinstance(raw, dict) else [],
+        "providers": parse_providers(raw) if isinstance(raw, dict) else [],
+        "channels": parse_channels(raw) if isinstance(raw, dict) else {},
+        "webhooks": raw.get("webhooks", []) if isinstance(raw, dict) else [],
+    }
+
+
+def _parse_audit_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw audit dict from DSL/MIR into CP14 AuditComplianceCollection."""
+    from midicoder.emitters.core.cp14_audit_compliance.parser import (
+        AuditComplianceParser,
+    )
+    import yaml
+    parser = AuditComplianceParser()
+    yaml_str = yaml.dump(raw) if isinstance(raw, dict) else raw
+    return parser.parse(yaml_str) if yaml_str else {}
+
+
+def _parse_observability_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw observability dict from DSL/MIR into CP15 Observability dict."""
+    from midicoder.emitters.core.cp15_observability.parser import ObservabilityParser
+    parser = ObservabilityParser()
+    if isinstance(raw, dict):
+        import yaml
+        yaml_str = yaml.dump(raw)
+        return parser.parse(yaml_str)
+    return {}
+
+
+def _parse_webhook_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw webhook dict from DSL/MIR into CP40 WebhookIR."""
+    from midicoder.emitters.core.cp40_webhook.parser import WebhookIR
+    return WebhookIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_approval_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw approval dict from DSL/MIR into CP42 ApprovalIR."""
+    from midicoder.emitters.core.cp42_approval.parser import ApprovalIR
+    return ApprovalIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_retention_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw retention dict from DSL/MIR into CP47 RetentionIR."""
+    from midicoder.emitters.core.cp47_retention.parser import RetentionIR
+    return RetentionIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
 def _parse_catalog_dict(raw: dict[str, Any]) -> Any:
     """Parse raw catalog dict from DSL/MIR into CP50 CatalogIR."""
     from midicoder.emitters.core.cp50_catalog.parser import CatalogIR
     return CatalogIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_env_secrets_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw env secrets dict from DSL/MIR into CP56 EnvIR."""
+    from midicoder.emitters.core.cp56_env_secrets.parser import EnvIR
+    return EnvIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_kubernetes_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw kubernetes dict from DSL/MIR into CP54 K8sIR."""
+    from midicoder.emitters.core.cp54_kubernetes.parser import K8sIR
+    return K8sIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_cicd_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw CI/CD dict from DSL/MIR into CP55 CIIR."""
+    from midicoder.emitters.core.cp55_cicd.parser import CIIR
+    return CIIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_encryption_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw encryption dict from DSL/MIR into CP58 EncryptionIR."""
+    from midicoder.emitters.core.cp58_encryption.parser import EncryptionIR
+    return EncryptionIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_distributed_tracing_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw distributed tracing dict from DSL/MIR into CP61 TracingIR."""
+    from midicoder.emitters.core.cp61_distributed_tracing.parser import TracingIR
+    return TracingIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_graphql_federation_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw GraphQL Federation dict from DSL/MIR into CP57 GraphQLIR."""
+    from midicoder.emitters.core.cp57_graphql_federation.parser import GraphQLIR
+    return GraphQLIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_service_discovery_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw service discovery dict from DSL/MIR into CP60 ServiceDiscoveryIR."""
+    from midicoder.emitters.core.cp60_service_discovery.parser import ServiceDiscoveryIR
+    return ServiceDiscoveryIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_recommendation_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw recommendation dict from DSL/MIR into CP63 RecommendationIR."""
+    from midicoder.emitters.core.cp63_recommendation.parser import RecommendationIR
+    return RecommendationIR.from_dict(raw) if isinstance(raw, dict) else []
 
 
 PARSER_REGISTRY: dict[str, Any] = {
@@ -807,7 +1192,7 @@ PARSER_REGISTRY: dict[str, Any] = {
     "cp09_cache": _parse_cache_dict,
     "cp06_gateway": _parse_gateway_dict,
     "cp18_frontend": _parse_frontend_dict,
-    "cp19_ui_component": _parse_ui_component_dict,
+    "cp19_ui_components": _parse_ui_component_dict,
     "cp22_realtime": _parse_realtime_dict,
     "cp24_quality": _parse_quality_dict,
     "cp34_report": _parse_report_dict,
@@ -817,10 +1202,25 @@ PARSER_REGISTRY: dict[str, Any] = {
     "cp37_feature_flags": _parse_feature_flag_dict,
     "cp44_bulk_ops": _parse_bulk_ops_dict,
     "cp45_payment": _parse_payment_dict,
+    "cp59_tenant_billing": _parse_tenant_billing_dict,
     "cp46_mfa": _parse_mfa_dict,
     "cp48_rate_limit": _parse_rate_limit_dict,
     "cp49_consent": _parse_consent_dict,
     "cp50_catalog": _parse_catalog_dict,
+    "cp12_notification": _parse_notification_dict,
+    "cp14_audit_compliance": _parse_audit_dict,
+    "cp15_observability": _parse_observability_dict,
+    "cp40_webhook": _parse_webhook_dict,
+    "cp42_approval": _parse_approval_dict,
+    "cp47_retention": _parse_retention_dict,
+    "cp54_kubernetes": _parse_kubernetes_dict,
+    "cp55_cicd": _parse_cicd_dict,
+    "cp56_env_secrets": _parse_env_secrets_dict,
+    "cp58_encryption": _parse_encryption_dict,
+    "cp61_distributed_tracing": _parse_distributed_tracing_dict,
+    "cp57_graphql_federation": _parse_graphql_federation_dict,
+    "cp60_service_discovery": _parse_service_discovery_dict,
+    "cp63_recommendation": _parse_recommendation_dict,
 }
 
 
@@ -889,7 +1289,7 @@ class PackEmitterRouter:
         vo_data = context.get("vo")
 
         # ── CP19: UI Component emitter (must be FIRST — uses raw entity dict) ──
-        if parser_key == "cp19_ui_component" or pack_emitter.startswith("cp19."):
+        if parser_key == "cp19_ui_components" or pack_emitter.startswith("cp19."):
             # --- UI Component emitter dispatch ---
             # CP19 emitters take (list[ComponentSpec], output_dir) and return
             # list[GeneratedFile] with path/content attributes.

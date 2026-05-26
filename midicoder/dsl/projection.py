@@ -5363,6 +5363,220 @@ NodeParams = (
 
 
 # ============================================================================
+# CP02: Multi-Tenancy Configuration Params
+# ============================================================================
+
+class TenantConfigParams(TypedDict, total=False):
+    """Tham số cho Tenancy Config nodes (CP02: Multi-Tenancy).
+
+    Định nghĩa chiến lược isolation cho tenant: schema-per-tenant, row-level, v.v.
+    """
+    id: str
+    description: str
+    isolation_strategy: str  # schema_per_tenant, row_level, database_per_tenant
+    tenant_id_field: str
+    auto_provision: bool
+    max_tenants: int
+    tags: list[str]
+    source: str
+
+
+class TenantIsolationPolicyParams(TypedDict, total=False):
+    """Tham số cho Tenant Isolation Policy (CP02)."""
+    id: str
+    description: str
+    policy_type: str  # strict, relaxed, custom
+    data_leakage_prevention: bool
+    cross_tenant_query_allowed: bool
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP07: Infrastructure as Code Params
+# ============================================================================
+
+class IacResourceParams(TypedDict, total=False):
+    """Tham số cho IAC Resource nodes (CP07: Infrastructure as Code)."""
+    id: str
+    description: str
+    resource_type: str  # compute, database, storage, network
+    provider: str  # aws, gcp, azure
+    region: str
+    configuration: dict[str, Any]
+    tags: list[str]
+    source: str
+
+
+class IacNetworkParams(TypedDict, total=False):
+    """Tham số cho IAC Network nodes (CP07)."""
+    id: str
+    description: str
+    vpc_cidr: str
+    subnets: list[dict[str, Any]]
+    security_groups: list[dict[str, Any]]
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP11: File & Media Storage Params
+# ============================================================================
+
+class FileStorageParams(TypedDict, total=False):
+    """Tham số cho File Storage nodes (CP11: File & Media Storage)."""
+    id: str
+    description: str
+    provider: str  # s3, gcs, azure_blob, local
+    bucket: str
+    region: str
+    max_file_size_mb: int
+    allowed_mime_types: list[str]
+    cdn_enabled: bool
+    tags: list[str]
+    source: str
+
+
+class MediaProcessingParams(TypedDict, total=False):
+    """Tham số cho Media Processing nodes (CP11)."""
+    id: str
+    description: str
+    media_type: str  # image, video, audio
+    operations: list[dict[str, Any]]  # resize, transcode, watermark
+    output_format: str
+    quality: str
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP20: API Client Generator Params
+# ============================================================================
+
+class ApiClientParams(TypedDict, total=False):
+    """Tham số cho API Client nodes (CP20: API Client Generator)."""
+    id: str
+    description: str
+    base_url: str
+    protocol: str  # rest, graphql, grpc
+    auth_type: str  # bearer, api_key, oauth2
+    timeout_ms: int
+    retry_count: int
+    tags: list[str]
+    source: str
+
+
+class ApiClientEndpointParams(TypedDict, total=False):
+    """Tham số cho API Client Endpoint nodes (CP20)."""
+    id: str
+    description: str
+    method: str  # GET, POST, PUT, DELETE
+    path: str
+    request_schema: dict[str, Any]
+    response_schema: dict[str, Any]
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP25: Performance Testing Params
+# ============================================================================
+
+class PerformanceTestParams(TypedDict, total=False):
+    """Tham số cho Performance Test nodes (CP25: Performance Testing)."""
+    id: str
+    description: str
+    test_type: str  # load, stress, spike, endurance
+    target_rps: int
+    duration_seconds: int
+    endpoints: list[dict[str, Any]]
+    success_criteria: dict[str, Any]
+    tags: list[str]
+    source: str
+
+
+class LoadProfileParams(TypedDict, total=False):
+    """Tham số cho Load Profile nodes (CP25)."""
+    id: str
+    description: str
+    ramp_up_seconds: int
+    steady_state_seconds: int
+    virtual_users: int
+    think_time_ms: int
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP26: Documentation Generator Params
+# ============================================================================
+
+class DocumentationSpecParams(TypedDict, total=False):
+    """Tham số cho Documentation Spec nodes (CP26: Documentation Generator)."""
+    id: str
+    description: str
+    doc_type: str  # api_docs, user_guide, architecture
+    format: str  # markdown, openapi, html
+    entities: list[str]
+    output_path: str
+    tags: list[str]
+    source: str
+
+
+class ApiDocSectionParams(TypedDict, total=False):
+    """Tham số cho API Doc Section nodes (CP26)."""
+    id: str
+    description: str
+    section_name: str
+    endpoints: list[str]
+    examples: list[dict[str, Any]]
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP30: AI-Assisted Development Params
+# ============================================================================
+
+class AiServiceParams(TypedDict, total=False):
+    """Tham số cho AI Service nodes (CP30: AI-Assisted Development)."""
+    id: str
+    description: str
+    service_type: str  # llm, vision, speech, code_generation
+    provider: str  # openai, anthropic, gemini, local
+    model: str
+    api_key_ref: str
+    max_tokens: int
+    temperature: float
+    tags: list[str]
+    source: str
+
+
+class AiPromptTemplateParams(TypedDict, total=False):
+    """Tham số cho AI Prompt Template nodes (CP30)."""
+    id: str
+    description: str
+    template: str
+    variables: list[str]
+    system_prompt: str
+    max_tokens: int
+    tags: list[str]
+    source: str
+
+
+class AiToolCallParams(TypedDict, total=False):
+    """Tham số cho AI Tool Call nodes (CP30)."""
+    id: str
+    description: str
+    tool_name: str
+    tool_description: str
+    parameters_schema: dict[str, Any]
+    required: bool
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
 # Node Kind Enum (109 Node Types Tổng cộng)
 # ============================================================================
 
@@ -5747,6 +5961,118 @@ class NodeKind(Enum):
     CONSENT_POLICY = "consent.policy"  # Consent policy for tenant
     COOKIE_PREFERENCE = "consent.cookie"  # Cookie preference
     COMM_PREFERENCE = "consent.communication"  # Communication preference
+
+    # =========================================================================
+    # CP55: CI/CD Pipeline (3 loại)
+    # =========================================================================
+    CI_PIPELINE = "cicd.pipeline"  # CI/CD pipeline configuration
+    CI_STAGE = "cicd.stage"  # CI/CD pipeline stage
+    CI_JOB = "cicd.job"  # CI/CD pipeline job/step
+
+    # =========================================================================
+    # CP54: Kubernetes & Cloud Native (5 loại)
+    # =========================================================================
+    K8S_DEPLOYMENT = "k8s.deployment"  # Kubernetes Deployment resource
+    K8S_SERVICE = "k8s.service"  # Kubernetes Service resource
+    K8S_INGRESS = "k8s.ingress"  # Kubernetes Ingress resource
+    K8S_HPA = "k8s.hpa"  # Kubernetes HorizontalPodAutoscaler
+    HELM_CHART = "k8s.helm"  # Helm Chart configuration
+
+    # =========================================================================
+    # CP02: Multi-Tenancy Configuration (2 loại)
+    # =========================================================================
+    TENANCY_CONFIG = "tenancy.config"  # Tenant isolation strategy config
+    TENANT_ISOLATION_POLICY = "tenancy.isolation"  # Tenant isolation policy
+
+    # =========================================================================
+    # CP07: Infrastructure as Code (2 loại)
+    # =========================================================================
+    IAC_RESOURCE = "iac.resource"  # Cloud infrastructure resource
+    IAC_NETWORK = "iac.network"  # Network/VPC configuration
+
+    # =========================================================================
+    # CP11: File & Media Storage (2 loại)
+    # =========================================================================
+    FILE_STORAGE = "storage.file"  # File storage bucket/container config
+    MEDIA_PROCESSING = "storage.media"  # Media processing pipeline config
+
+    # =========================================================================
+    # CP20: API Client Generator (2 loại)
+    # =========================================================================
+    API_CLIENT = "api.client"  # External API client config
+    API_CLIENT_ENDPOINT = "api.client_endpoint"  # API client endpoint definition
+
+    # =========================================================================
+    # CP25: Performance Testing (2 loại)
+    # =========================================================================
+    PERFORMANCE_TEST = "testing.performance"  # Performance test scenario
+    LOAD_PROFILE = "testing.load_profile"  # Load profile (ramp-up, duration)
+
+    # =========================================================================
+    # CP26: Documentation Generator (2 loại)
+    # =========================================================================
+    DOCUMENTATION_SPEC = "docs.spec"  # Documentation specification
+    API_DOC_SECTION = "docs.api_section"  # API documentation section
+
+    # =========================================================================
+    # CP30: AI-Assisted Development (3 loại)
+    # =========================================================================
+    AI_SERVICE = "ai.service"  # AI/ML service integration
+    AI_PROMPT_TEMPLATE = "ai.prompt"  # AI prompt template
+    AI_TOOL_CALL = "ai.tool_call"  # AI tool/function call definition
+
+    # =========================================================================
+    # CP59: Tenant Billing & Invoicing (4 loại)
+    # =========================================================================
+    BILLING_PLAN = "billing.plan"  # Kế hoạch thanh toán (free, starter, professional, enterprise)
+    BILLING_CYCLE = "billing.cycle"  # Chu kỳ thanh toán (monthly, quarterly, annual)
+    USAGE_METER = "billing.usage_meter"  # Đo lường sử dụng (api_calls, storage_gb, users, bandwidth_gb)
+    INVOICE_CONFIG = "billing.invoice"  # Cấu hình hóa đơn (draft, sent, paid, overdue, void)
+
+    # =========================================================================
+    # CP56: Environment & Secret Management (3 loại)
+    # =========================================================================
+    ENV_CONFIG = "env.config"  # Environment variable config per environment
+    SECRET_CONFIG = "env.secret"  # Secret management config (Vault/KMS/local)
+    VAULT_CONFIG = "env.vault"  # HashiCorp Vault configuration
+
+    # =========================================================================
+    # CP57: GraphQL Federation (4 loại)
+    # =========================================================================
+    FEDERATION_SERVICE = "graphql.federation_service"  # Federation service trong federated graph
+    FEDERATED_TYPE = "graphql.federated_type"  # Kiểu dữ liệu được share giữa các service
+    FEDERATED_RESOLVER = "graphql.resolver"  # Resolver cho __resolveReference
+    GATEWAY_CONFIG = "graphql.gateway"  # Apollo Gateway aggregation configuration
+
+    # =========================================================================
+    # CP58: Data Encryption at Rest (3 loại)
+    # =========================================================================
+    ENCRYPTION_CONFIG = "encryption.config"  # Cấu hình mã hóa tổng thể
+    ENCRYPTED_FIELD = "encryption.field"  # Trường dữ liệu được mã hóa
+    ENCRYPTION_POLICY = "encryption.policy"  # Chính sách mã hóa với compliance
+
+    # =========================================================================
+    # CP60: Service Discovery & Config Center (4 loại)
+    # =========================================================================
+    SERVICE_INSTANCE = "discovery.service_instance"  # Thực thể service với host, port, protocol, health check
+    SERVICE_REGISTRY = "discovery.service_registry"  # Registry provider (Consul, etcd, ZooKeeper, Eureka)
+    CONFIG_ENTRY = "discovery.config_entry"  # Mục cấu hình theo environment với encryption và versioning
+    LOAD_BALANCING_CONFIG = "discovery.load_balancing"  # Cấu hình load balancing strategy và health check
+
+    # =========================================================================
+    # CP62: Mobile Backend (4 loại)
+    # =========================================================================
+    PUSH_NOTIFICATION_CONFIG = "mobile.push_config"  # Cấu hình push notification (FCM/APNs)
+    DEEP_LINK_ROUTE = "mobile.deep_link"  # Deep link route với pattern matching
+    MOBILE_AUTH_PROVIDER = "mobile.auth_provider"  # OAuth2 mobile auth provider (Apple/Google/Facebook)
+    OTA_UPDATE_CONFIG = "mobile.ota_update"  # Cấu hình OTA update với forced update và rollout
+
+    # =========================================================================
+    # CP63: Search & Recommendation Engine (3 loại)
+    # =========================================================================
+    RECOMMENDATION_CONFIG = "recommendation.config"  # Cấu hình recommendation engine (algorithm, item_entity, user_entity)
+    ITEM_EMBEDDING = "recommendation.item_embedding"  # Item embedding vector config (fields, similarity_metric, dimension)
+    USER_PREFERENCE = "recommendation.user_preference"  # User preference config (weight, history_window, boost_categories)
 
 
 # ============================================================================
@@ -6180,6 +6506,88 @@ class ProjectionNode:
             NodeKind.CONSENT_POLICY: ["id", "tenant_id", "consent_types"],
             NodeKind.COOKIE_PREFERENCE: ["id", "user_id"],
             NodeKind.COMM_PREFERENCE: ["id", "user_id"],
+
+            # =========================================================================
+            # CP54: Kubernetes & Cloud Native
+            # =========================================================================
+            NodeKind.K8S_DEPLOYMENT: ["id", "name", "image"],
+            NodeKind.K8S_SERVICE: ["id", "name", "service_type"],
+            NodeKind.K8S_INGRESS: ["id", "name"],
+            NodeKind.K8S_HPA: ["id", "deployment_id"],
+            NodeKind.HELM_CHART: ["id", "name"],
+
+            # CP55: CI/CD Pipeline
+            NodeKind.CI_PIPELINE: ["id", "platform"],
+            NodeKind.CI_STAGE: ["id", "steps"],
+            NodeKind.CI_JOB: ["id", "commands"],
+            # CP02: Multi-Tenancy
+            NodeKind.TENANCY_CONFIG: ["id", "isolation_strategy"],
+            NodeKind.TENANT_ISOLATION_POLICY: ["id", "policy_type"],
+            # CP07: Infrastructure as Code
+            NodeKind.IAC_RESOURCE: ["id", "resource_type"],
+            NodeKind.IAC_NETWORK: ["id", "vpc_cidr"],
+            # CP11: File & Media Storage
+            NodeKind.FILE_STORAGE: ["id", "provider"],
+            NodeKind.MEDIA_PROCESSING: ["id", "media_type"],
+            # CP20: API Client
+            NodeKind.API_CLIENT: ["id", "base_url"],
+            NodeKind.API_CLIENT_ENDPOINT: ["id", "method", "path"],
+            # CP25: Performance Testing
+            NodeKind.PERFORMANCE_TEST: ["id", "test_type"],
+            NodeKind.LOAD_PROFILE: ["id", "virtual_users"],
+            # CP26: Documentation
+            NodeKind.DOCUMENTATION_SPEC: ["id", "doc_type"],
+            NodeKind.API_DOC_SECTION: ["id", "section_name"],
+            # CP30: AI-Assisted Development
+            NodeKind.AI_SERVICE: ["id", "service_type"],
+            NodeKind.AI_PROMPT_TEMPLATE: ["id", "template"],
+            NodeKind.AI_TOOL_CALL: ["id", "tool_name"],
+            # =========================================================================
+            # CP59: Tenant Billing & Invoicing
+            # =========================================================================
+            NodeKind.BILLING_PLAN: ["id", "tier"],
+            NodeKind.BILLING_CYCLE: ["id", "type"],
+            NodeKind.USAGE_METER: ["id", "metric_name"],
+            NodeKind.INVOICE_CONFIG: ["id", "tenant_id", "plan_id"],
+            # =========================================================================
+            # CP56: Environment & Secret Management
+            # =========================================================================
+            NodeKind.ENV_CONFIG: ["id", "env_name"],
+            NodeKind.SECRET_CONFIG: ["id", "secret_type"],
+            NodeKind.VAULT_CONFIG: ["id", "address"],
+            # =========================================================================
+            # CP57: GraphQL Federation
+            # =========================================================================
+            NodeKind.FEDERATION_SERVICE: ["id", "name"],
+            NodeKind.FEDERATED_TYPE: ["id", "name", "key_fields"],
+            NodeKind.FEDERATED_RESOLVER: ["id", "entity_type"],
+            NodeKind.GATEWAY_CONFIG: ["id", "services"],
+            # =========================================================================
+            # CP58: Data Encryption at Rest
+            # =========================================================================
+            NodeKind.ENCRYPTION_CONFIG: ["id", "algorithm"],
+            NodeKind.ENCRYPTED_FIELD: ["id", "entity_id", "field_name"],
+            NodeKind.ENCRYPTION_POLICY: ["id", "name"],
+            # =========================================================================
+            # CP60: Service Discovery & Config Center
+            # =========================================================================
+            NodeKind.SERVICE_INSTANCE: ["id", "service_name", "host", "port"],
+            NodeKind.SERVICE_REGISTRY: ["id", "name", "provider"],
+            NodeKind.CONFIG_ENTRY: ["id", "key"],
+            NodeKind.LOAD_BALANCING_CONFIG: ["id", "service_name", "strategy"],
+            # =========================================================================
+            # CP62: Mobile Backend
+            # =========================================================================
+            NodeKind.PUSH_NOTIFICATION_CONFIG: ["id", "platform"],
+            NodeKind.DEEP_LINK_ROUTE: ["id", "path_pattern", "target_screen"],
+            NodeKind.MOBILE_AUTH_PROVIDER: ["id", "type"],
+            NodeKind.OTA_UPDATE_CONFIG: ["id", "platform"],
+            # =========================================================================
+            # CP63: Search & Recommendation Engine
+            # =========================================================================
+            NodeKind.RECOMMENDATION_CONFIG: ["id", "algorithm", "item_entity"],
+            NodeKind.ITEM_EMBEDDING: ["id", "item_type"],
+            NodeKind.USER_PREFERENCE: ["id", "user_entity"],
         }
         return required_map.get(self.kind, ["id"])
 

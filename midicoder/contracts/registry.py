@@ -88,6 +88,16 @@ CP_ID_TO_INTERNAL: Final[dict[str, str]] = {
     "CP51": "cp51_blueprint",
     "CP52": "cp52_invariant",
     "CP53": "cp53_domain_bridge",
+    "CP54": "cp54_kubernetes",
+    "CP55": "cp55_cicd",
+    "CP56": "cp56_env_secrets",
+    "CP57": "cp57_graphql_federation",
+    "CP58": "cp58_encryption",
+    "CP59": "cp59_tenant_billing",
+    "CP60": "cp60_service_discovery",
+    "CP61": "cp61_distributed_tracing",
+    "CP62": "cp62_mobile_backend",
+    "CP63": "cp63_recommendation",
 }
 """Mapping từ pack ID (vd: "CP01") sang folder name (vd: "cp01_domain_model").
 
