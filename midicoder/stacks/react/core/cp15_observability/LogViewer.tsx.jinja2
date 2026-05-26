@@ -1,261 +1,243 @@
-/**
- * Component LogViewer — hiển thị danh sách log entries với bộ lọc và phân trang.
- *
- * Kết hợp với useLogging hook để tải và hiển thị log từ backend API.
- */
-import React, { useState, useEffect, useCallback } from 'react';
-import { useLogging } from './useLogging';
-import { LogEntry, LogLevel, FilterState, DEFAULT_FILTER, LOG_LEVEL_COLORS } from './types';
+{#
+Jinja2 template cho Log Viewer Component — React với virtualized table.
 
-/**
- * Props cho LogViewer component.
- */
-interface LogViewerProps {
-  /** URL cơ sở của API. */
-  apiBaseUrl?: string;
-  /** Tên dịch vụ. */
-  serviceName?: string;
-  /** Tự động tải log khi mount. */
-  autoLoad?: boolean;
-  /** Callback khi log được chọn. */
-  onLogSelect?: (entry: LogEntry) => void;
+Tự động generate component hiển thị log với filter controls, search,
+và virtualized log table để xử lý hiệu quả số lượng log lớn.
+
+Usage:
+context = {
+"service_name": "my-service",
 }
+template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
 
 /**
- * LogViewer component.
- *
- * Hiển thị danh sách log với:
- * - Bộ lọc theo mức độ log
- * - Tìm kiếm theo từ khóa
- * - Phân trang
- * - Hiển thị chi tiết khi click vào log entry
- */
-export const LogViewer: React.FC<LogViewerProps> = ({
-  apiBaseUrl = '/api',
-  serviceName = '{{ service_name | default("midicoder-react") }}',
-  autoLoad = true,
-  onLogSelect,
-}) => {
-  // Hook log
-  const { logs, loading, error, total, queryLogs } = useLogging({
-    apiBaseUrl,
-    serviceName,
-  });
+* Log Viewer Component — React với virtualized log table
+*
+* Tự động generate — không sửa tay.
+*
+* Pattern: B12 — Log Viewer & Search UI (CP15)
+*
+* Mục đích:
+* - Hiển thị log entries với filter controls (level, service, time range)
+* - Tìm kiếm theo từ khóa
+* - Virtualized table để render hiệu quả hàng ngàn log entries
+* - Log detail panel khi click vào entry
+*
+* Usage:
+* import { LogViewer } from './LogViewer';
+*
+<LogViewer apiBaseUrl="/api" serviceName="my-service" />
+*/
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 
-  // Trạng thái bộ lọc
-  const [filter, setFilter] = useState<FilterState>(DEFAULT_FILTER);
-  // Log entry đang được chọn để hiển thị chi tiết
-  const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
+/** Mức độ log. */
+export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
 
-  // Tự động tải log khi mount
-  useEffect(() => {
-    if (autoLoad) {
-      loadLogs();
+/** Một dòng log từ backend. */
+export interface LogEntry {
+id: string;
+timestamp: string;
+level: LogLevel;
+service: string;
+message: string;
+correlationId?: string;
+fields?: Record<string, unknown>;
+    stack?: string;
     }
-  }, []);
 
-  // Tải lại khi bộ lọc thay đổi
-  useEffect(() => {
-    loadLogs();
-  }, [filter.level, filter.page, filter.pageSize]);
+    /** Bộ filter log. */
+    interface LogFilter {
+    level: LogLevel | '';
+    service: string;
+    search: string;
+    fromTime: string;
+    toTime: string;
+    page: number;
+    }
 
-  /**
-   * Tải log từ backend.
-   */
-  const loadLogs = useCallback(() => {
-    queryLogs({
-      level: filter.level || undefined,
-      search: filter.search || undefined,
-      limit: filter.pageSize,
-      offset: filter.page * filter.pageSize,
-    });
-  }, [filter, queryLogs]);
+    /** Màu sắc theo level. */
+    const LEVEL_COLORS: Record<LogLevel, string> = {
+        DEBUG: '#6b7280',
+        INFO: '#2563eb',
+        WARN: '#d97706',
+        ERROR: '#dc2626',
+        FATAL: '#9f1239',
+        };
 
-  /**
-   * Xử lý khi bộ lọc mức độ thay đổi.
-   */
-  const handleLevelChange = useCallback((newLevel: LogLevel | null) => {
-    setFilter((prev) => ({ ...prev, level: newLevel, page: 0 }));
-  }, []);
+        /** Props cho LogViewer. */
+        interface LogViewerProps {
+        /** URL cơ sở của API. */
+        apiBaseUrl?: string;
+        /** Tên dịch vụ. */
+        serviceName?: string;
+        }
 
-  /**
-   * Xử lý khi tìm kiếm thay đổi.
-   */
-  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setFilter((prev) => ({ ...prev, search: e.target.value, page: 0 }));
-  }, []);
+        /**
+        * LogViewer component với virtualized table.
+        */
+        export const LogViewer: React.FC<LogViewerProps> = ({
+            apiBaseUrl = '/api',
+            serviceName = '{{ service_name | default("app") }}',
+            }) => {
+            const [logs, setLogs] = useState<LogEntry[]>([]);
+                const [loading, setLoading] = useState(false);
+                const [filter, setFilter] = useState<LogFilter>({
+                    level: '', service: '', search: '', fromTime: '', toTime: '', page: 0,
+                    });
+                    const [selected, setSelected] = useState<LogEntry | null>(null);
+                        const listRef = useRef<HTMLDivElement>(null);
 
-  /**
-   * Xử lý khi chọn log entry.
-   */
-  const handleLogClick = useCallback(
-    (entry: LogEntry) => {
-      setSelectedLog(entry);
-      onLogSelect?.(entry);
-    },
-    [onLogSelect]
-  );
+                            // Filter logs client-side (hoặc gọi API với params)
+                            const filteredLogs = useMemo(() => {
+                            return logs.filter((entry) => {
+                            if (filter.level && entry.level !== filter.level) return false;
+                            if (filter.service && !entry.service.includes(filter.service)) return false;
+                            if (filter.search && !entry.message.toLowerCase().includes(filter.search.toLowerCase()))
+                            return false;
+                            return true;
+                            });
+                            }, [logs, filter]);
 
-  /**
-   * Đóng chi tiết log.
-   */
-  const closeDetail = useCallback(() => {
-    setSelectedLog(null);
-  }, []);
+                            /** Tải logs từ backend. */
+                            const loadLogs = useCallback(async () => {
+                            setLoading(true);
+                            try {
+                            const params = new URLSearchParams({
+                            service: serviceName,
+                            limit: '50',
+                            offset: String(filter.page * 50),
+                            ...(filter.level ? { level: filter.level } : {}),
+                            ...(filter.search ? { search: filter.search } : {}),
+                            });
+                            const res = await fetch(`${apiBaseUrl}/logs?${params}`);
+                            const data = await res.json();
+                            setLogs(data.logs || data);
+                            } catch (err) {
+                            console.error('[LogViewer] Failed to load logs:', err);
+                            } finally {
+                            setLoading(false);
+                            }
+                            }, [apiBaseUrl, serviceName, filter.level, filter.search, filter.page]);
 
-  /**
-   * Chuyển trang.
-   */
-  const goToPage = useCallback((page: number) => {
-    setFilter((prev) => ({ ...prev, page }));
-  }, []);
+                            /** Handle filter change. */
+                            const handleFilterChange = useCallback((key: keyof LogFilter, value: string) => {
+                            setFilter((prev) => ({ ...prev, [key]: value, page: 0 }));
+                            }, []);
 
-  /**
-   * Tính tổng số trang.
-   */
-  const totalPages = Math.ceil(total / filter.pageSize);
+                            /** Row height cố định cho virtualization. */
+                            const rowHeight = 40;
+                            const visibleRange = useMemo(() => {
+                            if (!listRef.current) return { start: 0, end: 0 };
+                            const scrollTop = listRef.current.scrollTop;
+                            const viewportHeight = listRef.current.clientHeight;
+                            const start = Math.floor(scrollTop / rowHeight);
+                            const end = Math.min(filteredLogs.length, start + Math.ceil(viewportHeight / rowHeight) +
+                            5);
+                            return { start, end };
+                            }, [filteredLogs.length]);
 
-  return (
-    <div className="log-viewer">
-      <h2>Log Viewer</h2>
+                            return (
+                            <div className="log-viewer">
+                                <h2>Log Viewer</h2>
 
-      {/* Bộ lọc */}
-      <div className="log-viewer__filters">
-        <label htmlFor="level-filter">
-          Mức độ:{' '}
-          <select
-            id="level-filter"
-            value={filter.level || ''}
-            onChange={(e) => handleLevelChange(e.target.value as LogLevel || null)}
-          >
-            <option value="">Tất cả</option>
-            <option value="DEBUG">DEBUG</option>
-            <option value="INFO">INFO</option>
-            <option value="WARN">WARN</option>
-            <option value="ERROR">ERROR</option>
-            <option value="FATAL">FATAL</option>
-          </select>
-        </label>
+                                {/* Filter controls */}
+                                <div className="log-viewer__filters">
+                                    <select value={filter.level} onChange={(e)=> handleFilterChange('level',
+                                        e.target.value)}>
+                                        <option value="">Tất cả mức độ</option>
+                                        {(['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'] as LogLevel[]).map((l) => (
+                                        <option key={l} value={l}>{l}</option>
+                                        ))}
+                                    </select>
+                                    <input type="text" placeholder="Lọc theo service..." value={filter.service}
+                                        onChange={(e)=> handleFilterChange('service', e.target.value)} />
+                                    <input type="datetime-local" value={filter.fromTime} onChange={(e)=>
+                                    handleFilterChange('fromTime', e.target.value)} />
+                                    <input type="datetime-local" value={filter.toTime} onChange={(e)=>
+                                    handleFilterChange('toTime', e.target.value)} />
+                                    <input type="text" placeholder="Tìm kiếm..." value={filter.search} onChange={(e)=>
+                                    handleFilterChange('search', e.target.value)} />
+                                    <button onClick={loadLogs} disabled={loading}>
+                                        {loading ? 'Đang tải...' : 'Làm mới'}
+                                    </button>
+                                </div>
 
-        <label htmlFor="search-input">
-          Tìm kiếm:{' '}
-          <input
-            id="search-input"
-            type="text"
-            value={filter.search}
-            onChange={handleSearchChange}
-            placeholder="Tìm theo nội dung..."
-          />
-        </label>
+                                {/* Virtualized log table */}
+                                <div className="log-viewer__table-header">
+                                    <span style={{ width: '160px' }}>Thời gian</span>
+                                    <span style={{ width: '80px' }}>Mức độ</span>
+                                    <span style={{ width: '120px' }}>Dịch vụ</span>
+                                    <span>Thông điệp</span>
+                                </div>
+                                <div ref={listRef} className="log-viewer__table-body" style={{ height: '400px' ,
+                                    overflow: 'auto' , position: 'relative' }}>
+                                    <div style={{ height: `${filteredLogs.length * rowHeight}px`, position: 'relative'
+                                        }}>
+                                        {filteredLogs.slice(visibleRange.start, visibleRange.end).map((entry, i) => (
+                                        <div key={entry.id} className="log-viewer__row" style={{ top:
+                                            `${(visibleRange.start + i) * rowHeight}px`, position: 'absolute' , height:
+                                            `${rowHeight}px`, cursor: 'pointer' , background: selected?.id===entry.id
+                                            ? '#e0e7ff' : 'transparent' , }} onClick={()=> setSelected(entry)}>
+                                            <span style={{ width: '160px' }}>{new
+                                                Date(entry.timestamp).toLocaleString('vi-VN')}</span>
+                                            <span style={{ width: '80px' , color: LEVEL_COLORS[entry.level], fontWeight:
+                                                600 }}>
+                                                {entry.level}
+                                            </span>
+                                            <span style={{ width: '120px' }}>{entry.service}</span>
+                                            <span style={{ overflow: 'hidden' , textOverflow: 'ellipsis' ,
+                                                whiteSpace: 'nowrap' }}>
+                                                {entry.message}
+                                            </span>
+                                        </div>
+                                        ))}
+                                    </div>
+                                </div>
 
-        <button onClick={loadLogs} disabled={loading}>
-          {loading ? 'Đang tải...' : 'Làm mới'}
-        </button>
-      </div>
+                                {/* Pagination */}
+                                <div className="log-viewer__pagination">
+                                    <button disabled={filter.page===0} onClick={()=> setFilter((p) => ({ ...p, page:
+                                        p.page - 1 }))}>Trước</button>
+                                    <span>Trang {filter.page + 1}</span>
+                                    <button onClick={()=> setFilter((p) => ({ ...p, page: p.page + 1 }))}>Sau</button>
+                                </div>
 
-      {/* Thông báo lỗi */}
-      {error && (
-        <div className="log-viewer__error">
-          Lỗi khi tải log: {error.message}
-        </div>
-      )}
+                                {/* Detail panel */}
+                                {selected && (
+                                <div className="log-viewer__detail" onClick={(e)=> { if (e.target === e.currentTarget)
+                                    setSelected(null); }}>
+                                    <div className="log-viewer__detail-content" onClick={(e)=> e.stopPropagation()}>
+                                        <h3>Chi tiết Log</h3>
+                                        <button onClick={()=> setSelected(null)}>Đóng</button>
+                                        <dl>
+                                            <dt>Thời gian</dt>
+                                            <dd>{new Date(selected.timestamp).toLocaleString('vi-VN')}</dd>
+                                            <dt>Mức độ</dt>
+                                            <dd style={{ color: LEVEL_COLORS[selected.level] }}>{selected.level}</dd>
+                                            <dt>Dịch vụ</dt>
+                                            <dd>{selected.service}</dd>
+                                            <dt>Correlation ID</dt>
+                                            <dd>{selected.correlationId || '-'}</dd>
+                                            <dt>Thông điệp</dt>
+                                            <dd>{selected.message}</dd>
+                                            {selected.stack && (<dt>Stack Trace</dt>
+                                            <dd>
+                                                <pre>{selected.stack}</pre>
+                                            </dd>)}
+                                            {selected.fields && (<dt>Fields</dt>
+                                            <dd>
+                                                <pre>{JSON.stringify(selected.fields, null, 2)}</pre>
+                                            </dd>)}
+                                        </dl>
+                                    </div>
+                                </div>
+                                )}
+                            </div>
+                            );
+                            };
 
-      {/* Danh sách log */}
-      <div className="log-viewer__list">
-        {loading && !logs.length && <div className="log-viewer__loading">Đang tải log...</div>}
-        {!loading && !logs.length && (
-          <div className="log-viewer__empty">Không có log entry nào.</div>
-        )}
-
-        {logs.map((entry) => (
-          <div
-            key={entry.id}
-            className={`log-viewer__entry log-viewer__entry--${entry.level.toLowerCase()}`}
-            style={{ borderLeftColor: LOG_LEVEL_COLORS[entry.level] }}
-            onClick={() => handleLogClick(entry)}
-          >
-            <span className="log-viewer__timestamp">
-              {new Date(entry.timestamp).toLocaleString()}
-            </span>
-            <span
-              className="log-viewer__level"
-              style={{ color: LOG_LEVEL_COLORS[entry.level] }}
-            >
-              {entry.level}
-            </span>
-            <span className="log-viewer__service">{entry.service}</span>
-            {entry.component && (
-              <span className="log-viewer__component">{entry.component}</span>
-            )}
-            <span className="log-viewer__message">{entry.message}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Phân trang */}
-      {totalPages > 1 && (
-        <div className="log-viewer__pagination">
-          <button
-            onClick={() => goToPage(filter.page - 1)}
-            disabled={filter.page === 0}
-          >
-            Trước
-          </button>
-          <span>
-            Trang {filter.page + 1} / {totalPages}
-          </span>
-          <button
-            onClick={() => goToPage(filter.page + 1)}
-            disabled={filter.page >= totalPages - 1}
-          >
-            Sau
-          </button>
-        </div>
-      )}
-
-      {/* Chi tiết log */}
-      {selectedLog && (
-        <div className="log-viewer__detail">
-          <button className="log-viewer__close" onClick={closeDetail}>
-            Đóng
-          </button>
-          <h3>Chi tiết Log</h3>
-          <dl>
-            <dt>Thời gian</dt>
-            <dd>{new Date(selectedLog.timestamp).toLocaleString()}</dd>
-            <dt>Mức độ</dt>
-            <dd>{selectedLog.level}</dd>
-            <dt>Dịch vụ</dt>
-            <dd>{selectedLog.service}</dd>
-            {selectedLog.component && (
-              <>
-                <dt>Component</dt>
-                <dd>{selectedLog.component}</dd>
-              </>
-            )}
-            <dt>Thông điệp</dt>
-            <dd>{selectedLog.message}</dd>
-            {selectedLog.fields && (
-              <>
-                <dt>Trường bổ sung</dt>
-                <dd>
-                  <pre>{JSON.stringify(selectedLog.fields, null, 2)}</pre>
-                </dd>
-              </>
-            )}
-            {selectedLog.stack && (
-              <>
-                <dt>Stack Trace</dt>
-                <dd>
-                  <pre>{selectedLog.stack}</pre>
-                </dd>
-              </>
-            )}
-          </dl>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default LogViewer;
+                            export default LogViewer;

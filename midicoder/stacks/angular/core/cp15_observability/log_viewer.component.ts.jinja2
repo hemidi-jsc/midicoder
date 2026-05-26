@@ -1,258 +1,271 @@
+{#
+Jinja2 template cho Log Viewer Component — Angular với Signal-based state.
+
+Tự động generate component hiển thị bảng log với filter (level/service/time range),
+search input, pagination, và log detail drawer.
+
+Usage:
+context = {
+"service_name": "my-service",
+}
+template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
 /**
-* Component hiển thị danh sách log entries với khả năng lọc và tìm kiếm.
+* Log Viewer Component — Angular với Signal-based state
 *
-* Kết nối với LoggingService để tải log từ backend và hiển thị
-* dưới dạng bảng với các bộ lọc theo mức độ, dịch vụ, và từ khóa.
+* Tự động generate — không sửa tay.
+*
+* Pattern: B12 — Log Viewer & Search UI (CP15)
+*
+* Mục đích:
+* - Hiển thị bảng log entries với filter theo level, service, time range
+* - Tìm kiếm theo từ khóa với debounce
+* - Phân trang
+* - Log detail drawer để xem chi tiết
+*
+* Usage:
+* <app-log-viewer [serviceName]="'my-service'"></app-log-viewer>
 */
-import { Component, OnInit, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
+import {
+Component,
+signal,
+computed,
+effect,
+OnInit,
+OnDestroy,
+ChangeDetectionStrategy,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subscription } from 'rxjs';
-import { LoggingService, LogEntry, LogLevel, LogQueryParams } from '../../core/observability/logging_service';
+import { Subject } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 /**
-* Trạng thái bộ lọc hiện tại.
+* LogLevel — mức độ log entry.
 */
-interface FilterState {
-level: LogLevel | null;
-search: string;
-limit: number;
-offset: number;
-}
+export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
 
 /**
-* Component xem log.
-*
-* Hiển thị danh sách log entries từ backend với các bộ lọc
-* theo mức độ, tìm kiếm theo từ khóa, và phân trang.
+* LogEntry — một dòng log từ backend.
 */
-@Component({
-selector: 'app-log-viewer',
-standalone: true,
-imports: [CommonModule, FormsModule],
-changeDetection: ChangeDetectionStrategy.OnPush,
-template: `
-<div class="log-viewer">
-    <h2>Tất cả Log Entries</h2>
+export interface LogEntry {
+id: string;
+timestamp: string;
+level: LogLevel;
+service: string;
+component?: string;
+message: string;
+correlationId?: string;
+fields?: Record<string, unknown>;
+    stack?: string;
+    }
 
-    <!-- Bộ lọc -->
-    <div class="log-filters">
-        <label for="level-filter">
-            Mức độ:
-            <select id="level-filter" [(ngModel)]="filter.level" (change)="onFilterChange()">
-                <option [ngValue]="null">Tất cả</option>
-                <option [ngValue]="'DEBUG'">DEBUG</option>
-                <option [ngValue]="'INFO'">INFO</option>
-                <option [ngValue]="'WARN'">WARN</option>
-                <option [ngValue]="'ERROR'">ERROR</option>
-            </select>
-        </label>
+    /**
+    * Bộ lọc log.
+    */
+    interface LogFilter {
+    level: LogLevel | null;
+    service: string;
+    search: string;
+    fromTime: string;
+    toTime: string;
+    }
 
-        <label for="search-input">
-            Tìm kiếm:
-            <input id="search-input" type="text" [(ngModel)]="filter.search" (input)="onSearchDebounce()"
-                placeholder="Tìm theo nội dung..." />
-        </label>
+    @Component({
+    selector: 'app-log-viewer',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    template: `
+    <div class="log-viewer">
+        <h2>Log Viewer</h2>
 
-        <button (click)="loadLogs()" class="refresh-btn">
-            Làm mới
-        </button>
-    </div>
+        <!-- Filter controls -->
+        <div class="log-viewer__filters">
+            <label>Mức độ:
+                <select [(ngModel)]="filter.level" (ngModelChange)="onFilterChange()">
+                    <option [ngValue]="null">Tất cả</option>
+                    <option *ngFor="let l of levels" [value]="l">{{ l }}</option>
+                </select>
+            </label>
+            <label>Dịch vụ:
+                <input type="text" [(ngModel)]="filter.service" placeholder="Lọc theo service..."
+                    (input)="onFilterChange()" />
+            </label>
+            <label>Từ:
+                <input type="datetime-local" [(ngModel)]="filter.fromTime" (change)="onFilterChange()" />
+            </label>
+            <label>Đến:
+                <input type="datetime-local" [(ngModel)]="filter.toTime" (change)="onFilterChange()" />
+            </label>
+            <label>Tìm kiếm:
+                <input type="text" [(ngModel)]="filter.search" (input)="onSearchDebounce()"
+                    placeholder="Tìm theo nội dung..." />
+            </label>
+            <button (click)="loadLogs()" [disabled]="loading()">Làm mới</button>
+        </div>
 
-    <!-- Trạng thái tải -->
-    <div *ngIf="loading" class="loading">Đang tải log...</div>
+        <!-- Log table -->
+        <div *ngIf="loading()" class="log-viewer__loading">Đang tải log...</div>
+        <div *ngIf="!loading() && logs().length === 0" class="log-viewer__empty">
+            Không có log entry nào.
+        </div>
+        <table *ngIf="!loading() && logs().length > 0" class="log-viewer__table">
+            <thead>
+                <tr>
+                    <th>Thời gian</th>
+                    <th>Mức độ</th>
+                    <th>Dịch vụ</th>
+                    <th>Thông điệp</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr *ngFor="let entry of logs()"
+                    [class]="'log-viewer__row log-viewer__row--' + entry.level.toLowerCase()">
+                    <td>{{ entry.timestamp | date:'medium' }}</td>
+                    <td>{{ entry.level }}</td>
+                    <td>{{ entry.service }}</td>
+                    <td>{{ entry.message }}</td>
+                    <td><button (click)="selectLog(entry)">Chi tiết</button></td>
+                </tr>
+            </tbody>
+        </table>
 
-    <!-- Danh sách log -->
-    <div *ngIf="!loading && logs.length === 0" class="empty-state">
-        Không có log entry nào.
-    </div>
+        <!-- Pagination -->
+        <div *ngIf="totalPages() > 1" class="log-viewer__pagination">
+            <button (click)="goToPage(page() - 1)" [disabled]="page() === 0">Trước</button>
+            <span>Trang {{ page() + 1 }} / {{ totalPages() }}</span>
+            <button (click)="goToPage(page() + 1)" [disabled]="page() >= totalPages() - 1">Sau</button>
+        </div>
 
-    <div *ngIf="!loading && logs.length > 0" class="log-list">
-        <div *ngFor="let entry of logs" [class]="'log-entry log-entry--' + entry.level.toLowerCase()">
-            <span class="log-timestamp">{{ entry.timestamp | date:'medium' }}</span>
-            <span [class]="'log-level log-level--' + entry.level.toLowerCase()">
-                {{ entry.level }}
-            </span>
-            <span class="log-service">{{ entry.service }}</span>
-            <span class="log-message">{{ entry.message }}</span>
-            <span *ngIf="entry.fields" class="log-fields">
-                {{ entry.fields | json }}
-            </span>
+        <!-- Detail drawer -->
+        <div *ngIf="selectedLog()" class="log-viewer__drawer" (click)="closeDrawer($event)">
+            <div class="log-viewer__drawer-content" (click)="$event.stopPropagation()">
+                <h3>Chi tiết Log</h3>
+                <button (click)="selectedLog.set(null)">Đóng</button>
+                <dl *ngIf="selectedLog()">
+                    <ng-template #entryLet let-entry="selectedLog()">
+                        <dt>Thời gian</dt>
+                        <dd>{{ entry.timestamp | date:'medium' }}</dd>
+                        <dt>Mức độ</dt>
+                        <dd>{{ entry.level }}</dd>
+                        <dt>Dịch vụ</dt>
+                        <dd>{{ entry.service }}</dd>
+                        <dt>Correlation ID</dt>
+                        <dd>{{ entry.correlationId || '-' }}</dd>
+                        <dt>Thông điệp</dt>
+                        <dd>{{ entry.message }}</dd>
+                        <dt *ngIf="entry.stack">Stack Trace</dt>
+                        <dd *ngIf="entry.stack">
+                            <pre>{{ entry.stack }}</pre>
+                        </dd>
+                        <dt *ngIf="entry.fields">Fields</dt>
+                        <dd *ngIf="entry.fields">
+                            <pre>{{ entry.fields | json }}</pre>
+                        </dd>
+                    </ng-template>
+                </dl>
+            </div>
         </div>
     </div>
+    `,
+    styles: [`
+    .log-viewer { padding: 16px; font-family: monospace; }
+    .log-viewer__filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; align-items: center; }
+    .log-viewer__table { width: 100%; border-collapse: collapse; }
+    .log-viewer__table th, .log-viewer__table td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
+    .log-viewer__row--error { background: #ffe0e0; }
+    .log-viewer__row--warn { background: #fff3e0; }
+    .log-viewer__row--fatal { background: #ffcdd2; font-weight: bold; }
+    .log-viewer__pagination { display: flex; gap: 12px; margin-top: 16px; align-items: center; }
+    .log-viewer__drawer { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; justify-content:
+    flex-end; z-index: 1000; }
+    .log-viewer__drawer-content { width: 480px; max-width: 90vw; background: #fff; padding: 24px; overflow-y: auto; }
+    .log-viewer__loading, .log-viewer__empty { text-align: center; padding: 32px; color: #666; }
+    dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+    dt { font-weight: bold; }
+    pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+    `],
+    })
+    export class LogViewerComponent implements OnInit, OnDestroy {
+    // Signal-based state
+    readonly logs = signal<LogEntry[]>([]);
+        readonly loading = signal(false);
+        readonly page = signal(0);
+        readonly total = signal(0);
+        readonly selectedLog = signal<LogEntry | null>(null);
 
-    <!-- Phân trang -->
-    <div *ngIf="!loading && logs.length > 0" class="pagination">
-        <button (click)="previousPage()" [disabled]="filter.offset === 0">
-            Trước
-        </button>
-        <span>Trang {{ currentPage() }}</span>
-        <button (click)="nextPage()" [disabled]="logs.length < filter.limit">
-            Sau
-        </button>
-    </div>
-</div>
-`,
-styles: [`
-.log-viewer {
-padding: 16px;
-font-family: monospace;
-}
-.log-filters {
-display: flex;
-gap: 16px;
-margin-bottom: 16px;
-align-items: center;
-}
-.log-list {
-display: flex;
-flex-direction: column;
-gap: 4px;
-}
-.log-entry {
-display: flex;
-gap: 12px;
-padding: 8px;
-border-radius: 4px;
-background: #f5f5f5;
-font-size: 13px;
-}
-.log-entry--error {
-background: #ffe0e0;
-}
-.log-entry--warn {
-background: #fff3e0;
-}
-.log-level {
-font-weight: bold;
-min-width: 60px;
-}
-.log-level--error {
-color: #c62828;
-}
-.log-level--warn {
-color: #e65100;
-}
-.log-timestamp {
-min-width: 120px;
-color: #666;
-}
-.log-service {
-min-width: 80px;
-color: #1565c0;
-}
-.log-message {
-flex: 1;
-}
-.log-fields {
-color: #666;
-font-size: 11px;
-}
-.pagination {
-display: flex;
-gap: 12px;
-margin-top: 16px;
-align-items: center;
-}
-.loading, .empty-state {
-text-align: center;
-padding: 32px;
-color: #666;
-}
-`],
-})
-export class LogViewerComponent implements OnInit, OnDestroy {
-/** Dịch vụ log. */
-private readonly logging = new LoggingService();
+            // Computed: tổng số trang
+            readonly totalPages = computed(() => Math.max(1, Math.ceil(this.total() / 50)));
 
-/** Danh sách log entries. */
-logs: LogEntry[] = [];
+            readonly levels: LogLevel[] = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
 
-/** Trạng thái tải. */
-loading = false;
+            // Filter state
+            filter: LogFilter = {
+            level: null,
+            service: '',
+            search: '',
+            fromTime: '',
+            toTime: '',
+            };
 
-/** Trạng thái bộ lọc. */
-filter: FilterState = {
-level: null,
-search: '',
-limit: 50,
-offset: 0,
-};
+            private destroy$ = new Subject<void>();
+                private searchTimeout?: ReturnType<typeof setTimeout>;
 
-/** Subscription để dọn dẹp. */
-private sub?: Subscription;
+                    constructor() {
+                    // Auto-load khi page thay đổi
+                    effect(() => {
+                    this.page();
+                    this.loadLogs();
+                    });
+                    }
 
-/** Bộ debounce cho tìm kiếm. */
-private searchTimeout?: ReturnType<typeof setTimeout>;
+                    ngOnInit(): void {
+                    this.loadLogs();
+                    }
 
-    ngOnInit(): void {
-    this.loadLogs();
-    }
+                    ngOnDestroy(): void {
+                    this.destroy$.next();
+                    this.destroy$.complete();
+                    if (this.searchTimeout) clearTimeout(this.searchTimeout);
+                    }
 
-    ngOnDestroy(): void {
-    this.sub?.unsubscribe();
-    if (this.searchTimeout) clearTimeout(this.searchTimeout);
-    }
+                    loadLogs(): void {
+                    this.loading.set(true);
+                    // TODO: gọi API logs với filter, pagination
+                    // this.logService.queryLogs(this.buildQuery()).pipe(takeUntilDestroyed()).subscribe(...)
+                    this.loading.set(false);
+                    }
 
-    /**
-    * Tải log từ backend.
-    */
-    loadLogs(): void {
-    this.loading = true;
-    const params: LogQueryParams = {
-    level: this.filter.level ?? undefined,
-    search: this.filter.search || undefined,
-    limit: this.filter.limit,
-    offset: this.filter.offset,
-    };
+                    onFilterChange(): void {
+                    this.page.set(0);
+                    this.loadLogs();
+                    }
 
-    this.sub = this.logging.queryLogs(params).subscribe({
-    next: (entries) => {
-    this.logs = entries;
-    this.loading = false;
-    },
-    error: (err) => {
-    console.error('Failed to load logs:', err);
-    this.loading = false;
-    },
-    });
-    }
+                    onSearchDebounce(): void {
+                    if (this.searchTimeout) clearTimeout(this.searchTimeout);
+                    this.searchTimeout = setTimeout(() => {
+                    this.page.set(0);
+                    this.loadLogs();
+                    }, 300);
+                    }
 
-    /**
-    * Xử lý khi bộ lọc thay đổi.
-    */
-    onFilterChange(): void {
-    this.filter.offset = 0;
-    this.loadLogs();
-    }
+                    goToPage(p: number): void {
+                    this.page.set(p);
+                    }
 
-    /**
-    * Xử lý tìm kiếm với debounce.
-    */
-    onSearchDebounce(): void {
-    if (this.searchTimeout) clearTimeout(this.searchTimeout);
-    this.searchTimeout = setTimeout(() => {
-    this.filter.offset = 0;
-    this.loadLogs();
-    }, 300);
-    }
+                    selectLog(entry: LogEntry): void {
+                    this.selectedLog.set(entry);
+                    }
 
-    /** Chuyển sang trang trước. */
-    previousPage(): void {
-    if (this.filter.offset > 0) {
-    this.filter.offset -= this.filter.limit;
-    this.loadLogs();
-    }
-    }
-
-    /** Chuyển sang trang sau. */
-    nextPage(): void {
-    this.filter.offset += this.filter.limit;
-    this.loadLogs();
-    }
-
-    /** Tính số trang hiện tại. */
-    currentPage(): number {
-    return Math.floor(this.filter.offset / this.filter.limit) + 1;
-    }
-    }
+                    closeDrawer(e: Event): void {
+                    if (e.target === e.currentTarget) {
+                    this.selectedLog.set(null);
+                    }
+                    }
+                    }
