@@ -1,0 +1,189 @@
+"""
+Mô-đun State Lifecycle Emitter — emit lifecycle events.
+
+Tự động tạo bởi Midicoder CE — không chỉnh sửa thủ công.
+
+Kết hợp với CP05 (Event Bus) để emit events khi entity
+thay đổi trạng thái.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
+from uuid import uuid4
+
+
+@dataclass
+class LifecycleEvent:
+    """Lifecycle event cho state transition.
+
+    Attributes:
+        event_id: ID duy nhất của event.
+        event_type: Loại event (state_entered, state_exited, transition_completed).
+        entity_id: ID của entity.
+        entity_type: Entity type.
+        machine_id: ID state machine.
+        from_state: State trước (null cho initial).
+        to_state: State sau.
+        user_id: ID người thực hiện.
+        timestamp: Thời gian xảy ra.
+        metadata: Metadata bổ sung.
+    """
+
+    event_id: str = field(default_factory=lambda: str(uuid4()))
+    event_type: str = ""
+    entity_id: str = ""
+    entity_type: str = ""
+    machine_id: str = ""
+    from_state: Optional[str] = None
+    to_state: str = ""
+    user_id: Optional[str] = None
+    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+# Event handler callback type
+EventHandler = Callable[[LifecycleEvent], None]
+
+
+class StateLifecycleEmitter:
+    """Emit lifecycle events khi entity thay đổi trạng thái.
+
+    Các event types:
+    - state_entered: Entity vừa vào một state mới
+    - state_exited: Entity vừa rời một state cũ
+    - transition_completed: Transition hoàn tất (guard pass + effect done)
+    - instance_created: Instance mới được tạo
+
+    Usage:
+        emitter = StateLifecycleEmitter()
+        emitter.add_handler("order.state_entered", on_order_state_entered)
+        emitter.emit_on_transition(ctx)
+    """
+
+    def __init__(self):
+        """Khởi tạo emitter."""
+        self._handlers: Dict[str, List[EventHandler]] = {}
+
+{% for sm in state_machines %}
+{% for state in sm.states %}
+{% if state != sm.initial_state %}
+    # Handler skeleton: {{ sm.entity_type }} enters {{ state }}
+    def _on_{{ sm.entity_type | replace('-', '_') }}_{{ state | replace('-', '_') }}_entered(
+        event: LifecycleEvent,
+    ) -> None:
+        """Handle {{ sm.entity_type }} entering state '{{ state }}'."""
+        # TODO: implement state-entered logic
+        pass
+
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+    def add_handler(
+        self,
+        event_pattern: str,
+        handler: EventHandler,
+    ) -> None:
+        """Thêm event handler cho một pattern.
+
+        Args:
+            event_pattern: Pattern event (e.g. "order.state_entered").
+            handler: Handler callback.
+        """
+        if event_pattern not in self._handlers:
+            self._handlers[event_pattern] = []
+        self._handlers[event_pattern].append(handler)
+
+    def emit(self, event: LifecycleEvent) -> None:
+        """Emit một lifecycle event.
+
+        Args:
+            event: LifecycleEvent.
+        """
+        # Match pattern: entity_type.event_type
+        pattern = f"{event.entity_type}.{event.event_type}"
+        handlers = self._handlers.get(pattern, [])
+        for fn in handlers:
+            fn(event)
+
+        # Also emit to wildcard pattern
+        wildcard_handlers = self._handlers.get("*", [])
+        for fn in wildcard_handlers:
+            fn(event)
+
+    def emit_on_transition(
+        self,
+        entity_id: str,
+        entity_type: str,
+        machine_id: str,
+        from_state: Optional[str],
+        to_state: str,
+        user_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Emit events cho một transition.
+
+        Args:
+            entity_id: ID của entity.
+            entity_type: Entity type.
+            machine_id: ID state machine.
+            from_state: State trước.
+            to_state: State sau.
+            user_id: ID người thực hiện.
+            metadata: Metadata bổ sung.
+        """
+        # Emit state_exited
+        if from_state:
+            exit_event = LifecycleEvent(
+                event_type="state_exited",
+                entity_id=entity_id,
+                entity_type=entity_type,
+                machine_id=machine_id,
+                from_state=from_state,
+                to_state=to_state,
+                user_id=user_id,
+                metadata=metadata or {},
+            )
+            self.emit(exit_event)
+
+        # Emit state_entered
+        enter_event = LifecycleEvent(
+            event_type="state_entered",
+            entity_id=entity_id,
+            entity_type=entity_type,
+            machine_id=machine_id,
+            from_state=from_state,
+            to_state=to_state,
+            user_id=user_id,
+            metadata=metadata or {},
+        )
+        self.emit(enter_event)
+
+        # Emit transition_completed
+        complete_event = LifecycleEvent(
+            event_type="transition_completed",
+            entity_id=entity_id,
+            entity_type=entity_type,
+            machine_id=machine_id,
+            from_state=from_state,
+            to_state=to_state,
+            user_id=user_id,
+            metadata=metadata or {},
+        )
+        self.emit(complete_event)
+
+    def auto_register(self) -> None:
+        """Tự động đăng ký handlers được generate."""
+{% for sm in state_machines %}
+{% for state in sm.states %}
+{% if state != sm.initial_state %}
+        self.add_handler(
+            "{{ sm.entity_type }}.state_entered",
+            self._on_{{ sm.entity_type | replace('-', '_') }}_{{ state | replace('-', '_') }}_entered,
+        )
+{% endif %}
+{% endfor %}
+{% endfor %}

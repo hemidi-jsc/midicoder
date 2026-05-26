@@ -7,8 +7,17 @@
 
 import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-{% if ui_framework == 'antd' %}
+{% set fw = ui_framework | default("tailwind") %}
+{% if fw == "material" %}
+import { Container, Paper, Typography, Box, Alert, CircularProgress } from "@mui/material";
+{% elif fw == "tailwind" %}
+{# Tailwind uses utility classes, no UI library import #}
+{% elif fw == "bootstrap" %}
+import { Container, Card, Alert } from "react-bootstrap";
+{% elif fw == "antd" %}
 import { Result, Typography, Spin, Alert } from "antd";
+{% elif fw == "carbon" %}
+import { InlineLoading, InlineNotification, Grid, Column, Layer } from "@carbon/react";
 {% endif %}
 import { useAuthContext } from "../auth/AuthContext";
 
@@ -56,7 +65,7 @@ export const OAuthCallback: React.FC<OAuthCallbackPageProps> = ({
         handleCallback();
         }, [searchParams, navigate, redirectPath]);
 
-        {% if ui_framework == 'antd' %}
+        {% if fw == "antd" %}
         const centerStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" };
 
         if (loading) {
@@ -78,14 +87,108 @@ export const OAuthCallback: React.FC<OAuthCallbackPageProps> = ({
         }
 
         return null;
-        {% else %}
+        {% elif fw == "material" %}
+        const centerStyle = { mt: 8 };
+
+        if (loading) {
+        return (
+        <Container maxWidth="sm" sx={centerStyle}>
+            <Paper elevation={3} sx={{ p: 4, textAlign: "center" }}>
+                <CircularProgress size={40} />
+                <Typography variant="body1" sx={{ mt: 2 }}>Đang xác thực OAuth...</Typography>
+            </Paper>
+        </Container>
+        );
+        }
+
+        if (error) {
+        return (
+        <Container maxWidth="sm" sx={centerStyle}>
+            <Paper elevation={3} sx={{ p: 4 }}>
+                <Typography variant="h5" align="center" gutterBottom>OAuth Xác thực thất bại</Typography>
+                <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
+                <Box textAlign="center">
+                    <a onClick={()=> navigate("/login")}>Quay lại đăng nhập</a>
+                </Box>
+            </Paper>
+        </Container>
+        );
+        }
+
+        return null;
+        {% elif fw == "tailwind" %}
         const centerStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" };
-        const errStyle = { color: "red" };
+
+        if (loading) {
+        return (
+        <div className="min-h-screen flex items-center justify-center">
+            <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="mt-4 text-gray-600">Đang xác thực OAuth...</p>
+            </div>
+        </div>
+        );
+        }
+
+        if (error) {
+        return (
+        <div className="min-h-screen flex items-center justify-center">
+            <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md text-center">
+                <h2 className="text-2xl font-bold">OAuth Xác thực thất bại</h2>
+                <div className="bg-red-100 text-red-700 p-3 rounded">{error}</div>
+                <a href="/login" className="text-blue-600">Quay lại đăng nhập</a>
+            </div>
+        </div>
+        );
+        }
+
+        return null;
+        {% elif fw == "bootstrap" %}
+        const centerStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" };
+
+        if (loading) {
+        return (
+        <Container className="d-flex align-items-center justify-content-center" style={centerStyle}>
+            <div className="text-center">
+                <div className="spinner-border text-primary" role="status"></div>
+                <p className="mt-3 text-muted">Đang xác thực OAuth...</p>
+            </div>
+        </Container>
+        );
+        }
+
+        if (error) {
+        return (
+        <Container className="d-flex align-items-center justify-content-center" style={centerStyle}>
+            <Card style={{ maxWidth: 400, width: "100%" }}>
+                <Card.Body>
+                    <h2 className="text-center">OAuth Xác thực thất bại</h2>
+                    <Alert variant="danger">{error}</Alert>
+                    <div className="text-center mt-3">
+                        <a href="/login">Quay lại đăng nhập</a>
+                    </div>
+                </Card.Body>
+            </Card>
+        </Container>
+        );
+        }
+
+        return null;
+        {% elif fw == "carbon" %}
+        const centerStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" };
 
         if (loading) {
         return (
         <div style={centerStyle}>
-            <div>Đang xác thực OAuth...</div>
+            <Grid condense>
+                <Column>
+                    <Layer>
+                        <div className="cds--content text-center">
+                            <InlineLoading description="Đang xác thực OAuth..." />
+                        </div>
+                    </Layer>
+                </Column>
+            </Grid>
         </div>
         );
         }
@@ -93,11 +196,21 @@ export const OAuthCallback: React.FC<OAuthCallbackPageProps> = ({
         if (error) {
         return (
         <div style={centerStyle}>
-            <div>
-                <h2>OAuth Xác thực thất bại</h2>
-                <p style={errStyle}>{error}</p>
-                <a href="/login">Quay lại đăng nhập</a>
-            </div>
+            <Grid condense>
+                <Column>
+                    <Layer>
+                        <div className="cds--content" style={{ maxWidth: 400, width: "100%" }}>
+                            <h2 className="cds--text-truncate">OAuth Xác thực thất bại</h2>
+                            <InlineNotification kind="error" title="Lỗi" lowContrast onClose={()=> setError(null)}>
+                                {error}
+                            </InlineNotification>
+                            <div className="cds--list" style={{ marginTop: 16, textAlign: "center" }}>
+                                <a href="/login">Quay lại đăng nhập</a>
+                            </div>
+                        </div>
+                    </Layer>
+                </Column>
+            </Grid>
         </div>
         );
         }

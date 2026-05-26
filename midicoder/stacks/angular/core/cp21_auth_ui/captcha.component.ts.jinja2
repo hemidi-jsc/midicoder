@@ -1,143 +1,146 @@
 /** CAPTCHA Component - CP21.
- *
- * Thành phần bao bọc reCAPTCHA/hCaptcha để xác thực người dùng,
- * chống spam và tấn công tự động.
- *
- * UI Framework: [{ui_framework}]
- */
+*
+* Thành phần bao bọc reCAPTCHA/hCaptcha để xác thực người dùng,
+* chống spam và tấn công tự động.
+*
+* UI Framework: [{ui_framework}]
+*/
 
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ElementRef, ViewChild } from "@angular/core";
 import { CommonModule } from "@angular/common";
-{% if ui_framework == 'material' %}
-import { MatCardModule } from "@angular/material/card";
-{% elif ui_framework == 'bootstrap' %}
-import { NgBootstrapModule } from "ng-bootstrap";
-{% elif ui_framework == 'antd' %}
-import { NzCardModule } from "ng-zorro-antd/card";
-{% elif ui_framework == 'carbon' %}
-import { CarbonComponentsAngularModule } from "@carbon/angular";
+{% set fw = ui_framework | default("material") %}
+{% if fw == "material" %}
+import { MatCardModule } from '@angular/material/card';
+{% elif fw == "tailwind" %}
+{# Tailwind uses utility classes, no UI library imports needed #}
+{% elif fw == "bootstrap" %}
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+{% elif fw == "antd" %}
+import { NzCardModule } from 'ng-zorro-antd/card';
+{% elif fw == "carbon" %}
+import { AngularCarbonModule } from '@carbon/angular';
 {% endif %}
 
 @Component({
-  selector: "app-captcha",
-  standalone: true,
-  imports: [
-    CommonModule,
-{% if ui_framework == 'material' %}
-    MatCardModule,
-{% elif ui_framework == 'bootstrap' %}
-    NgBootstrapModule,
-{% elif ui_framework == 'antd' %}
-    NzCardModule,
-{% elif ui_framework == 'carbon' %}
-    CarbonComponentsAngularModule,
-{% elif ui_framework == 'tailwind' %}
-    // Tailwind — không cần thêm imports, chỉ dùng utility classes
+selector: "app-captcha",
+standalone: true,
+imports: [
+CommonModule,
+{% if fw == "material" %}
+MatCardModule,
+{% elif fw == "tailwind" %}
+// Tailwind — không cần thêm imports, chỉ dùng utility classes
+{% elif fw == "bootstrap" %}
+NgbModule,
+{% elif fw == "antd" %}
+NzCardModule,
+{% elif fw == "carbon" %}
+AngularCarbonModule,
 {% endif %}
-  ],
-  template: `
-    {% if ui_framework == 'material' %}
-    <mat-card class="p-2 mt-2">
-      <div class="text-body-secondary mb-1" style="font-size: 0.875rem;">Xác thực CAPTCHA</div>
-      <div #captchaContainer></div>
-    </mat-card>
-    {% elif ui_framework == 'bootstrap' %}
-    <div class="card mt-2">
-      <div class="card-body">
+],
+template: `
+{% if fw == "material" %}
+<mat-card class="p-2 mt-2">
+    <div class="text-body-secondary mb-1" style="font-size: 0.875rem;">Xác thực CAPTCHA</div>
+    <div #captchaContainer></div>
+</mat-card>
+{% elif fw == "tailwind" %}
+<!-- Tailwind: dùng utility classes cho container -->
+<div class="mt-4">
+    <p class="text-sm text-gray-500 mb-2">Xác thực CAPTCHA</p>
+    <div #captchaContainer></div>
+</div>
+{% elif fw == "bootstrap" %}
+<div class="card mt-2">
+    <div class="card-body">
         <div class="mb-2 text-muted">Xác thực CAPTCHA</div>
         <div #captchaContainer></div>
-      </div>
     </div>
-    {% elif ui_framework == 'antd' %}
-    <div nz-card class="mt-2" nzSize="small">
-      <span class="text-secondary">Xác thực CAPTCHA</span>
-      <div #captchaContainer style="margin-top: 8px;"></div>
-    </div>
-    {% elif ui_framework == 'carbon' %}
-    <div class="cds--grid mt-3">
-      <div class="cds--col-lg-16">
+</div>
+{% elif fw == "antd" %}
+<div nz-card class="mt-2" nzSize="small">
+    <span class="text-secondary">Xác thực CAPTCHA</span>
+    <div #captchaContainer style="margin-top: 8px;"></div>
+</div>
+{% elif fw == "carbon" %}
+<div class="cds--grid mt-3">
+    <div class="cds--col-lg-16">
         <div class="cds--label">Xác thực CAPTCHA</div>
         <div #captchaContainer></div>
-      </div>
     </div>
-    {% else %}
-    <!-- Tailwind: dùng utility classes cho container -->
-    <div class="mt-4">
-      <p class="text-sm text-gray-500 mb-2">Xác thực CAPTCHA</p>
-      <div #captchaContainer></div>
-    </div>
-    {% endif %}
-  `,
+</div>
+{% endif %}
+`,
 })
 export class CaptchaComponent implements OnInit, OnDestroy {
-  /** Khóa site từ nhà cung cấp CAPTCHA. */
-  @Input() siteKey: string = "";
+/** Khóa site từ nhà cung cấp CAPTCHA. */
+@Input() siteKey: string = "";
 
-  /** Loại CAPTCHA: recaptcha hoặc hcaptcha. */
-  @Input() captchaType: "recaptcha" | "hcaptcha" = "recaptcha";
+/** Loại CAPTCHA: recaptcha hoặc hcaptcha. */
+@Input() captchaType: "recaptcha" | "hcaptcha" = "recaptcha";
 
-  /** Sự kiện khi xác thực CAPTCHA thành công. */
-  @Output() verified = new EventEmitter<string>();
+/** Sự kiện khi xác thực CAPTCHA thành công. */
+@Output() verified = new EventEmitter<string>();
 
-  @ViewChild("captchaContainer", { static: true }) captchaContainer!: ElementRef<HTMLDivElement>;
+    @ViewChild("captchaContainer", { static: true }) captchaContainer!: ElementRef<HTMLDivElement>;
 
-  private widgetId: number | null = null;
+        private widgetId: number | null = null;
 
-  ngOnInit(): void {
-    // Kiểm tra script đã được tải chưa
-    if ((this.captchaType === "recaptcha" && (window as any).recaptcha) ||
+        ngOnInit(): void {
+        // Kiểm tra script đã được tải chưa
+        if ((this.captchaType === "recaptcha" && (window as any).recaptcha) ||
         (this.captchaType === "hcaptcha" && (window as any).hcaptcha)) {
-      this.initWidget();
-      return;
-    }
+        this.initWidget();
+        return;
+        }
 
-    const scriptId = this.captchaType === "recaptcha" ? "recaptcha-script" : "hcaptcha-script";
-    const existingScript = document.getElementById(scriptId);
+        const scriptId = this.captchaType === "recaptcha" ? "recaptcha-script" : "hcaptcha-script";
+        const existingScript = document.getElementById(scriptId);
 
-    if (existingScript) {
-      this.initWidget();
-      return;
-    }
+        if (existingScript) {
+        this.initWidget();
+        return;
+        }
 
-    // Tải script CAPTCHA từ nhà cung cấp
-    const script = document.createElement("script");
-    script.id = scriptId;
-    script.async = true;
-    script.defer = true;
-    script.src = this.captchaType === "recaptcha"
-      ? "https://www.google.com/recaptcha/api.js"
-      : "https://js.hcaptcha.com/1/api.js";
+        // Tải script CAPTCHA từ nhà cung cấp
+        const script = document.createElement("script");
+        script.id = scriptId;
+        script.async = true;
+        script.defer = true;
+        script.src = this.captchaType === "recaptcha"
+        ? "https://www.google.com/recaptcha/api.js"
+        : "https://js.hcaptcha.com/1/api.js";
 
-    script.onload = () => this.initWidget();
-    document.head.appendChild(script);
-  }
+        script.onload = () => this.initWidget();
+        document.head.appendChild(script);
+        }
 
-  /** Khởi tạo widget CAPTCHA sau khi script tải xong. */
-  private initWidget(): void {
-    const container = this.captchaContainer.nativeElement;
-    if (!container) return;
+        /** Khởi tạo widget CAPTCHA sau khi script tải xong. */
+        private initWidget(): void {
+        const container = this.captchaContainer.nativeElement;
+        if (!container) return;
 
-    if (this.captchaType === "recaptcha") {
-      this.widgetId = (window as any).recaptcha.render(container, {
+        if (this.captchaType === "recaptcha") {
+        this.widgetId = (window as any).recaptcha.render(container, {
         sitekey: this.siteKey,
         callback: (token: string) => this.verified.emit(token),
-      });
-    } else {
-      this.widgetId = (window as any).hcaptcha.render(container, {
+        });
+        } else {
+        this.widgetId = (window as any).hcaptcha.render(container, {
         sitekey: this.siteKey,
         callback: (token: string) => this.verified.emit(token),
-      });
-    }
-  }
+        });
+        }
+        }
 
-  ngOnDestroy(): void {
-    // Dọn dẹp widget khi component bị hủy
-    if (this.widgetId != null) {
-      if (this.captchaType === "recaptcha") {
+        ngOnDestroy(): void {
+        // Dọn dẹp widget khi component bị hủy
+        if (this.widgetId != null) {
+        if (this.captchaType === "recaptcha") {
         (window as any).recaptcha.remove(this.widgetId);
-      } else {
+        } else {
         (window as any).hcaptcha.remove(this.widgetId);
-      }
-    }
-  }
-}
+        }
+        }
+        }
+        }

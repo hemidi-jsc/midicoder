@@ -3598,6 +3598,1130 @@ class SubledgerParams(TypedDict, total=False):
 
 
 # ============================================================================
+# CP32: State Machine Engine Params
+# ============================================================================
+
+
+class StateMachineParams(TypedDict, total=False):
+    """
+    Tham số cho StateMachine nodes (CP32: State Machine Engine).
+
+    StateMachine định nghĩa finite state machine cho lifecycle của entity.
+    Bao gồm states, transitions, initial state, và guard references.
+
+    Fields:
+        id: Định danh của state machine
+        description: Mô tả
+        name: Tên state machine
+        entity_id: ID của entity áp dụng FSM
+        initial_state: Trạng thái mặc định
+        states: Danh sách tên states
+        transitions: Danh sách transition node IDs
+        is_global: Áp dụng cho tất cả instances cùng entity
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    name: str
+    entity_id: str
+    initial_state: str
+    states: list[str]
+    transitions: list[str]
+    is_global: bool
+    tags: list[str]
+    source: str
+
+
+class StateTransitionParams(TypedDict, total=False):
+    """
+    Tham số cho StateTransition nodes (CP32: State Machine Engine).
+
+    StateTransition định nghĩa một chuyển trạng thái trong FSM.
+    Bao gồm from/to state, guard condition, và effect reference.
+
+    Fields:
+        id: Định danh của transition
+        description: Mô tả
+        machine_id: Ref đến StateMachine node
+        from_state: State nguồn
+        to_state: State đích
+        guard: Guard node ID (tùy chọn) — condition để transition
+        effect: Effect node ID (tùy chọn) — side effect khi transition
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    machine_id: str
+    from_state: str
+    to_state: str
+    guard: Optional[str]
+    effect: Optional[str]
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP37: Feature Flags & Dynamic Config Params
+# ============================================================================
+
+
+class FeatureFlagParams(TypedDict, total=False):
+    """
+    Tham số cho FeatureFlag nodes (CP37: Feature Flags & Dynamic Config).
+
+    FeatureFlag định nghĩa feature toggle với boolean/percentage/targeted variants.
+    Bao gồm flag type, default value, tenant/environment scope.
+
+    Fields:
+        id: Định danh của feature flag
+        description: Mô tả
+        key: Flag key unique (dùng trong code)
+        flag_type: Loại flag ("boolean", "percentage", "targeted")
+        default_value: Default khi flag không evaluate
+        tenants: Tenant scope (tùy chọn)
+        environments: Environment scope (tùy chọn)
+        percentage: Percentage rollout (chỉ cho flag_type="percentage")
+        targeted_users: Targeted user segments (chỉ cho flag_type="targeted")
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    key: str
+    flag_type: str
+    default_value: bool
+    tenants: list[str]
+    environments: list[str]
+    percentage: int
+    targeted_users: list[str]
+    tags: list[str]
+    source: str
+
+
+class ABExperimentParams(TypedDict, total=False):
+    """
+    Tham số cho ABExperiment nodes (CP37: Feature Flags & Dynamic Config).
+
+    ABExperiment định nghĩa A/B experiment với variants và traffic split.
+    Bao gồm assignment key (deterministic) và active status.
+
+    Fields:
+        id: Định danh của experiment
+        description: Mô tả
+        name: Tên experiment
+        variants: Danh sách variant names (["control", "variant_a", ...])
+        traffic_split: Danh sách traffic percentages ([0.5, 0.25, 0.25])
+        assignment_key: User attribute để deterministic assignment
+        is_active: Trạng thái active
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    name: str
+    variants: list[str]
+    traffic_split: list[float]
+    assignment_key: str
+    is_active: bool
+    tags: list[str]
+    source: str
+
+
+class DynamicConfigParams(TypedDict, total=False):
+    """
+    Tham số cho DynamicConfig nodes (CP37: Feature Flags & Dynamic Config).
+
+    DynamicConfig định nghĩa key-value config với hierarchical scope.
+    Bao gồm value type, default value, và scope (global/tenant/environment).
+
+    Fields:
+        id: Định danh của config entry
+        description: Mô tả
+        key: Config key unique
+        value_type: Loại giá trị ("string", "number", "boolean", "json")
+        default_value: Default value
+        scope: Scope level ("global", "tenant", "environment")
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    key: str
+    value_type: str
+    default_value: Any
+    scope: str
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP21: Authentication UI Params
+# ============================================================================
+
+
+class AuthUIConfigParams(TypedDict, total=False):
+    """
+    Tham số cho AuthUIConfig nodes (CP21: Authentication UI Generator).
+
+    AuthUIConfig định nghĩa cấu hình auth UI: pages, ui_framework, session_monitor.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        pages: Danh sách auth pages emit (login, register, forgot_password, ...)
+        ui_framework: UI framework (material, tailwind, bootstrap, antd, carbon)
+        session_timeout_minutes: Timeout session (phút)
+        oauth_providers: Danh sách OAuth providers (google, github, ...)
+        enable_mfa: Bật MFA verify page
+        enable_captcha: Bật CAPTCHA
+        enable_self_register: Bật tự đăng ký
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    pages: list[str]
+    ui_framework: str
+    session_timeout_minutes: int
+    oauth_providers: list[str]
+    enable_mfa: bool
+    enable_captcha: bool
+    enable_self_register: bool
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP22: Real-time UI Params
+# ============================================================================
+
+
+class ChannelSpecParams(TypedDict, total=False):
+    """
+    Tham số cho ChannelSpec nodes (CP22: Real-time UI Generator).
+
+    ChannelSpec mapping giữa CP05 event topic và WebSocket/SSE channel.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        topic: Event topic (CP05)
+        transport: Loại transport (websocket, sse)
+        entity_id: Entity liên kết
+        auth_required: Cần auth để subscribe
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    topic: str
+    transport: str
+    entity_id: str
+    auth_required: bool
+    tags: list[str]
+    source: str
+
+
+class WidgetConfigParams(TypedDict, total=False):
+    """
+    Tham số cho WidgetConfig nodes (CP22: Real-time UI Generator).
+
+    WidgetConfig định nghĩa realtime widget (LiveFeed, LiveCounter, PresenceIndicator).
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        widget_type: Loại widget (live_feed, live_counter, presence_indicator, notification_toast)
+        channel_id: Ref đến ChannelSpec
+        entity_id: Entity hiển thị
+        refresh_interval_ms: Interval cập nhật
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    widget_type: str
+    channel_id: str
+    entity_id: str
+    refresh_interval_ms: int
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP28: Custom Code Injection Params
+# ============================================================================
+
+
+class CustomCodeBlockParams(TypedDict, total=False):
+    """
+    Tham số cho CustomCodeBlock nodes (CP28: Custom Code Injection).
+
+    CustomCodeBlock định nghĩa block code tùy chỉnh inject vào generated files.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        target_path: Đường dẫn file target
+        inject_point: Điểm inject (before_class, after_class, before_method, after_method, top, bottom)
+        language: Language (python, typescript)
+        code: Code block nội dung
+        condition: Điều kiện inject (tùy chọn)
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    target_path: str
+    inject_point: str
+    language: str
+    code: str
+    condition: str
+    tags: list[str]
+    source: str
+
+
+class HookParams(TypedDict, total=False):
+    """
+    Tham số cho Hook nodes (CP28: Custom Code Injection).
+
+    Hook định nghĩa compile-time lifecycle hook.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        event: Lifecycle event (before_emit, after_emit, before_render, after_render)
+        handler: Handler script/module
+        priority: Thứ tự ưu tiên
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    event: str
+    handler: str
+    priority: int
+    tags: list[str]
+    source: str
+
+
+class PatchRuleParams(TypedDict, total=False):
+    """
+    Tham số cho PatchRule nodes (CP28: Custom Code Injection).
+
+    PatchRule định nghĩa regex-based patch để transform generated code.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        target_path: Đường dẫn file target (glob pattern)
+        pattern: Regex pattern tìm
+        replacement: String thay thế
+        flags: Regex flags
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    target_path: str
+    pattern: str
+    replacement: str
+    flags: str
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP35: Geospatial Services Params
+# ============================================================================
+
+
+class GeospatialSpecParams(TypedDict, total=False):
+    """
+    Tham số cho GeospatialSpec nodes (CP35: Geospatial Services).
+
+    GeospatialSpec định nghĩa geospatial service cho entity.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        entity_id: Entity có location data
+        location_field: Field chứa toa độ
+        geofences: Danh sách geofence IDs
+        enable_routing: Bật tính năng routing
+        enable_distance: Bật tính năng tính khoảng cách
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    entity_id: str
+    location_field: str
+    geofences: list[str]
+    enable_routing: bool
+    enable_distance: bool
+    tags: list[str]
+    source: str
+
+
+class GeofenceParams(TypedDict, total=False):
+    """
+    Tham số cho Geofence nodes (CP35: Geospatial Services).
+
+    Geofence định nghĩa khu vực giới hạn (circle, polygon, rectangle) với alert rules.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        name: Tên geofence
+        shape: Hình dạng (circle, polygon, rectangle)
+        center: Toa độ trung tâm (lat, lon)
+        radius_meters: Bán kính (m) — cho circle
+        vertices: Danh sách vertices (lat, lon) — cho polygon
+        corners: 2 góc đối diện (lat, lon) — cho rectangle
+        alert_on_enter: Alert khi vào vùng
+        alert_on_exit: Alert khi ra khỏi vùng
+        notification_channel: Channel thông báo
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    name: str
+    shape: str
+    center: list[float]
+    radius_meters: float
+    vertices: list[list[float]]
+    corners: list[list[float]]
+    alert_on_enter: bool
+    alert_on_exit: bool
+    notification_channel: str
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP36: Tenant Onboarding Params
+# ============================================================================
+
+
+class TenantRegistrationParams(TypedDict, total=False):
+    """
+    Tham số cho TenantRegistration nodes (CP36: Tenant Onboarding).
+
+    TenantRegistration định nghĩa flow đăng ký tenant mới.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        enable_self_service: Bật tự đăng ký
+        require_verification: Cần verify email
+        default_plan: Subscription plan mặc định
+        trial_days: Số ngày trial
+        auto_provision: Tự động provision resources
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    enable_self_service: bool
+    require_verification: bool
+    default_plan: str
+    trial_days: int
+    auto_provision: bool
+    tags: list[str]
+    source: str
+
+
+class TenantSubscriptionParams(TypedDict, total=False):
+    """
+    Tham số cho TenantSubscription nodes (CP36: Tenant Onboarding).
+
+    TenantSubscription định nghĩa subscription plan management.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        plan_name: Tên plan
+        billing_cycle: Chu kỳ thanh toán (monthly, yearly)
+        features: Danh sách features
+        max_users: Số user tối đa
+        max_storage_gb: Storage tối đa (GB)
+        price: Giá
+        currency: Đơn vị tiền tệ
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    plan_name: str
+    billing_cycle: str
+    features: list[str]
+    max_users: int
+    max_storage_gb: int
+    price: float
+    currency: str
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP40: Webhook Params
+# ============================================================================
+
+
+class WebhookSubscriptionParams(TypedDict, total=False):
+    """
+    Tham số cho WebhookSubscription nodes (CP40: Webhook & Outbound Integration).
+
+    WebhookSubscription đăng ký webhook endpoint (event_type → URL + auth + retry).
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        event_types: Danh sách event types lắng nghe
+        url: Endpoint URL
+        auth_type: Loại auth (none, bearer, hmac, basic)
+        secret: Auth secret
+        headers: Custom headers
+        retry_policy_id: Ref đến RetryPolicy
+        is_active: Trạng thái active
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    event_types: list[str]
+    url: str
+    auth_type: str
+    secret: str
+    headers: dict[str, str]
+    retry_policy_id: str
+    is_active: bool
+    tags: list[str]
+    source: str
+
+
+class WebhookRetryPolicyParams(TypedDict, total=False):
+    """
+    Tham số cho WebhookRetryPolicy nodes (CP40: Webhook & Outbound Integration).
+
+    RetryPolicy định nghĩa chính sách retry exponential backoff.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        max_retries: Số retry tối đa
+        base_delay_ms: Base delay (ms)
+        max_delay_ms: Max delay (ms)
+        backoff_multiplier: Multiplier cho exponential backoff
+        http_retry_codes: HTTP status codes trigger retry
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    max_retries: int
+    base_delay_ms: int
+    max_delay_ms: int
+    backoff_multiplier: float
+    http_retry_codes: list[int]
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP41: Chat & Messaging Params
+# ============================================================================
+
+
+class ConversationParams(TypedDict, total=False):
+    """
+    Tham số cho Conversation nodes (CP41: Chat & Messaging).
+
+    Conversation định nghĩa phòng chat (direct, group, support, broadcast).
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        conversation_type: Loại (direct, group, support, broadcast)
+        entity_id: Entity liên kết (cho support chat)
+        participants: Danh sách participant IDs
+        max_participants: Số participant tối đa
+        enable_typing_indicator: Bật typing indicator
+        enable_read_receipt: Bật read receipt
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    conversation_type: str
+    entity_id: str
+    participants: list[str]
+    max_participants: int
+    enable_typing_indicator: bool
+    enable_read_receipt: bool
+    tags: list[str]
+    source: str
+
+
+class ChatMessageParams(TypedDict, total=False):
+    """
+    Tham số cho ChatMessage nodes (CP41: Chat & Messaging).
+
+    ChatMessage định nghĩa tin nhắn (text, image, video, file, reaction).
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        conversation_id: Ref đến Conversation
+        message_type: Loại (text, image, video, file, reaction, system)
+        sender_id: Người gửi
+        content: Nội dung
+        max_file_size_mb: Kích thước file tối đa (MB)
+        enable_reactions: Bật reactions
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    conversation_id: str
+    message_type: str
+    sender_id: str
+    content: str
+    max_file_size_mb: int
+    enable_reactions: bool
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP42: Approval Workflow Params
+# ============================================================================
+
+
+class ApprovalRequestParams(TypedDict, total=False):
+    """
+    Tham số cho ApprovalRequest nodes (CP42: Approval Workflow Engine).
+
+    ApprovalRequest định nghĩa yêu cầu phê duyệt multi-level chain.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        entity_id: Entity cần phê duyệt
+        chain_type: Loại chain (sequential, parallel, matrix)
+        steps: Danh sách approval step IDs
+        escalation_rule_id: Ref đến EscalationRule
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    entity_id: str
+    chain_type: str
+    steps: list[str]
+    escalation_rule_id: str
+    tags: list[str]
+    source: str
+
+
+class ApprovalStepParams(TypedDict, total=False):
+    """
+    Tham số cho ApprovalStep nodes (CP42: Approval Workflow Engine).
+
+    ApprovalStep định nghĩa bước phê duyệt với approver và deadline.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        request_id: Ref đến ApprovalRequest
+        step_number: Thứ tự bước
+        approver_type: Loại approver (role, user, group, dynamic)
+        approver_id: ID approver
+        deadline_hours: Deadline (giờ)
+        can_delegate: Cho phép giao quyền
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    request_id: str
+    step_number: int
+    approver_type: str
+    approver_id: str
+    deadline_hours: int
+    can_delegate: bool
+    tags: list[str]
+    source: str
+
+
+class EscalationRuleParams(TypedDict, total=False):
+    """
+    Tham số cho EscalationRule nodes (CP42: Approval Workflow Engine).
+
+    EscalationRule định nghĩa quy tắc tự động nâng cấp khi timeout.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        trigger_on: Điều kiện trigger (timeout, rejection, no_response)
+        timeout_hours: Timeout (giờ)
+        escalate_to: Escalate đến (role, user, manager)
+        notify_original: Thông báo approver gốc
+        max_escalations: Số lần escalate tối đa
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    trigger_on: str
+    timeout_hours: int
+    escalate_to: str
+    notify_original: bool
+    max_escalations: int
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP43: Versioning Params
+# ============================================================================
+
+
+class VersionConfigParams(TypedDict, total=False):
+    """
+    Tham số cho VersionConfig nodes (CP43: Versioning & History).
+
+    VersionConfig định nghĩa cấu hình versioning cho entity.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        entity_id: Entity áp dụng versioning
+        enable_versioning: Bật versioning
+        enable_soft_delete: Bật soft delete
+        enable_history: Bật history audit
+        max_versions: Số version tối đa lưu trữ
+        auto_cleanup: Tự động cleanup versions cũ
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    entity_id: str
+    enable_versioning: bool
+    enable_soft_delete: bool
+    enable_history: bool
+    max_versions: int
+    auto_cleanup: bool
+    tags: list[str]
+    source: str
+
+
+class HistoryRecordParams(TypedDict, total=False):
+    """
+    Tham số cho HistoryRecord nodes (CP43: Versioning & History).
+
+    HistoryRecord định nghĩa snapshot của entity tại một version cụ thể.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        entity_id: Entity được version
+        operation: Loại operation (create, update, delete, restore, hard_delete)
+        stored_fields: Fields lưu trong snapshot
+        retention_days: Thời gian lưu trữ (ngày)
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    entity_id: str
+    operation: str
+    stored_fields: list[str]
+    retention_days: int
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP44: Bulk Operations Params
+# ============================================================================
+
+
+class BulkJobParams(TypedDict, total=False):
+    """
+    Tham số cho BulkJob nodes (CP44: Bulk Operations Engine).
+
+    BulkJob định nghĩa công việc bulk operations với chunking và retry.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        entity_id: Entity thực hiện bulk op
+        operation: Loại operation (create, update, delete)
+        chunk_size: Kích thước chunk
+        max_concurrency: Số worker song song tối đa
+        retry_on_failure: Retry khi fail
+        max_retries: Số retry tối đa
+        dlq_enabled: Bật Dead Letter Queue
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    entity_id: str
+    operation: str
+    chunk_size: int
+    max_concurrency: int
+    retry_on_failure: bool
+    max_retries: int
+    dlq_enabled: bool
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP46: MFA Params
+# ============================================================================
+
+
+class MFACredentialParams(TypedDict, total=False):
+    """
+    Tham số cho MFACredential nodes (CP46: MFA & Advanced Authentication).
+
+    MFACredential định nghĩa chứng chỉ MFA của user.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        methods: Danh sách phương pháp MFA (totp, sms_otp, webauthn, biometric)
+        enforce_on: Điều kiện enforce (login, sensitive_action, always)
+        grace_period_days: Thời gian ân hạn
+        backup_codes_count: Số backup codes
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    methods: list[str]
+    enforce_on: str
+    grace_period_days: int
+    backup_codes_count: int
+    tags: list[str]
+    source: str
+
+
+class MFAChallengeSessionParams(TypedDict, total=False):
+    """
+    Tham số cho MFAChallengeSession nodes (CP46: MFA & Advanced Authentication).
+
+    MFAChallengeSession định nghĩa phiên thách thức xác thực MFA.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        method: Phương pháp MFA
+        timeout_seconds: Timeout challenge
+        max_attempts: Số lần thử tối đa
+        lockout_minutes: Khoá tài khoản sau fail (phút)
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    method: str
+    timeout_seconds: int
+    max_attempts: int
+    lockout_minutes: int
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP47: Data Retention Params
+# ============================================================================
+
+
+class RetentionPolicyParams(TypedDict, total=False):
+    """
+    Tham số cho RetentionPolicy nodes (CP47: Data Retention & Lifecycle).
+
+    RetentionPolicy định nghĩa chính sách retention cho entity type.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        entity_id: Entity áp dụng retention
+        retention_period_days: Thời gian giữ dữ liệu (ngày)
+        trigger_type: Loại trigger (time, event, status)
+        action_after_expiry: Hành động sau hết hạn (archive, purge, anonymize)
+        exempt_entities: Các entity được miễn (audit logs, ...)
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    entity_id: str
+    retention_period_days: int
+    trigger_type: str
+    action_after_expiry: str
+    exempt_entities: list[str]
+    tags: list[str]
+    source: str
+
+
+class ErasureRequestParams(TypedDict, total=False):
+    """
+    Tham số cho ErasureRequest nodes (CP47: Data Retention & Lifecycle).
+
+    ErasureRequest định nghĩa yêu cầu xóa dữ liệu PII (GDPR Right to Erasure).
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        user_id: User yêu cầu xóa
+        scope: Phạm vi xóa (all, specific_entities)
+        entities: Danh sách entities xóa
+        reason: Lý do xóa
+        verification_required: Cần verify
+        deadline_days: Hạn hoàn thành (ngày)
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    user_id: str
+    scope: str
+    entities: list[str]
+    reason: str
+    verification_required: bool
+    deadline_days: int
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP48: Rate Limiting Params
+# ============================================================================
+
+
+class RateLimitPolicyParams(TypedDict, total=False):
+    """
+    Tham số cho RateLimitPolicy nodes (CP48: Rate Limiting & Quota).
+
+    RateLimitPolicy định nghĩa chính sách rate limit.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        strategy: Chiến lược (fixed_window, sliding_window, token_bucket)
+        requests_per_window: Số request mỗi window
+        window_seconds: Kích thước window (giây)
+        burst_size: Kích thước burst (cho token bucket)
+        apply_to: Phạm vi áp dụng (endpoint, user, tenant, global)
+        endpoints: Danh sách endpoints
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    strategy: str
+    requests_per_window: int
+    window_seconds: int
+    burst_size: int
+    apply_to: str
+    endpoints: list[str]
+    tags: list[str]
+    source: str
+
+
+class QuotaConfigParams(TypedDict, total=False):
+    """
+    Tham số cho QuotaConfig nodes (CP48: Rate Limiting & Quota).
+
+    QuotaConfig định nghĩa quota cho cấp độ và chu kỳ cụ thể.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        level: Cấp quota (user, tenant, endpoint, global)
+        quota_type: Loại quota (requests, bandwidth, storage)
+        limit: Giới hạn
+        period: Chu kỳ (second, minute, hour, day, month)
+        overage_action: Hành động khi vượt quota (reject, throttle, bill)
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    level: str
+    quota_type: str
+    limit: int
+    period: str
+    overage_action: str
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
+# CP49: Consent & Preference Params
+# ============================================================================
+
+
+class ConsentRecordParams(TypedDict, total=False):
+    """
+    Tham số cho ConsentRecord nodes (CP49: Consent & Preference Management).
+
+    ConsentRecord định nghĩa bản ghi consent của user.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        user_id: User đã đồng ý
+        consent_type: Loại consent (cookie, data_processing, marketing, analytics)
+        granted: Đã đồng ý hay không
+        withdrawn_at: Thời điểm thu hồi
+        policy_version: Version policy khi đồng ý
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    user_id: str
+    consent_type: str
+    granted: bool
+    withdrawn_at: str
+    policy_version: str
+    tags: list[str]
+    source: str
+
+
+class ConsentPolicyParams(TypedDict, total=False):
+    """
+    Tham số cho ConsentPolicy nodes (CP49: Consent & Preference Management).
+
+    ConsentPolicy định nghĩa chính sách consent của tenant.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        tenant_id: Tenant áp dụng
+        consent_types: Danh sách consent types bắt buộc
+        require_explicit_consent: Cần explicit consent (GDPR)
+        cookie_categories: Danh sách cookie categories
+        data_retention_days: Thời gian giữ consent records
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    tenant_id: str
+    consent_types: list[str]
+    require_explicit_consent: bool
+    cookie_categories: list[str]
+    data_retention_days: int
+    tags: list[str]
+    source: str
+
+
+class CookiePreferenceParams(TypedDict, total=False):
+    """
+    Tham số cho CookiePreference nodes (CP49: Consent & Preference Management).
+
+    CookiePreference định nghĩa sở thích cookie của user.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        user_id: User sở thích
+        necessary: Cookie cần thiết (luôn true)
+        analytics: Cookie phân tích
+        marketing: Cookie marketing
+        preferences: Cookie sở thích
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    user_id: str
+    necessary: bool
+    analytics: bool
+    marketing: bool
+    preferences: bool
+    tags: list[str]
+    source: str
+
+
+class CommunicationPreferenceParams(TypedDict, total=False):
+    """
+    Tham số cho CommunicationPreference nodes (CP49: Consent & Preference Management).
+
+    CommunicationPreference định nghĩa sở thích truyền thông của user.
+
+    Fields:
+        id: Định danh
+        description: Mô tả
+        user_id: User sở thích
+        email_enabled: Bật email
+        sms_enabled: Bật SMS
+        push_enabled: Bật push notification
+        in_app_enabled: Bật in-app notification
+        frequency: Tần suất (realtime, daily, weekly, monthly)
+        tags: Danh sách tags
+        source: Nguồn định nghĩa
+    """
+
+    id: str
+    description: str
+    user_id: str
+    email_enabled: bool
+    sms_enabled: bool
+    push_enabled: bool
+    in_app_enabled: bool
+    frequency: str
+    tags: list[str]
+    source: str
+
+
+# ============================================================================
 # CP18: Frontend Framework Params
 # ============================================================================
 
@@ -4520,7 +5644,109 @@ class NodeKind(Enum):
     PLUGIN_CONTRACT = "plugin.contract"
     PLUGIN_POLICY = "plugin.policy"
 
+    # =========================================================================
+    # CP32: State Machine Engine (2 loại)
+    # =========================================================================
+    STATE_MACHINE = "runtime.state_machine"
+    STATE_TRANSITION = "runtime.state_transition"
 
+    # =========================================================================
+    # CP37: Feature Flags & Dynamic Config (3 loại)
+    # =========================================================================
+    FEATURE_FLAG = "runtime.feature_flag"
+    AB_EXPERIMENT = "runtime.ab_experiment"
+    DYNAMIC_CONFIG = "runtime.dynamic_config"
+
+    # =========================================================================
+    # CP21: Authentication UI (1 loại)
+    # =========================================================================
+    AUTH_UI_CONFIG = "ui.auth_config"  # Auth UI config (pages, ui_framework, session)
+
+    # =========================================================================
+    # CP22: Real-time UI (2 loại)
+    # =========================================================================
+    CHANNEL_SPEC = "ui.channel"  # WebSocket/SSE channel spec
+    WIDGET_CONFIG = "ui.widget"  # Realtime widget config
+
+    # =========================================================================
+    # CP28: Custom Code Injection (3 loại)
+    # =========================================================================
+    CUSTOM_CODE_BLOCK = "custom.code"  # Custom code block injection
+    CUSTOM_HOOK = "custom.hook"  # Compile-time lifecycle hook
+    CUSTOM_PATCH_RULE = "custom.patch"  # Regex-based patch rule
+
+    # =========================================================================
+    # CP31: Scheduler & Cron Engine (1 loại)
+    # =========================================================================
+    SCHEDULE = "scheduler.schedule"  # Cron/recurring job schedule
+
+    # =========================================================================
+    # CP35: Geospatial Services (2 loại)
+    # =========================================================================
+    GEOSPATIAL_SPEC = "geo.spec"  # Geospatial service spec
+    GEOFENCE = "geo.fence"  # Geofence region (circle/polygon/rectangle)
+
+    # =========================================================================
+    # CP36: Tenant Onboarding (2 loại)
+    # =========================================================================
+    TENANT_REGISTRATION = "tenant.registration"  # Tenant registration flow
+    TENANT_SUBSCRIPTION = "tenant.subscription"  # Subscription plan config
+
+    # =========================================================================
+    # CP40: Webhook & Outbound Integration (2 loại)
+    # =========================================================================
+    WEBHOOK_SUBSCRIPTION = "webhook.sub"  # Webhook endpoint subscription
+    WEBHOOK_RETRY_POLICY = "webhook.retry"  # Retry policy (exponential backoff)
+
+    # =========================================================================
+    # CP41: Chat & Messaging (2 loại)
+    # =========================================================================
+    CONVERSATION = "chat.conversation"  # Chat room (direct/group/support)
+    CHAT_MESSAGE = "chat.message"  # Chat message (text/image/file)
+
+    # =========================================================================
+    # CP42: Approval Workflow (3 loại)
+    # =========================================================================
+    APPROVAL_REQUEST = "approval.request"  # Multi-level approval chain
+    APPROVAL_STEP = "approval.step"  # Approval step (approver + deadline)
+    ESCALATION_RULE = "approval.escalation"  # Escalation on timeout
+
+    # =========================================================================
+    # CP43: Versioning & History (2 loại)
+    # =========================================================================
+    VERSION_CONFIG = "versioning.config"  # Versioning config for entity
+    HISTORY_RECORD = "versioning.history"  # Entity snapshot at version
+
+    # =========================================================================
+    # CP44: Bulk Operations (1 loại)
+    # =========================================================================
+    BULK_JOB = "bulk.job"  # Bulk operation job with chunking
+
+    # =========================================================================
+    # CP46: MFA & Advanced Authentication (2 loại)
+    # =========================================================================
+    MFA_CREDENTIAL = "mfa.credential"  # MFA credential config
+    MFA_CHALLENGE = "mfa.challenge"  # MFA challenge session
+
+    # =========================================================================
+    # CP47: Data Retention & Lifecycle (2 loại)
+    # =========================================================================
+    RETENTION_POLICY = "retention.policy"  # Data retention policy
+    ERASURE_REQUEST = "retention.erasure"  # GDPR erasure request
+
+    # =========================================================================
+    # CP48: Rate Limiting & Quota (2 loại)
+    # =========================================================================
+    RATE_LIMIT_POLICY = "ratelimit.policy"  # Rate limiting policy
+    QUOTA_CONFIG = "ratelimit.quota"  # Quota config (user/tenant/endpoint)
+
+    # =========================================================================
+    # CP49: Consent & Preference Management (4 loại)
+    # =========================================================================
+    CONSENT_RECORD = "consent.record"  # User consent record
+    CONSENT_POLICY = "consent.policy"  # Consent policy for tenant
+    COOKIE_PREFERENCE = "consent.cookie"  # Cookie preference
+    COMM_PREFERENCE = "consent.communication"  # Communication preference
 
 
 # ============================================================================
@@ -4850,6 +6076,110 @@ class ProjectionNode:
             NodeKind.CONSUL_SERVICE: ["id", "name", "port"],
             NodeKind.CONSUL_CONNECT: ["id", "service_id"],
             NodeKind.CONSUL_HEALTH_CHECK: ["id", "type"],
+
+            # =========================================================================
+            # CP32: State Machine Engine
+            # =========================================================================
+            NodeKind.STATE_MACHINE: ["id", "name", "entity_id", "initial_state", "states"],
+            NodeKind.STATE_TRANSITION: ["id", "machine_id", "from_state", "to_state"],
+
+            # =========================================================================
+            # CP37: Feature Flags & Dynamic Config
+            # =========================================================================
+            NodeKind.FEATURE_FLAG: ["id", "key", "flag_type", "default_value"],
+            NodeKind.AB_EXPERIMENT: ["id", "name", "variants", "traffic_split", "assignment_key"],
+            NodeKind.DYNAMIC_CONFIG: ["id", "key", "value_type", "default_value", "scope"],
+
+            # =========================================================================
+            # CP21: Authentication UI
+            # =========================================================================
+            NodeKind.AUTH_UI_CONFIG: ["id", "pages"],
+
+            # =========================================================================
+            # CP22: Real-time UI
+            # =========================================================================
+            NodeKind.CHANNEL_SPEC: ["id", "topic", "transport"],
+            NodeKind.WIDGET_CONFIG: ["id", "widget_type", "channel_id"],
+
+            # =========================================================================
+            # CP28: Custom Code Injection
+            # =========================================================================
+            NodeKind.CUSTOM_CODE_BLOCK: ["id", "target_path", "inject_point", "code"],
+            NodeKind.CUSTOM_HOOK: ["id", "event", "handler"],
+            NodeKind.CUSTOM_PATCH_RULE: ["id", "target_path", "pattern", "replacement"],
+
+            # =========================================================================
+            # CP31: Scheduler
+            # =========================================================================
+            NodeKind.SCHEDULE: ["id", "cron_expr", "handler"],
+
+            # =========================================================================
+            # CP35: Geospatial
+            # =========================================================================
+            NodeKind.GEOSPATIAL_SPEC: ["id", "entity_id", "location_field"],
+            NodeKind.GEOFENCE: ["id", "name", "shape"],
+
+            # =========================================================================
+            # CP36: Tenant Onboarding
+            # =========================================================================
+            NodeKind.TENANT_REGISTRATION: ["id"],
+            NodeKind.TENANT_SUBSCRIPTION: ["id", "plan_name"],
+
+            # =========================================================================
+            # CP40: Webhook
+            # =========================================================================
+            NodeKind.WEBHOOK_SUBSCRIPTION: ["id", "event_types", "url"],
+            NodeKind.WEBHOOK_RETRY_POLICY: ["id", "max_retries"],
+
+            # =========================================================================
+            # CP41: Chat
+            # =========================================================================
+            NodeKind.CONVERSATION: ["id", "conversation_type"],
+            NodeKind.CHAT_MESSAGE: ["id", "conversation_id", "message_type"],
+
+            # =========================================================================
+            # CP42: Approval Workflow
+            # =========================================================================
+            NodeKind.APPROVAL_REQUEST: ["id", "entity_id", "chain_type"],
+            NodeKind.APPROVAL_STEP: ["id", "request_id", "step_number", "approver_type"],
+            NodeKind.ESCALATION_RULE: ["id", "trigger_on", "escalate_to"],
+
+            # =========================================================================
+            # CP43: Versioning
+            # =========================================================================
+            NodeKind.VERSION_CONFIG: ["id", "entity_id"],
+            NodeKind.HISTORY_RECORD: ["id", "entity_id", "operation"],
+
+            # =========================================================================
+            # CP44: Bulk Operations
+            # =========================================================================
+            NodeKind.BULK_JOB: ["id", "entity_id", "operation"],
+
+            # =========================================================================
+            # CP46: MFA
+            # =========================================================================
+            NodeKind.MFA_CREDENTIAL: ["id", "methods"],
+            NodeKind.MFA_CHALLENGE: ["id", "method"],
+
+            # =========================================================================
+            # CP47: Data Retention
+            # =========================================================================
+            NodeKind.RETENTION_POLICY: ["id", "entity_id", "retention_period_days"],
+            NodeKind.ERASURE_REQUEST: ["id", "user_id", "scope"],
+
+            # =========================================================================
+            # CP48: Rate Limiting
+            # =========================================================================
+            NodeKind.RATE_LIMIT_POLICY: ["id", "strategy", "requests_per_window"],
+            NodeKind.QUOTA_CONFIG: ["id", "level", "limit"],
+
+            # =========================================================================
+            # CP49: Consent & Preference
+            # =========================================================================
+            NodeKind.CONSENT_RECORD: ["id", "user_id", "consent_type"],
+            NodeKind.CONSENT_POLICY: ["id", "tenant_id", "consent_types"],
+            NodeKind.COOKIE_PREFERENCE: ["id", "user_id"],
+            NodeKind.COMM_PREFERENCE: ["id", "user_id"],
         }
         return required_map.get(self.kind, ["id"])
 

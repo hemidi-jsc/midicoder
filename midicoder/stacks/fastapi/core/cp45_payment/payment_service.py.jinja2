@@ -57,7 +57,7 @@ from app.schemas.payment_schemas import (
 {% if enable_idempotency %}
 from app.models.payment_models import IdempotencyKeyModel
 {% endif %}
-from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+from app.errors import ErrorCode, MidicoderErrorManager as EM
 
 logger = logging.getLogger(__name__)
 

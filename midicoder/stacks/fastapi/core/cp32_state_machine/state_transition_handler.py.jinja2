@@ -1,0 +1,207 @@
+"""
+Mô-đun State Transition Handler — guard & effect functions.
+
+Tự động tạo bởi Midicoder CE — không chỉnh sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Awaitable, Callable, Dict, List, Optional
+
+
+@dataclass
+class GuardResult:
+    """Kết quả của guard function.
+
+    Attributes:
+        allowed: Transition có được phép không.
+        reason: Lý do nếu bị chặn.
+        metadata: Metadata bổ sung.
+    """
+
+    allowed: bool
+    reason: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TransitionContext:
+    """Context cho guard/effect function.
+
+    Attributes:
+        entity_id: ID của entity.
+        machine_id: ID của state machine.
+        from_state: State hiện tại.
+        to_state: State mục tiêu.
+        user_id: ID người thực hiện.
+        metadata: Metadata bổ sung.
+    """
+
+    entity_id: str
+    machine_id: str
+    from_state: str
+    to_state: str
+    user_id: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+# Guard function type: nhận context, trả về GuardResult
+GuardFn = Callable[[TransitionContext], GuardResult]
+# Effect function type: nhận context, void (có thể async)
+EffectFn = Callable[[TransitionContext], None]
+
+
+class StateTransitionHandler:
+    """Quản lý guard và effect functions cho state transitions.
+
+    Guard: chạy TRƯỚC transition, có thể chặn.
+    Effect: chạy SAU transition, không thể chặn.
+
+    Usage:
+        handler = StateTransitionHandler()
+        handler.add_guard("order", "pending", "confirmed", my_guard_fn)
+        handler.add_effect("order", "confirmed", "shipped", my_effect_fn)
+    """
+
+    def __init__(self):
+        """Khởi tạo handler."""
+        # guards[machine_id][(from_state, to_state)] = [GuardFn, ...]
+        self._guards: Dict[str, List[GuardFn]] = {}
+        # effects[machine_id][(from_state, to_state)] = [EffectFn, ...]
+        self._effects: Dict[str, List[EffectFn]] = {}
+
+{% for sm in state_machines %}
+{% for trans in sm.transitions %}
+{% if trans.guard %}
+    # Auto-registered guard for {{ sm.entity_type }}: {{ trans.from_state }} -> {{ trans.to_state }}
+    def _guard_{{ trans.id | replace('-', '_') }}(
+        ctx: TransitionContext,
+    ) -> GuardResult:
+        """Guard: {{ trans.description or trans.guard }}."""
+        # TODO: implement guard logic
+        return GuardResult(allowed=True)
+
+{% endif %}
+{% if trans.effect %}
+    # Auto-registered effect for {{ sm.entity_type }}: {{ trans.from_state }} -> {{ trans.to_state }}
+    def _effect_{{ trans.id | replace('-', '_') }}(
+        ctx: TransitionContext,
+    ) -> None:
+        """Effect: {{ trans.description or trans.effect }}."""
+        # TODO: implement effect logic
+        pass
+
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+    def add_guard(
+        self,
+        machine_id: str,
+        from_state: str,
+        to_state: str,
+        guard_fn: GuardFn,
+    ) -> None:
+        """Thêm guard function cho một transition.
+
+        Args:
+            machine_id: ID state machine.
+            from_state: State hiện tại.
+            to_state: State mục tiêu.
+            guard_fn: Guard function.
+        """
+        key = (from_state, to_state)
+        if machine_id not in self._guards:
+            self._guards[machine_id] = {}
+        if key not in self._guards[machine_id]:
+            self._guards[machine_id][key] = []
+        self._guards[machine_id][key].append(guard_fn)
+
+    def add_effect(
+        self,
+        machine_id: str,
+        from_state: str,
+        to_state: str,
+        effect_fn: EffectFn,
+    ) -> None:
+        """Thêm effect function cho một transition.
+
+        Args:
+            machine_id: ID state machine.
+            from_state: State hiện tại.
+            to_state: State mục tiêu.
+            effect_fn: Effect function.
+        """
+        key = (from_state, to_state)
+        if machine_id not in self._effects:
+            self._effects[machine_id] = {}
+        if key not in self._effects[machine_id]:
+            self._effects[machine_id][key] = []
+        self._effects[machine_id][key].append(effect_fn)
+
+    def evaluate_guards(
+        self,
+        machine_id: str,
+        from_state: str,
+        to_state: str,
+        context: TransitionContext,
+    ) -> List[GuardResult]:
+        """Đánh giá tất cả guards cho một transition.
+
+        Args:
+            machine_id: ID state machine.
+            from_state: State hiện tại.
+            to_state: State mục tiêu.
+            context: Transition context.
+
+        Returns:
+            Danh sách GuardResult.
+        """
+        key = (from_state, to_state)
+        guards = self._guards.get(machine_id, {}).get(key, [])
+        return [fn(context) for fn in guards]
+
+    def execute_effects(
+        self,
+        machine_id: str,
+        from_state: str,
+        to_state: str,
+        context: TransitionContext,
+    ) -> None:
+        """Thực thi tất cả effects cho một transition.
+
+        Args:
+            machine_id: ID state machine.
+            from_state: State hiện tại.
+            to_state: State mục tiêu.
+            context: Transition context.
+        """
+        key = (from_state, to_state)
+        effects = self._effects.get(machine_id, {}).get(key, [])
+        for fn in effects:
+            fn(context)
+
+    def auto_register(self) -> None:
+        """Tự động đăng ký guard/effect functions được generate."""
+{% for sm in state_machines %}
+{% for trans in sm.transitions %}
+{% if trans.guard %}
+        self.add_guard(
+            "{{ sm.machine_id }}",
+            "{{ trans.from_state }}",
+            "{{ trans.to_state }}",
+            self._guard_{{ trans.id | replace('-', '_') }},
+        )
+{% endif %}
+{% if trans.effect %}
+        self.add_effect(
+            "{{ sm.machine_id }}",
+            "{{ trans.from_state }}",
+            "{{ trans.to_state }}",
+            self._effect_{{ trans.id | replace('-', '_') }},
+        )
+{% endif %}
+{% endfor %}
+{% endfor %}

@@ -173,6 +173,28 @@ class DependencyType(Enum):
     API_VERSION_ENTITY_DEPENDENCY = "api_version_entity"     # P2-15h: CP43
     PAYMENT_ENTITY_DEPENDENCY = "payment_entity"             # P2-15i: CP45
     CATALOG_ENTITY_DEPENDENCY = "catalog_entity"             # P2-15j: CP50
+    STATE_MACHINE_DEPENDENCY = "state_machine_entity"         # P2-15k: CP32
+    FEATURE_FLAG_DEPENDENCY = "feature_flag_entity"           # P2-15l: CP37
+    AUTH_UI_DEPENDENCY = "auth_ui_entity"                     # CP21
+    CHANNEL_SPEC_DEPENDENCY = "channel_spec_entity"           # CP22
+    WIDGET_CHANNEL_DEPENDENCY = "widget_channel_entity"       # CP22
+    CUSTOM_CODE_DEPENDENCY = "custom_code_entity"             # CP28
+    GEOFENCE_DEPENDENCY = "geofence_entity"                   # CP35
+    TENANT_SUBSCRIPTION_DEPENDENCY = "tenant_sub_entity"      # CP36
+    WEBHOOK_RETRY_DEPENDENCY = "webhook_retry_entity"         # CP40
+    CONVERSATION_DEPENDENCY = "conversation_entity"           # CP41
+    CHAT_CONVERSATION_DEPENDENCY = "chat_conversation_entity"  # CP41
+    APPROVAL_REQUEST_DEPENDENCY = "approval_request_entity"   # CP42
+    APPROVAL_STEP_DEPENDENCY = "approval_step_entity"         # CP42
+    APPROVAL_ESCALATION_DEPENDENCY = "approval_esc_entity"    # CP42
+    VERSION_ENTITY_DEPENDENCY = "version_entity_entity"       # CP43
+    HISTORY_ENTITY_DEPENDENCY = "history_entity_entity"       # CP43
+    BULK_ENTITY_DEPENDENCY = "bulk_entity_entity"             # CP44
+    RETENTION_ENTITY_DEPENDENCY = "retention_entity_entity"   # CP47
+    ERASURE_ENTITY_DEPENDENCY = "erasure_entity_entity"       # CP47
+    RATE_LIMIT_ENDPOINT_DEPENDENCY = "ratelimit_ep_entity"    # CP48
+    CONSENT_POLICY_DEPENDENCY = "consent_policy_entity"       # CP49
+    CONSENT_RECORD_DEPENDENCY = "consent_record_entity"       # CP49
 
 
 @dataclass
@@ -557,6 +579,60 @@ class DependencyBuilder:
             self._extract_payment_gateway_dependencies(node)
         elif node.kind in (NodeKind.PRODUCT_CATALOG, NodeKind.FACETED_SEARCH_INDEX):
             self._extract_catalog_dependencies(node)
+        # CP32/CP37: State Machine & Feature Flag dependency extraction
+        elif node.kind == NodeKind.STATE_MACHINE:
+            self._extract_state_machine_dependencies(node)
+        elif node.kind == NodeKind.STATE_TRANSITION:
+            self._extract_state_transition_dependencies(node)
+        elif node.kind == NodeKind.FEATURE_FLAG:
+            self._extract_feature_flag_dependencies(node)
+        elif node.kind == NodeKind.AB_EXPERIMENT:
+            self._extract_ab_experiment_dependencies(node)
+        elif node.kind == NodeKind.DYNAMIC_CONFIG:
+            self._extract_dynamic_config_dependencies(node)
+        # CP21: Auth UI
+        elif node.kind == NodeKind.AUTH_UI_CONFIG:
+            self._extract_auth_ui_dependencies(node)
+        # CP22: Real-time UI
+        elif node.kind == NodeKind.CHANNEL_SPEC:
+            self._extract_channel_spec_dependencies(node)
+        elif node.kind == NodeKind.WIDGET_CONFIG:
+            self._extract_widget_config_dependencies(node)
+        # CP28: Custom Code
+        elif node.kind in (NodeKind.CUSTOM_CODE_BLOCK, NodeKind.CUSTOM_HOOK, NodeKind.CUSTOM_PATCH_RULE):
+            self._extract_custom_code_dependencies(node)
+        # CP35: Geospatial
+        elif node.kind == NodeKind.GEOSPATIAL_SPEC:
+            self._extract_geospatial_dependencies(node)
+        # CP40: Webhook
+        elif node.kind == NodeKind.WEBHOOK_SUBSCRIPTION:
+            self._extract_webhook_dependencies(node)
+        # CP41: Chat
+        elif node.kind == NodeKind.CONVERSATION:
+            self._extract_conversation_dependencies(node)
+        elif node.kind == NodeKind.CHAT_MESSAGE:
+            self._extract_chat_message_dependencies(node)
+        # CP42: Approval
+        elif node.kind == NodeKind.APPROVAL_REQUEST:
+            self._extract_approval_request_dependencies(node)
+        elif node.kind == NodeKind.APPROVAL_STEP:
+            self._extract_approval_step_dependencies(node)
+        # CP43: Versioning
+        elif node.kind == NodeKind.VERSION_CONFIG:
+            self._extract_version_config_dependencies(node)
+        elif node.kind == NodeKind.HISTORY_RECORD:
+            self._extract_history_record_dependencies(node)
+        # CP44: Bulk Ops
+        elif node.kind == NodeKind.BULK_JOB:
+            self._extract_bulk_job_dependencies(node)
+        # CP47: Retention
+        elif node.kind == NodeKind.RETENTION_POLICY:
+            self._extract_retention_policy_dependencies(node)
+        elif node.kind == NodeKind.ERASURE_REQUEST:
+            self._extract_erasure_request_dependencies(node)
+        # CP49: Consent
+        elif node.kind == NodeKind.CONSENT_RECORD:
+            self._extract_consent_record_dependencies(node)
 
     # -----------------------------------------------------------------------
     # P2-15: Domain-specific dependency extraction methods
@@ -780,7 +856,299 @@ class DependencyBuilder:
                 dep_type=DependencyType.CATALOG_ENTITY_DEPENDENCY,
                 field="entity_id",
             )
-    
+
+    def _extract_state_machine_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15k: CP32 STATE_MACHINE — depends on ENTITY it manages.
+        """
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.STATE_MACHINE_DEPENDENCY,
+                field="entity_id",
+            )
+
+    def _extract_state_transition_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15k: CP32 STATE_TRANSITION — depends on STATE_MACHINE and optional GUARD/EFFECT.
+        """
+        machine_id = node.params.get("machine_id")
+        if machine_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=machine_id,
+                dep_type=DependencyType.STATE_MACHINE_DEPENDENCY,
+                field="machine_id",
+            )
+        guard = node.params.get("guard")
+        if guard:
+            self.graph.add_edge(
+                source=node.id,
+                target=guard,
+                dep_type=DependencyType.COMMAND_GUARD,
+                field="guard",
+            )
+        effect = node.params.get("effect")
+        if effect:
+            self.graph.add_edge(
+                source=node.id,
+                target=effect,
+                dep_type=DependencyType.COMMAND_EFFECT,
+                field="effect",
+            )
+
+    def _extract_feature_flag_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15l: CP37 FEATURE_FLAG — depends on ENTITY if targeted at specific entity scope.
+        """
+        for tenant in node.params.get("tenants", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=tenant,
+                dep_type=DependencyType.FEATURE_FLAG_DEPENDENCY,
+                field="tenants",
+            )
+
+    def _extract_ab_experiment_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15l: CP37 AB_EXPERIMENT — depends on ENTITY referenced by assignment_key.
+        """
+        assignment_key = node.params.get("assignment_key")
+        if assignment_key:
+            self.graph.add_edge(
+                source=node.id,
+                target=assignment_key,
+                dep_type=DependencyType.FEATURE_FLAG_DEPENDENCY,
+                field="assignment_key",
+            )
+
+    def _extract_dynamic_config_dependencies(self, node: ProjectionNode) -> None:
+        """
+        P2-15l: CP37 DYNAMIC_CONFIG — depends on TENANT if scoped.
+        """
+        scope = node.params.get("scope")
+        if scope == "tenant":
+            pass  # Tenant dependency is resolved at runtime, not in DSL graph
+
+    # -----------------------------------------------------------------------
+    # CP21: Auth UI dependency extraction
+    # -----------------------------------------------------------------------
+    def _extract_auth_ui_dependencies(self, node: ProjectionNode) -> None:
+        """CP21: AUTH_UI_CONFIG — depends on ENTITY referenced by pages."""
+        pass  # UI pages reference entities at render time
+
+    # -----------------------------------------------------------------------
+    # CP22: Real-time UI dependency extraction
+    # -----------------------------------------------------------------------
+    def _extract_channel_spec_dependencies(self, node: ProjectionNode) -> None:
+        """CP22: CHANNEL_SPEC — depends on ENTITY."""
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.CHANNEL_SPEC_DEPENDENCY,
+                field="entity_id",
+            )
+
+    def _extract_widget_config_dependencies(self, node: ProjectionNode) -> None:
+        """CP22: WIDGET_CONFIG — depends on CHANNEL_SPEC and ENTITY."""
+        channel_id = node.params.get("channel_id")
+        if channel_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=channel_id,
+                dep_type=DependencyType.WIDGET_CHANNEL_DEPENDENCY,
+                field="channel_id",
+            )
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.CHANNEL_SPEC_DEPENDENCY,
+                field="entity_id",
+            )
+
+    # -----------------------------------------------------------------------
+    # CP28: Custom Code dependency extraction
+    # -----------------------------------------------------------------------
+    def _extract_custom_code_dependencies(self, node: ProjectionNode) -> None:
+        """CP28: Custom code — depends on target entity via target_path."""
+        pass  # File-level dependency, not graph-level
+
+    # -----------------------------------------------------------------------
+    # CP35: Geospatial dependency extraction
+    # -----------------------------------------------------------------------
+    def _extract_geospatial_dependencies(self, node: ProjectionNode) -> None:
+        """CP35: GEOSPATIAL_SPEC — depends on ENTITY and GEOFENCE nodes."""
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.GEO_ENTITY_DEPENDENCY,
+                field="entity_id",
+            )
+        for gf_id in node.params.get("geofences", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=gf_id,
+                dep_type=DependencyType.GEOFENCE_DEPENDENCY,
+                field="geofences",
+            )
+
+    # -----------------------------------------------------------------------
+    # CP40: Webhook dependency extraction
+    # -----------------------------------------------------------------------
+    def _extract_webhook_dependencies(self, node: ProjectionNode) -> None:
+        """CP40: WEBHOOK_SUBSCRIPTION — depends on RETRY_POLICY."""
+        retry_id = node.params.get("retry_policy_id")
+        if retry_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=retry_id,
+                dep_type=DependencyType.WEBHOOK_RETRY_DEPENDENCY,
+                field="retry_policy_id",
+            )
+
+    # -----------------------------------------------------------------------
+    # CP41: Chat dependency extraction
+    # -----------------------------------------------------------------------
+    def _extract_conversation_dependencies(self, node: ProjectionNode) -> None:
+        """CP41: CONVERSATION — depends on ENTITY (for support chat)."""
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.CONVERSATION_DEPENDENCY,
+                field="entity_id",
+            )
+
+    def _extract_chat_message_dependencies(self, node: ProjectionNode) -> None:
+        """CP41: CHAT_MESSAGE — depends on CONVERSATION."""
+        conv_id = node.params.get("conversation_id")
+        if conv_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=conv_id,
+                dep_type=DependencyType.CHAT_CONVERSATION_DEPENDENCY,
+                field="conversation_id",
+            )
+
+    # -----------------------------------------------------------------------
+    # CP42: Approval dependency extraction
+    # -----------------------------------------------------------------------
+    def _extract_approval_request_dependencies(self, node: ProjectionNode) -> None:
+        """CP42: APPROVAL_REQUEST — depends on ENTITY, STEPS, ESCALATION_RULE."""
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.APPROVAL_REQUEST_DEPENDENCY,
+                field="entity_id",
+            )
+        for step_id in node.params.get("steps", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=step_id,
+                dep_type=DependencyType.APPROVAL_STEP_DEPENDENCY,
+                field="steps",
+            )
+        esc_id = node.params.get("escalation_rule_id")
+        if esc_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=esc_id,
+                dep_type=DependencyType.APPROVAL_ESCALATION_DEPENDENCY,
+                field="escalation_rule_id",
+            )
+
+    def _extract_approval_step_dependencies(self, node: ProjectionNode) -> None:
+        """CP42: APPROVAL_STEP — depends on APPROVAL_REQUEST."""
+        req_id = node.params.get("request_id")
+        if req_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=req_id,
+                dep_type=DependencyType.APPROVAL_STEP_DEPENDENCY,
+                field="request_id",
+            )
+
+    # -----------------------------------------------------------------------
+    # CP43: Versioning dependency extraction
+    # -----------------------------------------------------------------------
+    def _extract_version_config_dependencies(self, node: ProjectionNode) -> None:
+        """CP43: VERSION_CONFIG — depends on ENTITY."""
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.VERSION_ENTITY_DEPENDENCY,
+                field="entity_id",
+            )
+
+    def _extract_history_record_dependencies(self, node: ProjectionNode) -> None:
+        """CP43: HISTORY_RECORD — depends on ENTITY."""
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.HISTORY_ENTITY_DEPENDENCY,
+                field="entity_id",
+            )
+
+    # -----------------------------------------------------------------------
+    # CP44: Bulk Ops dependency extraction
+    # -----------------------------------------------------------------------
+    def _extract_bulk_job_dependencies(self, node: ProjectionNode) -> None:
+        """CP44: BULK_JOB — depends on ENTITY."""
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.BULK_ENTITY_DEPENDENCY,
+                field="entity_id",
+            )
+
+    # -----------------------------------------------------------------------
+    # CP47: Retention dependency extraction
+    # -----------------------------------------------------------------------
+    def _extract_retention_policy_dependencies(self, node: ProjectionNode) -> None:
+        """CP47: RETENTION_POLICY — depends on ENTITY."""
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.RETENTION_ENTITY_DEPENDENCY,
+                field="entity_id",
+            )
+
+    def _extract_erasure_request_dependencies(self, node: ProjectionNode) -> None:
+        """CP47: ERASURE_REQUEST — depends on entities to erase."""
+        for entity_id in node.params.get("entities", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.ERASURE_ENTITY_DEPENDENCY,
+                field="entities",
+            )
+
+    # -----------------------------------------------------------------------
+    # CP49: Consent dependency extraction
+    # -----------------------------------------------------------------------
+    def _extract_consent_record_dependencies(self, node: ProjectionNode) -> None:
+        """CP49: CONSENT_RECORD — depends on CONSENT_POLICY."""
+        pass  # Policy reference is resolved at runtime
+
     def _extract_entity_dependencies(self, node: ProjectionNode) -> None:
         """Extract dependencies from entity (foreign keys)."""
         constraints = node.params.get("constraints", [])

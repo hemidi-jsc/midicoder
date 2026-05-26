@@ -84,7 +84,7 @@ selector: 'app-payment-history',
 standalone: true,
 imports: [CommonModule, FormsModule],
 changeDetection: ChangeDetectionStrategy.OnPush,
-template: `
+{% raw %}template: `
 <div class="payment-history-page">
     <!-- Tiêu đề -->
     <header class="page-header">
@@ -282,6 +282,7 @@ template: `
     </div>
 </div>
 `,
+{% endraw %}
 styles: [`
 .payment-history-page {
 padding: 20px;
@@ -868,4 +869,3 @@ const labels: Record<PaymentStatus, string> = {
     return labels[status] ?? status;
     }
     }
-    {% endraw %}

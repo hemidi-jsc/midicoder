@@ -1,103 +1,110 @@
 /** Login Component - CP21.
- *
- * Trang đăng nhập với form email/password,
- * liên kết quên mật khẩu và đăng ký.
- *
- * UI Framework: [{ui_framework}]
- */
+*
+* Trang đăng nhập với form email/password,
+* liên kết quên mật khẩu và đăng ký.
+*
+* UI Framework: [{ui_framework}]
+*/
 
 import { Component, OnInit } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { RouterModule } from "@angular/router";
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from "@angular/forms";
-{% if ui_framework == 'material' %}
-import { MatFormFieldModule } from "@angular/material/form-field";
-import { MatInputModule } from "@angular/material/input";
-import { MatButtonModule } from "@angular/material/button";
-import { MatCardModule } from "@angular/material/card";
-import { MatDividerModule } from "@angular/material/divider";
-{% elif ui_framework == 'bootstrap' %}
-import { NgBootstrapModule } from "ng-bootstrap";
-{% elif ui_framework == 'antd' %}
-import { NzFormModule } from "ng-zorro-antd/form";
-import { NzInputModule } from "ng-zorro-antd/input";
-import { NzButtonModule } from "ng-zorro-antd/button";
-{% elif ui_framework == 'carbon' %}
-import { CarbonComponentsAngularModule } from "@carbon/angular";
+{% set fw = ui_framework | default("material") %}
+{% if fw == "material" %}
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+{% elif fw == "tailwind" %}
+{# Tailwind uses utility classes, no UI library imports needed #}
+{% elif fw == "bootstrap" %}
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+{% elif fw == "antd" %}
+import { NzFormModule } from 'ng-zorro-antd/form';
+import { NzInputModule } from 'ng-zorro-antd/input';
+import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzCardModule } from 'ng-zorro-antd/card';
+{% elif fw == "carbon" %}
+import { AngularCarbonModule } from '@carbon/angular';
 {% endif %}
 import { AuthService } from "../core/auth/auth.service";
 
 @Component({
-  selector: "app-login",
-  standalone: true,
-  imports: [
-    CommonModule,
-    ReactiveFormsModule,
-    RouterModule,
-{% if ui_framework == 'material' %}
-    MatFormFieldModule,
-    MatInputModule,
-    MatButtonModule,
-    MatCardModule,
-    MatDividerModule,
-{% elif ui_framework == 'bootstrap' %}
-    NgBootstrapModule,
-{% elif ui_framework == 'antd' %}
-    NzFormModule,
-    NzInputModule,
-    NzButtonModule,
-{% elif ui_framework == 'carbon' %}
-    CarbonComponentsAngularModule,
-{% elif ui_framework == 'tailwind' %}
-    // Tailwind — no additional imports, utility classes only
+selector: "app-login",
+standalone: true,
+imports: [
+CommonModule,
+ReactiveFormsModule,
+RouterModule,
+{% if fw == "material" %}
+MatFormFieldModule,
+MatInputModule,
+MatButtonModule,
+MatCardModule,
+MatIconModule,
+MatProgressSpinnerModule,
+{% elif fw == "tailwind" %}
+// Tailwind — no additional imports, utility classes only
+{% elif fw == "bootstrap" %}
+NgbModule,
+{% elif fw == "antd" %}
+NzFormModule,
+NzInputModule,
+NzButtonModule,
+NzCardModule,
+{% elif fw == "carbon" %}
+AngularCarbonModule,
 {% endif %}
-  ],
-  templateUrl: './login.component.html',
+],
+templateUrl: './login.component.html',
 })
 export class LoginComponent implements OnInit {
-  loginForm!: FormGroup;
-  loading = false;
-  error: string | null = null;
+loginForm!: FormGroup;
+loading = false;
+error: string | null = null;
 
-  constructor(
-    private readonly fb: FormBuilder,
-    private readonly authService: AuthService,
-  ) {}
+constructor(
+private readonly fb: FormBuilder,
+private readonly authService: AuthService,
+) {}
 
-  ngOnInit(): void {
-    this.loginForm = this.fb.group({
-      email: ['', [Validators.required, Validators.email]],
-      password: ['', [Validators.required, Validators.minLength(8)]],
-      rememberMe: [false],
-    });
-  }
+ngOnInit(): void {
+this.loginForm = this.fb.group({
+email: ['', [Validators.required, Validators.email]],
+password: ['', [Validators.required, Validators.minLength(8)]],
+rememberMe: [false],
+});
+}
 
-  /** Submit form đăng nhập. */
-  onSubmit(): void {
-    if (this.loginForm.invalid) return;
+/** Submit form đăng nhập. */
+onSubmit(): void {
+if (this.loginForm.invalid) return;
 
-    this.loading = true;
-    this.error = null;
-    const { email, password } = this.loginForm.value;
+this.loading = true;
+this.error = null;
+const { email, password } = this.loginForm.value;
 
-    this.authService.login({ email, password }).subscribe({
-      next: () => {
-        // Redirect được xử lý trong route guard
-      },
-      error: (err) => {
-        this.error = err.message || "Đăng nhập thất bại. Vui lòng thử lại.";
-        this.loading = false;
-      },
-    });
-  }
+this.authService.login({ email, password }).subscribe({
+next: () => {
+// Redirect được xử lý trong route guard
+},
+error: (err) => {
+this.error = err.message || "Đăng nhập thất bại. Vui lòng thử lại.";
+this.loading = false;
+},
+});
+}
 
-  /** Lấy control email. */
-  get email() {
-    return this.loginForm.get('email')!;
-  }
+/** Lấy control email. */
+get email() {
+return this.loginForm.get('email')!;
+}
 
-  /** Lấy control password. */
-  get password() {
-    return this.loginForm.get('password')!;
-  }
+/** Lấy control password. */
+get password() {
+return this.loginForm.get('password')!;
+}
 }

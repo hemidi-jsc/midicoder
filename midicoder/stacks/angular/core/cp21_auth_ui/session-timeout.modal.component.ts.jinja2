@@ -9,15 +9,21 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { RouterModule } from "@angular/router";
-{% if ui_framework == 'material' %}
-import { MatDialogModule } from "@angular/material/dialog";
-import { MatButtonModule } from "@angular/material/button";
-{% elif ui_framework == 'bootstrap' %}
-import { NgBootstrapModule } from "ng-bootstrap";
-{% elif ui_framework == 'antd' %}
-import { NzModalModule } from "ng-zorro-antd/modal";
-{% elif ui_framework == 'carbon' %}
-import { CarbonComponentsAngularModule } from "@carbon/angular";
+{% set fw = ui_framework | default("material") %}
+{% if fw == "material" %}
+import { MatDialogModule } from '@angular/material/dialog';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+{% elif fw == "tailwind" %}
+{# Tailwind uses utility classes, no UI library imports needed #}
+{% elif fw == "bootstrap" %}
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+{% elif fw == "antd" %}
+import { NzModalModule } from 'ng-zorro-antd/modal';
+import { NzButtonModule } from 'ng-zorro-antd/button';
+{% elif fw == "carbon" %}
+import { AngularCarbonModule } from '@carbon/angular';
 {% endif %}
 import { Subscription } from "rxjs";
 
@@ -26,14 +32,20 @@ selector: "app-session-timeout-modal",
 standalone: true,
 imports: [
 CommonModule,
-{% if ui_framework == 'material' %}
-MatDialogModule, MatButtonModule,
-{% elif ui_framework == 'bootstrap' %}
-NgBootstrapModule,
-{% elif ui_framework == 'antd' %}
+{% if fw == "material" %}
+MatDialogModule,
+MatButtonModule,
+MatIconModule,
+MatProgressSpinnerModule,
+{% elif fw == "tailwind" %}
+// Tailwind — no additional imports, utility classes only
+{% elif fw == "bootstrap" %}
+NgbModule,
+{% elif fw == "antd" %}
 NzModalModule,
-{% elif ui_framework == 'carbon' %}
-CarbonComponentsAngularModule,
+NzButtonModule,
+{% elif fw == "carbon" %}
+AngularCarbonModule,
 {% endif %}
 ],
 template: `

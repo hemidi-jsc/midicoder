@@ -2610,6 +2610,1354 @@ class ProductCatalogUniqueSKU(BaseConstraint):
 
 
 # ============================================================================
+# CP32: State Machine Engine Constraints
+# ============================================================================
+
+
+class StateMachineTransitionValid(BaseConstraint):
+    """
+    C061: State machine transitions must reference valid states within the machine.
+
+    CP32: STATE_TRANSITION — both ``from_state`` and ``to_state`` must
+    exist in the ``states`` list of the referenced ``machine_id``.
+    """
+    id = "C061"
+    description = "State machine transition states must exist in machine"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.STATE_TRANSITION:
+            return []
+
+        results: list[ConstraintResult] = []
+        machine_id = node.params.get("machine_id")
+        if not machine_id:
+            return []
+
+        machine_node = tree.get_node(machine_id)
+        if not machine_node:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Transition references non-existent machine '{machine_id}'",
+                node_id=node.id,
+                field="machine_id",
+                expected="existing state machine ID",
+                actual=machine_id,
+            ))
+            return results
+
+        valid_states = set(machine_node.params.get("states", []))
+
+        from_state = node.params.get("from_state")
+        if from_state and from_state not in valid_states:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Transition '{node.id}': from_state '{from_state}' not in machine states {valid_states}",
+                node_id=node.id,
+                field="from_state",
+                expected=f"one of {valid_states}",
+                actual=from_state,
+            ))
+
+        to_state = node.params.get("to_state")
+        if to_state and to_state not in valid_states:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Transition '{node.id}': to_state '{to_state}' not in machine states {valid_states}",
+                node_id=node.id,
+                field="to_state",
+                expected=f"one of {valid_states}",
+                actual=to_state,
+            ))
+
+        return results
+
+
+class StateMachineInitialStateExists(BaseConstraint):
+    """
+    C062: State machine initial_state must be in the states list.
+
+    CP32: STATE_MACHINE — ``initial_state`` must be one of the declared ``states``.
+    """
+    id = "C062"
+    description = "State machine initial state must exist in states list"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.STATE_MACHINE:
+            return []
+
+        results: list[ConstraintResult] = []
+        initial = node.params.get("initial_state")
+        states = node.params.get("states", [])
+
+        if initial and initial not in states:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"State machine '{node.id}': initial_state '{initial}' not in states {states}",
+                node_id=node.id,
+                field="initial_state",
+                expected=f"one of {states}",
+                actual=initial,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP37: Feature Flags & Dynamic Config Constraints
+# ============================================================================
+
+
+class FeatureFlagKeyUnique(BaseConstraint):
+    """
+    C063: Feature flag keys must be unique across the tree.
+
+    CP37: FEATURE_FLAG — each ``key`` must appear exactly once.
+    """
+    id = "C063"
+    description = "Feature flag keys must be unique"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.FEATURE_FLAG:
+            return []
+
+        # Run once
+        if getattr(tree, "_c063_check_done", False):
+            return []
+        tree._c063_check_done = True
+
+        results: list[ConstraintResult] = []
+        flags = tree.get_nodes_by_kind(NodeKind.FEATURE_FLAG)
+        seen: set[str] = set()
+        for n in flags:
+            k = n.params.get("key")
+            if k in seen:
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"Duplicate feature flag key '{k}'",
+                    node_id=n.id,
+                    field="key",
+                    expected="unique flag key",
+                    actual=k,
+                ))
+            seen.add(k)
+
+        return results
+
+
+class ExperimentTrafficSplitValid(BaseConstraint):
+    """
+    C064: A/B experiment traffic split must sum to ~1.0 and match variant count.
+
+    CP37: AB_EXPERIMENT — ``traffic_split`` must have same length as ``variants``
+    and sum to approximately 1.0.
+    """
+    id = "C064"
+    description = "A/B experiment traffic split must sum to 1.0"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.AB_EXPERIMENT:
+            return []
+
+        results: list[ConstraintResult] = []
+        variants = node.params.get("variants", [])
+        splits = node.params.get("traffic_split", [])
+
+        if len(variants) != len(splits):
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Experiment '{node.id}': {len(variants)} variants but {len(splits)} traffic splits",
+                node_id=node.id,
+                field="traffic_split",
+                expected=f"{len(variants)} splits matching variants",
+                actual=f"{len(splits)} splits",
+            ))
+
+        total = sum(splits) if splits else 0
+        if total and abs(total - 1.0) > 1e-6:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Experiment '{node.id}': traffic split sums to {total}, expected 1.0",
+                node_id=node.id,
+                field="traffic_split",
+                expected="1.0",
+                actual=str(total),
+            ))
+
+        return results
+
+
+class DynamicConfigScopeValid(BaseConstraint):
+    """
+    C065: Dynamic config scope must be one of the valid values.
+
+    CP37: DYNAMIC_CONFIG — ``scope`` must be "global", "tenant", or "environment".
+    """
+    id = "C065"
+    description = "Dynamic config scope must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.DYNAMIC_CONFIG:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_scopes = {"global", "tenant", "environment"}
+        scope = node.params.get("scope")
+
+        if scope and scope not in valid_scopes:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Dynamic config '{node.id}': invalid scope '{scope}'",
+                node_id=node.id,
+                field="scope",
+                expected=f"one of {valid_scopes}",
+                actual=scope,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP21: Authentication UI Constraints
+# ============================================================================
+
+class AuthUIFrameworkValid(BaseConstraint):
+    """
+    C066: Auth UI framework must be one of the supported frameworks.
+
+    CP21: AUTH_UI_CONFIG — ``ui_framework`` must be "material", "tailwind", "bootstrap", "antd", or "carbon".
+    """
+    id = "C066"
+    description = "Auth UI framework must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.AUTH_UI_CONFIG:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_fw = {"material", "tailwind", "bootstrap", "antd", "carbon"}
+        fw = node.params.get("ui_framework")
+
+        if fw and fw not in valid_fw:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Auth UI '{node.id}': invalid ui_framework '{fw}'",
+                node_id=node.id,
+                field="ui_framework",
+                expected=f"one of {valid_fw}",
+                actual=fw,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP22: Real-time UI Constraints
+# ============================================================================
+
+class ChannelTransportValid(BaseConstraint):
+    """
+    C067: Channel transport must be 'websocket' or 'sse'.
+
+    CP22: CHANNEL_SPEC — ``transport`` must be one of the valid values.
+    """
+    id = "C067"
+    description = "Channel transport must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.CHANNEL_SPEC:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_transports = {"websocket", "sse"}
+        transport = node.params.get("transport")
+
+        if transport and transport not in valid_transports:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Channel '{node.id}': invalid transport '{transport}'",
+                node_id=node.id,
+                field="transport",
+                expected=f"one of {valid_transports}",
+                actual=transport,
+            ))
+
+        return results
+
+
+class WidgetTypeValid(BaseConstraint):
+    """
+    C068: Widget type must be a valid widget type.
+
+    CP22: WIDGET_CONFIG — ``widget_type`` must be "live_feed", "live_counter", "presence_indicator", or "notification_toast".
+    """
+    id = "C068"
+    description = "Widget type must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.WIDGET_CONFIG:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_types = {"live_feed", "live_counter", "presence_indicator", "notification_toast"}
+        wt = node.params.get("widget_type")
+
+        if wt and wt not in valid_types:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Widget '{node.id}': invalid widget_type '{wt}'",
+                node_id=node.id,
+                field="widget_type",
+                expected=f"one of {valid_types}",
+                actual=wt,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP28: Custom Code Injection Constraints
+# ============================================================================
+
+class CustomCodeInjectPointValid(BaseConstraint):
+    """
+    C069: Custom code inject point must be valid.
+
+    CP28: CUSTOM_CODE_BLOCK — ``inject_point`` must be "before_class", "after_class", "before_method", "after_method", "top", or "bottom".
+    """
+    id = "C069"
+    description = "Custom code inject point must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.CUSTOM_CODE_BLOCK:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_points = {"before_class", "after_class", "before_method", "after_method", "top", "bottom"}
+        ip = node.params.get("inject_point")
+
+        if ip and ip not in valid_points:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Code block '{node.id}': invalid inject_point '{ip}'",
+                node_id=node.id,
+                field="inject_point",
+                expected=f"one of {valid_points}",
+                actual=ip,
+            ))
+
+        return results
+
+
+class HookEventValid(BaseConstraint):
+    """
+    C070: Hook event must be a valid lifecycle event.
+
+    CP28: CUSTOM_HOOK — ``event`` must be "before_emit", "after_emit", "before_render", or "after_render".
+    """
+    id = "C070"
+    description = "Hook event must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.CUSTOM_HOOK:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_events = {"before_emit", "after_emit", "before_render", "after_render"}
+        event = node.params.get("event")
+
+        if event and event not in valid_events:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Hook '{node.id}': invalid event '{event}'",
+                node_id=node.id,
+                field="event",
+                expected=f"one of {valid_events}",
+                actual=event,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP31: Scheduler Constraints
+# ============================================================================
+
+class CronExpressionValid(BaseConstraint):
+    """
+    C071: Cron expression must have 5 fields.
+
+    CP31: SCHEDULE — ``cron_expr`` must be a valid 5-field cron expression.
+    """
+    id = "C071"
+    description = "Cron expression must have 5 fields"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.SCHEDULE:
+            return []
+
+        results: list[ConstraintResult] = []
+        cron = node.params.get("cron_expr")
+
+        if cron and not isinstance(cron, str):
+            return results
+
+        if cron:
+            parts = cron.split()
+            if len(parts) != 5:
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"Schedule '{node.id}': cron expression has {len(parts)} fields, expected 5",
+                    node_id=node.id,
+                    field="cron_expr",
+                    expected="5 fields",
+                    actual=str(len(parts)),
+                ))
+
+        return results
+
+
+# ============================================================================
+# CP35: Geospatial Constraints
+# ============================================================================
+
+class GeofenceShapeValid(BaseConstraint):
+    """
+    C072: Geofence shape must be valid.
+
+    CP35: GEOFENCE — ``shape`` must be "circle", "polygon", or "rectangle".
+    """
+    id = "C072"
+    description = "Geofence shape must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.GEOFENCE:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_shapes = {"circle", "polygon", "rectangle"}
+        shape = node.params.get("shape")
+
+        if shape and shape not in valid_shapes:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Geofence '{node.id}': invalid shape '{shape}'",
+                node_id=node.id,
+                field="shape",
+                expected=f"one of {valid_shapes}",
+                actual=shape,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP36: Tenant Onboarding Constraints
+# ============================================================================
+
+class TenantPlanNameUnique(BaseConstraint):
+    """
+    C073: Tenant subscription plan names must be unique.
+
+    CP36: TENANT_SUBSCRIPTION — ``plan_name`` must be unique across all subscription nodes.
+    """
+    id = "C073"
+    description = "Tenant subscription plan name must be unique"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.TENANT_SUBSCRIPTION:
+            return []
+
+        results: list[ConstraintResult] = []
+        plan_name = node.params.get("plan_name")
+
+        if not plan_name:
+            return results
+
+        existing = [n for n in tree.nodes if n.kind == NodeKind.TENANT_SUBSCRIPTION
+                     and n.id != node.id and n.params.get("plan_name") == plan_name]
+        if existing:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Subscription '{node.id}': duplicate plan_name '{plan_name}' (conflicts with '{existing[0].id}')",
+                node_id=node.id,
+                field="plan_name",
+                expected="unique",
+                actual=plan_name,
+            ))
+
+        return results
+
+
+class TenantBillingCycleValid(BaseConstraint):
+    """
+    C074: Tenant billing cycle must be valid.
+
+    CP36: TENANT_SUBSCRIPTION — ``billing_cycle`` must be "monthly" or "yearly".
+    """
+    id = "C074"
+    description = "Tenant billing cycle must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.TENANT_SUBSCRIPTION:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_cycles = {"monthly", "yearly"}
+        cycle = node.params.get("billing_cycle")
+
+        if cycle and cycle not in valid_cycles:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Subscription '{node.id}': invalid billing_cycle '{cycle}'",
+                node_id=node.id,
+                field="billing_cycle",
+                expected=f"one of {valid_cycles}",
+                actual=cycle,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP40: Webhook Constraints
+# ============================================================================
+
+class WebhookAuthTypeValid(BaseConstraint):
+    """
+    C075: Webhook auth type must be valid.
+
+    CP40: WEBHOOK_SUBSCRIPTION — ``auth_type`` must be "none", "bearer", "hmac", or "basic".
+    """
+    id = "C075"
+    description = "Webhook auth type must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.WEBHOOK_SUBSCRIPTION:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_auth = {"none", "bearer", "hmac", "basic"}
+        auth = node.params.get("auth_type")
+
+        if auth and auth not in valid_auth:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Webhook '{node.id}': invalid auth_type '{auth}'",
+                node_id=node.id,
+                field="auth_type",
+                expected=f"one of {valid_auth}",
+                actual=auth,
+            ))
+
+        return results
+
+
+class WebhookRetryPolicyPositive(BaseConstraint):
+    """
+    C076: Webhook retry policy max_retries must be positive.
+
+    CP40: WEBHOOK_RETRY_POLICY — ``max_retries`` >= 0.
+    """
+    id = "C076"
+    description = "Webhook retry policy max_retries must be >= 0"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.WEBHOOK_RETRY_POLICY:
+            return []
+
+        results: list[ConstraintResult] = []
+        max_r = node.params.get("max_retries")
+
+        if max_r is not None and max_r < 0:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Retry policy '{node.id}': max_retries={max_r} < 0",
+                node_id=node.id,
+                field="max_retries",
+                expected=">= 0",
+                actual=str(max_r),
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP41: Chat Constraints
+# ============================================================================
+
+class ConversationTypeValid(BaseConstraint):
+    """
+    C077: Conversation type must be valid.
+
+    CP41: CONVERSATION — ``conversation_type`` must be "direct", "group", "support", or "broadcast".
+    """
+    id = "C077"
+    description = "Conversation type must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.CONVERSATION:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_types = {"direct", "group", "support", "broadcast"}
+        ct = node.params.get("conversation_type")
+
+        if ct and ct not in valid_types:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Conversation '{node.id}': invalid conversation_type '{ct}'",
+                node_id=node.id,
+                field="conversation_type",
+                expected=f"one of {valid_types}",
+                actual=ct,
+            ))
+
+        return results
+
+
+class ChatMessageTypeValid(BaseConstraint):
+    """
+    C078: Chat message type must be valid.
+
+    CP41: CHAT_MESSAGE — ``message_type`` must be "text", "image", "video", "file", "reaction", or "system".
+    """
+    id = "C078"
+    description = "Chat message type must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.CHAT_MESSAGE:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_types = {"text", "image", "video", "file", "reaction", "system"}
+        mt = node.params.get("message_type")
+
+        if mt and mt not in valid_types:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Message '{node.id}': invalid message_type '{mt}'",
+                node_id=node.id,
+                field="message_type",
+                expected=f"one of {valid_types}",
+                actual=mt,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP42: Approval Constraints
+# ============================================================================
+
+class ApprovalChainTypeValid(BaseConstraint):
+    """
+    C079: Approval chain type must be valid.
+
+    CP42: APPROVAL_REQUEST — ``chain_type`` must be "sequential", "parallel", or "matrix".
+    """
+    id = "C079"
+    description = "Approval chain type must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.APPROVAL_REQUEST:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_types = {"sequential", "parallel", "matrix"}
+        ct = node.params.get("chain_type")
+
+        if ct and ct not in valid_types:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Approval '{node.id}': invalid chain_type '{ct}'",
+                node_id=node.id,
+                field="chain_type",
+                expected=f"one of {valid_types}",
+                actual=ct,
+            ))
+
+        return results
+
+
+class ApprovalApproverTypeValid(BaseConstraint):
+    """
+    C080: Approver type must be valid.
+
+    CP42: APPROVAL_STEP — ``approver_type`` must be "role", "user", "group", or "dynamic".
+    """
+    id = "C080"
+    description = "Approver type must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.APPROVAL_STEP:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_types = {"role", "user", "group", "dynamic"}
+        at = node.params.get("approver_type")
+
+        if at and at not in valid_types:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Step '{node.id}': invalid approver_type '{at}'",
+                node_id=node.id,
+                field="approver_type",
+                expected=f"one of {valid_types}",
+                actual=at,
+            ))
+
+        return results
+
+
+class EscalationTriggerValid(BaseConstraint):
+    """
+    C081: Escalation trigger must be valid.
+
+    CP42: ESCALATION_RULE — ``trigger_on`` must be "timeout", "rejection", or "no_response".
+    """
+    id = "C081"
+    description = "Escalation trigger must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.ESCALATION_RULE:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_triggers = {"timeout", "rejection", "no_response"}
+        trigger = node.params.get("trigger_on")
+
+        if trigger and trigger not in valid_triggers:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Escalation '{node.id}': invalid trigger_on '{trigger}'",
+                node_id=node.id,
+                field="trigger_on",
+                expected=f"one of {valid_triggers}",
+                actual=trigger,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP43: Versioning Constraints
+# ============================================================================
+
+class HistoryOperationValid(BaseConstraint):
+    """
+    C082: History operation must be valid.
+
+    CP43: HISTORY_RECORD — ``operation`` must be "create", "update", "delete", "restore", or "hard_delete".
+    """
+    id = "C082"
+    description = "History operation must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.HISTORY_RECORD:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_ops = {"create", "update", "delete", "restore", "hard_delete"}
+        op = node.params.get("operation")
+
+        if op and op not in valid_ops:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"History '{node.id}': invalid operation '{op}'",
+                node_id=node.id,
+                field="operation",
+                expected=f"one of {valid_ops}",
+                actual=op,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP44: Bulk Operations Constraints
+# ============================================================================
+
+class BulkOperationValid(BaseConstraint):
+    """
+    C083: Bulk operation must be valid.
+
+    CP44: BULK_JOB — ``operation`` must be "create", "update", or "delete".
+    """
+    id = "C083"
+    description = "Bulk operation must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.BULK_JOB:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_ops = {"create", "update", "delete"}
+        op = node.params.get("operation")
+
+        if op and op not in valid_ops:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Bulk job '{node.id}': invalid operation '{op}'",
+                node_id=node.id,
+                field="operation",
+                expected=f"one of {valid_ops}",
+                actual=op,
+            ))
+
+        return results
+
+
+class BulkChunkSizePositive(BaseConstraint):
+    """
+    C084: Bulk chunk size must be positive.
+
+    CP44: BULK_JOB — ``chunk_size`` > 0.
+    """
+    id = "C084"
+    description = "Bulk chunk size must be > 0"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.BULK_JOB:
+            return []
+
+        results: list[ConstraintResult] = []
+        cs = node.params.get("chunk_size")
+
+        if cs is not None and cs <= 0:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Bulk job '{node.id}': chunk_size={cs} <= 0",
+                node_id=node.id,
+                field="chunk_size",
+                expected="> 0",
+                actual=str(cs),
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP46: MFA Constraints
+# ============================================================================
+
+class MFAMethodValid(BaseConstraint):
+    """
+    C085: MFA method must be valid.
+
+    CP46: MFA_CREDENTIAL — each method in ``methods`` must be "totp", "sms_otp", "webauthn", or "biometric".
+    """
+    id = "C085"
+    description = "MFA methods must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.MFA_CREDENTIAL:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_methods = {"totp", "sms_otp", "webauthn", "biometric"}
+        methods = node.params.get("methods", [])
+
+        for m in methods:
+            if m not in valid_methods:
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"MFA '{node.id}': invalid method '{m}'",
+                    node_id=node.id,
+                    field="methods",
+                    expected=f"one of {valid_methods}",
+                    actual=m,
+                ))
+
+        return results
+
+
+class MFAChallengeMethodValid(BaseConstraint):
+    """
+    C086: MFA challenge method must be valid.
+
+    CP46: MFA_CHALLENGE — ``method`` must be "totp", "sms_otp", "webauthn", or "biometric".
+    """
+    id = "C086"
+    description = "MFA challenge method must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.MFA_CHALLENGE:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_methods = {"totp", "sms_otp", "webauthn", "biometric"}
+        method = node.params.get("method")
+
+        if method and method not in valid_methods:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Challenge '{node.id}': invalid method '{method}'",
+                node_id=node.id,
+                field="method",
+                expected=f"one of {valid_methods}",
+                actual=method,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP47: Data Retention Constraints
+# ============================================================================
+
+class RetentionActionValid(BaseConstraint):
+    """
+    C087: Retention action after expiry must be valid.
+
+    CP47: RETENTION_POLICY — ``action_after_expiry`` must be "archive", "purge", or "anonymize".
+    """
+    id = "C087"
+    description = "Retention action must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.RETENTION_POLICY:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_actions = {"archive", "purge", "anonymize"}
+        action = node.params.get("action_after_expiry")
+
+        if action and action not in valid_actions:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Policy '{node.id}': invalid action_after_expiry '{action}'",
+                node_id=node.id,
+                field="action_after_expiry",
+                expected=f"one of {valid_actions}",
+                actual=action,
+            ))
+
+        return results
+
+
+class ErasureScopeValid(BaseConstraint):
+    """
+    C088: Erasure scope must be valid.
+
+    CP47: ERASURE_REQUEST — ``scope`` must be "all" or "specific_entities".
+    """
+    id = "C088"
+    description = "Erasure scope must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.ERASURE_REQUEST:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_scopes = {"all", "specific_entities"}
+        scope = node.params.get("scope")
+
+        if scope and scope not in valid_scopes:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Erasure '{node.id}': invalid scope '{scope}'",
+                node_id=node.id,
+                field="scope",
+                expected=f"one of {valid_scopes}",
+                actual=scope,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP48: Rate Limiting Constraints
+# ============================================================================
+
+class RateLimitStrategyValid(BaseConstraint):
+    """
+    C089: Rate limit strategy must be valid.
+
+    CP48: RATE_LIMIT_POLICY — ``strategy`` must be "fixed_window", "sliding_window", or "token_bucket".
+    """
+    id = "C089"
+    description = "Rate limit strategy must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.RATE_LIMIT_POLICY:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_strategies = {"fixed_window", "sliding_window", "token_bucket"}
+        strategy = node.params.get("strategy")
+
+        if strategy and strategy not in valid_strategies:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Rate limit '{node.id}': invalid strategy '{strategy}'",
+                node_id=node.id,
+                field="strategy",
+                expected=f"one of {valid_strategies}",
+                actual=strategy,
+            ))
+
+        return results
+
+
+class QuotaLevelValid(BaseConstraint):
+    """
+    C090: Quota level must be valid.
+
+    CP48: QUOTA_CONFIG — ``level`` must be "user", "tenant", "endpoint", or "global".
+    """
+    id = "C090"
+    description = "Quota level must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.QUOTA_CONFIG:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_levels = {"user", "tenant", "endpoint", "global"}
+        level_val = node.params.get("level")
+
+        if level_val and level_val not in valid_levels:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Quota '{node.id}': invalid level '{level_val}'",
+                node_id=node.id,
+                field="level",
+                expected=f"one of {valid_levels}",
+                actual=level_val,
+            ))
+
+        return results
+
+
+class QuotaPeriodValid(BaseConstraint):
+    """
+    C091: Quota period must be valid.
+
+    CP48: QUOTA_CONFIG — ``period`` must be "second", "minute", "hour", "day", or "month".
+    """
+    id = "C091"
+    description = "Quota period must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.QUOTA_CONFIG:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_periods = {"second", "minute", "hour", "day", "month"}
+        period = node.params.get("period")
+
+        if period and period not in valid_periods:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Quota '{node.id}': invalid period '{period}'",
+                node_id=node.id,
+                field="period",
+                expected=f"one of {valid_periods}",
+                actual=period,
+            ))
+
+        return results
+
+
+# ============================================================================
+# CP49: Consent & Preference Constraints
+# ============================================================================
+
+class ConsentTypeValid(BaseConstraint):
+    """
+    C092: Consent type must be valid.
+
+    CP49: CONSENT_RECORD — ``consent_type`` must be "cookie", "data_processing", "marketing", or "analytics".
+    """
+    id = "C092"
+    description = "Consent type must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.CONSENT_RECORD:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_types = {"cookie", "data_processing", "marketing", "analytics"}
+        ct = node.params.get("consent_type")
+
+        if ct and ct not in valid_types:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Consent '{node.id}': invalid consent_type '{ct}'",
+                node_id=node.id,
+                field="consent_type",
+                expected=f"one of {valid_types}",
+                actual=ct,
+            ))
+
+        return results
+
+
+class CommFrequencyValid(BaseConstraint):
+    """
+    C093: Communication frequency must be valid.
+
+    CP49: COMM_PREFERENCE — ``frequency`` must be "realtime", "daily", "weekly", or "monthly".
+    """
+    id = "C093"
+    description = "Communication frequency must be valid"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext,
+    ) -> list[ConstraintResult]:
+        if node.kind != NodeKind.COMM_PREFERENCE:
+            return []
+
+        results: list[ConstraintResult] = []
+        valid_freq = {"realtime", "daily", "weekly", "monthly"}
+        freq = node.params.get("frequency")
+
+        if freq and freq not in valid_freq:
+            results.append(ConstraintResult(
+                constraint_id=self.id,
+                level=self.level,
+                message=f"Comm preference '{node.id}': invalid frequency '{freq}'",
+                node_id=node.id,
+                field="frequency",
+                expected=f"one of {valid_freq}",
+                actual=freq,
+            ))
+
+        return results
+
+
+# ============================================================================
 # Constraint Registry
 # ============================================================================
 
@@ -2715,6 +4063,56 @@ for cls in [
     APIVersionSemanticVersion,
     PaymentGatewayEndpointsValid,
     ProductCatalogUniqueSKU,
+    # CP32: State Machine Engine C061-C062
+    StateMachineTransitionValid,
+    StateMachineInitialStateExists,
+    # CP37: Feature Flags & Dynamic Config C063-C065
+    FeatureFlagKeyUnique,
+    ExperimentTrafficSplitValid,
+    DynamicConfigScopeValid,
+    # CP21: Authentication UI C066
+    AuthUIFrameworkValid,
+    # CP22: Real-time UI C067-C068
+    ChannelTransportValid,
+    WidgetTypeValid,
+    # CP28: Custom Code Injection C069-C070
+    CustomCodeInjectPointValid,
+    HookEventValid,
+    # CP31: Scheduler C071
+    CronExpressionValid,
+    # CP35: Geospatial C072
+    GeofenceShapeValid,
+    # CP36: Tenant Onboarding C073-C074
+    TenantPlanNameUnique,
+    TenantBillingCycleValid,
+    # CP40: Webhook C075-C076
+    WebhookAuthTypeValid,
+    WebhookRetryPolicyPositive,
+    # CP41: Chat C077-C078
+    ConversationTypeValid,
+    ChatMessageTypeValid,
+    # CP42: Approval C079-C081
+    ApprovalChainTypeValid,
+    ApprovalApproverTypeValid,
+    EscalationTriggerValid,
+    # CP43: Versioning C082
+    HistoryOperationValid,
+    # CP44: Bulk Operations C083-C084
+    BulkOperationValid,
+    BulkChunkSizePositive,
+    # CP46: MFA C085-C086
+    MFAMethodValid,
+    MFAChallengeMethodValid,
+    # CP47: Data Retention C087-C088
+    RetentionActionValid,
+    ErasureScopeValid,
+    # CP48: Rate Limiting C089-C091
+    RateLimitStrategyValid,
+    QuotaLevelValid,
+    QuotaPeriodValid,
+    # CP49: Consent & Preference C092-C093
+    ConsentTypeValid,
+    CommFrequencyValid,
 ]:
     default_registry.register(cls())
 

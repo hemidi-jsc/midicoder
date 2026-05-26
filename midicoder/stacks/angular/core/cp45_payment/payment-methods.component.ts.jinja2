@@ -78,7 +78,7 @@ selector: 'app-payment-methods',
 standalone: true,
 imports: [CommonModule, FormsModule],
 changeDetection: ChangeDetectionStrategy.OnPush,
-template: `
+{% raw %}template: `
 <div class="payment-methods-page">
     <!-- Tiêu đề -->
     <header class="page-header">
@@ -221,6 +221,7 @@ template: `
     </div>
 </div>
 `,
+{% endraw %}
 styles: [`
 .payment-methods-page {
 padding: 20px;
@@ -698,4 +699,3 @@ newForm: Omit<CreatePaymentMethodDto, 'metadata'> & { metadataJson: string } = {
                 return labels[type] ?? type;
                 }
                 }
-                {% endraw %}

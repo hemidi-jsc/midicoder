@@ -7,10 +7,21 @@
 
 import React, { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-{% if ui_framework == 'antd' %}
+{% set fw = ui_framework | default("tailwind") %}
+{% if fw == "material" %}
+import { Container, Paper, TextField, Button, Typography, Box, Alert } from "@mui/material";
+{% elif fw == "tailwind" %}
+{# Tailwind uses utility classes, no UI library import #}
+{% elif fw == "bootstrap" %}
+import { Container, Card, Form, Button, Alert } from "react-bootstrap";
+{% elif fw == "antd" %}
 import { Form, Input, Button, Card, Typography, Alert, Space } from "antd";
+{% elif fw == "carbon" %}
+import { Form, FormGroup, TextInput, Button, InlineNotification, Grid, Column, Layer } from "@carbon/react";
 {% endif %}
 import { useAuthContext } from "../auth/AuthContext";
+
+const { Title, Text } = Typography;
 
 export interface MfaVerifyPageProps {}
 
@@ -39,7 +50,7 @@ export const MfaVerify: React.FC<MfaVerifyPageProps> = () => {
         // TODO: gọi API resend code
         };
 
-        {% if ui_framework == 'antd' %}
+        {% if fw == "antd" %}
         const [form] = Form.useForm();
         const fullFormStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
         background: "#f0f2f5" };
@@ -73,33 +84,124 @@ export const MfaVerify: React.FC<MfaVerifyPageProps> = () => {
             </Card>
         </div>
         );
-        {% else %}
-        const pageStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" };
-        const cardStyle = { maxWidth: 400, width: "100%", padding: 24, border: "1px solid #ddd", borderRadius: 8 };
-        const errStyle = { color: "red", marginBottom: 12 };
-        const codeStyle = { width: "100%", padding: 8, marginBottom: 12, textAlign: "center", fontSize: 24,
-        letterSpacing: 8 };
-        const btnStyle = { width: "100%", padding: 12 };
-        const linkStyle = { marginTop: 12, textAlign: "center" };
-
+        {% elif fw == "material" %}
+        const loginStyle = { mt: 8 };
+        const paperStyle = { p: 4 };
+        const btnStyle = { mt: 2, mb: 1 };
+        const linkStyle = { mt: 2, textAlign: "center" };
+        const codeStyle = { textAlign: "center" as const, fontSize: 24, letterSpacing: 8 };
         const emptyValues = { code: "" };
 
         return (
-        <div style={pageStyle}>
-            <div style={cardStyle}>
-                <h2>Xác thực hai yếu tố</h2>
-                <p>Nhập mã xác thực 6 chữ số từ ứng dụng {mfaType.toUpperCase()} của bạn.</p>
-                {error && <div style={errStyle}>{error}</div>}
-                <form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
-                    <input type="text" placeholder="000000" maxLength={6} required style={codeStyle} />
-                    <button type="submit" disabled={loading} style={btnStyle}>
+        <Container maxWidth="sm" sx={loginStyle}>
+            <Paper elevation={3} sx={paperStyle}>
+                <Typography variant="h4" align="center" gutterBottom>Xác thực hai yếu tố</Typography>
+                <Typography paragraph>
+                    Nhập mã xác thực 6 chữ số từ ứng dụng {mfaType.toUpperCase()} của bạn.
+                </Typography>
+                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                <Box component="form" onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
+                    <TextField fullWidth label="Mã xác thực (6 chữ số)" type="text" maxLength={6} margin="normal"
+                        required InputProps={{ style: codeStyle }} />
+                    <Button fullWidth variant="contained" type="submit" sx={btnStyle} disabled={loading}>
+                        {loading ? "Đang xác thực..." : "Xác thực"}
+                    </Button>
+                </Box>
+                <Box sx={linkStyle}>
+                    <a href="#" onClick={(e)=> { e.preventDefault(); resendCode(); }}>Gửi lại mã</a>
+                </Box>
+            </Paper>
+        </Container>
+        );
+        {% elif fw == "tailwind" %}
+        const emptyValues = { code: "" };
+
+        return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-md">
+                <h2 className="text-3xl font-bold text-center">Xác thực hai yếu tố</h2>
+                <p className="text-center text-gray-600">
+                    Nhập mã xác thực 6 chữ số từ ứng dụng {mfaType.toUpperCase()} của bạn.
+                </p>
+                {error && <div className="bg-red-100 text-red-700 p-3 rounded">{error}</div>}
+                <form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }} className="space-y-4">
+                    <input type="text" placeholder="000000" maxLength={6} required
+                        className="w-full p-3 border rounded text-center text-2xl tracking-widest" />
+                    <button type="submit" disabled={loading}
+                        className="w-full p-3 bg-blue-600 text-white rounded hover:bg-blue-700">
                         {loading ? "Đang xác thực..." : "Xác thực"}
                     </button>
                 </form>
-                <div style={linkStyle}>
-                    <a href="#" onClick={(e)=> { e.preventDefault(); resendCode(); }}>Gửi lại mã</a>
+                <div className="text-center">
+                    <a href="#" onClick={(e)=> { e.preventDefault(); resendCode(); }} className="text-blue-600">
+                        Gửi lại mã
+                    </a>
                 </div>
             </div>
+        </div>
+        );
+        {% elif fw == "bootstrap" %}
+        const emptyValues = { code: "" };
+
+        return (
+        <Container className="d-flex align-items-center justify-content-center" style={{ minHeight: "100vh" }}>
+            <Card style={{ maxWidth: 400, width: "100%" }}>
+                <Card.Body>
+                    <h2 className="text-center">Xác thực hai yếu tố</h2>
+                    <p className="text-center text-muted">
+                        Nhập mã xác thực 6 chữ số từ ứng dụng {mfaType.toUpperCase()} của bạn.
+                    </p>
+                    {error && <Alert variant="danger">{error}</Alert>}
+                    <Form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
+                        <Form.Group className="mb-3">
+                            <Form.Control type="text" placeholder="000000" maxLength={6} required
+                                className="text-center fw-bold" style={{ fontSize: "1.5rem" , letterSpacing: "0.5em"
+                                }} />
+                        </Form.Group>
+                        <Button variant="primary" type="submit" disabled={loading} className="w-100">
+                            {loading ? "Đang xác thực..." : "Xác thực"}
+                        </Button>
+                    </Form>
+                    <div className="text-center mt-3">
+                        <a href="#" onClick={(e)=> { e.preventDefault(); resendCode(); }}>Gửi lại mã</a>
+                    </div>
+                </Card.Body>
+            </Card>
+        </Container>
+        );
+        {% elif fw == "carbon" %}
+        const emptyValues = { code: "" };
+
+        return (
+        <div style={{ minHeight: "100vh" , display: "flex" , alignItems: "center" , justifyContent: "center" }}>
+            <Grid condense>
+                <Column>
+                    <Layer>
+                        <div className="cds--content" style={{ maxWidth: 400, width: "100%" }}>
+                            <h2 className="cds--text-truncate">Xác thực hai yếu tố</h2>
+                            <p>Nhập mã xác thực 6 chữ số từ ứng dụng {mfaType.toUpperCase()} của bạn.</p>
+                            {error && (
+                            <InlineNotification kind="error" title="Lỗi" lowContrast onClose={()=> setError(null)}>
+                                {error}
+                            </InlineNotification>
+                            )}
+                            <Form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
+                                <FormGroup>
+                                    <TextInput id="code" label="Mã xác thực (6 chữ số)" placeholder="000000"
+                                        maxLength={6} required style={{ textAlign: "center" , fontSize: 24,
+                                        letterSpacing: 8 }} />
+                                </FormGroup>
+                                <Button kind="primary" type="submit" disabled={loading} style={{ width: "100%" }}>
+                                    {loading ? "Đang xác thực..." : "Xác thực"}
+                                </Button>
+                            </Form>
+                            <div className="cds--list" style={{ marginTop: 16, textAlign: "center" }}>
+                                <a href="#" onClick={(e)=> { e.preventDefault(); resendCode(); }}>Gửi lại mã</a>
+                            </div>
+                        </div>
+                    </Layer>
+                </Column>
+            </Grid>
         </div>
         );
         {% endif %}

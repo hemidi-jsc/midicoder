@@ -1,62 +1,71 @@
 /** Auth UI Module - CP21.
- *
- * Module gom tất cả auth UI components, guards và services.
- * Import module này vào feature module để sử dụng auth UI.
- *
- * UI Framework: [{ui_framework}]
- */
+*
+* Module gom tất cả auth UI components, guards và services.
+* Import module này vào feature module để sử dụng auth UI.
+*
+* UI Framework: [{ui_framework}]
+*/
 
 import { NgModule } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { ReactiveFormsModule } from "@angular/forms";
 import { RouterModule } from "@angular/router";
-{% if ui_framework == 'material' %}
-import { MatFormFieldModule } from "@angular/material/form-field";
-import { MatInputModule } from "@angular/material/input";
-import { MatButtonModule } from "@angular/material/button";
-import { MatCardModule } from "@angular/material/card";
-import { MatDividerModule } from "@angular/material/divider";
-{% elif ui_framework == 'bootstrap' %}
-import { NgBootstrapModule } from "ng-bootstrap";
-{% elif ui_framework == 'antd' %}
-import { NzFormModule } from "ng-zorro-antd/form";
-import { NzInputModule } from "ng-zorro-antd/input";
-import { NzButtonModule } from "ng-zorro-antd/button";
-{% elif ui_framework == 'carbon' %}
-import { CarbonComponentsAngularModule } from "@carbon/angular";
+{% set fw = ui_framework | default("material") %}
+{% if fw == "material" %}
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+{% elif fw == "tailwind" %}
+{# Tailwind uses utility classes, no UI library imports needed #}
+{% elif fw == "bootstrap" %}
+import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
+{% elif fw == "antd" %}
+import { NzFormModule } from 'ng-zorro-antd/form';
+import { NzInputModule } from 'ng-zorro-antd/input';
+import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzCardModule } from 'ng-zorro-antd/card';
+{% elif fw == "carbon" %}
+import { AngularCarbonModule } from '@carbon/angular';
 {% endif %}
 import { authRoutes } from "./auth.routes";
 
 @NgModule({
-  imports: [
-    CommonModule,
-    ReactiveFormsModule,
-    RouterModule.forChild(authRoutes),
-{% if ui_framework == 'material' %}
-    MatFormFieldModule,
-    MatInputModule,
-    MatButtonModule,
-    MatCardModule,
-    MatDividerModule,
-{% elif ui_framework == 'bootstrap' %}
-    NgBootstrapModule,
-{% elif ui_framework == 'antd' %}
-    NzFormModule,
-    NzInputModule,
-    NzButtonModule,
-{% elif ui_framework == 'carbon' %}
-    CarbonComponentsAngularModule,
+imports: [
+CommonModule,
+ReactiveFormsModule,
+RouterModule.forChild(authRoutes),
+{% if fw == "material" %}
+MatFormFieldModule,
+MatInputModule,
+MatButtonModule,
+MatCardModule,
+MatIconModule,
+MatProgressSpinnerModule,
+{% elif fw == "tailwind" %}
+// Tailwind — no additional imports, utility classes only
+{% elif fw == "bootstrap" %}
+NgbModule,
+{% elif fw == "antd" %}
+NzFormModule,
+NzInputModule,
+NzButtonModule,
+NzCardModule,
+{% elif fw == "carbon" %}
+AngularCarbonModule,
 {% endif %}
-  ],
-  declarations: [],
-  exports: [RouterModule],
-  providers: [
+],
+declarations: [],
+exports: [RouterModule],
+providers: [
 {% if include_role_guard %}
-    // RoleGuard — providedIn: root, không cần declare
+// RoleGuard — providedIn: root, không cần declare
 {% endif %}
 {% if include_permission_guard %}
-    // PermissionGuard — providedIn: root, không cần declare
+// PermissionGuard — providedIn: root, không cần declare
 {% endif %}
-  ],
+],
 })
 export class AuthUIModule {}

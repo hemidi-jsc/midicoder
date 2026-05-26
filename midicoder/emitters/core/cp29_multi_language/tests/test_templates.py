@@ -1,4 +1,4 @@
-"""Test template existence and content for CP28."""
+"""Test template existence and content for CP29."""
 from __future__ import annotations
 
 import pytest
@@ -23,8 +23,8 @@ def _render_template(stack: str, pack_folder: str, template_name: str, context: 
         return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
-# ---- CP28: custom_code (all 4 stacks) ----
-_PACK_FOLDER = "cp28_custom_code"
+# ---- CP29: multi_language (all 4 stacks) ----
+_PACK_FOLDER = "cp29_multi_language"
 _FASTAPI_TEMPLATES = sorted([f.name for f in (_STACKS_DIR / "fastapi" / "core" / _PACK_FOLDER).glob("*.jinja2")])
 _NESTJS_TEMPLATES = sorted([f.name for f in (_STACKS_DIR / "nestjs" / "core" / _PACK_FOLDER).glob("*.jinja2")])
 _REACT_TEMPLATES = sorted([f.name for f in (_STACKS_DIR / "react" / "core" / _PACK_FOLDER).glob("*.jinja2")])
@@ -60,7 +60,7 @@ def test_total_template_count():
     assert (
         len(_FASTAPI_TEMPLATES) + len(_NESTJS_TEMPLATES)
         + len(_REACT_TEMPLATES) + len(_ANGULAR_TEMPLATES)
-    ) >= 10
+    ) >= 5
 
 
 class TestRuleV1NoMidicoderImport:

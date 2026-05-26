@@ -256,6 +256,18 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "NestJSUIEmitter",
         "cp19_ui_component",
     ),
+    # CP21 – Authentication UI (React)
+    "cp21.react": (
+        "midicoder.emitters.core.cp21_auth_ui.react",
+        "ReactAuthUIEmitter",
+        None,
+    ),
+    # CP21 – Authentication UI (Angular)
+    "cp21.angular": (
+        "midicoder.emitters.core.cp21_auth_ui.angular",
+        "AngularAuthUIEmitter",
+        None,
+    ),
     # CP22 – Real-time UI (React)
     "cp22.react": (
         "midicoder.emitters.core.cp22_realtime_ui.react",

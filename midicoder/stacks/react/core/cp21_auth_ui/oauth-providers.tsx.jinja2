@@ -3,17 +3,20 @@
 * Hiển thị các nút đăng nhập bằng nhà cung cấp OAuth
 * (Google, Facebook, GitHub, Azure AD).
 *
-* UI Framework: {{{ ui_framework }}}
+* UI Framework: [{ui_framework}]
 */
 
 import React from "react";
-{% if ui_framework == 'material' %}
+{% set fw = ui_framework | default("tailwind") %}
+{% if fw == "material" %}
 import { Button, Box, Typography } from "@mui/material";
-{% elif ui_framework == 'bootstrap' %}
+{% elif fw == "tailwind" %}
+{# Tailwind uses utility classes, no UI library import #}
+{% elif fw == "bootstrap" %}
 import { Button } from "react-bootstrap";
-{% elif ui_framework == 'antd' %}
+{% elif fw == "antd" %}
 import { Button, Typography } from "antd";
-{% elif ui_framework == 'carbon' %}
+{% elif fw == "carbon" %}
 import { Button } from "@carbon/react";
 {% endif %}
 
@@ -21,137 +24,126 @@ const { Title, Text } = Typography;
 
 /** Giao diện nhà cung cấp OAuth. */
 export interface OAuthProvider {
-  id: string;
-  name: string;
-  icon: string;
-  authorizationUrl: string;
+id: string;
+name: string;
+icon: string;
+authorizationUrl: string;
 }
 
 /** OAuthProviderButton Props. */
 export interface OAuthProviderButtonProps {
-  provider: OAuthProvider;
-  onClick: (provider: OAuthProvider) => void;
+provider: OAuthProvider;
+onClick: (provider: OAuthProvider) => void;
 }
 
 /** Nút đăng nhập OAuth với nhà cung cấp cụ thể. */
 export const OAuthProviderButton: React.FC<OAuthProviderButtonProps> = ({ provider, onClick }) => {
-{% if ui_framework == 'antd' %}
-  return (
-    <Button
-      size="large"
-      block
-      icon={<span role="img" aria-label={provider.name}>{provider.icon}</span>}
-      onClick={() => onClick(provider)}
-    >
-      Đăng nhập với {provider.name}
+    {% if fw == "antd" %}
+    return (
+    <Button size="large" block icon={<span role="img" aria-label={provider.name}>{provider.icon}</span>}
+        onClick={() => onClick(provider)}
+        >
+        Đăng nhập với {provider.name}
     </Button>
-  );
-{% elif ui_framework == 'material' %}
-  return (
-    <Button
-      variant="outlined"
-      fullWidth
-      startAdornment={<span role="img" aria-label={provider.name}>{provider.icon}</span>}
-      onClick={() => onClick(provider)}
-      sx={{ justifyContent: "flex-start", textTransform: "none", py: 1 }}
-    >
-      Đăng nhập với {provider.name}
+    );
+    {% elif fw == "material" %}
+    return (
+    <Button variant="outlined" fullWidth startAdornment={<span role="img"
+        aria-label={provider.name}>{provider.icon}</span>}
+        onClick={() => onClick(provider)}
+        sx={{ justifyContent: "flex-start", textTransform: "none", py: 1 }}
+        >
+        Đăng nhập với {provider.name}
     </Button>
-  );
-{% elif ui_framework == 'bootstrap' %}
-  return (
-    <Button
-      variant="outline-primary"
-      size="lg"
-      block
-      onClick={() => onClick(provider)}
-    >
-      <span role="img" aria-label={provider.name} style={{ marginRight: 8 }}>{provider.icon}</span>
-      Đăng nhập với {provider.name}
-    </Button>
-  );
-{% elif ui_framework == 'carbon' %}
-  return (
-    <Button
-      kind="secondary"
-      size="lg"
-      renderIcon={() => <span role="img" aria-label={provider.name}>{provider.icon}</span>}
-      iconDescription={provider.name}
-      onClick={() => onClick(provider)}
-    >
-      Đăng nhập với {provider.name}
-    </Button>
-  );
-{% else %}
-  return (
-    <button
-      style={{
-        display: "flex",
-        alignItems: "center",
-        width: "100%",
-        padding: "12px 16px",
-        border: "1px solid #d9d9d9",
-        borderRadius: 6,
-        background: "#fff",
-        cursor: "pointer",
-        fontSize: 14,
-      }}
-      onClick={() => onClick(provider)}
-    >
-      <span role="img" aria-label={provider.name} style={{ marginRight: 8 }}>
-        {provider.icon}
-      </span>
-      Đăng nhập với {provider.name}
+    );
+    {% elif fw == "tailwind" %}
+    return (
+    <button type="button"
+        className="w-full flex items-center px-4 py-3 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 cursor-pointer text-sm"
+        onClick={()=> onClick(provider)}
+        >
+        <span role="img" aria-label={provider.name} className="mr-2">
+            {provider.icon}
+        </span>
+        Đăng nhập với {provider.name}
     </button>
-  );
-{% endif %}
-};
+    );
+    {% elif fw == "bootstrap" %}
+    return (
+    <Button variant="outline-primary" size="lg" block onClick={()=> onClick(provider)}
+        >
+        <span role="img" aria-label={provider.name} style={{ marginRight: 8 }}>{provider.icon}</span>
+        Đăng nhập với {provider.name}
+    </Button>
+    );
+    {% elif fw == "carbon" %}
+    return (
+    <Button kind="secondary" size="lg" renderIcon={()=> <span role="img"
+            aria-label={provider.name}>{provider.icon}</span>}
+        iconDescription={provider.name}
+        onClick={() => onClick(provider)}
+        >
+        Đăng nhập với {provider.name}
+    </Button>
+    );
+    {% endif %}
+    };
 
-/** OAuthProviderList Props. */
-export interface OAuthProviderListProps {
-  providers: OAuthProvider[];
-  onProviderClick: (provider: OAuthProvider) => void;
-}
+    /** OAuthProviderList Props. */
+    export interface OAuthProviderListProps {
+    providers: OAuthProvider[];
+    onProviderClick: (provider: OAuthProvider) => void;
+    }
 
-/** Danh sách nút đăng nhập OAuth.
- * Duyệt qua danh sách nhà cung cấp và hiển thị nút tương ứng. */
-export const OAuthProviderList: React.FC<OAuthProviderListProps> = ({ providers, onProviderClick }) => {
-{% if ui_framework == 'antd' %}
-  const spaceStyle = { display: "flex", flexDirection: "column" as const, gap: 12 };
-  return <div style={spaceStyle}>{providers.map((p) => <OAuthProviderButton key={p.id} provider={p} onClick={onProviderClick} />)}</div>;
-{% elif ui_framework == 'material' %}
-  return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-      {providers.map((p) => (
-        <OAuthProviderButton key={p.id} provider={p} onClick={onProviderClick} />
-      ))}
-    </Box>
-  );
-{% elif ui_framework == 'tailwind' %}
-  return (
-    <div className="space-y-3">
-      {providers.map((p) => (
-        <OAuthProviderButton key={p.id} provider={p} onClick={onProviderClick} />
-      ))}
-    </div>
-  );
-{% else %}
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {providers.map((p) => (
-        <OAuthProviderButton key={p.id} provider={p} onClick={onProviderClick} />
-      ))}
-    </div>
-  );
-{% endif %}
-};
+    /** Danh sách nút đăng nhập OAuth.
+    * Duyệt qua danh sách nhà cung cấp và hiển thị nút tương ứng. */
+    export const OAuthProviderList: React.FC<OAuthProviderListProps> = ({ providers, onProviderClick }) => {
+        {% if fw == "antd" %}
+        const spaceStyle = { display: "flex", flexDirection: "column" as const, gap: 12 };
+        return <div style={spaceStyle}>{providers.map((p) =>
+            <OAuthProviderButton key={p.id} provider={p} onClick={onProviderClick} />)}
+        </div>;
+        {% elif fw == "material" %}
+        return (
+        <Box sx={{ display: "flex" , flexDirection: "column" , gap: 1.5 }}>
+            {providers.map((p) => (
+            <OAuthProviderButton key={p.id} provider={p} onClick={onProviderClick} />
+            ))}
+        </Box>
+        );
+        {% elif fw == "tailwind" %}
+        return (
+        <div className="space-y-3">
+            {providers.map((p) => (
+            <OAuthProviderButton key={p.id} provider={p} onClick={onProviderClick} />
+            ))}
+        </div>
+        );
+        {% elif fw == "bootstrap" %}
+        return (
+        <div className="d-flex flex-column gap-3">
+            {providers.map((p) => (
+            <OAuthProviderButton key={p.id} provider={p} onClick={onProviderClick} />
+            ))}
+        </div>
+        );
+        {% elif fw == "carbon" %}
+        return (
+        <div style={{ display: "flex" , flexDirection: "column" , gap: 12 }}>
+            {providers.map((p) => (
+            <OAuthProviderButton key={p.id} provider={p} onClick={onProviderClick} />
+            ))}
+        </div>
+        );
+        {% endif %}
+        };
 
-/** Danh sách nhà cung cấp OAuth mặc định. */
-export const defaultProviders: OAuthProvider[] = [
-  { id: "google", name: "Google", icon: "🔍", authorizationUrl: "/auth/google" },
-  { id: "facebook", name: "Facebook", icon: "📘", authorizationUrl: "/auth/facebook" },
-  { id: "github", name: "GitHub", icon: "🐙", authorizationUrl: "/auth/github" },
-  { id: "azure-ad", name: "Azure AD", icon: "☁️", authorizationUrl: "/auth/azure-ad" },
-];
+        /** Danh sách nhà cung cấp OAuth mặc định. */
+        export const defaultProviders: OAuthProvider[] = [
+        { id: "google", name: "Google", icon: "🔍", authorizationUrl: "/auth/google" },
+        { id: "facebook", name: "Facebook", icon: "📘", authorizationUrl: "/auth/facebook" },
+        { id: "github", name: "GitHub", icon: "🐙", authorizationUrl: "/auth/github" },
+        { id: "azure-ad", name: "Azure AD", icon: "☁️", authorizationUrl: "/auth/azure-ad" },
+        ];
 
-export default OAuthProviderList;
+        export default OAuthProviderList;

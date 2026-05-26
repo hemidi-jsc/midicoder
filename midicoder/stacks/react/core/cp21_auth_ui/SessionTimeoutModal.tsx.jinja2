@@ -7,10 +7,17 @@
 */
 
 import React, { useState, useEffect } from "react";
-{% if ui_framework == 'antd' %}
-import { Modal, Button, Typography, Space } from "antd";
-{% elif ui_framework == 'material' %}
+{% set fw = ui_framework | default("tailwind") %}
+{% if fw == "material" %}
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from "@mui/material";
+{% elif fw == "tailwind" %}
+{# Tailwind uses utility classes, no UI library import #}
+{% elif fw == "bootstrap" %}
+import { Modal, Button } from "react-bootstrap";
+{% elif fw == "antd" %}
+import { Modal, Button, Typography, Space } from "antd";
+{% elif fw == "carbon" %}
+import { Modal, Button } from "@carbon/react";
 {% endif %}
 
 /** SessionTimeoutModal Props */
@@ -28,7 +35,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
     onStayLoggedIn,
     onLogout,
     }) => {
-    {% if ui_framework == 'antd' %}
+    {% if fw == "antd" %}
     return (
     <Modal title={<Typography.Text strong>Session sắp hết hạn</Typography.Text>}
         open={visible}
@@ -50,7 +57,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
         </Space>
     </Modal>
     );
-    {% elif ui_framework == 'material' %}
+    {% elif fw == "material" %}
     return (
     <Dialog open={visible} onClose={()=> {}} maxWidth="xs" fullWidth>
         <DialogTitle>Session sắp hết hạn</DialogTitle>
@@ -70,7 +77,7 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
         </DialogActions>
     </Dialog>
     );
-    {% else %}
+    {% elif fw == "tailwind" %}
     const overlayStyle = {
     position: "fixed" as const,
     top: 0, left: 0, right: 0, bottom: 0,
@@ -82,27 +89,57 @@ export const SessionTimeoutModal: React.FC<SessionTimeoutModalProps> = ({
     };
     const boxStyle = { background: "white", padding: 24, borderRadius: 8, maxWidth: 400, width: "100%" };
     const actionStyle = { marginTop: 16, display: "flex", gap: 8 };
-    const primaryBtn = { padding: "8px 16px", background: "#1890ff", color: "white", border: "none", borderRadius: 4,
-    cursor: "pointer" };
-    const secondaryBtn = { padding: "8px 16px", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer" };
 
     return visible ? (
     <div style={overlayStyle}>
-        <div style={boxStyle}>
-            <h3>Session sắp hết hạn</h3>
-            <p>Session của bạn sẽ hết hạn trong <strong>{countdown}</strong> giây.</p>
-            <p style={{ color: "#666" }}>Không hành động sẽ bị đăng xuất tự động.</p>
+        <div style={boxStyle} className="shadow-xl">
+            <h3 className="text-lg font-semibold mb-3">Session sắp hết hạn</h3>
+            <p className="mb-2">Session của bạn sẽ hết hạn trong <strong>{countdown}</strong> giây.</p>
+            <p className="text-gray-500 text-sm mb-4">Không hành động sẽ bị đăng xuất tự động.</p>
             <div style={actionStyle}>
-                <button style={primaryBtn} onClick={onStayLoggedIn}>
+                <button onClick={onStayLoggedIn} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
                     Đang làm việc, tiếp tục
                 </button>
-                <button style={secondaryBtn} onClick={onLogout}>
+                <button onClick={onLogout} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50">
                     Đăng xuất ngay
                 </button>
             </div>
         </div>
     </div>
     ) : null;
+    {% elif fw == "bootstrap" %}
+    return (
+    <Modal show={visible} onHide={()=> {}} centered backdrop="static" keyboard={false}>
+        <Modal.Header closeButton={false}>
+            <Modal.Title>Session sắp hết hạn</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+            <p>Session của bạn sẽ hết hạn trong <strong>{countdown}</strong> giây.</p>
+            <p className="text-muted">Không hành động sẽ bị đăng xuất tự động.</p>
+        </Modal.Body>
+        <Modal.Footer>
+            <Button variant="secondary" onClick={onLogout}>
+                Đăng xuất ngay
+            </Button>
+            <Button variant="primary" onClick={onStayLoggedIn}>
+                Đang làm việc, tiếp tục
+            </Button>
+        </Modal.Footer>
+    </Modal>
+    );
+    {% elif fw == "carbon" %}
+    return (
+    <Modal open={visible} modalHeading="Session sắp hết hạn" primaryButtonText="Đang làm việc, tiếp tục"
+        secondaryButtonText="Đăng xuất ngay" onRequestSubmit={onStayLoggedIn} onRequestSecondarySubmit={onLogout}
+        onRequestClose={()=> {}}
+        selectorPrimaryFocus="#carbon-modal"
+        >
+        <div id="carbon-modal">
+            <p>Session của bạn sẽ hết hạn trong <strong>{countdown}</strong> giây.</p>
+            <p className="cds--label" style={{ color: "#8d8d8d" }}>Không hành động sẽ bị đăng xuất tự động.</p>
+        </div>
+    </Modal>
+    );
     {% endif %}
     };
 

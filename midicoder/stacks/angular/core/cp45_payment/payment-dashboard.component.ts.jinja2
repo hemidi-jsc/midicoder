@@ -63,7 +63,7 @@ selector: 'app-payment-dashboard',
 standalone: true,
 imports: [CommonModule],
 changeDetection: ChangeDetectionStrategy.OnPush,
-template: `
+{% raw %}template: `
 <div class="payment-dashboard">
     <!-- Tiêu đề -->
     <header class="dashboard-header">
@@ -183,6 +183,7 @@ template: `
     </ng-container>
 </div>
 `,
+{% endraw %}
 styles: [`
 .payment-dashboard {
 padding: 20px;
@@ -506,4 +507,3 @@ const icons: Record<string, string> = {
         return labels[type] ?? type;
         }
         }
-        {% endraw %}

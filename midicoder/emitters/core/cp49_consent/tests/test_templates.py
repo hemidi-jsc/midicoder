@@ -86,11 +86,11 @@ class TestPackManifest:
         assert "CP47" in deps
 
     def test_pack_file_contributions_count(self):
-        """Có 22 file contributions cho 4 stacks (6+6+5+5)."""
+        """Có 24 file contributions cho 4 stacks (6+6+6+6)."""
         with open(EMITTERS_DIR / "pack.yml", "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         contributions = data["pack"]["file_contributions"]["infrastructure"]
-        assert len(contributions) == 22  # 6+6+5+5
+        assert len(contributions) == 24  # 6+6+6+6
 
     def test_pack_recipes(self):
         """Recipes đúng."""

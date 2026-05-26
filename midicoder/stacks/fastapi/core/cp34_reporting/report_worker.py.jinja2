@@ -40,13 +40,6 @@ class BatchJob:
     max_retries: int = 3
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self) -> None:
-        """Validate batch job sau khi khởi tạo."""
-        if not self.report_spec_ids:
-            raise ValueError("Batch job phải có ít nhất 1 report spec")
-        if self.max_retries < 0:
-            self.max_retries = 3
-
     def can_retry(self) -> bool:
         """Kiểm tra job có thể retry không."""
         return self.retries < self.max_retries and self.status == BatchJobStatus.FAILED

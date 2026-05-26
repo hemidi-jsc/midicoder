@@ -1,4 +1,4 @@
-"""Test template existence and content for CP28."""
+"""Test template existence and content for CP22."""
 from __future__ import annotations
 
 import pytest
@@ -23,30 +23,13 @@ def _render_template(stack: str, pack_folder: str, template_name: str, context: 
         return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
-# ---- CP28: custom_code (all 4 stacks) ----
-_PACK_FOLDER = "cp28_custom_code"
-_FASTAPI_TEMPLATES = sorted([f.name for f in (_STACKS_DIR / "fastapi" / "core" / _PACK_FOLDER).glob("*.jinja2")])
-_NESTJS_TEMPLATES = sorted([f.name for f in (_STACKS_DIR / "nestjs" / "core" / _PACK_FOLDER).glob("*.jinja2")])
+# ---- CP22: realtime_ui (frontend only: react, angular) ----
+_PACK_FOLDER = "cp22_realtime_ui"
 _REACT_TEMPLATES = sorted([f.name for f in (_STACKS_DIR / "react" / "core" / _PACK_FOLDER).glob("*.jinja2")])
 _ANGULAR_TEMPLATES = sorted([f.name for f in (_STACKS_DIR / "angular" / "core" / _PACK_FOLDER).glob("*.jinja2")])
 
-_ALL_TEMPLATES = (
-    [("fastapi", t) for t in _FASTAPI_TEMPLATES]
-    + [("nestjs", t) for t in _NESTJS_TEMPLATES]
-    + [("react", t) for t in _REACT_TEMPLATES]
-    + [("angular", t) for t in _ANGULAR_TEMPLATES]
-)
-
 
 class TestTemplateDiscovery:
-    @pytest.mark.parametrize("t", _FASTAPI_TEMPLATES)
-    def test_fastapi_template_exists(self, t):
-        assert (_STACKS_DIR / "fastapi" / "core" / _PACK_FOLDER / t).exists()
-
-    @pytest.mark.parametrize("t", _NESTJS_TEMPLATES)
-    def test_nestjs_template_exists(self, t):
-        assert (_STACKS_DIR / "nestjs" / "core" / _PACK_FOLDER / t).exists()
-
     @pytest.mark.parametrize("t", _REACT_TEMPLATES)
     def test_react_template_exists(self, t):
         assert (_STACKS_DIR / "react" / "core" / _PACK_FOLDER / t).exists()
@@ -57,21 +40,20 @@ class TestTemplateDiscovery:
 
 
 def test_total_template_count():
-    assert (
-        len(_FASTAPI_TEMPLATES) + len(_NESTJS_TEMPLATES)
-        + len(_REACT_TEMPLATES) + len(_ANGULAR_TEMPLATES)
-    ) >= 10
+    assert len(_REACT_TEMPLATES) + len(_ANGULAR_TEMPLATES) >= 10
 
 
 class TestRuleV1NoMidicoderImport:
-    @pytest.mark.parametrize("stack,t", _ALL_TEMPLATES)
-    def test_no_midicoder_import(self, stack, t):
+    @pytest.mark.parametrize("t", _REACT_TEMPLATES + _ANGULAR_TEMPLATES)
+    def test_no_midicoder_import(self, t):
+        stack = "react" if (_STACKS_DIR / "react" / "core" / _PACK_FOLDER / t).exists() else "angular"
         raw = (_STACKS_DIR / stack / "core" / _PACK_FOLDER / t).read_text(encoding="utf-8")
-        assert "from midicoder" not in raw, f"[{stack}] {t} should not import from midicoder"
+        assert "from midicoder" not in raw, f"{t} should not import from midicoder"
 
 
 class TestRuleV2NoPostInit:
-    @pytest.mark.parametrize("stack,t", _ALL_TEMPLATES)
-    def test_no_post_init(self, stack, t):
+    @pytest.mark.parametrize("t", _REACT_TEMPLATES + _ANGULAR_TEMPLATES)
+    def test_no_post_init(self, t):
+        stack = "react" if (_STACKS_DIR / "react" / "core" / _PACK_FOLDER / t).exists() else "angular"
         raw = (_STACKS_DIR / stack / "core" / _PACK_FOLDER / t).read_text(encoding="utf-8")
-        assert "__post_init__" not in raw, f"[{stack}] {t} should not contain __post_init__"
+        assert "__post_init__" not in raw, f"{t} should not contain __post_init__"

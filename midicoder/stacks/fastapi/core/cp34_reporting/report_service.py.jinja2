@@ -66,17 +66,6 @@ class ReportSpec:
     aggregations: list[str] = field(default_factory=list)
     description: str = ""
 
-    def __post_init__(self) -> None:
-        """Validate report spec sau khi khởi tạo."""
-        if not self.id or not self.id.strip():
-            raise ValueError("Report spec ID không được để trống")
-        if not self.entity or not self.entity.strip():
-            raise ValueError("Report spec entity không được để trống")
-        valid_funcs = {af.value for af in AggregationFunc}
-        for agg in self.aggregations:
-            if agg.upper() not in valid_funcs:
-                raise ValueError(f"Aggregation function không hợp lệ: {agg}")
-
     def has_aggregation(self) -> bool:
         """Kiểm tra report có aggregation không."""
         return len(self.aggregations) > 0
@@ -143,13 +132,6 @@ class BatchJob:
     retries: int = 0
     max_retries: int = 3
     metadata: dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        """Validate batch job sau khi khởi tạo."""
-        if not self.report_spec_ids:
-            raise ValueError("Batch job phải có ít nhất 1 report spec")
-        if self.max_retries < 0:
-            self.max_retries = 3
 
     def can_retry(self) -> bool:
         """Kiểm tra job có thể retry không."""

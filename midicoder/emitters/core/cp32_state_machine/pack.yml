@@ -23,7 +23,7 @@ capabilities_provided:
 
 file_contributions:
   infrastructure:
-    # FastAPI
+    # FastAPI — core engine
     - path: "app/state_machine/state_machine.py"
       file_type: "state_machine"
       template: "cp32_state_machine/state_machine.py.jinja2"
@@ -38,7 +38,23 @@ file_contributions:
       pack_emitter: null
       context_keys: ["state_machines"]
 
-    # NestJS
+    # FastAPI — transition handler (guard + effect)
+    - path: "app/state_machine/state_transition_handler.py"
+      file_type: "state_machine"
+      template: "cp32_state_machine/state_transition_handler.py.jinja2"
+      stacks: ["fastapi"]
+      pack_emitter: null
+      context_keys: ["state_machines"]
+
+    # FastAPI — lifecycle emitter
+    - path: "app/state_machine/state_lifecycle_emitter.py"
+      file_type: "state_machine"
+      template: "cp32_state_machine/state_lifecycle_emitter.py.jinja2"
+      stacks: ["fastapi"]
+      pack_emitter: null
+      context_keys: ["state_machines"]
+
+    # NestJS — core engine
     - path: "src/state-machine/state-machine.service.ts"
       file_type: "state_machine"
       template: "cp32_state_machine/state-machine.service.ts.jinja2"
@@ -49,6 +65,22 @@ file_contributions:
     - path: "src/state-machine/state-registry.service.ts"
       file_type: "state_machine"
       template: "cp32_state_machine/state-registry.service.ts.jinja2"
+      stacks: ["nestjs"]
+      pack_emitter: null
+      context_keys: ["state_machines"]
+
+    # NestJS — transition handler (guard + effect)
+    - path: "src/state-machine/state-transition-handler.service.ts"
+      file_type: "state_machine"
+      template: "cp32_state_machine/state-transition-handler.service.ts.jinja2"
+      stacks: ["nestjs"]
+      pack_emitter: null
+      context_keys: ["state_machines"]
+
+    # NestJS — lifecycle emitter
+    - path: "src/state-machine/state-lifecycle-emitter.service.ts"
+      file_type: "state_machine"
+      template: "cp32_state_machine/state-lifecycle-emitter.service.ts.jinja2"
       stacks: ["nestjs"]
       pack_emitter: null
       context_keys: ["state_machines"]

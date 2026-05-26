@@ -8,13 +8,16 @@
 
 import React, { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-{% if ui_framework == 'material' %}
+{% set fw = ui_framework | default("tailwind") %}
+{% if fw == "material" %}
 import { Container, Paper, TextField, Button, Typography, Box, Divider, Alert } from "@mui/material";
-{% elif ui_framework == 'bootstrap' %}
-import { Container, Card, Form, Button, Alert, Row, Col } from "react-bootstrap";
-{% elif ui_framework == 'antd' %}
+{% elif fw == "tailwind" %}
+{# Tailwind uses utility classes, no UI library import #}
+{% elif fw == "bootstrap" %}
+import { Container, Card, Form, Button, Alert } from "react-bootstrap";
+{% elif fw == "antd" %}
 import { Form, Input, Button, Card, Typography, Alert, Divider } from "antd";
-{% elif ui_framework == 'carbon' %}
+{% elif fw == "carbon" %}
 import { Form, FormGroup, TextInput, Button, InlineNotification, Grid, Column } from "@carbon/react";
 {% endif %}
 import { useAuthContext } from "../auth/AuthContext";
@@ -55,7 +58,7 @@ export const Login: React.FC<LoginPageProps> = ({
         }
         };
 
-        {% if ui_framework == 'antd' %}
+        {% if fw == "antd" %}
         const [form] = Form.useForm();
         const emailRule = { required: true, type: "email" };
         const passRule = { required: true, min: 8 };
@@ -97,7 +100,7 @@ export const Login: React.FC<LoginPageProps> = ({
             </Card>
         </div>
         );
-        {% elif ui_framework == 'material' %}
+        {% elif fw == "material" %}
         const loginStyle = { mt: 8 };
         const paperStyle = { p: 4 };
         const btnStyle = { mt: 2, mb: 1 };
@@ -135,7 +138,7 @@ export const Login: React.FC<LoginPageProps> = ({
             </Paper>
         </Container>
         );
-        {% elif ui_framework == 'tailwind' %}
+        {% elif fw == "tailwind" %}
         const emptyValues = { email: "", password: "" };
 
         return (
@@ -168,41 +171,82 @@ export const Login: React.FC<LoginPageProps> = ({
             </div>
         </div>
         );
-        {% else %}
-        const pageStyle = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" };
-        const cardStyle = { maxWidth: 400, width: "100%", padding: 24, border: "1px solid #ddd", borderRadius: 8 };
-        const titleStyle = { textAlign: "center" };
-        const errStyle = { color: "red", marginBottom: 12 };
-        const inputStyle = { width: "100%", padding: 8, marginBottom: 12 };
-        const btnStyle = { width: "100%", padding: 12 };
-        const linkStyle = { marginTop: 12, display: "flex", justifyContent: "space-between" };
+        {% elif fw == "bootstrap" %}
         const emptyValues = { email: "", password: "" };
 
         return (
-        <div style={pageStyle}>
-            <div style={cardStyle}>
-                <h2 style={titleStyle}>Đăng nhập</h2>
-                {error && <div style={errStyle}>{error}</div>}
-                <form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
-                    <input type="email" placeholder="Email" required style={inputStyle} />
-                    <input type="password" placeholder="Mật khẩu" required style={inputStyle} />
-                    {/* Ô checkbox ghi nhớ đăng nhập */}
-                    <div style={{ display: "flex" , alignItems: "center" , marginBottom: 12 }}>
-                        <input type="checkbox" id="rememberMe" checked={rememberMe} onChange={(e)=>
-                        setRememberMe(e.target.checked)}
-                        style={{ marginRight: 8 }}
-                        />
-                        <label htmlFor="rememberMe">Ghi nhớ đăng nhập</label>
+        <Container className="d-flex align-items-center justify-content-center" style={{ minHeight: "100vh" }}>
+            <Card style={{ maxWidth: 400, width: "100%" }}>
+                <Card.Body>
+                    <h2 className="text-center">Đăng nhập</h2>
+                    {error && <Alert variant="danger">{error}</Alert>}
+                    <Form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
+                        <Form.Group className="mb-3">
+                            <Form.Control type="email" placeholder="Email" required />
+                        </Form.Group>
+                        <Form.Group className="mb-3">
+                            <Form.Control type="password" placeholder="Mật khẩu" required />
+                        </Form.Group>
+                        {/* Ô checkbox ghi nhớ đăng nhập */}
+                        <Form.Group className="mb-3" controlId="rememberMe">
+                            <Form.Check type="checkbox" label="Ghi nhớ đăng nhập" checked={rememberMe} onChange={(e)=>
+                                setRememberMe(e.target.checked)}
+                                />
+                        </Form.Group>
+                        <Button variant="primary" type="submit" disabled={loading} className="w-100">
+                            {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+                        </Button>
+                    </Form>
+                    <div className="d-flex justify-content-between mt-3">
+                        <Link to="/forgot-password">Quên mật khẩu?</Link>
+                        <Link to="/register">Đăng ký</Link>
                     </div>
-                    <button type="submit" disabled={loading} style={btnStyle}>
-                        {loading ? "Đang đăng nhập..." : "Đăng nhập"}
-                    </button>
-                </form>
-                <div style={linkStyle}>
-                    <Link to="/forgot-password">Quên mật khẩu?</Link>
-                    <Link to="/register">Đăng ký</Link>
-                </div>
-            </div>
+                </Card.Body>
+            </Card>
+        </Container>
+        );
+        {% elif fw == "carbon" %}
+        const emptyValues = { email: "", password: "" };
+
+        return (
+        <div style={{ minHeight: "100vh" , display: "flex" , alignItems: "center" , justifyContent: "center" }}>
+            <Grid condense>
+                <Column>
+                    <Layer>
+                        <div className="cds--content" style={{ maxWidth: 400, width: "100%" }}>
+                            <h2 className="cds--text-truncate">Đăng nhập</h2>
+                            {error && (
+                            <InlineNotification kind="error" title="Lỗi" lowContrast onClose={()=> setError(null)}>
+                                {error}
+                            </InlineNotification>
+                            )}
+                            <Form onSubmit={(e)=> { e.preventDefault(); handleSubmit(emptyValues); }}>
+                                <FormGroup>
+                                    <TextInput id="email" label="Email" type="email" placeholder="Email" required />
+                                    <TextInput id="password" label="Mật khẩu" type="password" placeholder="Mật khẩu"
+                                        required />
+                                </FormGroup>
+                                {/* Ô checkbox ghi nhớ đăng nhập */}
+                                <div style={{ marginBottom: 16 }}>
+                                    <label>
+                                        <input type="checkbox" checked={rememberMe} onChange={(e)=>
+                                        setRememberMe(e.target.checked)} style={{ marginRight: 8 }} />
+                                        Ghi nhớ đăng nhập
+                                    </label>
+                                </div>
+                                <Button kind="primary" type="submit" disabled={loading} style={{ width: "100%" }}>
+                                    {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+                                </Button>
+                            </Form>
+                            <div className="cds--list" style={{ marginTop: 16, display: "flex" ,
+                                justifyContent: "space-between" }}>
+                                <Link to="/forgot-password">Quên mật khẩu?</Link>
+                                <Link to="/register">Đăng ký</Link>
+                            </div>
+                        </div>
+                    </Layer>
+                </Column>
+            </Grid>
         </div>
         );
         {% endif %}

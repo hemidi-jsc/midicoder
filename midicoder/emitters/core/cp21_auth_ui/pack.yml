@@ -58,138 +58,165 @@ pack:
         file_type: "auth_page"
         template: "cp21_auth_ui/login.component.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/register.component.ts"
         file_type: "auth_page"
         template: "cp21_auth_ui/register.component.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/forgot-password.component.ts"
         file_type: "auth_page"
         template: "cp21_auth_ui/forgot-password.component.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/reset-password.component.ts"
         file_type: "auth_page"
         template: "cp21_auth_ui/reset-password.component.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/mfa-verify.component.ts"
         file_type: "auth_page"
         template: "cp21_auth_ui/mfa-verify.component.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/oauth-callback.component.ts"
         file_type: "auth_page"
         template: "cp21_auth_ui/oauth-callback.component.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/oauth-providers.component.ts"
         file_type: "auth_component"
         template: "cp21_auth_ui/oauth-providers.component.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/captcha.component.ts"
         file_type: "auth_component"
         template: "cp21_auth_ui/captcha.component.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/role.guard.ts"
         file_type: "route_guard"
         template: "cp21_auth_ui/role.guard.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/permission.guard.ts"
         file_type: "route_guard"
         template: "cp21_auth_ui/permission.guard.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/session-timeout.modal.component.ts"
         file_type: "session_modal"
         template: "cp21_auth_ui/session-timeout.modal.component.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/session-monitor.service.ts"
         file_type: "session_service"
         template: "cp21_auth_ui/session-monitor.service.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/auth.routes.ts"
         file_type: "auth_routes"
         template: "cp21_auth_ui/auth.routes.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       - path: "src/app/auth-ui/auth-ui.module.ts"
         file_type: "auth_module"
         template: "cp21_auth_ui/auth-ui.module.ts.jinja2"
         stacks: ["angular"]
-        pack_emitter: null
+        pack_emitter: "cp21.angular"
+        context_keys: ["ui_framework"]
       # React
       - path: "src/auth-ui/login.tsx"
         file_type: "auth_page"
         template: "cp21_auth_ui/login.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/register.tsx"
         file_type: "auth_page"
         template: "cp21_auth_ui/register.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/forgot-password.tsx"
         file_type: "auth_page"
         template: "cp21_auth_ui/forgot-password.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/reset-password.tsx"
         file_type: "auth_page"
         template: "cp21_auth_ui/reset-password.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/mfa-verify.tsx"
         file_type: "auth_page"
         template: "cp21_auth_ui/mfa-verify.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/oauth-callback.tsx"
         file_type: "auth_page"
         template: "cp21_auth_ui/oauth-callback.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/oauth-providers.tsx"
         file_type: "auth_component"
         template: "cp21_auth_ui/oauth-providers.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/captcha.tsx"
         file_type: "auth_component"
         template: "cp21_auth_ui/captcha.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/RoleRoute.tsx"
         file_type: "route_guard"
         template: "cp21_auth_ui/RoleRoute.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/PermissionRoute.tsx"
         file_type: "route_guard"
         template: "cp21_auth_ui/PermissionRoute.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/SessionTimeoutModal.tsx"
         file_type: "session_modal"
         template: "cp21_auth_ui/SessionTimeoutModal.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/useSessionMonitor.ts"
         file_type: "session_hook"
         template: "cp21_auth_ui/useSessionMonitor.ts.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
       - path: "src/auth-ui/auth-routes.tsx"
         file_type: "auth_routes"
         template: "cp21_auth_ui/auth-routes.tsx.jinja2"
         stacks: ["react"]
-        pack_emitter: null
+        pack_emitter: "cp21.react"
+        context_keys: ["ui_framework"]
   frontend_integration:
     angular:
       - LoginComponent
