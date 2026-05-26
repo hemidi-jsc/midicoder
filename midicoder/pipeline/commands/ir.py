@@ -899,17 +899,18 @@ def _store_custom_code_in_metadata(builder: MIRBuilder, tree: ProjectionTree) ->
     commands = builder.mir.metadata.get("commands", [])
 
     try:
-        from midicoder.emitters.core.cp28_custom_code.recipes import (
-            auto_generate_custom_code_from_mir,
+        # CP28 recipes merged into CP27 — use CP27's auto_generate_plugins_from_mir
+        from midicoder.emitters.core.cp27_plugin_system.recipes import (
+            auto_generate_plugins_from_mir,
         )
-        collection = auto_generate_custom_code_from_mir({
+        collection = auto_generate_plugins_from_mir({
             "entities": entities,
             "commands": commands,
         })
         coll_dict = collection.to_dict()
-        builder.mir.metadata["custom_code_blocks"] = coll_dict["blocks"]
-        builder.mir.metadata["hooks"] = coll_dict["hooks"]
-        builder.mir.metadata["patch_rules"] = coll_dict["patch_rules"]
+        builder.mir.metadata["custom_code_blocks"] = coll_dict.get("blocks", [])
+        builder.mir.metadata["hooks"] = coll_dict.get("hooks", [])
+        builder.mir.metadata["patch_rules"] = coll_dict.get("patch_rules", [])
     except Exception:
         # Fallback: nếu CP28 recipes không available, set empty lists
         # — templates vẫn render được với data rỗng

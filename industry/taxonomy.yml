@@ -519,22 +519,7 @@ core_packs:
     category: extensibility
     status: stable
     version: 1.0.0
-  - id: CP28
-    name: Custom Code Injection Generator
-    internal_id: cp28_custom_code
-    phase: P4
-    description: "Compile-time code injection: custom blocks, lifecycle hooks, regex patch rules"
-    definitions_count: 3
-    obligations_count: 1
-    depends_on:
-      - CP01
-    capabilities_provided:
-      - custom_code_inject
-      - hook_define
-      - patch_apply
-    category: extensibility
-    status: experimental
-    version: 1.0.0
+  # CP28 removed — merged into CP27 (cp27_plugin_system)
   - id: CP29
     name: Multi-Language Support Generator
     internal_id: cp29_multi_language

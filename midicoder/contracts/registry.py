@@ -62,7 +62,7 @@ CP_ID_TO_INTERNAL: Final[dict[str, str]] = {
     "CP25": "cp25_performance_testing",
     "CP26": "cp26_documentation",
     "CP27": "cp27_plugin_system",
-    "CP28": "cp28_custom_code",
+    # CP28 removed — merged into CP27 (cp27_plugin_system)
     "CP29": "cp29_multi_language",
     "CP30": "cp30_ai_assisted",
     "CP31": "cp31_scheduler",
