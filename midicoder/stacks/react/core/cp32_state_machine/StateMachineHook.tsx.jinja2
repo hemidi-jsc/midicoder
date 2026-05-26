@@ -1,0 +1,332 @@
+/**
+ * useStateMachine Hook — CP32: State Machine Engine.
+ *
+ * Custom hook để tương tác với state machine backend.
+ * Cung cấp state management client-side và API calls cho transitions.
+ *
+ * Tự động sinh bởi Midicoder CE — không sửa thủ công.
+ */
+
+import { useState, useCallback, useEffect, useRef } from 'react';
+
+// ===========================================================================
+// TypeScript Types
+// ===========================================================================
+
+/**
+ * Cấu hình state machine từ backend.
+ */
+interface StateMachineConfig {
+  machineId: string;
+  entityType: string;
+  states: string[];
+  initialState: string;
+  transitions: Record<string, string[]>;
+  finalStates?: string[];
+}
+
+/**
+ * Một bản ghi lịch sử transition.
+ */
+interface TransitionRecord {
+  entity_id: string;
+  from_state: string;
+  to_state: string;
+  user_id: string | null;
+  timestamp: string;
+  metadata: Record<string, any>;
+}
+
+/**
+ * State instance hiện tại.
+ */
+interface StateInstanceState {
+  entity_id: string;
+  machine_id: string;
+  current_state: string;
+  history: TransitionRecord[];
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Kết quả của một transition API call.
+ */
+interface TransitionResult {
+  success: boolean;
+  entity_id: string;
+  from_state: string;
+  to_state: string;
+  error?: string;
+}
+
+/**
+ * Kết quả trả về của hook useStateMachine.
+ */
+interface UseStateMachineReturn {
+  /** State instance hiện tại. */
+  instance: StateInstanceState | null;
+  /** Cấu hình state machine. */
+  config: StateMachineConfig | null;
+  /** Đang tải. */
+  loading: boolean;
+  /** Lỗi. */
+  error: string | null;
+
+  /** Tạo state instance mới cho entity. */
+  createInstance: (entityId: string, machineId: string) => Promise<StateInstanceState>;
+
+  /** Lấy trạng thái hiện tại của entity. */
+  getState: (entityId: string) => Promise<StateInstanceState>;
+
+  /** Thực hiện transition. */
+  transition: (entityId: string, toState: string, userId?: string) => Promise<TransitionResult>;
+
+  /** Lấy các transitions hợp lệ từ current state. */
+  getValidTransitions: () => string[];
+
+  /** Kiểm tra có thể transition đến state mục tiêu không. */
+  canTransitionTo: (toState: string) => boolean;
+
+  /** Kiểm tra current state có phải final state không. */
+  isFinalState: () => boolean;
+
+  /** Làm mới state từ server. */
+  refresh: (entityId: string) => Promise<void>;
+
+  /** Reset hook về trạng thái ban đầu. */
+  reset: () => void;
+}
+
+// ===========================================================================
+// Dữ liệu state machine từ backend (do Jinja2 render)
+// ===========================================================================
+
+/** Danh sách state machines tự động sinh từ backend */
+const STATE_MACHINES: StateMachineConfig[] = [
+{% for sm in state_machines %}
+{
+  machineId: '{{ sm.machine_id }}',
+  entityType: '{{ sm.entity_type }}',
+  states: {{ sm.states | tojson }},
+  initialState: '{{ sm.initial_state }}',
+  transitions: {{ sm.transitions | tojson }},
+  finalStates: {{ sm.final_states | tojson }},
+},
+{% endfor %}
+];
+
+const API_BASE = '/api';
+
+/**
+ * Tìm config của state machine theo machineId.
+ */
+function findMachineConfig(machineId: string): StateMachineConfig | undefined {
+  return STATE_MACHINES.find((m) => m.machineId === machineId);
+}
+
+// ===========================================================================
+// useStateMachine Hook
+// ===========================================================================
+
+/**
+ * Custom hook để quản lý state machine và thực hiện transitions.
+ *
+ * @example
+ * ```tsx
+ * function OrderDetail({ orderId }: { orderId: string }) {
+ *   const { instance, transition, getValidTransitions, loading } = useStateMachine();
+ *
+ *   useEffect(() => {
+ *     instance?.entity_id || instance.getState(orderId);
+ *   }, [orderId]);
+ *
+ *   const validTargets = getValidTransitions();
+ *
+ *   return (
+ *     <div>
+ *       <p>Trạng thái: {instance?.current_state}</p>
+ *       {validTargets.map((target) => (
+ *         <button key={target} onClick={() => transition(orderId, target)}>
+ *           Chuyển sang {target}
+ *         </button>
+ *       ))}
+ *     </div>
+ *   );
+ * }
+ * ```
+ */
+export function useStateMachine(): UseStateMachineReturn {
+  const [instance, setInstance] = useState<StateInstanceState | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Config lookup dựa trên machineId của current instance
+  const config = instance ? findMachineConfig(instance.machine_id) || null : null;
+
+  /** Tạo state instance mới cho entity. */
+  const createInstance = useCallback(
+    async (entityId: string, machineId: string): Promise<StateInstanceState> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${API_BASE}/state-machine/instances`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entity_id: entityId, machine_id: machineId }),
+        });
+        if (!res.ok) throw new Error(`Không thể tạo instance: HTTP ${res.status}`);
+        const data = await res.json();
+        setInstance(data);
+        return data;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  /** Lấy trạng thái hiện tại của entity. */
+  const getState = useCallback(async (entityId: string): Promise<StateInstanceState> => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/state-machine/instances/${entityId}`);
+      if (!res.ok) throw new Error(`Không tìm thấy instance: HTTP ${res.status}`);
+      const data = await res.json();
+      setInstance(data);
+      return data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /** Thực hiện transition cho entity. */
+  const transition = useCallback(
+    async (entityId: string, toState: string, userId?: string): Promise<TransitionResult> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${API_BASE}/state-machine/instances/${entityId}/transition`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to_state: toState, user_id: userId }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Transition thất bại: HTTP ${res.status}`);
+        }
+        const data: TransitionResult = await res.json();
+
+        // Cập nhật local state sau khi transition thành công
+        setInstance((prev) =>
+          prev
+            ? {
+                ...prev,
+                current_state: data.to_state,
+                updated_at: new Date().toISOString(),
+                history: [
+                  ...prev.history,
+                  {
+                    entity_id: entityId,
+                    from_state: data.from_state,
+                    to_state: data.to_state,
+                    user_id: userId || null,
+                    timestamp: new Date().toISOString(),
+                    metadata: {},
+                  },
+                ],
+              }
+            : prev
+        );
+
+        return data;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Lỗi không xác định');
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  /** Lấy danh sách transitions hợp lệ từ current state. */
+  const getValidTransitions = useCallback((): string[] => {
+    if (!instance || !config) return [];
+    return config.transitions[instance.current_state] || [];
+  }, [instance, config]);
+
+  /** Kiểm tra có thể transition đến state mục tiêu không. */
+  const canTransitionTo = useCallback(
+    (toState: string): boolean => {
+      if (!instance || !config) return false;
+      const valid = config.transitions[instance.current_state] || [];
+      return valid.includes(toState);
+    },
+    [instance, config]
+  );
+
+  /** Kiểm tra current state có phải final state không. */
+  const isFinalState = useCallback((): boolean => {
+    if (!instance || !config) return false;
+    return (config.finalStates || []).includes(instance.current_state);
+  }, [instance, config]);
+
+  /** Làm mới state từ server. */
+  const refresh = useCallback(
+    async (entityId: string): Promise<void> => {
+      await getState(entityId);
+    },
+    [getState]
+  );
+
+  /** Reset hook về trạng thái ban đầu. */
+  const reset = useCallback(() => {
+    setInstance(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return {
+    instance,
+    config,
+    loading,
+    error,
+    createInstance,
+    getState,
+    transition,
+    getValidTransitions,
+    canTransitionTo,
+    isFinalState,
+    refresh,
+    reset,
+  };
+}
+
+/**
+ * Hook để lấy danh sách tất cả state machine configs.
+ *
+ * @example
+ * ```tsx
+ * const machines = useStateMachineConfigs();
+ * // machines => [{ machineId, entityType, states, ... }, ...]
+ * ```
+ */
+export function useStateMachineConfigs(): StateMachineConfig[] {
+  return STATE_MACHINES;
+}
+
+/**
+ * Hook để lấy config của một state machine cụ thể.
+ *
+ * @param machineId - ID của state machine cần lấy.
+ */
+export function useStateMachineConfig(machineId: string): StateMachineConfig | null {
+  return findMachineConfig(machineId) || null;
+}

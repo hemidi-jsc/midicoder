@@ -1,0 +1,241 @@
+/**
+ * State Machine Service — CP32: State Machine Engine.
+ *
+ * Tự động sinh bởi Midicoder CE — không sửa thủ công.
+ *
+ * Angular service để tương tác với state machine backend API.
+ * Cung cấp các phương thức cho việc quản lý state instances
+ * và thực hiện transitions.
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable, of } from 'rxjs';
+
+/** Cấu hình state machine từ backend */
+export interface StateMachineConfig {
+  machineId: string;
+  entityType: string;
+  states: string[];
+  initialState: string;
+  transitions: Record<string, string[]>;
+  finalStates?: string[];
+}
+
+/** Một bản ghi lịch sử transition */
+export interface TransitionRecord {
+  entity_id: string;
+  from_state: string;
+  to_state: string;
+  user_id: string | null;
+  timestamp: string;
+  metadata: Record<string, any>;
+}
+
+/** State instance hiện tại */
+export interface StateInstanceState {
+  entity_id: string;
+  machine_id: string;
+  current_state: string;
+  history: TransitionRecord[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** Kết quả của một transition API call */
+export interface TransitionResult {
+  success: boolean;
+  entity_id: string;
+  from_state: string;
+  to_state: string;
+  error?: string;
+}
+
+/** Dữ liệu để tạo instance mới */
+export interface CreateInstanceRequest {
+  entity_id: string;
+  machine_id: string;
+}
+
+/** Dữ liệu để thực hiện transition */
+export interface TransitionRequest {
+  to_state: string;
+  user_id?: string;
+}
+
+{% raw %}
+/**
+ * Danh sách state machines tự động sinh từ backend
+ */
+{% endraw %}
+const STATE_MACHINES: StateMachineConfig[] = [
+{% for sm in state_machines %}
+{
+  machineId: '{{ sm.machine_id }}',
+  entityType: '{{ sm.entity_type }}',
+  states: {{ sm.states | tojson }},
+  initialState: '{{ sm.initial_state }}',
+  transitions: {{ sm.transitions | tojson }},
+  finalStates: {{ sm.final_states | tojson }},
+},
+{% endfor %}
+{% raw %}
+];
+
+/**
+ * Tìm config của state machine theo machineId.
+ */
+function findMachineConfig(machineId: string): StateMachineConfig | undefined {
+  return STATE_MACHINES.find((m) => m.machineId === machineId);
+}
+
+/**
+ * Service để tương tác với State Machine API.
+ *
+ * @example
+ * ```ts
+ * constructor(private stateMachineService: StateMachineService) {}
+ *
+ * // Tạo instance mới
+ * this.stateMachineService.createInstance({
+ *   entity_id: 'order-123',
+ *   machine_id: 'order_fsm'
+ * }).subscribe(instance => console.log(instance));
+ *
+ * // Thực hiện transition
+ * this.stateMachineService.transition('order-123', {
+ *   to_state: 'APPROVED',
+ *   user_id: 'admin'
+ * }).subscribe(result => console.log(result));
+ * ```
+ */
+@Injectable({
+  providedIn: 'root',
+})
+export class StateMachineService {
+  private readonly baseUrl = '/api/state-machine';
+
+  constructor(private http: HttpClient) {}
+
+  // ===========================================================================
+  // Config lookup (client-side)
+  // ===========================================================================
+
+  /**
+   * Lấy tất cả state machine configs (client-side).
+   */
+  getAllConfigs(): StateMachineConfig[] {
+    return STATE_MACHINES;
+  }
+
+  /**
+   * Lấy config của một state machine theo machineId (client-side).
+   */
+  getConfig(machineId: string): StateMachineConfig | undefined {
+    return findMachineConfig(machineId);
+  }
+
+  /**
+   * Lấy các transitions hợp lệ từ một state (client-side validation).
+   */
+  getValidTransitions(machineId: string, fromState: string): string[] {
+    const config = findMachineConfig(machineId);
+    if (!config) return [];
+    return config.transitions[fromState] || [];
+  }
+
+  /**
+   * Kiểm tra transition có hợp lệ không (client-side).
+   */
+  isValidTransition(machineId: string, fromState: string, toState: string): boolean {
+    const valid = this.getValidTransitions(machineId, fromState);
+    return valid.includes(toState);
+  }
+
+  /**
+   * Kiểm tra một state có phải final state không.
+   */
+  isFinalState(machineId: string, state: string): boolean {
+    const config = findMachineConfig(machineId);
+    if (!config || !config.finalStates) return false;
+    return config.finalStates.includes(state);
+  }
+
+  // ===========================================================================
+  // API calls
+  // ===========================================================================
+
+  /**
+   * Tạo state instance mới cho entity.
+   */
+  createInstance(request: CreateInstanceRequest): Observable<StateInstanceState> {
+    return this.http.post<StateInstanceState>(
+      `${this.baseUrl}/instances`,
+      request
+    );
+  }
+
+  /**
+   * Lấy trạng thái hiện tại của entity.
+   */
+  getInstance(entityId: string): Observable<StateInstanceState> {
+    return this.http.get<StateInstanceState>(
+      `${this.baseUrl}/instances/${entityId}`
+    );
+  }
+
+  /**
+   * Thực hiện transition cho entity.
+   */
+  transition(entityId: string, request: TransitionRequest): Observable<TransitionResult> {
+    return this.http.post<TransitionResult>(
+      `${this.baseUrl}/instances/${entityId}/transition`,
+      request
+    );
+  }
+
+  /**
+   * Lấy lịch sử transitions của entity.
+   */
+  getHistory(entityId: string): Observable<TransitionRecord[]> {
+    return this.http.get<TransitionRecord[]>(
+      `${this.baseUrl}/instances/${entityId}/history`
+    );
+  }
+
+  /**
+   * Lấy danh sách transitions hợp lệ từ current state (qua API).
+   */
+  getValidTransitionsFromApi(entityId: string): Observable<string[]> {
+    return this.http.get<string[]>(
+      `${this.baseUrl}/instances/${entityId}/valid-transitions`
+    );
+  }
+
+  /**
+   * Kiểm tra có thể transition đến state mục tiêu không (qua API).
+   */
+  canTransition(entityId: string, toState: string): Observable<boolean> {
+    return this.http.get<boolean>(
+      `${this.baseUrl}/instances/${entityId}/can-transition`,
+      { params: { to_state: toState } }
+    );
+  }
+
+  /**
+   * List tất cả state machine definitions đã đăng ký.
+   */
+  listMachines(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.baseUrl}/machines`);
+  }
+
+  /**
+   * Lấy definition của một state machine.
+   */
+  getMachineDefinition(machineId: string): Observable<StateMachineConfig> {
+    return this.http.get<StateMachineConfig>(
+      `${this.baseUrl}/machines/${machineId}`
+    );
+  }
+}
+{% endraw %}

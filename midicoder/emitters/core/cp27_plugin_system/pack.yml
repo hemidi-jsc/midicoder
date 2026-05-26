@@ -5,6 +5,9 @@ pack:
   version: "1.0.0"
   status: "stable"
   category: "extensibility"
+  metadata:
+    absorbed_packs:
+      - "cp28_custom_code"
   depends_on: ["CP01"]
   definitions_count: 3
   obligations_count: 1
@@ -15,6 +18,9 @@ pack:
     - plugin_slot_define
     - plugin_contract
     - plugin_policy
+    - custom_code_inject
+    - hook_define
+    - patch_apply
   capabilities:
     - id: "plugin_slot_define"
       emitter: "fastapi, nestjs, angular, react"
@@ -22,6 +28,12 @@ pack:
       emitter: "fastapi, nestjs, angular, react"
     - id: "plugin_policy"
       emitter: "fastapi, nestjs"
+    - id: "custom_code_inject"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "hook_define"
+      emitter: "fastapi, nestjs, angular, react"
+    - id: "patch_apply"
+      emitter: "fastapi, nestjs, angular, react"
   definitions:
     - name: "PluginSlot"
       description: "Điểm móc nối lifecycle mà plugin có thể hook vào"

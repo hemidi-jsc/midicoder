@@ -5,13 +5,18 @@ pack:
   version: "1.1.0"
   status: "developing"
   category: "integration"
-  depends_on: ["CP01", "CP05"]
+  # CP48 (Rate Limiting) dependency: rate_limiting capability has been
+  # fully redirected to CP48. The gateway no longer emits rate limiter
+  # code — all rate limiting is owned by CP48 (cp48_rate_limit).
+  depends_on: ["CP01", "CP05", "CP48"]
   definitions_count: 29
   obligations_count: 8
   error_codes:
     prefix: "MDC-CP06"
     range: "MDC-CP06-001 to MDC-CP06-008"
   capabilities_provided:
+    # NOTE: rate_limiting has been removed from CP06 and is now fully
+    # owned by CP48 (cp48_rate_limit). See depends_on above.
     - route_request
     - gateway_binding
     - service_mesh_config
@@ -19,7 +24,6 @@ pack:
     - graphql_routing
     - webhook_handling
     - circuit_breaker
-    - rate_limiting
     - tenant_isolation
     - load_balancing
   capabilities:
@@ -35,8 +39,7 @@ pack:
       emitter: "fastapi, nestjs"
     - id: "circuit_breaker"
       emitter: "fastapi, nestjs"
-    - id: "rate_limiting"
-      emitter: "fastapi, nestjs"
+    # rate_limiting capability removed — fully handled by CP48 (cp48_rate_limit)
     - id: "tenant_aware"
       emitter: "fastapi, nestjs, angular, react"
   definitions:

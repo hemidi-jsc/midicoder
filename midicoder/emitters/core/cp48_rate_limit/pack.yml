@@ -19,7 +19,10 @@ pack:
   version: "1.0.0"
   status: "stable"
   category: "integration"
-  depends_on: ["CP03"]
+  depends_on: ["CP03", "CP06"]
+  # CP06 (API Gateway) dependency: rate limiting works together with the
+  # gateway layer. CP48 now owns the rate_limiting capability previously
+  # shared with CP06, and requires CP06 for gateway integration.
   definitions_count: 4
   obligations_count: 2
   error_codes:

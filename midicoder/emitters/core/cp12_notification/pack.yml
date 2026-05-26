@@ -11,12 +11,19 @@ pack:
   error_codes:
     prefix: "MDC-CP12"
     range: "MDC-CP12-001 to MDC-CP12-007"
+  scope_note: >
+    CP12 treats webhook as one notification delivery channel among many
+    (email, sms, push, in-app). It provides a simple "send payload to URL"
+    service for notification dispatch only.
+    For webhook subscription management, event-driven dispatch, retry
+    policies with queue workers, tenant isolation, and dashboard UI —
+    use CP40 (Webhook & Outbound Integration Hub).
+    In short: CP12 = notification channels; CP40 = webhook event hub.
   capabilities_provided:
     - send_notification
     - email_dispatch
     - sms_dispatch
     - push_notification
-    - webhook_dispatch
     - delivery_tracking
     - ab_testing
   capabilities:
@@ -28,6 +35,9 @@ pack:
       emitter: "fastapi, nestjs, angular, react"
     - id: "template_engine"
       emitter: "fastapi, nestjs"
+    # NOTE: webhook here is a notification delivery channel (simple send-to-URL),
+    # NOT the full webhook hub. For subscription management, event-driven dispatch,
+    # retry queues, and dashboard — use CP40 (Webhook & Outbound Integration Hub).
     - id: "webhook"
       emitter: "fastapi, nestjs"
     - id: "delivery_tracking"
@@ -41,6 +51,8 @@ pack:
       description: "Parameterized message template per channel"
     - name: "DispatchConfig"
       description: "Routing and retry settings for notification delivery"
+    # Webhook definitions below are for notification-channel dispatch only.
+    # For subscription/event-driven webhook hub, see CP40.
     - name: "WebhookConfig"
       description: "Webhook channel with auth, retry, payload template"
     - name: "WebhookDelivery"
@@ -70,6 +82,8 @@ pack:
       description: "Notification templates must have required variables"
     - name: "FallbackChannel"
       description: "Failed dispatch must retry on fallback channel"
+    # NOTE: WebhookReliability here covers notification-channel dispatch only.
+    # For full retry policies with queue workers, see CP40.
     - name: "WebhookReliability"
       description: "Webhook deliveries must retry with backoff on failure"
     - name: "ChatSecurity"

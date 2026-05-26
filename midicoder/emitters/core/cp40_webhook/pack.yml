@@ -20,6 +20,15 @@ pack:
   status: "stable"
   category: "integration"
   depends_on: ["CP05", "CP12", "CP14"]
+  scope_note: >
+    CP40 is the webhook event hub: subscription management (CRUD with
+    tenant isolation), event-driven fan-out dispatch to multiple endpoints,
+    configurable retry policies with queue workers, HMAC signature
+    verification, and dashboard UI for monitoring deliveries.
+    CP12 (Notification) uses webhook only as one of many notification
+    delivery channels (email, sms, push, in-app, webhook) for simple
+    "send payload to URL" operations.
+    In short: CP40 = webhook event hub; CP12 = notification channels.
   definitions_count: 4
   obligations_count: 2
   error_codes:

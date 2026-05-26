@@ -1,0 +1,360 @@
+/**
+* State Diagram Component — CP32: State Machine Engine.
+*{% raw %}
+* UI Framework: {{{ ui_framework }}}
+*
+* Tự động sinh bởi Midicoder CE — không sửa thủ công.
+*
+* Hiển thị sơ đồ trực quan các state và transitions
+* của state machine engine. Sử dụng SVG để vẽ nodes và edges.
+*/
+{% endraw %}
+
+import {
+Component,
+EventEmitter,
+Input,
+OnChanges,
+Output,
+SimpleChanges,
+ChangeDetectionStrategy,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+
+{% if ui_framework == "material" %}
+import { MatCardModule } from '@angular/material/card';
+import { MatChipsModule } from '@angular/material/chips';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+// Su dung Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+// Ant Design khong ung dung cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon khong ung dung cho Angular
+{% endif %}
+{% raw %}
+
+/** Cấu hình state machine từ backend */
+export interface StateMachineConfig {
+machineId: string;
+entityType: string;
+states: string[];
+initialState: string;
+transitions: Record<string, string[]>;
+    finalStates?: string[];
+    }
+
+    /** Vị trí tính toán của node trong SVG */
+    interface NodePosition {
+    state: string;
+    x: number;
+    y: number;
+    isInitial: boolean;
+    isFinal: boolean;
+    }
+
+    /** Edge nối giữa hai nodes */
+    interface EdgeInfo {
+    from: NodePosition;
+    to: NodePosition;
+    }
+
+    /** Layout kết quả */
+    interface LayoutResult {
+    nodes: NodePosition[];
+    edges: EdgeInfo[];
+    svgWidth: number;
+    svgHeight: number;
+    }
+
+    const NODE_WIDTH = 120;
+    const NODE_HEIGHT = 48;
+    const HORIZONTAL_GAP = 80;
+    const PADDING = 40;
+    const SVG_HEIGHT = 200;
+
+    /**
+    * Tính toán layout nodes theo hàng ngang.
+    * Sắp xếp states theo thứ tự: initial -> regular -> final.
+    */
+    function computeLayout(
+    states: string[],
+    initialState: string,
+    finalStates: string[]
+    ): NodePosition[] {
+    const ordered: string[] = [];
+    ordered.push(initialState);
+    for (const s of states) {
+    if (s !== initialState && !finalStates.includes(s)) {
+    ordered.push(s);
+    }
+    }
+    for (const s of finalStates) {
+    if (!ordered.includes(s)) {
+    ordered.push(s);
+    }
+    }
+
+    return ordered.map((state, index) => ({
+    state,
+    x: PADDING + index * (NODE_WIDTH + HORIZONTAL_GAP),
+    y: PADDING + 60,
+    isInitial: state === initialState,
+    isFinal: finalStates.includes(state),
+    }));
+    }
+
+    /** Tính toán toa do duong noi giua hai nodes */
+    function getEdgePath(from: NodePosition, to: NodePosition): string {
+    const x1 = from.x + NODE_WIDTH;
+    const y1 = from.y + NODE_HEIGHT / 2;
+    const x2 = to.x;
+    const y2 = to.y + NODE_HEIGHT / 2;
+    const cx = (x2 - x1) / 2;
+    return `M ${x1} ${y1} C ${x1 + cx} ${y1}, ${x2 - cx} ${y2}, ${x2} ${y2}`;
+    }
+
+    @Component({
+    selector: 'app-state-diagram',
+    standalone: true,
+    imports: [
+    CommonModule,
+    {% if ui_framework == "material" %}
+    MatCardModule,
+    MatChipsModule,
+    {% elif ui_framework == "antd" %}
+    // Ant Design modules
+    {% elif ui_framework == "carbon" %}
+    // Carbon modules
+    {% endif %}
+    ],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    template: `
+    <div class="state-diagram" [class]="className" data-testid="state-diagram"
+        style="overflow-x: auto; padding: 16px 0;">
+        <!-- Header -->
+        <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
+            <h3 style="margin: 0; font-size: 16px;">
+                State Machine: {{ config.entityType }}
+            </h3>
+            <span *ngIf="currentState" style="font-size: 12px; padding: 4px 8px; background-color: #e3f2fd;
+                     border-radius: 4px; color: #1976d2;">
+                Hien tai: {{ currentState }}
+            </span>
+        </div>
+
+        <!-- SVG Diagram -->
+        <svg [attr.width]="layout.svgWidth" [attr.height]="layout.svgHeight" [attr.viewBox]="viewBox"
+            style="display: block" role="img" [attr.aria-label]="'So do state machine cho ' + config.entityType">
+            <defs>
+                <marker [attr.id]="'arrowhead-' + machineId" markerWidth="10" markerHeight="7" refX="9" refY="3.5"
+                    orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="#666" />
+                </marker>
+                <marker [attr.id]="'arrowhead-active-' + machineId" markerWidth="10" markerHeight="7" refX="9"
+                    refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="#1976d2" />
+                </marker>
+            </defs>
+
+            <!-- Edges -->
+            <ng-container *ngFor="let edge of layout.edges; let i = index">
+                <path [attr.d]="getEdgePath(edge.from, edge.to)" fill="none"
+                    [attr.stroke]="isCurrentEdge(edge) ? '#1976d2' : '#999'"
+                    [attr.stroke-width]="isCurrentEdge(edge) ? 2.5 : 1.5" [attr.marker-end]="isCurrentEdge(edge)
+                  ? 'url(#arrowhead-active-' + machineId + ')'
+                  : 'url(#arrowhead-' + machineId + ')'">
+                </path>
+            </ng-container>
+
+            <!-- Nodes -->
+            <ng-container *ngFor="let node of layout.nodes">
+                <g class="state-node" [attr.data-state]="node.state" (click)="onStateClick.emit(node.state)"
+                    [style.cursor]="(onStateClick.observed ? 'pointer' : 'default')">
+                    <rect [attr.x]="node.x" [attr.y]="node.y" [attr.width]="nodeWidth" [attr.height]="nodeHeight"
+                        [attr.rx]="node.isFinal ? (nodeHeight / 2) : 8" [attr.fill]="isActiveState(node.state) ? '#e3f2fd' :
+                               node.isInitial ? '#e8f5e9' : '#fff'" [attr.stroke]="isActiveState(node.state) ? '#1976d2' :
+                                 node.isInitial ? '#4caf50' : '#ccc'"
+                        [attr.stroke-width]="isActiveState(node.state) ? 2.5 : 1.5">
+                    </rect>
+                    <text [attr.x]="node.x + (nodeWidth / 2)" [attr.y]="node.y + (nodeHeight / 2) + 1"
+                        text-anchor="middle" dominant-baseline="middle"
+                        [attr.fill]="isActiveState(node.state) ? '#0d47a1' : '#333'" font-size="13"
+                        [attr.font-weight]="isActiveState(node.state) ? 'bold' : 'normal'">
+                        {{ node.state }}
+                    </text>
+                    <ng-container *ngIf="node.isInitial">
+                        <text [attr.x]="node.x + (nodeWidth / 2)" [attr.y]="node.y - 8" text-anchor="middle"
+                            fill="#4caf50" font-size="10">
+                            (start)
+                        </text>
+                    </ng-container>
+                    <ng-container *ngIf="node.isFinal">
+                        <text [attr.x]="node.x + (nodeWidth / 2)" [attr.y]="node.y - 8" text-anchor="middle"
+                            fill="#f44336" font-size="10">
+                            (end)
+                        </text>
+                    </ng-container>
+                </g>
+            </ng-container>
+        </svg>
+
+        <!-- Legend -->
+        <div style="margin-top: 12px; display: flex; gap: 16px; font-size: 12px; color: #666;">
+            <span style="display: flex; align-items: center; gap: 4px;">
+                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+                       background-color: #e8f5e9; border: 1.5px solid #4caf50;"></span>
+                Initial
+            </span>
+            <span style="display: flex; align-items: center; gap: 4px;">
+                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 2px;
+                       background-color: #fff; border: 1.5px solid #ccc;"></span>
+                Regular
+            </span>
+            <span style="display: flex; align-items: center; gap: 4px;">
+                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 6px;
+                       background-color: #fff; border: 1.5px solid #f44336;"></span>
+                Final
+            </span>
+            <span style="display: flex; align-items: center; gap: 4px;">
+                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 2px;
+                       background-color: #e3f2fd; border: 2px solid #1976d2;"></span>
+                Active
+            </span>
+        </div>
+    </div>
+    `,
+    styles: [`
+    :host {
+    display: block;
+    }
+    `],
+    })
+    export class StateDiagramComponent implements OnChanges {
+    /** Cau hinh state machine */
+    @Input() config!: StateMachineConfig;
+    /** State hien tai dang duoc highlight */
+    @Input() currentState: string | null = null;
+    /** Class ten tuy chinh */
+    @Input() className: string = '';
+    /** Machine ID cho marker uniqueness */
+    @Input() machineId: string = 'default';
+
+    /** Callback khi click vao state */
+    @Output() onStateClick = new EventEmitter<string>();
+
+        /** Layout tinh toan */
+        layout: LayoutResult = { nodes: [], edges: [], svgWidth: 400, svgHeight: SVG_HEIGHT };
+
+        readonly nodeWidth = NODE_WIDTH;
+        readonly nodeHeight = NODE_HEIGHT;
+
+        /** ViewBox cua SVG */
+        get viewBox(): string {
+        return `0 0 ${this.layout.svgWidth} ${this.layout.svgHeight}`;
+        }
+
+        ngOnChanges(changes: SimpleChanges): void {
+        if (changes['config']) {
+        this.recomputeLayout();
+        }
+        }
+
+        /** Tinh toan lai layout khi config thay doi */
+        private recomputeLayout(): void {
+        const c = this.config;
+        if (!c) return;
+
+        const nodes = computeLayout(
+        c.states,
+        c.initialState,
+        c.finalStates || []
+        );
+
+        const edges: EdgeInfo[] = [];
+        for (const [fromState, toStates] of Object.entries(c.transitions)) {
+        const fromNode = nodes.find((n) => n.state === fromState);
+        if (!fromNode) continue;
+        for (const toState of toStates) {
+        const toNode = nodes.find((n) => n.state === toState);
+        if (toNode) {
+        edges.push({ from: fromNode, to: toNode });
+        }
+        }
+        }
+
+        const svgWidth = nodes.length
+        ? nodes[nodes.length - 1].x + NODE_WIDTH + PADDING
+        : 400;
+
+        this.layout = { nodes, edges, svgWidth, svgHeight: SVG_HEIGHT };
+        }
+
+        /** Tinh toa do edge path */
+        getEdgePath(from: NodePosition, to: NodePosition): string {
+        return getEdgePath(from, to);
+        }
+
+        /** Kiem tra state co dang active khong */
+        isActiveState(state: string): boolean {
+        return this.currentState === state;
+        }
+
+        /** Kiem tra edge co dang active khong (tu current state) */
+        isCurrentEdge(edge: EdgeInfo): boolean {
+        return this.currentState === edge.from.state;
+        }
+        }
+
+        /**
+        * Interface cho state click event cua multi diagram.
+        */
+        export interface StateClickEvent {
+        machineId: string;
+        state: string;
+        }
+
+        /**
+        * Component hien thi nhieu state machines.
+        */
+        @Component({
+        selector: 'app-state-diagram-multi',
+        standalone: true,
+        imports: [
+        CommonModule,
+        StateDiagramComponent,
+        {% if ui_framework == "material" %}
+        MatCardModule,
+        {% endif %}
+        ],
+        changeDetection: ChangeDetectionStrategy.OnPush,
+        template: `
+        <div class="state-diagram-multi" [class]="className" data-testid="state-diagram-multi">
+            <ng-container *ngFor="let machine of machines">
+                <div style="margin-bottom: 32px; padding-bottom: 32px; border-bottom: 1px solid #eee;">
+                    <app-state-diagram [config]="machine" [currentState]="currentStates[machine.machineId] || null"
+                        [machineId]="machine.machineId"
+                        (onStateClick)="onStateClick.emit({ machineId: machine.machineId, state: $event })" />
+                </div>
+            </ng-container>
+        </div>
+        `,
+        styles: [`
+        :host {
+        display: block;
+        }
+        `],
+        })
+        export class StateDiagramMultiComponent {
+        /** Tat ca state machines */
+        @Input() machines: StateMachineConfig[] = STATE_MACHINES;
+        /** State hien tai cua tung machine */
+        @Input() currentStates: Record<string, string> = {};
+            /** Class ten tuy chinh */
+            @Input() className: string = '';
+
+            /** Callback khi click vao state */
+            @Output() onStateClick = new EventEmitter<StateClickEvent>();
+                }
+                {% endraw %}

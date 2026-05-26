@@ -105,23 +105,30 @@ def code():
     is_flag=True,
     help="Hiển thị chi tiết plan"
 )
-def plan(target: str, verbose: bool):
+@click.option(
+    "--status-filter", "-s",
+    type=click.Choice(["stable", "experimental", "deprecated"]),
+    default=None,
+    help="Chỉ include packs có status tương ứng (mặc định: tất cả)"
+)
+def plan(target: str, verbose: bool, status_filter: str | None):
     """
     Tạo implementation plan từ MIR.
-    
+
     Phân tích MIR và tạo kế hoạch files cần generate.
     Lưu plan vào SQLite artifacts table.
-    
+
     OPTIONS:
-      --target, -t    Target để generate (backend|frontend|all, mặc định: all)
-      --verbose, -v   Hiển thị chi tiết plan
-    
+      --target, -t       Target để generate (backend|frontend|all, mặc định: all)
+      --verbose, -v      Hiển thị chi tiết plan
+      --status-filter, -s Chỉ include packs có status tương ứng
+
     EXAMPLES:
       midicoder code plan
       midicoder code plan --target backend
-      midicoder code plan --verbose
+      midicoder code plan --status-filter stable
     """
-    _execute_plan(target=target, verbose=verbose)
+    _execute_plan(target=target, verbose=verbose, status_filter=status_filter)
 
 
 @code.command()
@@ -136,23 +143,30 @@ def plan(target: str, verbose: bool):
     is_flag=True,
     help="Generate nhưng không lưu files"
 )
-def gen(target: str, dry_run: bool):
+@click.option(
+    "--status-filter", "-s",
+    type=click.Choice(["stable", "experimental", "deprecated"]),
+    default=None,
+    help="Chỉ include packs có status tương ứng (mặc định: tất cả)"
+)
+def gen(target: str, dry_run: bool, status_filter: str | None):
     """
     Generate code từ plan.
-    
+
     Sử dụng Jinja2 templates để generate code từ plan.
     Lưu vào .midicoder/versions/{active_version}/src/
-    
+
     OPTIONS:
-      --target, -t    Target để generate (backend|frontend|all, mặc định: all)
-      --dry-run       Generate nhưng không lưu files
-    
+      --target, -t       Target để generate (backend|frontend|all, mặc định: all)
+      --dry-run          Generate nhưng không lưu files
+      --status-filter, -s Chỉ include packs có status tương ứng
+
     EXAMPLES:
       midicoder code gen
       midicoder code gen --target backend
-      midicoder code gen --dry-run
+      midicoder code gen --status-filter stable
     """
-    _execute_gen(target=target, dry_run=dry_run)
+    _execute_gen(target=target, dry_run=dry_run, status_filter=status_filter)
 
 
 @code.command()
@@ -202,21 +216,29 @@ def apply(target_dir: str, dry_run: bool, backup: bool, force: bool):
 # Implementation Functions
 # ============================================================================
 
-def _execute_plan(target: str = "all", verbose: bool = False) -> None:
+def _execute_plan(
+    target: str = "all",
+    verbose: bool = False,
+    status_filter: str | None = None,
+) -> None:
     """
     Thực thi code plan command.
-    
+
     Process:
     1. Load MIR từ SQLite artifacts table
     2. Phân tích MIR để tạo plan
     3. Lưu plan vào SQLite artifacts table
     4. Hiển thị summary
-    
+
     Args:
         target: Target để generate (backend|frontend|all)
         verbose: Hiển thị chi tiết plan
+        status_filter: Nếu set, chỉ include packs có status tương ứng
     """
-    click.echo("📋 Đang tạo implementation plan...")
+    if status_filter:
+        click.echo(f"📋 Đang tạo implementation plan (status_filter={status_filter})...")
+    else:
+        click.echo("📋 Đang tạo implementation plan...")
     
     # Bước 1: Load MIR từ SQLite
     mir_data = _load_mir_from_artifacts()
@@ -226,13 +248,13 @@ def _execute_plan(target: str = "all", verbose: bool = False) -> None:
         raise SystemExit(1)
     
     click.echo(f"   ✓ Đã load MIR: {len(mir_data.get('operations', []))} operations")
-    
+
     # Bước 2: Lấy active_version
     config = get_config()
     active_version = config.get("active_version", "v1.0.0")
-    
+
     # Bước 3: Tạo plan
-    plan = _create_implementation_plan(mir_data, target)
+    plan = _create_implementation_plan(mir_data, target, status_filter=status_filter)
     
     # Bước 4: Lưu plan vào artifacts
     artifacts_manager = ArtifactsManager()
@@ -328,7 +350,11 @@ def _load_mir_from_artifacts() -> Optional[dict]:
         return None
 
 
-def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
+def _create_implementation_plan(
+    mir: dict,
+    target: str,
+    status_filter: str | None = None,
+) -> ImplementationPlan:
     """
     Tạo implementation plan từ MIR.
     
@@ -349,7 +375,7 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
     
     # Tạo backend modules
     if target in ["backend", "all"]:
-        backend_files = _plan_backend_files(mir)
+        backend_files = _plan_backend_files(mir, status_filter=status_filter)
 
         # BUG FIX: read entities from MIR.metadata (same fix as in _plan_backend_files)
         metadata_dict = mir.get("metadata", {})
@@ -439,7 +465,7 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
 
     # Tạo frontend modules
     if target in ["frontend", "all"]:
-        frontend_files = _plan_frontend_files(mir)
+        frontend_files = _plan_frontend_files(mir, status_filter=status_filter)
 
         frontend_specs = [FileSpec(
             path=f["path"],
@@ -458,7 +484,7 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
         ))
     
     # Infrastructure module
-    infra_files = _plan_infra_files()
+    infra_files = _plan_infra_files(status_filter=status_filter)
     infra_specs = [FileSpec(
         path=f["path"],
         file_type=f["type"],
@@ -477,7 +503,7 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
 
     # DP packs: Domain Packs (emit after CPs — can override/extend core)
     if target in ["backend", "all"]:
-        dp_files = _load_domain_pack_files(target)
+        dp_files = _load_domain_pack_files(target, status_filter=status_filter)
         if dp_files:
             dp_specs = [FileSpec(
                 path=f["path"],
@@ -496,7 +522,7 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
 
     # RX packs: Regulatory Overlays (emit last — inject compliance)
     if target in ["backend", "all"]:
-        rx_files = _load_regulatory_pack_files(target)
+        rx_files = _load_regulatory_pack_files(target, status_filter=status_filter)
         if rx_files:
             rx_specs = [FileSpec(
                 path=f["path"],
@@ -516,11 +542,12 @@ def _create_implementation_plan(mir: dict, target: str) -> ImplementationPlan:
     return plan
 
 
-def _load_domain_pack_files(target: str) -> List[dict]:
+def _load_domain_pack_files(target: str, status_filter: str | None = None) -> List[dict]:
     """Load infrastructure files from Domain Packs (DP).
 
     Args:
         target: Target to generate (backend|frontend|all)
+        status_filter: If set, only include packs with matching status.
 
     Returns:
         List of file plan dicts from domain packs.
@@ -530,7 +557,7 @@ def _load_domain_pack_files(target: str) -> List[dict]:
 
     backend_stack = _get_backend_stack()
     loader = FileContributionsLoader()
-    domain_contributions = loader.load_all_domain(stack=backend_stack)
+    domain_contributions = loader.load_all_domain(stack=backend_stack, status_filter=status_filter)
 
     files: List[dict] = []
     seen: set[str] = set()
@@ -542,11 +569,12 @@ def _load_domain_pack_files(target: str) -> List[dict]:
     return files
 
 
-def _load_regulatory_pack_files(target: str) -> List[dict]:
+def _load_regulatory_pack_files(target: str, status_filter: str | None = None) -> List[dict]:
     """Load infrastructure files from Regulatory Overlays (RX).
 
     Args:
         target: Target to generate (backend|frontend|all)
+        status_filter: If set, only include packs with matching status.
 
     Returns:
         List of file plan dicts from regulatory packs.
@@ -556,7 +584,7 @@ def _load_regulatory_pack_files(target: str) -> List[dict]:
 
     backend_stack = _get_backend_stack()
     loader = FileContributionsLoader()
-    regulatory_contributions = loader.load_all_regulatory(stack=backend_stack)
+    regulatory_contributions = loader.load_all_regulatory(stack=backend_stack, status_filter=status_filter)
 
     files: List[dict] = []
     seen: set[str] = set()
@@ -568,7 +596,7 @@ def _load_regulatory_pack_files(target: str) -> List[dict]:
     return files
 
 
-def _plan_backend_files(mir: dict) -> List[dict]:
+def _plan_backend_files(mir: dict, status_filter: str | None = None) -> List[dict]:
     """
     Plan backend files from MIR.
 
@@ -579,6 +607,7 @@ def _plan_backend_files(mir: dict) -> List[dict]:
 
     Args:
         mir: MIR dictionary (as produced by MIR.to_dict())
+        status_filter: If set, only include packs with matching status.
 
     Returns:
         Danh sách backend file plans
@@ -610,19 +639,27 @@ def _plan_backend_files(mir: dict) -> List[dict]:
     ])
 
     # --- Pack-declared infrastructure files for this backend stack ---
-    infra_files = loader.resolve_all_infrastructure(backend_stack, metadata)
+    infra_files = loader.resolve_all_infrastructure(
+        backend_stack, metadata, status_filter=status_filter
+    )
     _merge_files(files, infra_files)
 
     # --- Pack-declared per-entity files for this backend stack ---
-    per_entity_files = loader.resolve_all_per_entity(backend_stack, entities)
+    per_entity_files = loader.resolve_all_per_entity(
+        backend_stack, entities, status_filter=status_filter
+    )
     _merge_files(files, per_entity_files)
 
     # --- Pack-declared per-command files for this backend stack ---
-    per_command_files = loader.resolve_all_per_command(backend_stack, commands)
+    per_command_files = loader.resolve_all_per_command(
+        backend_stack, commands, status_filter=status_filter
+    )
     _merge_files(files, per_command_files)
 
     # --- Pack-declared per-query files for this backend stack ---
-    per_query_files = loader.resolve_all_per_query(backend_stack, queries)
+    per_query_files = loader.resolve_all_per_query(
+        backend_stack, queries, status_filter=status_filter
+    )
     _merge_files(files, per_query_files)
 
     return files
@@ -644,7 +681,7 @@ def _merge_files(target: List[dict], source: List[dict]) -> None:
             target.append(f)
 
 
-def _plan_frontend_files(mir: dict) -> List[dict]:
+def _plan_frontend_files(mir: dict, status_filter: str | None = None) -> List[dict]:
     """
     Plan frontend files from MIR.
 
@@ -653,6 +690,7 @@ def _plan_frontend_files(mir: dict) -> List[dict]:
 
     Args:
         mir: MIR dictionary
+        status_filter: If set, only include packs with matching status.
 
     Returns:
         Danh sách frontend file plans
@@ -666,26 +704,34 @@ def _plan_frontend_files(mir: dict) -> List[dict]:
     files = []
 
     # --- Pack-declared infrastructure files for this frontend stack ---
-    infra_files = loader.resolve_all_infrastructure(frontend_stack, metadata)
+    infra_files = loader.resolve_all_infrastructure(
+        frontend_stack, metadata, status_filter=status_filter
+    )
     for f in infra_files:
         f.setdefault("metadata", {})["stack"] = frontend_stack
     _merge_files(files, infra_files)
 
     # --- Pack-declared per-entity files for this frontend stack ---
-    per_entity_files = loader.resolve_all_per_entity(frontend_stack, entities)
+    per_entity_files = loader.resolve_all_per_entity(
+        frontend_stack, entities, status_filter=status_filter
+    )
     for f in per_entity_files:
         f.setdefault("metadata", {})["stack"] = frontend_stack
     _merge_files(files, per_entity_files)
 
     # --- Pack-declared per-ui-component files (entities × component_types) ---
-    per_ui_component_files = loader.resolve_all_per_ui_component(frontend_stack, entities)
+    per_ui_component_files = loader.resolve_all_per_ui_component(
+        frontend_stack, entities, status_filter=status_filter
+    )
     for f in per_ui_component_files:
         f.setdefault("metadata", {})["stack"] = frontend_stack
     _merge_files(files, per_ui_component_files)
 
     # --- Pack-declared per-widget files (CP22 realtime widgets) ---
     # Resolve widget types (presence, live_feed, live_counter, ...) — not per-entity
-    per_widget_files = loader.resolve_all_per_widget(frontend_stack, None)
+    per_widget_files = loader.resolve_all_per_widget(
+        frontend_stack, None, status_filter=status_filter
+    )
     for f in per_widget_files:
         f.setdefault("metadata", {})["stack"] = frontend_stack
     _merge_files(files, per_widget_files)
@@ -728,13 +774,16 @@ def _get_ui_framework(frontend_stack: str) -> str:
     return "material" if frontend_stack == "angular" else "antd"
 
 
-def _plan_infra_files() -> List[dict]:
+def _plan_infra_files(status_filter: str | None = None) -> List[dict]:
     """
     Plan infrastructure files.
 
     Stack-aware: resolves file contributions from ALL packs for the
     ``infrastructure`` stack role (CP07 IaC).  Falls back to a minimal
     set of well-known infra files when the loader returns nothing.
+
+    Args:
+        status_filter: If set, only include packs with matching status.
 
     Returns:
         Danh sách infra file plans
@@ -743,7 +792,9 @@ def _plan_infra_files() -> List[dict]:
 
     # CP07 (IaC) contributes docker-compose, Dockerfile for fastapi/nestjs
     # Since infra is stack-agnostic, try "fastapi" first (where CP07 lives)
-    infra_files = loader.resolve_all_infrastructure("fastapi")
+    infra_files = loader.resolve_all_infrastructure(
+        "fastapi", status_filter=status_filter
+    )
 
     # Filter to only infrastructure-type files
     infra_paths = {"docker-compose.yml", "Dockerfile", "Dockerfile.api", ".env.example"}
@@ -771,22 +822,29 @@ def _plan_infra_files() -> List[dict]:
     ]
 
 
-def _execute_gen(target: str = "all", dry_run: bool = False) -> None:
+def _execute_gen(target: str = "all", dry_run: bool = False, status_filter: str | None = None) -> None:
     """
     Thực thi code gen command.
-    
+
     Process:
     1. Load plan từ SQLite artifacts table
     2. Generate code cho mỗi file trong plan
     3. Generate Docker Compose từ MIR
     4. Lưu vào .midicoder/versions/{active_version}/src/
     5. Hiển thị summary
-    
+
     Args:
         target: Target để generate (backend|frontend|all)
         dry_run: Generate nhưng không lưu files
+        status_filter: If set, only include packs with matching status.
+                       (Note: gen reads from pre-built plan, so this filter
+                        is primarily for compatibility; the real filtering
+                        happens in `code plan`.)
     """
-    click.echo("🔨 Đang generate code...")
+    if status_filter:
+        click.echo(f"🔨 Đang generate code (status_filter={status_filter})...")
+    else:
+        click.echo("🔨 Đang generate code...")
     
     # Bước 1: Load plan từ SQLite
     config = get_config()

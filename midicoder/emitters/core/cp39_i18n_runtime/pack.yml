@@ -18,6 +18,8 @@ pack:
   version: "1.0.0"
   status: "stable"
   category: "internationalization"
+  consolidation_group: "i18n"
+  merged_with: "cp29_multi_language"
   depends_on: ["CP01", "CP02", "CP29"]
   definitions_count: 4
   obligations_count: 2

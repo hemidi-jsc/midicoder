@@ -152,6 +152,7 @@ class FileContributions:
     per_query: list[PerQueryFile] = field(default_factory=list)
     per_ui_component: list[PerUIComponentFile] = field(default_factory=list)
     per_widget: list[PerWidgetFile] = field(default_factory=list)
+    status: str = "stable"
 
     @property
     def is_empty(self) -> bool:
@@ -264,6 +265,7 @@ class FileContributionsLoader:
         pack_internal_id: str,
         pack_id: str = "",
         stack: str | None = None,
+        status_filter: str | None = None,
     ) -> FileContributions:
         """Load contributions for a single pack, optionally filtered by stack.
 
@@ -272,6 +274,9 @@ class FileContributionsLoader:
             pack_id: Pack id (e.g. ``CP08``).
             stack: If set, only keep entries whose ``stacks`` list contains
                    the given value.
+            status_filter: If set, skip packs whose ``status`` in pack.yml
+                           does not match (e.g. ``"stable"`` excludes
+                           ``"experimental"`` and ``"deprecated"`` packs).
 
         Returns:
             ``FileContributions`` — may be empty.
@@ -281,9 +286,19 @@ class FileContributionsLoader:
             return FileContributions(pack_id=pack_id, pack_internal_id=pack_internal_id)
 
         data = _load_yaml(pack_yml)
+        pack_status = data.get("status", "stable")
+
+        # Filter by status if requested
+        if status_filter and pack_status != status_filter:
+            return FileContributions(pack_id=pack_id, pack_internal_id=pack_internal_id)
+
         raw = data.get("file_contributions", {})
         if not raw:
-            return FileContributions(pack_id=pack_id, pack_internal_id=pack_internal_id)
+            return FileContributions(
+                pack_id=pack_id,
+                pack_internal_id=pack_internal_id,
+                status=pack_status,
+            )
 
         infra = [_parse_infrastructure(f) for f in raw.get("infrastructure", [])]
         per_entity = [_parse_per_entity(f) for f in raw.get("per_entity", [])]
@@ -310,12 +325,14 @@ class FileContributionsLoader:
             per_query=per_query,
             per_ui_component=per_ui_component,
             per_widget=per_widget,
+            status=pack_status,
         )
 
     def load_all(
         self,
         pack_map: dict[str, str] | None = None,
         stack: str | None = None,
+        status_filter: str | None = None,
     ) -> list[FileContributions]:
         """Load contributions for all Core Packs (CP).
 
@@ -323,6 +340,7 @@ class FileContributionsLoader:
             pack_map: ``{pack_id: internal_id}``.  If ``None``, loads ALL
                       known CP packs.
             stack: Optional stack filter.
+            status_filter: If set, skip packs whose ``status`` does not match.
 
         Returns:
             List of non-empty ``FileContributions``.
@@ -332,7 +350,12 @@ class FileContributionsLoader:
 
         contributions = []
         for pack_id, internal_id in pack_map.items():
-            fc = self.load(pack_internal_id=internal_id, pack_id=pack_id, stack=stack)
+            fc = self.load(
+                pack_internal_id=internal_id,
+                pack_id=pack_id,
+                stack=stack,
+                status_filter=status_filter,
+            )
             if not fc.is_empty:
                 contributions.append(fc)
         return contributions
@@ -345,6 +368,7 @@ class FileContributionsLoader:
         self,
         search_dir: Path,
         stack: str | None = None,
+        status_filter: str | None = None,
     ) -> list[FileContributions]:
         """Load contributions from any pack directory (domain or regulatory).
 
@@ -353,6 +377,7 @@ class FileContributionsLoader:
         Args:
             search_dir: Parent directory containing pack folders.
             stack: Optional stack filter.
+            status_filter: If set, skip packs whose ``status`` does not match.
 
         Returns:
             List of non-empty ``FileContributions``.
@@ -369,6 +394,12 @@ class FileContributionsLoader:
                 continue
 
             data = _load_yaml(pack_yml)
+
+            # Filter by status if requested
+            pack_status = data.get("status", "stable")
+            if status_filter and pack_status != status_filter:
+                continue
+
             raw = data.get("file_contributions", {})
             if not raw:
                 continue
@@ -400,18 +431,27 @@ class FileContributionsLoader:
                 per_query=per_query,
                 per_ui_component=per_ui_component,
                 per_widget=per_widget,
+                status=pack_status,
             )
             if not fc.is_empty:
                 contributions.append(fc)
         return contributions
 
-    def load_all_domain(self, stack: str | None = None) -> list[FileContributions]:
+    def load_all_domain(
+        self,
+        stack: str | None = None,
+        status_filter: str | None = None,
+    ) -> list[FileContributions]:
         """Load contributions from all Domain Packs (DP)."""
-        return self._load_from_dir(self._domain_dir, stack)
+        return self._load_from_dir(self._domain_dir, stack, status_filter)
 
-    def load_all_regulatory(self, stack: str | None = None) -> list[FileContributions]:
+    def load_all_regulatory(
+        self,
+        stack: str | None = None,
+        status_filter: str | None = None,
+    ) -> list[FileContributions]:
         """Load contributions from all Regulatory Overlays (RX)."""
-        return self._load_from_dir(self._regulatory_dir, stack)
+        return self._load_from_dir(self._regulatory_dir, stack, status_filter)
 
     # ------------------------------------------------------------------
     # Expansion helpers — produce file plan dicts for code.py
@@ -693,6 +733,7 @@ class FileContributionsLoader:
         self,
         stack: str,
         mir_metadata: dict | None = None,
+        status_filter: str | None = None,
     ) -> list[dict[str, Any]]:
         """Load infrastructure files from ALL packs for the given stack.
 
@@ -700,7 +741,7 @@ class FileContributionsLoader:
         """
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
-        for fc in self.load_all(stack=stack):
+        for fc in self.load_all(stack=stack, status_filter=status_filter):
             for f in self.expand_infrastructure(fc, mir_metadata):
                 if f["path"] not in seen:
                     seen.add(f["path"])
@@ -711,6 +752,7 @@ class FileContributionsLoader:
         self,
         stack: str,
         entities: list[dict[str, Any]],
+        status_filter: str | None = None,
     ) -> list[dict[str, Any]]:
         """Load per-entity files from ALL packs for the given stack.
 
@@ -718,7 +760,7 @@ class FileContributionsLoader:
         """
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
-        for fc in self.load_all(stack=stack):
+        for fc in self.load_all(stack=stack, status_filter=status_filter):
             for f in self.expand_per_entity(fc, entities):
                 if f["path"] not in seen:
                     seen.add(f["path"])
@@ -729,11 +771,12 @@ class FileContributionsLoader:
         self,
         stack: str,
         commands: list[dict[str, Any]],
+        status_filter: str | None = None,
     ) -> list[dict[str, Any]]:
         """Load per-command files from ALL packs for the given stack."""
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
-        for fc in self.load_all(stack=stack):
+        for fc in self.load_all(stack=stack, status_filter=status_filter):
             for f in self.expand_per_command(fc, commands):
                 if f["path"] not in seen:
                     seen.add(f["path"])
@@ -744,11 +787,12 @@ class FileContributionsLoader:
         self,
         stack: str,
         queries: list[dict[str, Any]],
+        status_filter: str | None = None,
     ) -> list[dict[str, Any]]:
         """Load per-query files from ALL packs for the given stack."""
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
-        for fc in self.load_all(stack=stack):
+        for fc in self.load_all(stack=stack, status_filter=status_filter):
             for f in self.expand_per_query(fc, queries):
                 if f["path"] not in seen:
                     seen.add(f["path"])
@@ -759,6 +803,7 @@ class FileContributionsLoader:
         self,
         stack: str,
         entities: list[dict[str, Any]],
+        status_filter: str | None = None,
     ) -> list[dict[str, Any]]:
         """Load per-ui-component files from ALL packs for the given stack.
 
@@ -767,13 +812,14 @@ class FileContributionsLoader:
         Args:
             stack: Target stack (e.g. ``"react"``, ``"angular"``).
             entities: Raw entity dicts from ``MIR.metadata.entities``.
+            status_filter: If set, skip packs whose ``status`` does not match.
 
         Returns:
             Deduplicated list of file plan dicts.
         """
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
-        for fc in self.load_all(stack=stack):
+        for fc in self.load_all(stack=stack, status_filter=status_filter):
             for f in self.expand_per_ui_component(fc, entities):
                 if f["path"] not in seen:
                     seen.add(f["path"])
@@ -784,6 +830,7 @@ class FileContributionsLoader:
         self,
         stack: str,
         channels: list[dict[str, Any]] | None = None,
+        status_filter: str | None = None,
     ) -> list[dict[str, Any]]:
         """Load per-widget files from ALL packs for the given stack.
 
@@ -792,13 +839,14 @@ class FileContributionsLoader:
         Args:
             stack: Target stack (e.g. ``"react"``, ``"angular"``).
             channels: Optional channel specs from CP22.
+            status_filter: If set, skip packs whose ``status`` does not match.
 
         Returns:
             Deduplicated list of file plan dicts.
         """
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
-        for fc in self.load_all(stack=stack):
+        for fc in self.load_all(stack=stack, status_filter=status_filter):
             for f in self.expand_per_widget(fc, channels):
                 if f["path"] not in seen:
                     seen.add(f["path"])

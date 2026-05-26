@@ -3,7 +3,8 @@ pack:
   name: "Custom Code Injection Generator"
   internal_id: "cp28_custom_code"
   version: "1.0.0"
-  status: "experimental"
+  status: "deprecated"
+  merged_into: "cp27_plugin_system"
   category: "extensibility"
   depends_on: ["CP01"]
   definitions_count: 3

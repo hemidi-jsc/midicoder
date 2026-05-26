@@ -1,0 +1,440 @@
+/**
+ * StateDiagram Component — CP32: State Machine Engine.
+ *{% raw %}
+ * UI Framework: {{{ ui_framework }}}
+ *
+ * Component hiển thị sơ đồ trực quan các state và transitions
+ * của state machine engine. Sử dụng SVG để vẽ nodes và edges.
+ *
+ * Tự động sinh bởi Midicoder CE — không sửa thủ công.
+ */
+{% endraw %}
+
+import React, { useMemo } from 'react';
+
+{% if ui_framework == "material" %}
+import { Tooltip, Chip, Box, Typography } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind utility classes inline
+{% elif ui_framework == "bootstrap" %}
+import { Tooltip as BsTooltip, OverlayTrigger, Badge } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Tooltip, Tag, Space, Typography } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Tooltip, Tag, Layer } from '@carbon/react';
+{% endif %}
+{% raw %}
+
+// ===========================================================================
+// TypeScript Types
+// ===========================================================================
+
+/**
+ * Cấu hình state machine từ backend.
+ */
+interface StateMachineConfig {
+  machineId: string;
+  entityType: string;
+  states: string[];
+  initialState: string;
+  transitions: Record<string, string[]>;
+  finalStates?: string[];
+}
+
+/**
+ * Vị trí tính toán của node trong SVG.
+ */
+interface NodePosition {
+  state: string;
+  x: number;
+  y: number;
+  isInitial: boolean;
+  isFinal: boolean;
+}
+
+/**
+ * Props của StateDiagram.
+ */
+interface StateDiagramProps {
+  /** Cấu hình state machine. */
+  config: StateMachineConfig;
+  /** State hiện tại đang được highlight. */
+  currentState?: string;
+  /** Class tên tùy chỉnh cho container. */
+  className?: string;
+  /** Callback khi click vào một state. */
+  onStateClick?: (state: string) => void;
+}
+
+// ===========================================================================
+// Dữ liệu state machine từ backend (do Jinja2 render)
+// ===========================================================================
+{% endraw %}
+
+/** Danh sách state machines tự động sinh từ backend */
+const STATE_MACHINES: StateMachineConfig[] = [
+{% for sm in state_machines %}
+{
+  machineId: '{{ sm.machine_id }}',
+  entityType: '{{ sm.entity_type }}',
+  states: {{ sm.states | tojson }},
+  initialState: '{{ sm.initial_state }}',
+  transitions: {{ sm.transitions | tojson }},
+  finalStates: {{ sm.final_states | tojson }},
+},
+{% endfor %}
+];
+
+{% raw %}
+// ===========================================================================
+// Helper: Tính toán layout nodes theo hàng ngang
+// ===========================================================================
+
+const NODE_WIDTH = 120;
+const NODE_HEIGHT = 48;
+const HORIZONTAL_GAP = 80;
+const VERTICAL_GAP = 120;
+const PADDING = 40;
+
+/**
+ * Tính toán vị trí các nodes trong layout tuyến tính.
+ * Sắp xếp states theo thứ tự: initial → regular → final.
+ */
+function computeLayout(
+  states: string[],
+  initialState: string,
+  finalStates: string[]
+): NodePosition[] {
+  const ordered: string[] = [];
+  ordered.push(initialState);
+  for (const s of states) {
+    if (s !== initialState && !finalStates.includes(s)) {
+      ordered.push(s);
+    }
+  }
+  for (const s of finalStates) {
+    if (!ordered.includes(s)) {
+      ordered.push(s);
+    }
+  }
+
+  return ordered.map((state, index) => ({
+    state,
+    x: PADDING + index * (NODE_WIDTH + HORIZONTAL_GAP),
+    y: PADDING + 60,
+    isInitial: state === initialState,
+    isFinal: finalStates.includes(state),
+  }));
+}
+
+/**
+ * Tính toán toạ độ đường nối giữa hai nodes.
+ */
+function getEdgePath(
+  from: NodePosition,
+  to: NodePosition
+): string {
+  const x1 = from.x + NODE_WIDTH;
+  const y1 = from.y + NODE_HEIGHT / 2;
+  const x2 = to.x;
+  const y2 = to.y + NODE_HEIGHT / 2;
+  const cx = (x2 - x1) / 2;
+
+  return `M ${x1} ${y1} C ${x1 + cx} ${y1}, ${x2 - cx} ${y2}, ${x2} ${y2}`;
+}
+
+// ===========================================================================
+// StateDiagram Component
+// ===========================================================================
+
+/**
+ * StateDiagram — Hiển thị sơ đồ state transitions.
+ *
+ * @example
+ * ```tsx
+ * <StateDiagram
+ *   config={orderMachine}
+ *   currentState={currentOrderState}
+ *   onStateClick={(s) => console.log('Clicked:', s)}
+ * />
+ * ```
+ */
+const StateDiagram: React.FC<StateDiagramProps> = ({
+  config,
+  currentState,
+  className = '',
+  onStateClick,
+}) => {
+  const { nodes, edges, svgWidth, svgHeight } = useMemo(() => {
+    const nodes = computeLayout(
+      config.states,
+      config.initialState,
+      config.finalStates || []
+    );
+
+    // Tính edges từ transitions dict
+    const edges: Array<{ from: NodePosition; to: NodePosition }> = [];
+    for (const [fromState, toStates] of Object.entries(config.transitions)) {
+      const fromNode = nodes.find((n) => n.state === fromState);
+      if (!fromNode) continue;
+      for (const toState of toStates) {
+        const toNode = nodes.find((n) => n.state === toState);
+        if (toNode) {
+          edges.push({ from: fromNode, to: toNode });
+        }
+      }
+    }
+
+    const svgWidth = nodes.length
+      ? nodes[nodes.length - 1].x + NODE_WIDTH + PADDING
+      : 400;
+    const svgHeight = 200;
+
+    return { nodes, edges, svgWidth, svgHeight };
+  }, [config]);
+
+  return (
+    <div
+      className={`state-diagram ${className}`}
+      data-testid="state-diagram"
+      style={{ overflowX: 'auto', padding: '16px 0' }}
+    >
+      {/* Header */}
+      <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <h3 style={{ margin: 0, fontSize: '16px' }}>
+          State Machine: {config.entityType}
+        </h3>
+        {currentState && (
+          <span
+            style={{
+              fontSize: '12px',
+              padding: '4px 8px',
+              backgroundColor: '#e3f2fd',
+              borderRadius: '4px',
+              color: '#1976d2',
+            }}
+          >
+            Hiện tại: {currentState}
+          </span>
+        )}
+      </div>
+
+      {/* SVG Diagram */}
+      <svg
+        width={svgWidth}
+        height={svgHeight}
+        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+        style={{ display: 'block' }}
+        role="img"
+        aria-label={`Sơ đồ state machine cho ${config.entityType}`}
+      >
+        <defs>
+          {/* Arrowhead marker */}
+          <marker
+            id="arrowhead"
+            markerWidth="10"
+            markerHeight="7"
+            refX="9"
+            refY="3.5"
+            orient="auto"
+          >
+            <polygon points="0 0, 10 3.5, 0 7" fill="#666" />
+          </marker>
+          {/* Active arrowhead marker */}
+          <marker
+            id="arrowhead-active"
+            markerWidth="10"
+            markerHeight="7"
+            refX="9"
+            refY="3.5"
+            orient="auto"
+          >
+            <polygon points="0 0, 10 3.5, 0 7" fill="#1976d2" />
+          </marker>
+        </defs>
+
+        {/* Edges */}
+        {edges.map((edge, i) => {
+          const path = getEdgePath(edge.from, edge.to);
+          const isActive =
+            currentState === edge.from.state;
+          return (
+            <path
+              key={`edge-${i}`}
+              d={path}
+              fill="none"
+              stroke={isActive ? '#1976d2' : '#999'}
+              strokeWidth={isActive ? 2.5 : 1.5}
+              markerEnd={isActive ? 'url(#arrowhead-active)' : 'url(#arrowhead)'}
+            />
+          );
+        })}
+
+        {/* Nodes */}
+        {nodes.map((node) => {
+          const isActive = currentState === node.state;
+          return (
+            <g
+              key={node.state}
+              className="state-node"
+              data-state={node.state}
+              onClick={() => onStateClick?.(node.state)}
+              style={{ cursor: onStateClick ? 'pointer' : 'default' }}
+            >
+              {/* Node background */}
+              <rect
+                x={node.x}
+                y={node.y}
+                width={NODE_WIDTH}
+                height={NODE_HEIGHT}
+                rx={node.isFinal ? NODE_HEIGHT / 2 : 8}
+                fill={isActive ? '#e3f2fd' : node.isInitial ? '#e8f5e9' : '#fff'}
+                stroke={
+                  isActive ? '#1976d2' : node.isInitial ? '#4caf50' : '#ccc'
+                }
+                strokeWidth={isActive ? 2.5 : 1.5}
+              />
+              {/* State label */}
+              <text
+                x={node.x + NODE_WIDTH / 2}
+                y={node.y + NODE_HEIGHT / 2 + 1}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill={isActive ? '#0d47a1' : '#333'}
+                fontSize="13"
+                fontWeight={isActive ? 'bold' : 'normal'}
+              >
+                {node.state}
+              </text>
+              {/* Badge: initial/final */}
+              {node.isInitial && (
+                <text
+                  x={node.x + NODE_WIDTH / 2}
+                  y={node.y - 8}
+                  textAnchor="middle"
+                  fill="#4caf50"
+                  fontSize="10"
+                >
+                  (start)
+                </text>
+              )}
+              {node.isFinal && (
+                <text
+                  x={node.x + NODE_WIDTH / 2}
+                  y={node.y - 8}
+                  textAnchor="middle"
+                  fill="#f44336"
+                  fontSize="10"
+                >
+                  (end)
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Legend */}
+      <div
+        style={{
+          marginTop: '12px',
+          display: 'flex',
+          gap: '16px',
+          fontSize: '12px',
+          color: '#666',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{
+            display: 'inline-block',
+            width: 12,
+            height: 12,
+            borderRadius: '50%',
+            backgroundColor: '#e8f5e9',
+            border: '1.5px solid #4caf50',
+          }} />
+          Initial
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{
+            display: 'inline-block',
+            width: 12,
+            height: 12,
+            borderRadius: '2px',
+            backgroundColor: '#fff',
+            border: '1.5px solid #ccc',
+          }} />
+          Regular
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{
+            display: 'inline-block',
+            width: 12,
+            height: 12,
+            borderRadius: '6px',
+            backgroundColor: '#fff',
+            border: '1.5px solid #f44336',
+          }} />
+          Final
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{
+            display: 'inline-block',
+            width: 12,
+            height: 12,
+            borderRadius: '2px',
+            backgroundColor: '#e3f2fd',
+            border: '2px solid #1976d2',
+          }} />
+          Active
+        </span>
+      </div>
+    </div>
+  );
+};
+
+// ===========================================================================
+// StateDiagramMulti — Hiển thị nhiều state machines
+// ===========================================================================
+
+/**
+ * Props của StateDiagramMulti.
+ */
+interface StateDiagramMultiProps {
+  /** State hiện tại của từng machine. */
+  currentStates?: Record<string, string>;
+  /** Callback khi click vào state. */
+  onStateClick?: (machineId: string, state: string) => void;
+  /** Class tên tùy chỉnh. */
+  className?: string;
+}
+
+/**
+ * Hiển thị tất cả state machines đã được định nghĩa.
+ */
+const StateDiagramMulti: React.FC<StateDiagramMultiProps> = ({
+  currentStates = {},
+  onStateClick,
+  className = '',
+}) => {
+  return (
+    <div className={`state-diagram-multi ${className}`} data-testid="state-diagram-multi">
+      {STATE_MACHINES.map((machine) => (
+        <div
+          key={machine.machineId}
+          style={{ marginBottom: '32px', paddingBottom: '32px', borderBottom: '1px solid #eee' }}
+        >
+          <StateDiagram
+            config={machine}
+            currentState={currentStates[machine.machineId]}
+            onStateClick={(state) => onStateClick?.(machine.machineId, state)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export { StateDiagram, StateDiagramMulti };
+export type { StateMachineConfig, StateDiagramProps, StateDiagramMultiProps };
+{% endraw %}

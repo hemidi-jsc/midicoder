@@ -84,3 +84,35 @@ file_contributions:
       stacks: ["nestjs"]
       pack_emitter: null
       context_keys: ["state_machines"]
+
+    # React — visual diagram
+    - path: "src/state-machine/StateDiagram.tsx"
+      file_type: "state_machine"
+      template: "cp32_state_machine/StateDiagram.tsx.jinja2"
+      stacks: ["react"]
+      pack_emitter: null
+      context_keys: ["state_machines"]
+
+    # React — custom hook
+    - path: "src/state-machine/useStateMachine.ts"
+      file_type: "state_machine"
+      template: "cp32_state_machine/StateMachineHook.tsx.jinja2"
+      stacks: ["react"]
+      pack_emitter: null
+      context_keys: ["state_machines"]
+
+    # Angular — visual diagram component
+    - path: "src/state-machine/state-diagram.component.ts"
+      file_type: "state_machine"
+      template: "cp32_state_machine/state-diagram.component.ts.jinja2"
+      stacks: ["angular"]
+      pack_emitter: null
+      context_keys: ["state_machines"]
+
+    # Angular — state machine service
+    - path: "src/state-machine/state-machine.service.ts"
+      file_type: "state_machine"
+      template: "cp32_state_machine/state-machine.service.ts.jinja2"
+      stacks: ["angular"]
+      pack_emitter: null
+      context_keys: ["state_machines"]
