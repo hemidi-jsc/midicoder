@@ -1,0 +1,242 @@
+{#
+Jinja2 template cho GDPR Data Export Routes (CP47 — Article 20).
+
+Tự động generate FastAPI routes cho data export endpoints.
+
+Usage:
+    context = {
+        "tenant_enabled": True,
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Routes cho GDPR Data Export — API endpoints.
+
+Tự động generate — không sửa tay.
+
+Endpoints:
+- POST   /api/data-export/request    — Yêu cầu export dữ liệu
+- GET    /api/data-export/status      — Kiểm tra trạng thái export
+- GET    /api/data-export/download    — Tải file export
+- DELETE /api/data-export/cancel      — Hủy yêu cầu export
+
+Auth: Yêu cầu xác thực JWT + tenant isolation.
+
+CP47: Data Retention & Lifecycle Management
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+
+{% if tenant_enabled %}
+from app.tenant_context import get_current_tenant_id
+{% endif %}
+
+from app.db import get_db_session
+from app.auth import get_current_user
+{% if tenant_enabled %}
+from app.tenant_context import TenantInfo
+{% endif %}
+
+router = APIRouter(prefix="/api/data-export", tags=["GDPR Data Export"])
+
+
+# ============================================================================
+# Request/Response schemas
+# ============================================================================
+
+
+class ExportRequest(BaseModel):
+    """Schema cho yêu cầu export dữ liệu."""
+
+    user_id: str = Field(..., description="ID người dùng cần export dữ liệu")
+    export_format: str = Field("json", description="Định dạng export: json hoặc csv")
+    entity_types: list[str] | None = Field(
+        None,
+        description="Danh sách entity cần export (None = tất cả)",
+    )
+
+
+class ExportStatus(BaseModel):
+    """Schema cho trạng thái export."""
+
+    request_id: str
+    status: str  # pending, processing, completed, failed, expired
+    created_at: str
+    completed_at: str | None = None
+    file_url: str | None = None
+    error_message: str | None = None
+
+
+class ExportResponse(BaseModel):
+    """Schema cho phản hồi yêu cầu export."""
+
+    request_id: str
+    status: str
+    message: str
+
+
+# ============================================================================
+# In-memory export registry (thực tế nên dùng Redis/database)
+# ============================================================================
+
+export_registry: dict[str, dict[str, Any]] = {}
+
+
+# ============================================================================
+# Routes
+# ============================================================================
+
+
+@router.post(
+    "/request",
+    response_model=ExportResponse,
+    summary="Yêu cầu export dữ liệu GDPR",
+    description="Tạo yêu cầu export toàn bộ dữ liệu người dùng theo GDPR Article 20.",
+)
+async def request_data_export(
+    request: ExportRequest,
+    current_user=Depends(get_current_user),
+{% if tenant_enabled %}
+    tenant_info: TenantInfo = Depends(get_current_tenant_id),
+{% endif %}
+    db=Depends(get_db_session),
+) -> ExportResponse:
+    """
+    Tạo yêu cầu export dữ liệu.
+
+    Người dùng có quyền export dữ liệu của chính mình.
+    Admin có quyền export dữ liệu của bất kỳ người dùng nào trong tenant.
+    """
+    # Validate user permission
+    if current_user.id != request.user_id:
+        if not current_user.is_admin:
+            raise HTTPException(
+                status_code=403,
+                detail="Không có quyền export dữ liệu của người dùng khác",
+            )
+
+    # Tạo request ID
+    request_id = str(uuid.uuid4())
+
+    # Đăng ký export
+    export_registry[request_id] = {
+        "request_id": request_id,
+        "user_id": request.user_id,
+        "export_format": request.export_format,
+        "entity_types": request.entity_types,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc),
+        "file_path": None,
+    }
+
+    return ExportResponse(
+        request_id=request_id,
+        status="pending",
+        message="Yêu cầu export đã được tạo. Sử dụng GET /status để kiểm tra trạng thái.",
+    )
+
+
+@router.get(
+    "/status",
+    response_model=ExportStatus,
+    summary="Kiểm tra trạng thái export",
+)
+async def get_export_status(
+    request_id: str = Query(..., description="ID yêu cầu export"),
+    current_user=Depends(get_current_user),
+) -> ExportStatus:
+    """
+    Kiểm tra trạng thái của yêu cầu export.
+
+    Trả về:
+    - pending: Đang chờ xử lý
+    - processing: Đang xử lý
+    - completed: Hoàn tất, file sẵn sàng tải
+    - failed: Lỗi khi xử lý
+    - expired: File đã hết hạn
+    """
+    export_record = export_registry.get(request_id)
+    if not export_record:
+        raise HTTPException(status_code=404, detail="Không tìm thấy yêu cầu export")
+
+    # Check expiry
+    if export_record["status"] == "completed":
+        age = datetime.now(timezone.utc) - export_record["created_at"]
+        if age > timedelta(hours=48):
+            export_record["status"] = "expired"
+
+    return ExportStatus(
+        request_id=export_record["request_id"],
+        status=export_record["status"],
+        created_at=export_record["created_at"].isoformat(),
+        completed_at=export_record.get("completed_at"),
+        file_url=f"/api/data-export/download?request_id={request_id}" if export_record["status"] == "completed" else None,
+        error_message=export_record.get("error_message"),
+    )
+
+
+@router.get(
+    "/download",
+    summary="Tải file export",
+)
+async def download_export(
+    request_id: str = Query(..., description="ID yêu cầu export"),
+    current_user=Depends(get_current_user),
+):
+    """Tải file export đã hoàn tất."""
+    from fastapi.responses import FileResponse
+
+    export_record = export_registry.get(request_id)
+    if not export_record:
+        raise HTTPException(status_code=404, detail="Không tìm thấy yêu cầu export")
+
+    if export_record["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Export chưa hoàn tất hoặc đã hết hạn")
+
+    file_path = Path(export_record["file_path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File export không tồn tại")
+
+    return FileResponse(
+        path=str(file_path),
+        filename=file_path.name,
+        media_type="application/json" if export_record["export_format"] == "json" else "text/csv",
+    )
+
+
+@router.delete(
+    "/cancel",
+    response_model=ExportResponse,
+    summary="Hủy yêu cầu export",
+)
+async def cancel_export(
+    request_id: str = Query(..., description="ID yêu cầu export"),
+    current_user=Depends(get_current_user),
+) -> ExportResponse:
+    """Hủy yêu cầu export đang chờ xử lý."""
+    export_record = export_registry.get(request_id)
+    if not export_record:
+        raise HTTPException(status_code=404, detail="Không tìm thấy yêu cầu export")
+
+    if export_record["status"] in ("completed", "failed"):
+        raise HTTPException(status_code=400, detail="Không thể hủy export đã hoàn tất hoặc đã lỗi")
+
+    export_record["status"] = "cancelled"
+
+    return ExportResponse(
+        request_id=request_id,
+        status="cancelled",
+        message="Đã hủy yêu cầu export",
+    )

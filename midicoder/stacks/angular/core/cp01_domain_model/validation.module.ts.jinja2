@@ -1,0 +1,229 @@
+{#
+Jinja2 template cho Shared Validation Module — Angular.
+
+Tự động generate Angular module với custom form validators.
+
+Usage:
+    context = {
+        "errors": [Error objects],
+        "entities": [Entity objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+{# Note: Angular templates in CP01 use .ts.jinja2 extension #}
+
+/**
+ * Shared Validation Module cho Angular
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B6 — Input Validation & Sanitization
+ *
+ * Mục đích:
+ * - Cung cấp custom validators cho Angular Forms
+ * - Hỗ trợ email, phone, URL, pattern, min/max length
+ * - Easy to import và sử dụng trong reactive forms
+ *
+ * Usage:
+ *     // Import module
+ *     import { SharedModule } from './shared';
+ *     imports: [SharedModule]
+ *
+ *     // Sử dụng validators trong reactive form
+ *     import { EmailValidator, PhoneValidator, UrlValidator } from './validation';
+ *
+ *     this.form = this.fb.group({
+ *         email: ['', [Validators.required, EmailValidator.email()]],
+ *         phone: ['', [PhoneValidator.phoneVN()]],
+ *         website: ['', [UrlValidator.url()]],
+ *         username: ['', [PatternValidator.pattern(/^[a-zA-Z0-9_]+$/)]],
+ *     });
+ */
+
+import { NgModule } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
+
+/**
+ * Email Validator — validate định dạng email.
+ */
+export class EmailValidator {
+    static email(): ValidatorFn {
+        const pattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+        return (control: AbstractControl): ValidationErrors | null => {
+            const value = control.value;
+            if (!value) return null;
+
+            const isValid = pattern.test(value.trim());
+            return isValid
+                ? null
+                : { invalidEmail: { message: 'Email không đúng định dạng' } };
+        };
+    }
+}
+
+/**
+ * Phone Validator — validate số điện thoại.
+ */
+export class PhoneValidator {
+    /**
+     * Validate số điện thoại Việt Nam.
+     * Hỗ trợ: +84, 0xxx, 9 chữ số.
+     */
+    static phoneVN(): ValidatorFn {
+        const pattern = /^(\+?84|[0])\d{8,9}$/;
+
+        return (control: AbstractControl): ValidationErrors | null => {
+            const value = control.value;
+            if (!value) return null;
+
+            const cleaned = value.replace(/[\s\-()]+/g, '');
+            const isValid = pattern.test(cleaned);
+            return isValid
+                ? null
+                : {
+                      invalidPhone: {
+                          message: 'Số điện thoại không đúng định dạng. Ví dụ: 0912345678 hoặc +84912345678',
+                      },
+                  };
+        };
+    }
+
+    /**
+     * Validate số điện thoại quốc tế.
+     */
+    static phoneInternational(): ValidatorFn {
+        const pattern = /^(\+?\d{1,3}[-.\s]?)?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}$/;
+
+        return (control: AbstractControl): ValidationErrors | null => {
+            const value = control.value;
+            if (!value) return null;
+
+            const isValid = pattern.test(value.trim());
+            return isValid
+                ? null
+                : {
+                      invalidPhone: {
+                          message: 'Số điện thoại không đúng định dạng',
+                      },
+                  };
+        };
+    }
+}
+
+/**
+ * URL Validator — validate định dạng URL.
+ */
+export class UrlValidator {
+    static url(): ValidatorFn {
+        const pattern = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/;
+
+        return (control: AbstractControl): ValidationErrors | null => {
+            const value = control.value;
+            if (!value) return null;
+
+            const isValid = pattern.test(value.trim());
+            return isValid
+                ? null
+                : { invalidUrl: { message: 'URL không đúng định dạng' } };
+        };
+    }
+}
+
+/**
+ * Pattern Validator — validate theo regex pattern tùy chỉnh.
+ */
+export class PatternValidator {
+    static pattern(regex: RegExp, message?: string): ValidatorFn {
+        return (control: AbstractControl): ValidationErrors | null => {
+            const value = control.value;
+            if (!value) return null;
+
+            const isValid = regex.test(value);
+            return isValid
+                ? null
+                : {
+                      patternMismatch: {
+                          message: message || 'Không khớp với pattern yêu cầu',
+                      },
+                  };
+        };
+    }
+}
+
+/**
+ * Length Validator — validate độ dài string.
+ */
+export class LengthValidator {
+    static minLength(min: number): ValidatorFn {
+        return (control: AbstractControl): ValidationErrors | null => {
+            const value = control.value;
+            if (!value) return null;
+
+            return value.length >= min
+                ? null
+                : {
+                      minLength: {
+                          requiredLength: min,
+                          message: `Tối thiểu ${min} ký tự`,
+                      },
+                  };
+        };
+    }
+
+    static maxLength(max: number): ValidatorFn {
+        return (control: AbstractControl): ValidationErrors | null => {
+            const value = control.value;
+            if (!value) return null;
+
+            return value.length <= max
+                ? null
+                : {
+                      maxLength: {
+                          requiredLength: max,
+                          message: `Tối đa ${max} ký tự`,
+                      },
+                  };
+        };
+    }
+}
+
+/**
+ * Sanitize Validator — strip HTML/XSS từ input.
+ * Không trả về error — transform giá trị.
+ */
+export class SanitizeValidator {
+    static stripXss(): ValidatorFn {
+        return (control: AbstractControl): ValidationErrors | null => {
+            const value = control.value;
+            if (!value || typeof value !== 'string') return null;
+
+            // Strip XSS patterns
+            const cleaned = value
+                .replace(/<script[^>]*>.*?<\/script>/gi, '')
+                .replace(/javascript\s*:/gi, '')
+                .replace(/\son\w+\s*=\s*['"][^'"]*['"]/gi, '');
+
+            if (cleaned !== value) {
+                control.setValue(cleaned, { emitEvent: false });
+            }
+
+            return null;
+        };
+    }
+}
+
+/**
+ * Validation Module — export tất cả validators.
+ */
+@NgModule({
+    imports: [CommonModule],
+    declarations: [],
+    exports: [],
+})
+export class ValidationModule {}

@@ -1,0 +1,192 @@
+{#
+Jinja2 template cho Global Exception Filter — NestJS.
+
+Tự động generate @Catch() decorator-based filter.
+Response format đồng nhất với FastAPI error handler.
+
+Usage:
+    context = {
+        "errors": [Error objects],
+        "entities": [Entity objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Global Exception Filter cho NestJS
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B3 — Standardized Error Response
+ *
+ * Mục đích:
+ * - Bắt tất cả exception và trả về response JSON đồng nhất
+ * - Phân loại lỗi: VALIDATION_ERROR, HTTP_ERROR, INTERNAL_ERROR
+ * - Không lộ stack trace cho client (production-safe)
+ * - Log chi tiết server-side cho debugging
+ *
+ * Đăng ký:
+ *     // Trong AppController hoặc main.ts
+ *     @UseFilters(GlobalExceptionFilter)
+ *     // hoặc dùng APP_INTERCEPTOR token trong provider
+ *
+ * Response format:
+ *     {
+ *         "error": "VALIDATION_ERROR",
+ *         "message": "Dữ liệu đầu vào không hợp lệ",
+ *         "details": [...],
+ *         "path": "/api/v1/users",
+ *     }
+ *
+ * Error codes:
+ *     - MDC-CP01-001: ValidationError (422)
+ *     - MDC-CP01-002: HttpException (tùy status_code)
+ *     - MDC-CP01-003: Generic Exception (500)
+ */
+
+import {
+    Catch,
+    ArgumentsHost,
+    HttpException,
+    HttpStatus,
+    Logger,
+} from '@nestjs/common';
+import { Response, Request } from 'express';
+
+/**
+ * Response structure đồng nhất cho tất cả lỗi.
+ */
+interface StandardErrorResponse {
+    error: string;
+    message: string;
+    details?: any[];
+    path: string;
+}
+
+/**
+ * Global Exception Filter — bắt tất cả exception chưa được xử lý.
+ *
+ * Thứ tự xử lý:
+ * 1. ValidationError (Bad Request Exception) -> 422
+ * 2. HttpException -> bảo tồn status code
+ * 3. Exception generic -> 500
+ */
+@Catch()
+export class GlobalExceptionFilter {
+    private readonly logger = new Logger(GlobalExceptionFilter.name);
+
+    catch(exception: unknown, host: ArgumentsHost): void {
+        const ctx = host.switchToHttp();
+        const response = ctx.getResponse<Response>();
+        const request = ctx.getRequest<Request>();
+
+        let errorResponse: StandardErrorResponse;
+
+        if (exception instanceof HttpException) {
+            errorResponse = this.handleHttpException(exception, request);
+        } else if (exception instanceof Error) {
+            errorResponse = this.handleGenericException(exception, request);
+        } else {
+            errorResponse = this.handleUnknownException(exception, request);
+        }
+
+        const statusCode = this.getStatusCode(exception);
+        response.status(statusCode).json(errorResponse);
+    }
+
+    /**
+     * Xử lý HttpException — bảo tồn status code gốc.
+     */
+    private handleHttpException(
+        exception: HttpException,
+        request: Request,
+    ): StandardErrorResponse {
+        const status = exception.getStatus();
+        const response = exception.getResponse();
+
+        if (status === HttpStatus.UNPROCESSABLE_ENTITY || status === HttpStatus.BAD_REQUEST) {
+            return {
+                error: 'VALIDATION_ERROR',
+                message: 'Dữ liệu đầu vào không hợp lệ',
+                details: this.extractValidationDetails(response),
+                path: request.url,
+            };
+        }
+
+        return {
+            error: 'HTTP_ERROR',
+            message:
+                typeof response === 'string'
+                    ? response
+                    : (response as any).message || String(response),
+            path: request.url,
+        };
+    }
+
+    /**
+     * Xử lý Exception generic — trả về 500 và log chi tiết.
+     */
+    private handleGenericException(
+        exception: Error,
+        request: Request,
+    ): StandardErrorResponse {
+        this.logger.error(
+            `Unhandled exception at ${request.url}: ${exception.message}`,
+            exception.stack,
+        );
+
+        return {
+            error: 'INTERNAL_ERROR',
+            message: 'Đã xảy ra lỗi nội bộ server',
+            path: request.url,
+        };
+    }
+
+    /**
+     * Xử lý exception không rõ loại.
+     */
+    private handleUnknownException(
+        exception: unknown,
+        request: Request,
+    ): StandardErrorResponse {
+        this.logger.error(
+            `Unknown exception at ${request.url}: ${JSON.stringify(exception)}`,
+        );
+
+        return {
+            error: 'INTERNAL_ERROR',
+            message: 'Đã xảy ra lỗi nội bộ server',
+            path: request.url,
+        };
+    }
+
+    /**
+     * Extract validation details từ response object.
+     */
+    private extractValidationDetails(response: any): any[] | undefined {
+        if (typeof response === 'object' && response !== null) {
+            const msg = (response as any).message;
+            if (Array.isArray(msg)) {
+                return msg.map((m: string) => ({
+                    field: 'unknown',
+                    message: m,
+                    type: 'validation',
+                }));
+            }
+        }
+        return undefined;
+    }
+
+    /**
+     * Xác định HTTP status code từ exception.
+     */
+    private getStatusCode(exception: unknown): number {
+        if (exception instanceof HttpException) {
+            return exception.getStatus();
+        }
+        return HttpStatus.INTERNAL_SERVER_ERROR;
+    }
+}

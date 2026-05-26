@@ -1,0 +1,104 @@
+/**
+* Notification Preference Component — CP12: Notification & Communication
+*
+* Angular component: toggle channel opt-in/out, quiet hours time picker.
+*/
+
+import { Component, OnInit } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+
+interface ChannelPref { name: string; label: string; enabled: boolean; }
+interface QuietHours { enabled: boolean; startTime: string; endTime: string; }
+
+@Component({
+selector: 'app-notification-preference',
+template: `{% raw %}
+<div class="np">
+    <h2 class="np-title">Cài đặt Notification</h2>
+    <section class="np-section">
+        <h3>Kênh notification</h3>
+        <div *ngFor="let ch of channels" class="np-row">
+            <span class="np-label">{{ ch.label }}</span>
+            <label class="np-toggle">
+                <input type="checkbox" [checked]="ch.enabled" (change)="toggle(ch.name)" />
+                <span class="np-slider"></span>
+            </label>
+        </div>
+    </section>
+    <section class="np-section">
+        <h3>Quiet Hours</h3>
+        <div class="np-row">
+            <span>Thời gian im lặng</span>
+            <label class="np-toggle">
+                <input type="checkbox" [checked]="qh.enabled" (change)="toggleQh()" />
+                <span class="np-slider"></span>
+            </label>
+        </div>
+        <div *ngIf="qh.enabled" class="np-time">
+            <label>Từ: <input type="time" [value]="qh.startTime" (change)="onTime('startTime', $event)" /></label>
+            <label>Đến: <input type="time" [value]="qh.endTime" (change)="onTime('endTime', $event)" /></label>
+        </div>
+    </section>
+    <div *ngIf="saved" class="np-saved">Đã lưu cài đặt</div>
+</div>
+{% endraw %}`,
+styles: [`
+.np { max-width: 600px; padding: 24px; font-family: system-ui, sans-serif; }
+.np-title { margin: 0 0 24px; font-size: 1.5rem; }
+.np-section { margin-bottom: 24px; }
+.np-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid
+#eee; }
+.np-label { font-weight: 500; }
+.np-toggle { position: relative; width: 48px; height: 26px; display: inline-block; }
+.np-toggle input { opacity: 0; width: 0; height: 0; }
+.np-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #ccc; border-radius:
+26px; transition: 0.3s; }
+.np-slider:before { content: ""; position: absolute; height: 20px; width: 20px; left: 3px; bottom: 3px; background:
+#fff; border-radius: 50%; transition: 0.3s; }
+.np-toggle input:checked + .np-slider { background: #2196f3; }
+.np-toggle input:checked + .np-slider:before { transform: translateX(22px); }
+.np-time { display: flex; gap: 16px; margin-top: 12px; }
+.np-time label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+.np-time input { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+.np-saved { padding: 8px 16px; background: #e8f5e9; border-radius: 4px; color: #2e7d32; text-align: center; margin-top:
+16px; }
+`],
+})
+export class NotificationPreferenceComponent implements OnInit {
+channels: ChannelPref[] = [];
+qh: QuietHours = { enabled: false, startTime: '22:00', endTime: '07:00' };
+saved = false;
+private url = '/api/notifications/preferences';
+
+constructor(private http: HttpClient) {}
+
+ngOnInit(): void {
+this.http.get<any>(this.url).subscribe({
+    next: (d) => { this.channels = d.channels; this.qh = d.quietHours; },
+    error: (e) => console.error('Khong the tai preferences', e),
+    });
+    }
+
+    toggle(name: string): void {
+    this.http.patch(`${this.url}/channel/${name}`, { enabled: false }).subscribe({
+    next: () => { const ch = this.channels.find((c) => c.name === name); if (ch) ch.enabled = !ch.enabled; this.flash();
+    },
+    error: (e) => console.error(e),
+    });
+    }
+
+    toggleQh(): void {
+    this.qh.enabled = !this.qh.enabled;
+    this.http.patch(`${this.url}/quiet-hours`, this.qh).subscribe({
+    next: () => this.flash(),
+    error: () => { this.qh.enabled = !this.qh.enabled; },
+    });
+    }
+
+    onTime(key: keyof QuietHours, event: Event): void {
+    this.qh[key] = (event.target as HTMLInputElement).value;
+    this.http.patch(`${this.url}/quiet-hours`, this.qh).subscribe();
+    }
+
+    private flash(): void { this.saved = true; setTimeout(() => this.saved = false, 2000); }
+    }

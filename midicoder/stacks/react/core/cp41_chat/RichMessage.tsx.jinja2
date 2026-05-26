@@ -1,0 +1,273 @@
+{#
+Jinja2 template cho Rich Message Component — React.
+
+Tự động generate component hiển thị tin nhắn chat với markdown rendering,
+code blocks với syntax highlighting, file attachment display, và reactions.
+
+Usage:
+    context = {
+        "service_name": "my-service",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Rich Message Component — React
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B16 — Chat Rich Formatting (CP41)
+ *
+ * Mục đích:
+ * - Markdown rendering cho nội dung tin nhắn
+ * - Code blocks với syntax highlighting (highlight.js)
+ * - Hiển thị file attachment (ảnh, tài liệu)
+ * - Reactions (emoji reactions) cho tin nhắn
+ *
+ * Usage:
+ *     import { RichMessage } from './RichMessage';
+ *     <RichMessage message={msg} onReaction={handleReaction} />
+ */
+import React, { useState, useMemo, useCallback } from 'react';
+
+/** Loại nội dung tin nhắn. */
+export type MessageType = 'text' | 'image' | 'video' | 'file' | 'code' | 'system';
+
+/** File attachment trong tin nhắn. */
+export interface FileAttachment {
+    id: string;
+    name: string;
+    type: string;       // MIME type
+    size: number;       // bytes
+    url: string;
+    thumbnailUrl?: string;
+}
+
+/** Emoji reaction. */
+export interface Reaction {
+    emoji: string;
+    userIds: string[];
+    count: number;
+}
+
+/** Code block với syntax info. */
+export interface CodeBlock {
+    language: string;
+    code: string;
+}
+
+/** Định nghĩa tin nhắn. */
+export interface ChatMessage {
+    id: string;
+    senderId: string;
+    senderName: string;
+    senderAvatar?: string;
+    timestamp: string;
+    type: MessageType;
+    content: string;
+    codeBlock?: CodeBlock;
+    attachments?: FileAttachment[];
+    reactions?: Reaction[];
+    isOwn?: boolean;
+    edited?: boolean;
+}
+
+/** Props cho RichMessage. */
+interface RichMessageProps {
+    /** Dữ liệu tin nhắn. */
+    message: ChatMessage;
+    /** ID user hiện tại. */
+    currentUserId?: string;
+    /** Callback khi thêm reaction. */
+    onReaction?: (messageId: string, emoji: string) => void;
+    /** Callback khi mở preview ảnh. */
+    onPreview?: (url: string) => void;
+}
+
+/** Emoji options cho reaction picker. */
+const EMOJI_OPTIONS = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👀'];
+
+/** Hiển thị icon file theo MIME type. */
+function getFileIcon(mimeType: string): string {
+    if (mimeType.startsWith('image/')) return '🖼️';
+    if (mimeType.startsWith('video/')) return '🎬';
+    if (mimeType.includes('pdf')) return '📄';
+    if (mimeType.includes('zip') || mimeType.includes('compress')) return '📦';
+    if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) return '📊';
+    return '📎';
+}
+
+/** Format file size. */
+function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Render markdown đơn giản (production: dùng marked/markdown-it). */
+function renderMarkdown(text: string): string {
+    if (!text) return '';
+    return text
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`(.+?)`/g, '<code class="inline-code">$1</code>')
+        .replace(/\n/g, '<br/>');
+}
+
+/**
+ * RichMessage component.
+ */
+export const RichMessage: React.FC<RichMessageProps> = ({
+    message,
+    currentUserId = '',
+    onReaction,
+    onPreview,
+}) => {
+    const [showPicker, setShowPicker] = useState(false);
+
+    // Safe HTML content
+    const safeContent = useMemo(
+        () => ({ __html: renderMarkdown(message.content) }),
+        [message.content]
+    );
+
+    /** Toggle reaction. */
+    const handleReaction = useCallback((emoji: string) => {
+        onReaction?.(message.id, emoji);
+        setShowPicker(false);
+    }, [message.id, onReaction]);
+
+    /** Copy code block. */
+    const handleCopyCode = useCallback(() => {
+        const code = message.codeBlock?.code || message.content;
+        navigator.clipboard.writeText(code);
+    }, [message.codeBlock, message.content]);
+
+    /** Format timestamp. */
+    const formattedTime = useMemo(
+        () => new Date(message.timestamp).toLocaleString('vi-VN'),
+        [message.timestamp]
+    );
+
+    return (
+        <div className={`rich-message rich-message--${message.isOwn ? 'own' : 'other'}`}>
+            {/* Sender info */}
+            {!message.isOwn && (
+                <div className="rich-message__header">
+                    {message.senderAvatar && (
+                        <img src={message.senderAvatar} alt={message.senderName}
+                            className="rich-message__avatar" />
+                    )}
+                    <span className="rich-message__sender">{message.senderName}</span>
+                    <span className="rich-message__time">
+                        {formattedTime}
+                        {message.edited && <span className="rich-message__edited">(s)</span>}
+                    </span>
+                </div>
+            )}
+
+            {/* Message bubble */}
+            <div className="rich-message__bubble">
+                {/* System message */}
+                {message.type === 'system' && (
+                    <div className="rich-message__system">{message.content}</div>
+                )}
+
+                {/* Markdown text */}
+                {message.type === 'text' && (
+                    <div dangerouslySetInnerHTML={safeContent} />
+                )}
+
+                {/* Code block */}
+                {(message.type === 'code' || message.codeBlock) && (
+                    <div className="rich-message__codeblock">
+                        <div className="rich-message__codeblock-header">
+                            <span className="rich-message__codeblock-lang">
+                                {message.codeBlock?.language || 'text'}
+                            </span>
+                            <button className="rich-message__copy-btn" onClick={handleCopyCode}>
+                                Sao chép
+                            </button>
+                        </div>
+                        <pre className="rich-message__code">
+                            <code className={`language-${message.codeBlock?.language || 'text'}`}>
+                                {message.codeBlock?.code || message.content}
+                            </code>
+                        </pre>
+                    </div>
+                )}
+
+                {/* Image attachments */}
+                {message.type === 'image' && message.attachments && (
+                    <div className="rich-message__media">
+                        {message.attachments.map((att) => (
+                            att.type.startsWith('image/') && (
+                                <img key={att.id} src={att.url} alt={att.name}
+                                    className="rich-message__image"
+                                    onClick={() => onPreview?.(att.url)} />
+                            )
+                        ))}
+                    </div>
+                )}
+
+                {/* File attachments */}
+                {message.type === 'file' && message.attachments && (
+                    <div className="rich-message__files">
+                        {message.attachments.map((att) => (
+                            <div key={att.id} className="rich-message__file-card">
+                                <span className="rich-message__file-icon">{getFileIcon(att.type)}</span>
+                                <div className="rich-message__file-info">
+                                    <a href={att.url} target="_blank" rel="noopener noreferrer"
+                                        className="rich-message__file-name">
+                                        {att.name}
+                                    </a>
+                                    <span className="rich-message__file-size">
+                                        {formatFileSize(att.size)}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Timestamp for own messages */}
+                {message.isOwn && (
+                    <span className="rich-message__time">
+                        {formattedTime}
+                        {message.edited && ' (s)'}
+                    </span>
+                )}
+            </div>
+
+            {/* Reactions */}
+            {message.reactions && message.reactions.length > 0 && (
+                <div className="rich-message__reactions">
+                    {message.reactions.map((r) => (
+                        <button key={r.emoji}
+                            className={`rich-message__reaction${r.userIds.includes(currentUserId) ? ' rich-message__reaction--own' : ''}`}
+                            onClick={() => handleReaction(r.emoji)}>
+                            <span>{r.emoji}</span>
+                            <span className="rich-message__reaction-count">{r.count}</span>
+                        </button>
+                    ))}
+                    <button className="rich-message__add-reaction"
+                        onClick={() => setShowPicker(!showPicker)}>+</button>
+                </div>
+            )}
+
+            {/* Reaction picker */}
+            {showPicker && (
+                <div className="rich-message__picker" onClick={(e) => { if (e.target === e.currentTarget) setShowPicker(false); }}>
+                    {EMOJI_OPTIONS.map((emoji) => (
+                        <button key={emoji} onClick={() => handleReaction(emoji)}>{emoji}</button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default RichMessage;

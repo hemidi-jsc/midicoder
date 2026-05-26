@@ -1,0 +1,294 @@
+{#
+Jinja2 template cho Rich Message Component — Angular.
+
+Tự động generate component hiển thị tin nhắn chat với markdown rendering,
+code blocks với syntax highlighting, file attachment display, và reactions.
+
+Usage:
+    context = {
+        "service_name": "my-service",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Rich Message Component — Angular
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B16 — Chat Rich Formatting (CP41)
+ *
+ * Mục đích:
+ * - Markdown rendering cho nội dung tin nhắn
+ * - Code blocks với syntax highlighting
+ * - Hiển thị file attachment (ảnh, tài liệu)
+ * - Reactions (emoji reactions) cho tin nhắn
+ *
+ * Usage:
+ *     <app-rich-message [message]="msg" (reactionAdded)="onReaction($event)"></app-rich-message>
+ */
+import {
+    Component,
+    Input,
+    Output,
+    EventEmitter,
+    signal,
+    computed,
+    ChangeDetectionStrategy,
+    ChangeDetectorRef,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+
+/** Loại nội dung tin nhắn. */
+export type MessageType = 'text' | 'image' | 'video' | 'file' | 'code' | 'system';
+
+/** File attachment trong tin nhắn. */
+export interface FileAttachment {
+    id: string;
+    name: string;
+    type: string;       // MIME type
+    size: number;       // bytes
+    url: string;
+    thumbnailUrl?: string;
+}
+
+/** Emoji reaction. */
+export interface Reaction {
+    emoji: string;
+    userIds: string[];
+    count: number;
+}
+
+/** Code block với syntax info. */
+export interface CodeBlock {
+    language: string;
+    code: string;
+}
+
+/** Định nghĩa tin nhắn. */
+export interface ChatMessage {
+    id: string;
+    senderId: string;
+    senderName: string;
+    senderAvatar?: string;
+    timestamp: string;
+    type: MessageType;
+    content: string;
+    codeBlock?: CodeBlock;
+    attachments?: FileAttachment[];
+    reactions?: Reaction[];
+    isOwn?: boolean;
+    edited?: boolean;
+}
+
+@Component({
+    selector: 'app-rich-message',
+    standalone: true,
+    imports: [CommonModule],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    template: `
+        <div [class]="'rich-message rich-message--' + (message().isOwn ? 'own' : 'other')">
+            <!-- Sender info -->
+            <div *ngIf="!message().isOwn" class="rich-message__header">
+                <img *ngIf="message().senderAvatar" [src]="message().senderAvatar"
+                    class="rich-message__avatar" [alt]="message().senderName" />
+                <span class="rich-message__sender">{{ message().senderName }}</span>
+                <span class="rich-message__time">
+                    {{ message().timestamp | date:'short' }}
+                    <span *ngIf="message().edited" class="rich-message__edited">(s)</span>
+                </span>
+            </div>
+
+            <!-- Message bubble -->
+            <div class="rich-message__bubble">
+                <!-- System message -->
+                <div *ngIf="message().type === 'system'" class="rich-message__system">
+                    {{ message().content }}
+                </div>
+
+                <!-- Markdown rendered text -->
+                <div *ngIf="message().type === 'text'" [innerHTML]="safeContent"></div>
+
+                <!-- Code block with syntax highlighting -->
+                <div *ngIf="message().type === 'code' || message().codeBlock"
+                    class="rich-message__codeblock">
+                    <div class="rich-message__codeblock-header">
+                        <span class="rich-message__codeblock-lang">
+                            {{ message().codeBlock?.language || 'text' }}
+                        </span>
+                        <button class="rich-message__copy-btn" (click)="copyCode()">Sao chép</button>
+                    </div>
+                    <pre class="rich-message__code"><code [class]="'language-' + (message().codeBlock?.language || 'text')">{{ message().codeBlock?.code || message().content }}</code></pre>
+                </div>
+
+                <!-- Image attachments -->
+                <div *ngIf="message().type === 'image' && message().attachments" class="rich-message__media">
+                    <ng-container *ngFor="let att of message().attachments">
+                        <img *ngIf="att.type.startsWith('image/')"
+                            [src]="att.url" [alt]="att.name"
+                            class="rich-message__image" (click)="openPreview(att.url)" />
+                    </ng-container>
+                </div>
+
+                <!-- File attachments -->
+                <div *ngIf="message().type === 'file' && message().attachments" class="rich-message__files">
+                    <div *ngFor="let att of message().attachments" class="rich-message__file-card">
+                        <span class="rich-message__file-icon">{{ fileIcon(att.type) }}</span>
+                        <div class="rich-message__file-info">
+                            <a [href]="att.url" target="_blank" class="rich-message__file-name">
+                                {{ att.name }}
+                            </a>
+                            <span class="rich-message__file-size">{{ att.size | fileSize }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Timestamp for own messages -->
+                <div *ngIf="message().isOwn" class="rich-message__time">
+                    {{ message().timestamp | date:'shortTime' }}
+                    <span *ngIf="message().edited">(s)</span>
+                </div>
+            </div>
+
+            <!-- Reactions -->
+            <div *ngIf="message().reactions?.length" class="rich-message__reactions">
+                <div *ngFor="let r of message().reactions()"
+                    [class]="'rich-message__reaction' + (r.userIds.includes(currentUser()) ? ' rich-message__reaction--own' : '')"
+                    (click)="toggleReaction(r.emoji)">
+                    <span>{{ r.emoji }}</span>
+                    <span class="rich-message__reaction-count">{{ r.count }}</span>
+                </div>
+                <button class="rich-message__add-reaction" (click)="showReactionPicker = true">+</button>
+            </div>
+
+            <!-- Reaction picker -->
+            <div *ngIf="showReactionPicker" class="rich-message__picker" (click)="closePicker($event)">
+                <div class="rich-message__picker-content" (click)="$event.stopPropagation()">
+                    <button *ngFor="let emoji of emojiOptions" (click)="addReaction(emoji)">
+                        {{ emoji }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    `,
+    styles: [`
+        .rich-message { margin: 8px 0; max-width: 80%; }
+        .rich-message--own { margin-left: auto; }
+        .rich-message--other { margin-right: auto; }
+
+        .rich-message__header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .rich-message__avatar { width: 24px; height: 24px; border-radius: 50%; }
+        .rich-message__sender { font-weight: 600; font-size: 13px; }
+        .rich-message__time { font-size: 11px; color: #6b7280; }
+        .rich-message__edited { font-style: italic; }
+
+        .rich-message__bubble {
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: #f3f4f6;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .rich-message--own .rich-message__bubble { background: #3b82f6; color: #fff; }
+        .rich-message__system { text-align: center; color: #6b7280; font-style: italic; background: transparent; padding: 4px; }
+
+        .rich-message__codeblock { background: #1e293b; border-radius: 8px; overflow: hidden; margin: 4px 0; }
+        .rich-message__codeblock-header { display: flex; justify-content: space-between; padding: 4px 8px; background: #334155; }
+        .rich-message__codeblock-lang { font-size: 11px; color: #94a3b8; }
+        .rich-message__copy-btn { font-size: 11px; background: transparent; border: 1px solid #475569; color: #94a3b8; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
+        .rich-message__code { margin: 0; padding: 12px; overflow-x: auto; color: #e2e8f0; font-size: 13px; }
+
+        .rich-message__media { display: flex; flex-wrap: wrap; gap: 4px; }
+        .rich-message__image { max-width: 300px; max-height: 200px; border-radius: 8px; cursor: pointer; object-fit: cover; }
+
+        .rich-message__files { display: flex; flex-direction: column; gap: 4px; }
+        .rich-message__file-card { display: flex; align-items: center; gap: 8px; padding: 8px; background: rgba(0,0,0,0.05); border-radius: 6px; }
+        .rich-message__file-icon { font-size: 20px; }
+        .rich-message__file-name { text-decoration: none; font-size: 13px; font-weight: 500; }
+        .rich-message__file-size { font-size: 11px; color: #6b7280; }
+
+        .rich-message__reactions { display: flex; gap: 4px; margin-top: 4px; align-items: center; }
+        .rich-message__reaction { display: flex; align-items: center; gap: 2px; padding: 2px 6px; border-radius: 12px; border: 1px solid #e5e7eb; background: #fff; cursor: pointer; font-size: 13px; }
+        .rich-message__reaction--own { border-color: #3b82f6; background: #eff6ff; }
+        .rich-message__add-reaction { width: 24px; height: 24px; border-radius: 50%; border: 1px solid #d1d5db; background: #fff; cursor: pointer; font-size: 16px; line-height: 1; }
+
+        .rich-message__picker { position: absolute; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; display: flex; gap: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 100; }
+        .rich-message__picker-content { display: flex; gap: 4px; }
+        .rich-message__picker-content button { background: none; border: none; font-size: 18px; cursor: pointer; padding: 4px; border-radius: 4px; }
+        .rich-message__picker-content button:hover { background: #f3f4f6; }
+    `],
+})
+export class RichMessageComponent {
+    @Input() set message(val: ChatMessage) {
+        this._message.set(val);
+        this._safeContent = this.sanitizer.bypassSecurityTrustHtml(this.renderMarkdown(val.content));
+    }
+    get message(): ChatMessage { return this._message(); }
+
+    @Input() currentUser = signal('');
+    @Output() reactionAdded = new EventEmitter<{ messageId: string; emoji: string }>();
+    @Output() previewOpened = new EventEmitter<string>();
+
+    showReactionPicker = false;
+    emojiOptions = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👀'];
+
+    private readonly _message = signal<ChatMessage>(null as any);
+    private _safeContent: SafeHtml = '';
+
+    readonly safeContent: SafeHtml = this._safeContent;
+
+    constructor(
+        private sanitizer: DomSanitizer,
+        private cdr: ChangeDetectorRef,
+    ) {}
+
+    /** Render markdown đơn giản (production: dùng marked/markdown-it). */
+    private renderMarkdown(text: string): string {
+        if (!text) return '';
+        return text
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>')
+            .replace(/`(.+?)`/g, '<code>$1</code>')
+            .replace(/\n/g, '<br/>');
+    }
+
+    /** Copy code block vào clipboard. */
+    copyCode(): void {
+        const code = this._message().codeBlock?.code || this._message().content;
+        navigator.clipboard.writeText(code);
+    }
+
+    /** Toggle reaction cho message. */
+    toggleReaction(emoji: string): void {
+        this.addReaction(emoji);
+    }
+
+    addReaction(emoji: string): void {
+        this.reactionAdded.emit({ messageId: this._message().id, emoji });
+        this.showReactionPicker = false;
+    }
+
+    /** Mở preview ảnh. */
+    openPreview(url: string): void {
+        this.previewOpened.emit(url);
+    }
+
+    /** Hiển thị icon file theo MIME type. */
+    fileIcon(mimeType: string): string {
+        if (mimeType.startsWith('image/')) return '🖼️';
+        if (mimeType.startsWith('video/')) return '🎬';
+        if (mimeType.includes('pdf')) return '📄';
+        if (mimeType.includes('zip') || mimeType.includes('compress')) return '📦';
+        if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) return '📊';
+        if (mimeType.includes('document') || mimeType.includes('word')) return '📝';
+        return '📎';
+    }
+
+    closePicker(e: Event): void {
+        if (e.target === e.currentTarget) this.showReactionPicker = false;
+    }
+}

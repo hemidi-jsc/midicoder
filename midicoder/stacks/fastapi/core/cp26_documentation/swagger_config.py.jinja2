@@ -1,0 +1,111 @@
+{#
+Jinja2 template cho Swagger/OpenAPI UI Config — FastAPI.
+
+Tự động generate cấu hình Swagger UI tùy chỉnh từ CP26 Documentation Generator.
+
+Usage:
+    context = {
+        "app_title": str,         # Tiêu đề ứng dụng
+        "app_description": str,   # Mô tả ứng dụng
+        "app_version": str,       # Phiên bản
+        "servers": [...],         # Danh sách server environments
+        "oauth2_redirect": str,   # OAuth2 redirect URL
+    }
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+"""
+Swagger/OpenAPI UI Configuration cho FastAPI.
+
+Tự động generate từ CP26 Documentation Generator.
+{% if app_description %}
+{{ app_description }}
+{% endif %}
+
+Cung cấp:
+- get_swagger_ui_config(): Cấu hình Swagger UI tùy chỉnh
+- get_redoc_ui_href(): Đường dẫn ReDoc
+- setup_swagger(): Hàm setup Swagger cho FastAPI app
+"""
+
+from __future__ import annotations
+
+
+def get_swagger_ui_config() -> dict:
+    """Lấy cấu hình Swagger UI tùy chỉnh.
+
+    Returns:
+        Dict cấu hình Swagger UI.
+    """
+    return {
+        "dom_id": "#swagger-ui",
+        "display_request_duration": True,
+        "defaultModelsExpandDepth": -1,
+        "defaultModelExpandDepth": 3,
+        "defaultModelRendering": "example",
+        "display_operation_id": True,
+        "filter": True,
+        "show_extensions": True,
+        "show_common_extensions": True,
+        "try_it_out_enabled": True,
+        "oauth2_redirect_url": "{{ oauth2_redirect }}",
+    }
+
+
+def get_swagger_theme() -> dict:
+    """Lấy theme tùy chỉnh cho Swagger UI.
+
+    Returns:
+        Dict theme configuration.
+    """
+    return {
+        "primaryColor": "#0052CC",
+        "textPrimaryColor": "#333333",
+        "borderColor": "#E0E0E0",
+        "backgroundColor": "#FFFFFF",
+    }
+
+
+def setup_swagger(app) -> None:
+    """Thiết lập Swagger UI tùy chỉnh cho FastAPI app.
+
+    Args:
+        app: FastAPI application instance.
+    """
+    app.docs_url = "/docs"
+    app.redoc_url = "/redoc"
+    app.swagger_ui_parameters = get_swagger_ui_config()
+
+
+def custom_swagger_ui_html() -> str:
+    """Tạo custom Swagger UI HTML page.
+
+    Returns:
+        HTML string cho Swagger UI.
+    """
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>{{ app_title }} - API Docs</title>
+        <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css">
+        <style>
+            body { margin: 0; padding: 0; }
+            .topbar { display: none; }
+            .swagger-ui .info { margin: 32px 0; }
+        </style>
+    </head>
+    <body>
+        <div id="swagger-ui"></div>
+        <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
+        <script>
+            SwaggerUIBundle({
+                url: "/openapi.json",
+                dom_id: "#swagger-ui",
+                {{ get_swagger_ui_config() | tojson }}
+            });
+        </script>
+    </body>
+    </html>
+    """

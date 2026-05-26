@@ -1,0 +1,209 @@
+{#
+Jinja2 template cho SLO/SLA Dashboard Component — React.
+
+Tự động generate component hiển thị SLO dashboard với burn rate chart
+và error budget progress bars.
+
+Usage:
+    context = {
+        "service_name": "my-service",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * SLO/SLA Dashboard Component — React
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B13 — SLO/SLA Dashboard (CP16)
+ *
+ * Mục đích:
+ * - Hiển thị burn rate chart cho từng SLO
+ * - Error budget progress bars
+ * - SLO status indicators (healthy/warning/critical)
+ * - Hỗ trợ multiple SLOs và multiple time windows
+ *
+ * Usage:
+ *     import { SLODashboard } from './SLODashboard';
+ *     <SLODashboard apiBaseUrl="/api" serviceNames={['api', 'web']} />
+ */
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+
+/** Trạng thái SLO. */
+export type SLOStatus = 'healthy' | 'warning' | 'critical';
+
+/** Định nghĩa SLO. */
+export interface SLODefinition {
+    id: string;
+    name: string;
+    service: string;
+    target: number;           // ví dụ: 99.95
+    window: string;           // '30d'
+    current: number;          // current measurement
+    budgetRemaining: number;  // phần trăm error budget còn lại
+    burnRate: number;         // tốc độ tiêu thụ
+    status: SLOStatus;
+    burnRateHistory: BurnRatePoint[];
+}
+
+/** Điểm dữ liệu burn rate theo thời gian. */
+export interface BurnRatePoint {
+    timestamp: string;
+    rate: number;
+}
+
+/** Màu sắc theo status. */
+const STATUS_COLORS: Record<SLOStatus, string> = {
+    healthy: '#16a34a',
+    warning: '#d97706',
+    critical: '#dc2626',
+};
+
+const STATUS_LABELS: Record<SLOStatus, string> = {
+    healthy: 'Healthy',
+    warning: 'Warning',
+    critical: 'Critical',
+};
+
+/** Props. */
+interface SLODashboardProps {
+    /** URL cơ sở API. */
+    apiBaseUrl?: string;
+    /** Danh sách service names. */
+    serviceNames?: string[];
+}
+
+/**
+ * SLODashboard component.
+ */
+export const SLODashboard: React.FC<SLODashboardProps> = ({
+    apiBaseUrl = '/api',
+    serviceNames = ['{{ service_name | default("app") }}'],
+}) => {
+    const [slos, setSlos] = useState<SLODefinition[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [timeWindow, setTimeWindow] = useState('30d');
+
+    /** Load SLOs từ backend. */
+    const loadSLOs = useCallback(async () => {
+        setLoading(true);
+        try {
+            const params = new URLSearchParams({ window: timeWindow, services: serviceNames.join(',') });
+            const res = await fetch(`${apiBaseUrl}/slo?${params}`);
+            const data = await res.json();
+            setSlos(data.slos || data);
+        } catch (err) {
+            console.error('[SLODashboard] Failed to load SLOs:', err);
+        } finally {
+            setLoading(false);
+        }
+    }, [apiBaseUrl, timeWindow, serviceNames]);
+
+    useEffect(() => { loadSLOs(); }, [loadSLOs]);
+
+    /** Computed: tổng quan SLO status. */
+    const summary = useMemo(() => ({
+        total: slos.length,
+        healthy: slos.filter((s) => s.status === 'healthy').length,
+        warning: slos.filter((s) => s.status === 'warning').length,
+        critical: slos.filter((s) => s.status === 'critical').length,
+    }), [slos]);
+
+    /** Mini burn rate chart component. */
+    const BurnRateChart: React.FC<{ history: BurnRatePoint[] }> = ({ history }) => {
+        if (!history.length) return null;
+        const maxRate = Math.max(...history.map((h) => h.rate), 1);
+        const width = 200;
+        const height = 40;
+        const points = history.map((h, i) => {
+            const x = (i / (history.length - 1)) * width;
+            const y = height - (h.rate / maxRate) * height;
+            return `${x},${y}`;
+        }).join(' ');
+
+        return (
+            <svg width={width} height={height} className="slo-dashboard__burnchart">
+                {/* Threshold lines */}
+                <line x1="0" y1={height * 0.7} x2={width} y2={height * 0.7}
+                    stroke="#d97706" strokeWidth="0.5" strokeDasharray="3" />
+                <line x1="0" y1={height * 0.3} x2={width} y2={height * 0.3}
+                    stroke="#dc2626" strokeWidth="0.5" strokeDasharray="3" />
+                {/* Data line */}
+                <polyline points={points} fill="none" stroke={STATUS_COLORS[history[history.length - 1].rate > 10 ? 'critical' : history[history.length - 1].rate > 1 ? 'warning' : 'healthy']}
+                    strokeWidth="1.5" />
+            </svg>
+        );
+    };
+
+    return (
+        <div className="slo-dashboard">
+            <h2>SLO/SLA Dashboard</h2>
+
+            {/* Controls */}
+            <div className="slo-dashboard__controls">
+                <label>Window:{' '}
+                    <select value={timeWindow} onChange={(e) => setTimeWindow(e.target.value)}>
+                        <option value="7d">7 ngày</option>
+                        <option value="30d">30 ngày</option>
+                        <option value="90d">90 ngày</option>
+                    </select>
+                </label>
+                <button onClick={loadSLOs} disabled={loading}>
+                    {loading ? 'Đang tải...' : 'Làm mới'}
+                </button>
+                {/* Summary badges */}
+                <span className="slo-dashboard__badge slo-dashboard__badge--healthy">
+                    {summary.healthy} Healthy
+                </span>
+                <span className="slo-dashboard__badge slo-dashboard__badge--warning">
+                    {summary.warning} Warning
+                </span>
+                <span className="slo-dashboard__badge slo-dashboard__badge--critical">
+                    {summary.critical} Critical
+                </span>
+            </div>
+
+            {/* SLO Cards */}
+            {loading && <div className="slo-dashboard__loading">Đang tải SLOs...</div>}
+            {!loading && !slos.length && <div className="slo-dashboard__empty">Không có SLO nào.</div>}
+            <div className="slo-dashboard__grid">
+                {slos.map((slo) => (
+                    <div key={slo.id} className={`slo-card slo-card--${slo.status}`}>
+                        <div className="slo-card__header">
+                            <span className="slo-card__status" style={{ background: STATUS_COLORS[slo.status] + '22', color: STATUS_COLORS[slo.status] }}>
+                                {STATUS_LABELS[slo.status]}
+                            </span>
+                            <h3>{slo.name}</h3>
+                            <span className="slo-card__service">{slo.service}</span>
+                        </div>
+                        <div className="slo-card__metrics">
+                            <div className="slo-metric"><span className="slo-metric__label">Target</span><span className="slo-metric__value">{slo.target}%</span></div>
+                            <div className="slo-metric"><span className="slo-metric__label">Current</span><span className="slo-metric__value" style={{ color: STATUS_COLORS[slo.status] }}>{slo.current}%</span></div>
+                            <div className="slo-metric"><span className="slo-metric__label">Burn Rate</span><span className="slo-metric__value">{slo.burnRate.toFixed(2)}x</span></div>
+                        </div>
+                        {/* Error Budget Progress Bar */}
+                        <div className="slo-card__budget">
+                            <div className="slo-card__budget-label">
+                                <span>Error Budget</span>
+                                <span>{slo.budgetRemaining.toFixed(1)}% còn lại</span>
+                            </div>
+                            <div className="slo-card__bar">
+                                <div className="slo-card__bar-fill"
+                                    style={{ width: `${slo.budgetRemaining}%`, background: STATUS_COLORS[slo.status] }}
+                                />
+                            </div>
+                        </div>
+                        {/* Burn Rate Chart */}
+                        <BurnRateChart history={slo.burnRateHistory} />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+export default SLODashboard;

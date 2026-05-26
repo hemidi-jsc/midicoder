@@ -1,0 +1,219 @@
+{#
+Jinja2 template cho Health Check Endpoints — FastAPI.
+
+Tự động generate các endpoint health check chuẩn Kubernetes:
+/health (liveness), /ready (readiness với DB check), /live (K8s probe).
+Sử dụng dependency injection cho các health indicator.
+
+Usage:
+    context = {
+        "project_name": "my_api",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Health Check Endpoints cho FastAPI
+
+Tự động generate — không sửa tay.
+
+Pattern: B2 — Health Check Standard
+
+Mục đích:
+- Cung cấp các endpoint health check cho Kubernetes và load balancer
+- /health: liveness probe — trả về 200 nếu ứng dụng đang chạy
+- /ready: readiness probe — kiểm tra DB và dependency sẵn sàng
+- /live: K8s liveness probe — lightweight, không check dependency
+- Hỗ trợ custom health indicators thông qua dependency injection
+
+Đăng ký:
+    # Trong main.py hoặc app factory
+    from app.monitoring.health_check import HealthCheckRouter
+    app.include_router(HealthCheckRouter())
+
+Response format:
+    {
+        "status": "healthy",
+        "version": "1.0.0",
+        "timestamp": "2025-01-01T00:00:00Z",
+        "checks": {"database": "ok"}
+    }
+
+Error codes:
+    - MDC-CP16-015: Database connection failed
+    - MDC-CP16-016: Health check endpoint error
+"""
+
+from __future__ import annotations
+
+import time
+from datetime import datetime, timezone
+from typing import Any
+
+from fastapi import APIRouter, Depends, status
+from pydantic import BaseModel
+
+# Context variables
+{% set version = "1.0.0" %}
+
+
+class HealthResponse(BaseModel):
+    """Schema phản hồi health check.
+
+    Attributes:
+        status: Trạng thái tổng thể ("healthy", "unhealthy")
+        version: Phiên bản ứng dụng
+        timestamp: Thời gian thực hiện kiểm tra (UTC ISO 8601)
+        checks: Kết quả chi tiết từng health indicator
+        uptime_seconds: Thời gian ứng dụng đã chạy (giây)
+    """
+
+    status: str
+    version: str = "{{ version }}"
+    timestamp: str
+    checks: dict[str, str]
+    uptime_seconds: float
+
+
+class HealthCheckRouter:
+    """Router cho các endpoint health check.
+
+    Cung cấp 3 endpoint chính:
+    - GET /health: Liveness — trả về 200 nếu app còn sống
+    - GET /ready: Readiness — check DB connectivity, trả về 503 nếu chưa sẵn sàng
+    - GET /live: K8s liveness probe — lightweight, không dependency
+
+    Sử dụng class-based pattern để dễ dàng inject dependencies
+    vào router mà không cần global state.
+
+    Args:
+        tags: Danh sách tags cho OpenAPI documentation
+    """
+
+    def __init__(self, tags: list[str] | None = None) -> None:
+        self._router = APIRouter(tags=tags or ["health"])
+        self._start_time = time.time()
+        self._register_routes()
+
+    @property
+    def router(self) -> APIRouter:
+        """Trả về APIRouter instance để include vào app.
+
+        Returns:
+            Configured APIRouter với các health check routes
+        """
+        return self._router
+
+    async def _check_database(self) -> tuple[str, str]:
+        """Kiểm tra kết nối database.
+
+        Returns:
+            Tuple (key, status): ("database", "ok") hoặc ("database", "error: ...")
+        """
+        try:
+            from app.database import get_session
+
+            session = await get_session()
+            await session.execute("SELECT 1")
+            return ("database", "ok")
+        except Exception as e:
+            return ("database", f"error: {str(e)}")
+
+    async def _run_all_checks(self) -> dict[str, str]:
+        """Chạy tất cả health indicators và tổng hợp kết quả.
+
+        Returns:
+            Dictionary mapping indicator name to status string
+        """
+        checks: dict[str, str] = {}
+        checks["database"] = (await self._check_database())[1]
+        return checks
+
+    def _make_response(self, status_code: int, checks: dict[str, str]) -> dict[str, Any]:
+        """Xây dựng response object chuẩn.
+
+        Args:
+            status_code: HTTP status code (200 hoặc 503)
+            checks: Kết quả từ health indicators
+
+        Returns:
+            Dictionary để trả về làm JSON response
+        """
+        overall = "healthy" if all(s == "ok" for s in checks.values()) else "unhealthy"
+
+        return {
+            "status": overall,
+            "version": "{{ version }}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "checks": checks,
+            "uptime_seconds": round(time.time() - self._start_time, 2),
+        }
+
+    def _register_routes(self) -> None:
+        """Đăng ký tất cả health check routes vào router."""
+
+        @self._router.get(
+            "/health",
+            summary="Liveness health check",
+            description="Kiểm tra xem ứng dụng có đang chạy bình thường không",
+            status_code=status.HTTP_200_OK,
+        )
+        async def health_liveness() -> dict[str, Any]:
+            """Endpoint liveness — trả về 200 nếu app đang chạy.
+
+            Dùng cho load balancer health check và K8s liveness probe.
+            Không kiểm tra dependency — chỉ xác nhận tiến trình còn sống.
+
+            Returns:
+                HealthResponse với status "healthy"
+            """
+            return self._make_response(
+                status.HTTP_200_OK,
+                {"app": "ok"},
+            )
+
+        @self._router.get(
+            "/ready",
+            summary="Readiness health check",
+            description="Kiểm tra ứng dụng và dependency đã sẵn sàng phục vụ request chưa",
+            responses={
+                200: {"description": "Sẵn sàng phục vụ"},
+                503: {"description": "Chưa sẵn sàng — dependency chưa kết nối được"},
+            },
+        )
+        async def health_readiness() -> dict[str, Any]:
+            """Endpoint readiness — kiểm tra đầy đủ dependency.
+
+            Dùng cho K8s readiness probe. Trả về 503 nếu bất kỳ
+            health indicator nào thất bại (DB, Redis, v.v.).
+
+            Returns:
+                HealthResponse với kết quả chi tiết từng indicator
+            """
+            checks = await self._run_all_checks()
+            status_code = (
+                status.HTTP_200_OK
+                if all(s == "ok" for s in checks.values())
+                else status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+            return self._make_response(status_code, checks)
+
+        @self._router.get(
+            "/live",
+            summary="K8s liveness probe",
+            description="Lightweight endpoint cho Kubernetes liveness probe",
+            status_code=status.HTTP_200_OK,
+        )
+        async def health_k8s_live() -> dict[str, str]:
+            """Endpoint K8s liveness — tối giản, không overhead.
+
+            Trả về response minimial nhất để K8s kiểm tra tiến trình.
+            Không thực hiện bất kỳ dependency check nào.
+
+            Returns:
+                Dictionary tối giản với key "status"
+            """
+            return {"status": "alive"}

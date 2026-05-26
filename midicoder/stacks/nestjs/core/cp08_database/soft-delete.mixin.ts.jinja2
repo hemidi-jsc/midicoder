@@ -1,0 +1,130 @@
+{#
+Jinja2 template cho Soft Delete Mixin — NestJS / TypeORM.
+
+Tự động generate TypeORM soft delete mixin sử dụng @DeleteDateColumn()
+và soft-delete support tích hợp của TypeORM.
+
+Usage:
+    context = {
+        "project_name": "my_api",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Soft Delete Mixin — TypeORM (NestJS)
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B5 — Soft Delete Standard
+ *
+ * Mục đích:
+ * - Hỗ trợ soft delete cho TypeORM entity
+ * - Sử dụng @DeleteDateColumn() để tự động quản lý cột deletedAt
+ * - TypeORM tự động filter soft-deleted records trong query
+ * - Cung cấp helper methods cho soft delete và restore
+ *
+ * Sử dụng:
+ *   @Entity()
+ *   export class User extends SoftDeleteMixin {
+ *     @PrimaryGeneratedColumn()
+ *     id: number;
+ *   }
+ *
+ *   // Soft delete (TypeORM tự động set deletedAt)
+ *   await userRepository.softDelete(id);
+ *
+ *   // Khôi phục
+ *   await userRepository.restore(id);
+ *
+ *   // Query bao gồm cả deleted records
+ *   const users = await userRepository.find({ withDeleted: true });
+ *
+ * Error codes:
+ *   - MDC-CP08-009: Soft delete operation failed
+ *   - MDC-CP08-010: Cannot undelete non-deleted record
+ */
+
+import { DeleteDateColumn, Entity, BaseEntity } from 'typeorm';
+
+/**
+ * Interface cho entity có hỗ trợ soft delete.
+ */
+export interface ISoftDeletable {
+  deletedAt: Date | null;
+  isDeleted: boolean;
+}
+
+/**
+ * SoftDeleteMixin — lớp trừu tượng cung cấp soft delete cho TypeORM entity.
+ *
+ * Sử dụng @DeleteDateColumn() để TypeORM tự động:
+ * - Set deletedAt khi gọi softDelete()
+ * - Filter các bản ghi đã xoá khỏi query mặc định
+ * - Restore bản ghi khi gọi restore()
+ *
+ * Kết hợp với BaseEntity để có access đến repository methods.
+ */
+export abstract class SoftDeleteMixin extends BaseEntity implements ISoftDeletable {
+  /**
+   * Thời điểm soft delete — NULL nếu bản ghi còn hoạt động.
+   *
+   * TypeORM @DeleteDateColumn tự động quản lý column này:
+   - Set khi gọi repository.softDelete()
+   - NULL khi gọi repository.restore()
+   - Auto-filter trong query (find, findOne, queryBuilder)
+   */
+  @DeleteDateColumn({
+    nullable: true,
+    select: false,
+    comment: 'Thời điểm soft delete — NULL nếu bản ghi còn hoạt động',
+  })
+  deletedAt: Date | null = null;
+
+  /**
+   * Kiểm tra bản ghi đã được soft delete chưa.
+   */
+  get isDeleted(): boolean {
+    return this.deletedAt !== null && this.deletedAt !== undefined;
+  }
+
+  /**
+   * Soft delete bản ghi hiện tại.
+   *
+   * @throws Error nếu bản ghi đã được soft delete trước đó
+   */
+  async softDelete(): Promise<void> {
+    if (this.isDeleted) {
+      throw new Error(`Record đã được soft delete tại ${this.deletedAt}`);
+    }
+    const repo = this.constructor as any;
+    await repo.softDelete({ id: (this as any).id });
+    this.deletedAt = new Date();
+  }
+
+  /**
+   * Khôi phục bản ghi đã soft delete.
+   *
+   * @throws Error nếu bản ghi chưa được soft delete
+   */
+  async undelete(): Promise<void> {
+    if (!this.isDeleted) {
+      throw new Error('Không thể undelete — bản ghi chưa được soft delete');
+    }
+    const repo = this.constructor as any;
+    await repo.restore({ id: (this as any).id });
+    this.deletedAt = null;
+  }
+
+  /**
+   * Query options để bao gồm cả soft-deleted records.
+   *
+   * @returns Object với withDeleted: true
+   */
+  static withDeletedOptions() {
+    return { withDeleted: true };
+  }
+}

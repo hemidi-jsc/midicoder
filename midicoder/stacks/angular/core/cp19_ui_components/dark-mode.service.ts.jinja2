@@ -1,0 +1,146 @@
+{#
+Jinja2 template cho Dark Mode Service — Angular (CP19).
+
+Tu dong generate service xu ly chui do voi localStorage persistence,
+CSS class toggle tren <html>, va CSS custom property overrides.
+
+Usage:
+context = {}
+template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+* DarkModeService — Service quan ly chui do/sang trong Angular.
+*
+* Cong nang:
+* - Luu tru trang thai dark/light mode vao localStorage
+* - Toggle CSS class 'dark' tren phan tu <html>
+* - Coveri CSS custom properties theo chui do
+* - Hoi tiep thiet bi (prefers-color-scheme) neu chưa co lua chon
+*
+* Tao tu dong boi CP19 — khong sua thu cong.
+*/
+
+import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { BehaviorSubject } from 'rxjs';
+
+/** Key lua chon chui luu tru trong localStorage. */
+const STORAGE_KEY = 'app-dark-mode';
+
+/** CSS custom properties cho chui sang (mode mac dinh). */
+const LIGHT_THEME: Record<string, string> = {
+    '--bg-primary': '#ffffff',
+    '--bg-secondary': '#f8fafc',
+    '--bg-surface': '#f1f5f9',
+    '--text-primary': '#0f172a',
+    '--text-secondary': '#475569',
+    '--text-muted': '#94a3b8',
+    '--border-color': '#e2e8f0',
+    '--accent-color': '#3b82f6',
+    '--accent-hover': '#2563eb',
+    '--success-color': '#22c55e',
+    '--warning-color': '#f59e0b',
+    '--error-color': '#ef4444',
+    '--shadow-color': 'rgba(0, 0, 0, 0.1)',
+    };
+
+    /** CSS custom properties cho chui do. */
+    const DARK_THEME: Record<string, string> = {
+        '--bg-primary': '#0f172a',
+        '--bg-secondary': '#1e293b',
+        '--bg-surface': '#334155',
+        '--text-primary': '#f8fafc',
+        '--text-secondary': '#cbd5e1',
+        '--text-muted': '#64748b',
+        '--border-color': '#475569',
+        '--accent-color': '#60a5fa',
+        '--accent-hover': '#3b82f6',
+        '--success-color': '#4ade80',
+        '--warning-color': '#fbbf24',
+        '--error-color': '#f87171',
+        '--shadow-color': 'rgba(0, 0, 0, 0.4)',
+        };
+
+        /**
+        * DarkModeService — Quan ly chui do/sang.
+        */
+        @Injectable({
+        providedIn: 'root',
+        })
+        export class DarkModeService {
+        /** Subject phat hoi trang thai dark mode. */
+        private readonly _modeSubject = new BehaviorSubject<boolean>(false);
+
+            /** Observable de follow trang thai dark mode. */
+            public readonly mode$ = this._modeSubject.asObservable();
+
+            /** Trang thai dark mode hien tai. */
+            public get isDark(): boolean {
+            return this._modeSubject.value;
+            }
+
+            constructor(@Inject(PLATFORM_ID) private readonly platformId: Object) {
+            /* Khoi tao tu localStorage hoac thiet bi */
+            if (isPlatformBrowser(this.platformId)) {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            let dark: boolean;
+            if (saved !== null) {
+            dark = saved === 'true';
+            } else {
+            dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+            this.setDark(dark, false);
+            }
+            }
+
+            /**
+            * Btat/tat che do dark mode.
+            * @param dark - True de bat dark mode, false de sang
+            * @param persist - Co luu vao localStorage khong (mac dinh: co)
+            */
+            setDark(dark: boolean, persist: boolean = true): void {
+            if (!isPlatformBrowser(this.platformId)) return;
+
+            this._modeSubject.next(dark);
+
+            /* Toggle CSS class tren <html> */
+            const html = document.documentElement;
+            if (dark) {
+            html.classList.add('dark');
+            } else {
+            html.classList.remove('dark');
+            }
+
+            /* Coveri CSS custom properties */
+            const theme = dark ? DARK_THEME : LIGHT_THEME;
+            const root = document.documentElement;
+            for (const [prop, value] of Object.entries(theme)) {
+            root.style.setProperty(prop, value);
+            }
+
+            /* Luu vao localStorage */
+            if (persist) {
+            localStorage.setItem(STORAGE_KEY, String(dark));
+            }
+            }
+
+            /**
+            * Toggle chui do/sang.
+            */
+            toggle(): void {
+            this.setDark(!this.isDark);
+            }
+
+            /**
+            * Lap thiet lap tu he thong (prefers-color-scheme).
+            */
+            syncWithSystem(): void {
+            if (!isPlatformBrowser(this.platformId)) return;
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            this.setDark(prefersDark);
+            }
+            }

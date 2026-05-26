@@ -1,0 +1,166 @@
+{#
+Jinja2 template cho Filter Builder (FastAPI/SQLAlchemy).
+
+Tự động generate dynamic filter builder cho CP08 Database.
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+"""
+Dynamic Filter Builder cho SQLAlchemy queries.
+
+Tự động generate — không sửa tay.
+Hỗ trợ:
+- eq, ne, gt, gte, lt, lte
+- contains, like, ilike
+- in_, not_in_
+- is_null, is_not_null
+- between
+- and_, or_
+"""
+
+from __future__ import annotations
+
+import operator
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import and_, or_, not_
+from sqlalchemy.sql import ColumnElement
+
+
+class FilterBuilder:
+    """Dynamic filter builder cho SQLAlchemy.
+
+    Usage:
+        builder = FilterBuilder(User)
+        stmt = builder.apply_filters(select(User), {
+            "name__eq": "John",
+            "age__gt": 18,
+            "email__contains": "@example.com",
+            "status__in": ["active", "pending"],
+        })
+    """
+
+    OPERATORS = {
+        "eq": operator.eq,
+        "ne": operator.ne,
+        "gt": operator.gt,
+        "gte": operator.ge,
+        "lt": operator.lt,
+        "lte": operator.le,
+        "contains": lambda col, val: col.contains(val),
+        "like": lambda col, val: col.like(f"%{val}%"),
+        "ilike": lambda col, val: col.ilike(f"%{val}%"),
+        "startswith": lambda col, val: col.startswith(val),
+        "endswith": lambda col, val: col.endswith(val),
+        "in": lambda col, val: col.in_(val),
+        "not_in": lambda col, val: col.notin_(val),
+        "is_null": lambda col, val: col.is_(None) if val else col.isnot(None),
+        "between": lambda col, val: col.between(val[0], val[1]) if isinstance(val, (list, tuple)) and len(val) == 2 else col,
+        "is_not_null": lambda col, val: col.isnot(None),
+    }
+
+    def __init__(self, model_cls: type | None = None) -> None:
+        """Init FilterBuilder.
+
+        Args:
+            model_cls: SQLAlchemy model class (optional, cho column validation)
+        """
+        self.model_cls = model_cls
+        self._allowed_columns: set[str] = set()
+        if model_cls:
+            self._allowed_columns = {c.key for c in model_cls.__table__.columns}
+
+    def build_filter(self, column_name: str, op: str, value: Any) -> ColumnElement | None:
+        """Build single filter expression.
+
+        Args:
+            column_name: Tên column (có thể include operator: "age__gt")
+            op: Operator name
+            value: Giá trị so sánh
+
+        Returns:
+            ColumnElement hoặc None nếu invalid
+        """
+        if op not in self.OPERATORS:
+            return None
+
+        if self._allowed_columns and column_name not in self._allowed_columns:
+            return None
+
+        try:
+            col = getattr(self.model_cls, column_name) if self.model_cls else None
+            if col is None:
+                return None
+            return self.OPERATORS[op](col, value)
+        except (AttributeError, TypeError, IndexError):
+            return None
+
+    def apply_filters(
+        self,
+        stmt: Any,
+        filters: dict[str, Any],
+        logical_op: str = "and",
+    ) -> Any:
+        """Apply multiple filters lên select statement.
+
+        Args:
+            stmt: SQLAlchemy select statement
+            filters: Dict {column__operator: value}
+            logical_op: "and" hoặc "or" để combine filters
+
+        Returns:
+            Select statement với WHERE clause
+        """
+        if not filters:
+            return stmt
+
+        conditions = []
+        for key, value in filters.items():
+            if "__" not in key:
+                # Default to eq
+                column_name = key
+                op = "eq"
+            else:
+                parts = key.rsplit("__", 1)
+                column_name = parts[0]
+                op = parts[1]
+
+            condition = self.build_filter(column_name, op, value)
+            if condition is not None:
+                conditions.append(condition)
+
+        if not conditions:
+            return stmt
+
+        combined = and_(*conditions) if logical_op == "and" else or_(*conditions)
+        return stmt.where(combined)
+
+    def apply_sort(
+        self,
+        stmt: Any,
+        sort_by: str,
+        ascending: bool = True,
+    ) -> Any:
+        """Apply sorting lên select statement.
+
+        Args:
+            stmt: SQLAlchemy select statement
+            sort_by: Column name để sort
+            ascending: Ascending (mặc định True)
+
+        Returns:
+            Select statement với ORDER BY
+        """
+        if self._allowed_columns and sort_by not in self._allowed_columns:
+            return stmt
+
+        try:
+            col = getattr(self.model_cls, sort_by)
+            if ascending:
+                return stmt.order_by(col.asc())
+            else:
+                return stmt.order_by(col.desc())
+        except AttributeError:
+            return stmt

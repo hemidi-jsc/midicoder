@@ -1,0 +1,283 @@
+{#
+Jinja2 template cho Financial Transaction Dashboard — React (CP33).
+
+Tu dong generate component bang dieu khien giao dich tai chinh voi
+bang giao dich, do bi FX, va trang thai doi choi.
+
+Usage:
+    context = {
+        "transactions": [Transaction objects],
+        "accounts": [Account objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * TransactionDashboard — Bang dieu khien giao dich tai chinh (React).
+ *
+ * Hien thi bang ke giao dich, lịch sử tỷ giá FX, trạng thái đối chiếu,
+ * và góc nhìn double-entry.
+ *
+ * Tao tu dong boi CP33 — khong sua thu cong.
+ */
+
+import React, { useState, useMemo, useCallback } from 'react';
+
+/** Giao dien giao dich tai chinh. */
+export interface Transaction {
+    id: string;
+    date: string;
+    description: string;
+    type: 'single_entry' | 'double_entry';
+    status: 'draft' | 'posted' | 'reconciled';
+    totalDebit: number;
+    totalCredit: number;
+    currency: string;
+    entries: LedgerEntry[];
+}
+
+/** Giao dien mot phan tu ke. */
+export interface LedgerEntry {
+    id: string;
+    accountCode: string;
+    accountName: string;
+    entryType: 'debit' | 'credit';
+    amount: number;
+    currency: string;
+}
+
+/** Giao dien ty gia FX. */
+export interface FXRate {
+    pair: string;
+    rate: number;
+    effectiveFrom: string;
+    effectiveTo: string;
+    isActive: boolean;
+}
+
+/** Giao dien trang thai doi choi. */
+export interface ReconciliationStatus {
+    accountId: string;
+    accountName: string;
+    internalBalance: number;
+    externalBalance: number;
+    difference: number;
+    isBalanced: boolean;
+    lastReconciled: string;
+}
+
+/** TransactionDashboard props. */
+interface TransactionDashboardProps {
+    transactions?: Transaction[];
+    fxRates?: FXRate[];
+    reconStatus?: ReconciliationStatus[];
+}
+
+/**
+ * TransactionDashboard — Component bang dieu khien giao dich tai chinh.
+ */
+const TransactionDashboard: React.FC<TransactionDashboardProps> = ({
+    transactions = [],
+    fxRates = [],
+    reconStatus = [],
+}) => {
+    const [expandedTx, setExpandedTx] = useState<string | null>(null);
+
+    /* Dinh dang tien te */
+    const formatMoney = useCallback((amount: number, currency: string = 'VND') => {
+        return new Intl.NumberFormat('vi-VN', {
+            style: 'currency',
+            currency,
+        }).format(amount);
+    }, []);
+
+    /* Lay mau cho trang thai */
+    const statusColor: Record<string, string> = {
+        draft: '#6b7280',
+        posted: '#2563eb',
+        reconciled: '#16a34a',
+    };
+
+    /* Lay entries cua giao dich dang mo */
+    const selectedEntries = useMemo<LedgerEntry[]>(() => {
+        const tx = transactions.find(t => t.id === expandedTx);
+        return tx?.entries ?? [];
+    }, [transactions, expandedTx]);
+
+    /* Toggle mo/thu entries */
+    const toggleExpand = useCallback((txId: string) => {
+        setExpandedTx(prev => prev === txId ? null : txId);
+    }, []);
+
+    return (
+        <div style={{ padding: '16px', fontFamily: 'system-ui, sans-serif' }}>
+            {/* Bang ke giao dich */}
+            <section style={{ marginBottom: '24px' }}>
+                <h2 style={{ marginBottom: '12px', fontSize: '1.1rem' }}>Bang Ke Giao Dich</h2>
+                <table style={styles.table}>
+                    <thead>
+                        <tr>
+                            <th style={styles.th}>ID</th>
+                            <th style={styles.th}>Ngay</th>
+                            <th style={styles.th}>Mota</th>
+                            <th style={styles.th}>Loai</th>
+                            <th style={styles.th}>Trang thai</th>
+                            <th style={styles.th}>No</th>
+                            <th style={styles.th}>Co</th>
+                            <th style={styles.th}>TCB</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {transactions.map(tx => (
+                            <React.Fragment key={tx.id}>
+                                <tr style={{ cursor: 'pointer' }} onClick={() => toggleExpand(tx.id)}>
+                                    <td style={styles.td}>{tx.id.substring(0, 8)}</td>
+                                    <td style={styles.td}>{new Date(tx.date).toLocaleDateString('vi-VN')}</td>
+                                    <td style={styles.td}>{tx.description}</td>
+                                    <td style={styles.td}>{tx.type === 'double_entry' ? 'Double' : 'Single'}</td>
+                                    <td style={{ ...styles.td, color: statusColor[tx.status] }}>
+                                        {tx.status === 'draft' ? 'Nhap' : tx.status === 'posted' ? 'Da post' : 'Da doi choi'}
+                                    </td>
+                                    <td style={{ ...styles.td, fontFamily: 'monospace', textAlign: 'right' }}>
+                                        {formatMoney(tx.totalDebit, tx.currency)}
+                                    </td>
+                                    <td style={{ ...styles.td, fontFamily: 'monospace', textAlign: 'right' }}>
+                                        {formatMoney(tx.totalCredit, tx.currency)}
+                                    </td>
+                                    <td style={styles.td}>
+                                        <button style={styles.btnSmall}>
+                                            {expandedTx === tx.id ? 'Thu' : 'Mo'}
+                                        </button>
+                                    </td>
+                                </tr>
+                                {expandedTx === tx.id && (
+                                    <tr>
+                                        <td colSpan={8} style={{ padding: '0' }}>
+                                            <div style={{ padding: '12px', background: '#f9fafb', marginLeft: '12px', borderRadius: '4px' }}>
+                                                <h4 style={{ margin: '0 0 8px 0' }}>Chi tiet double-entry</h4>
+                                                <table style={styles.table}>
+                                                    <thead>
+                                                        <tr>
+                                                            <th style={styles.th}>Ma TK</th>
+                                                            <th style={styles.th}>Ten TK</th>
+                                                            <th style={styles.th}>Loai</th>
+                                                            <th style={styles.th}>Sophai</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {selectedEntries.map(e => (
+                                                            <tr key={e.id}>
+                                                                <td style={styles.td}>{e.accountCode}</td>
+                                                                <td style={styles.td}>{e.accountName}</td>
+                                                                <td style={styles.td}>{e.entryType === 'debit' ? 'No' : 'Co'}</td>
+                                                                <td style={{ ...styles.td, fontFamily: 'monospace', textAlign: 'right' }}>
+                                                                    {formatMoney(e.amount, e.currency)}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </React.Fragment>
+                        ))}
+                    </tbody>
+                </table>
+            </section>
+
+            {/* Li su ty gia FX */}
+            <section style={{ marginBottom: '24px' }}>
+                <h2 style={{ marginBottom: '12px', fontSize: '1.1rem' }}>Li Su Ty Gia FX</h2>
+                <table style={styles.table}>
+                    <thead>
+                        <tr>
+                            <th style={styles.th}>Cup</th>
+                            <th style={styles.th}>Ty gia</th>
+                            <th style={styles.th}>Hieu luc</th>
+                            <th style={styles.th}>Trang thai</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {fxRates.map((fx, i) => (
+                            <tr key={i}>
+                                <td style={styles.td}>{fx.pair}</td>
+                                <td style={{ ...styles.td, fontFamily: 'monospace' }}>{fx.rate.toFixed(4)}</td>
+                                <td style={styles.td}>{new Date(fx.effectiveFrom).toLocaleDateString('vi-VN')}</td>
+                                <td style={styles.td}>
+                                    <span style={{
+                                        color: fx.isActive ? '#16a34a' : '#9ca3af',
+                                        fontWeight: fx.isActive ? 600 : 400,
+                                    }}>
+                                        {fx.isActive ? 'Hoat dong' : 'Khoa'}
+                                    </span>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </section>
+
+            {/* Trang thai doi choi */}
+            <section>
+                <h2 style={{ marginBottom: '12px', fontSize: '1.1rem' }}>Trang Thai Doi Choi</h2>
+                <table style={styles.table}>
+                    <thead>
+                        <tr>
+                            <th style={styles.th}>TK</th>
+                            <th style={styles.th}>Ten TK</th>
+                            <th style={styles.th}>Sodu noi bo</th>
+                            <th style={styles.th}>Sodo ben ngoai</th>
+                            <th style={styles.th}>Chenh lech</th>
+                            <th style={styles.th}>Tinh trang</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {reconStatus.map(r => (
+                            <tr key={r.accountId}>
+                                <td style={styles.td}>{r.accountId}</td>
+                                <td style={styles.td}>{r.accountName}</td>
+                                <td style={{ ...styles.td, fontFamily: 'monospace', textAlign: 'right' }}>
+                                    {formatMoney(r.internalBalance)}
+                                </td>
+                                <td style={{ ...styles.td, fontFamily: 'monospace', textAlign: 'right' }}>
+                                    {formatMoney(r.externalBalance)}
+                                </td>
+                                <td style={{
+                                    ...styles.td,
+                                    fontFamily: 'monospace',
+                                    textAlign: 'right',
+                                    color: r.isBalanced ? '#16a34a' : '#dc2626',
+                                }}>
+                                    {formatMoney(r.difference)}
+                                </td>
+                                <td style={styles.td}>
+                                    <span style={{
+                                        color: r.isBalanced ? '#16a34a' : '#dc2626',
+                                        fontWeight: 600,
+                                    }}>
+                                        {r.isBalanced ? 'Dung' : 'Lech'}
+                                    </span>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </section>
+        </div>
+    );
+};
+
+/* Shared styles */
+const styles: Record<string, React.CSSProperties> = {
+    table: { width: '100%', borderCollapse: 'collapse' },
+    th: { textAlign: 'left', padding: '8px', borderBottom: '1px solid #eee', fontSize: '0.85rem', background: '#f9fafb', fontWeight: 600 },
+    td: { textAlign: 'left', padding: '8px', borderBottom: '1px solid #eee', fontSize: '0.85rem' },
+    btnSmall: { padding: '2px 8px', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer', background: '#fff' },
+};
+
+export default TransactionDashboard;

@@ -1,0 +1,221 @@
+{#
+Jinja2 template cho SLO/SLA Dashboard Component — Angular.
+
+Tự động generate component hiển thị SLO dashboard với burn rate chart,
+error budget tracking, và SLO status indicators.
+
+Usage:
+    context = {
+        "service_name": "my-service",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * SLO/SLA Dashboard Component — Angular
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B13 — SLO/SLA Dashboard (CP16)
+ *
+ * Mục đích:
+ * - Hiển thị burn rate chart cho từng SLO
+ * - Theo dõi error budget (tiêu thụ còn lại)
+ * - SLO status indicators (healthy/warning/critical)
+ * - Hỗ trợ multiple SLOs và time window
+ *
+ * Usage:
+ *     <app-slo-dashboard [serviceNames]="['api', 'web']"></app-slo-dashboard>
+ */
+import {
+    Component,
+    signal,
+    computed,
+    OnInit,
+    ChangeDetectionStrategy,
+    effect,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+
+/** Trạng thái SLO. */
+export type SLOStatus = 'healthy' | 'warning' | 'critical';
+
+/** Định nghĩa SLO. */
+export interface SLODefinition {
+    id: string;
+    name: string;
+    service: string;
+    target: number;           // ví dụ: 99.95
+    window: string;           // '30d'
+    current: number;          // current measurement
+    budgetRemaining: number;  // phần trăm error budget còn lại
+    burnRate: number;         // tốc độ tiêu thụ budget
+    status: SLOStatus;
+}
+
+/** Dữ liệu burn rate theo thời gian. */
+export interface BurnRatePoint {
+    timestamp: string;
+    rate: number;
+    threshold1: number;  // 1x — warning
+    threshold2: number;  // 10x — critical
+}
+
+@Component({
+    selector: 'app-slo-dashboard',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    template: `
+        <div class="slo-dashboard">
+            <h2>SLO/SLA Dashboard</h2>
+
+            <!-- Time window selector -->
+            <div class="slo-dashboard__controls">
+                <label>Time Window:
+                    <select [(ngModel)]="timeWindow" (ngModelChange)="loadSLOs()">
+                        <option value="7d">7 ngày</option>
+                        <option value="30d">30 ngày</option>
+                        <option value="90d">90 ngày</option>
+                    </select>
+                </label>
+                <button (click)="loadSLOs()" [disabled]="loading()">Làm mới</button>
+            </div>
+
+            <!-- Loading -->
+            <div *ngIf="loading()" class="slo-dashboard__loading">Đang tải SLOs...</div>
+
+            <!-- SLO Cards Grid -->
+            <div *ngIf="!loading() && sloList().length === 0" class="slo-dashboard__empty">
+                Không có SLO nào được định nghĩa.
+            </div>
+            <div *ngIf="!loading() && sloList().length > 0" class="slo-dashboard__grid">
+                <div *ngFor="let slo of sloList()"
+                    [class]="'slo-card slo-card--' + slo.status">
+                    <!-- Status header -->
+                    <div class="slo-card__header">
+                        <span class="slo-card__status" [class]="'slo-card__status--' + slo.status">
+                            {{ statusLabel(slo.status) }}
+                        </span>
+                        <h3>{{ slo.name }}</h3>
+                        <span class="slo-card__service">{{ slo.service }}</span>
+                    </div>
+
+                    <!-- Target & Current -->
+                    <div class="slo-card__metrics">
+                        <div class="slo-metric">
+                            <span class="slo-metric__label">Target</span>
+                            <span class="slo-metric__value">{{ slo.target }}%</span>
+                        </div>
+                        <div class="slo-metric">
+                            <span class="slo-metric__label">Current</span>
+                            <span class="slo-metric__value"
+                                [class]="'slo-metric__value--' + slo.status">
+                                {{ slo.current }}%
+                            </span>
+                        </div>
+                        <div class="slo-metric">
+                            <span class="slo-metric__label">Burn Rate</span>
+                            <span class="slo-metric__value">{{ slo.burnRate.toFixed(2) }}x</span>
+                        </div>
+                    </div>
+
+                    <!-- Error Budget Progress -->
+                    <div class="slo-card__budget">
+                        <span>Error Budget</span>
+                        <div class="slo-card__bar">
+                            <div class="slo-card__bar-fill"
+                                [class]="'slo-card__bar-fill--' + slo.status"
+                                [style.width.%]="slo.budgetRemaining">
+                            </div>
+                        </div>
+                        <span>{{ slo.budgetRemaining.toFixed(1) }}% còn lại</span>
+                    </div>
+
+                    <!-- Mini burn rate sparkline -->
+                    <div class="slo-card__burnrate">
+                        <div *ngFor="let bar of burnRateBars(slo.burnRate)"
+                            [class]="'slo-card__bar-segment' + (bar > 10 ? ' slo-card__bar-segment--critical' : bar > 1 ? ' slo-card__bar-segment--warning' : '')">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `,
+    styles: [`
+        .slo-dashboard { padding: 16px; }
+        .slo-dashboard__controls { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
+        .slo-dashboard__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+        .slo-dashboard__loading, .slo-dashboard__empty { text-align: center; padding: 32px; color: #666; }
+
+        .slo-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+        .slo-card--healthy { border-left: 4px solid #16a34a; }
+        .slo-card--warning { border-left: 4px solid #d97706; }
+        .slo-card--critical { border-left: 4px solid #dc2626; }
+
+        .slo-card__header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+        .slo-card__status { padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+        .slo-card__status--healthy { background: #dcfce7; color: #16a34a; }
+        .slo-card__status--warning { background: #fef3c7; color: #d97706; }
+        .slo-card__status--critical { background: #fee2e2; color: #dc2626; }
+        .slo-card__service { margin-left: auto; font-size: 12px; color: #6b7280; }
+
+        .slo-card__metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+        .slo-metric { text-align: center; }
+        .slo-metric__label { display: block; font-size: 11px; color: #6b7280; }
+        .slo-metric__value { font-size: 18px; font-weight: 700; }
+        .slo-metric__value--warning { color: #d97706; }
+        .slo-metric__value--critical { color: #dc2626; }
+
+        .slo-card__budget { margin-bottom: 8px; }
+        .slo-card__bar { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin: 4px 0; }
+        .slo-card__bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+        .slo-card__bar-fill--healthy { background: #16a34a; }
+        .slo-card__bar-fill--warning { background: #d97706; }
+        .slo-card__bar-fill--critical { background: #dc2626; }
+
+        .slo-card__burnrate { display: flex; gap: 2px; height: 24px; align-items: flex-end; }
+        .slo-card__bar-segment { flex: 1; background: #16a34a; min-height: 2px; border-radius: 1px; }
+        .slo-card__bar-segment--warning { background: #d97706; }
+        .slo-card__bar-segment--critical { background: #dc2626; }
+    `],
+})
+export class SLODashboardComponent implements OnInit {
+    readonly sloList = signal<SLODefinition[]>([]);
+    readonly loading = signal(false);
+
+    timeWindow = '30d';
+
+    // Computed: đếm SLOs theo status
+    readonly healthyCount = computed(() => this.sloList().filter((s) => s.status === 'healthy').length);
+    readonly warningCount = computed(() => this.sloList().filter((s) => s.status === 'warning').length);
+    readonly criticalCount = computed(() => this.sloList().filter((s) => s.status === 'critical').length);
+
+    ngOnInit(): void {
+        this.loadSLOs();
+    }
+
+    loadSLOs(): void {
+        this.loading.set(true);
+        // TODO: gọi API SLOs với time window
+        // this.sloService.getSLOs(this.timeWindow).subscribe(...)
+        this.loading.set(false);
+    }
+
+    statusLabel(status: SLOStatus): string {
+        return { healthy: 'Healthy', warning: 'Warning', critical: 'Critical' }[status];
+    }
+
+    /** Tạo burn rate bars mini chart. */
+    burnRateBars(rate: number): number[] {
+        const base = Math.max(0.1, rate / 5);
+        return Array.from({ length: 20 }, (_, i) => {
+            const variation = 0.5 + Math.sin(i * 0.5) * 0.5;
+            return +(base * variation * (1 + (20 - i) * 0.02)).toFixed(2);
+        });
+    }
+}

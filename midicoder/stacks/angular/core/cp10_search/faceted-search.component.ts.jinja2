@@ -1,0 +1,308 @@
+{#
+Jinja2 template cho Faceted Search — Angular (CP10).
+
+Tu dong generate component giao dien tim kiem co loc rat:
+bang loc the loai/gia/tung ngay, danh sach ket qua, phan trang, sap xep, chip loc hoat dong.
+
+Usage:
+    context = {
+        "facets": [Facet objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * FacetedSearchComponent — Giao dien tim kiem co loc rat.
+ *
+ * Hien thi bang loc ben (the loai, gia, tung ngay), danh sach ket qua grid,
+ * phan trang, sap xep, va chip loc hoat dong.
+ *
+ * Tao tu dong boi CP10 — khong sua thu cong.
+ */
+
+import {
+    Component,
+    OnInit,
+    ChangeDetectionStrategy,
+    inject,
+    signal,
+    computed,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+
+/** Giao dien ket qua tim kiem. */
+export interface SearchResult {
+    id: string;
+    title: string;
+    description: string;
+    category: string;
+    price: number;
+    date: string;
+    score: number;
+}
+
+/** Giao dien mot facet (loc rat). */
+export interface FacetOption {
+    key: string;
+    label: string;
+    count: number;
+}
+
+export interface Facet {
+    name: string;
+    type: 'category' | 'price_range' | 'date_range';
+    options: FacetOption[];
+}
+
+/** Giao dien bo loc dang hoat. */
+export interface ActiveFilter {
+    facetName: string;
+    key: string;
+    label: string;
+}
+
+/** Giao dien phan trang. */
+export interface PaginationState {
+    currentPage: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+}
+
+@Component({
+    selector: 'app-faceted-search',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    template: `
+        <div class="faceted-search">
+            <!-- Thanh tim kiem -->
+            <header class="search-header">
+                <input
+                    type="text"
+                    class="search-input"
+                    placeholder="Tim kiem..."
+                    [(ngModel)]="query"
+                    (input)="onSearch()"
+                />
+                <span class="result-count">{{ filteredResults().length }} ket qua</span>
+            </header>
+
+            <div class="search-body">
+                <!-- Bang loc ben -->
+                <aside class="filter-sidebar">
+                    <h3>Bo Loc</h3>
+
+                    <!-- Loc the loai -->
+                    <div class="filter-group" *ngFor="let facet of facets()">
+                        <h4>{{ facet.name }}</h4>
+                        <label *ngFor="let opt of facet.options" class="filter-option">
+                            <input
+                                type="checkbox"
+                                [checked]="isFilterActive(facet.name, opt.key)"
+                                (change)="toggleFilter(facet.name, opt.key, opt.label)"
+                            />
+                            <span class="opt-label">{{ opt.label }}</span>
+                            <span class="opt-count">({{ opt.count }})</span>
+                        </label>
+                    </div>
+
+                    <!-- Loc khoang gia -->
+                    <div class="filter-group">
+                        <h4>Khoang Gia</h4>
+                        <div class="range-inputs">
+                            <input type="number" placeholder="Tieu" [(ngModel)]="priceMin" (change)="onSearch()" />
+                            <input type="number" placeholder="Nhat" [(ngModel)]="priceMax" (change)="onSearch()" />
+                        </div>
+                    </div>
+
+                    <!-- Loc tung ngay -->
+                    <div class="filter-group">
+                        <h4>Tung Ngay</h4>
+                        <input type="date" [(ngModel)]="dateFrom" (change)="onSearch()" />
+                        <input type="date" [(ngModel)]="dateTo" (change)="onSearch()" />
+                    </div>
+                </aside>
+
+                <!-- Khuong chot ket qua -->
+                <main class="results-area">
+                    <!-- Chip loc hoat dong -->
+                    <div class="active-filters" *ngIf="activeFilters().length">
+                        <span class="chip" *ngFor="let f of activeFilters()">
+                            {{ f.label }}
+                            <button class="chip-remove" (click)="removeFilter(f.facetName, f.key)">&times;</button>
+                        </span>
+                        <button class="clear-all" (click)="clearAllFilters()">Xoa tat ca</button>
+                    </div>
+
+                    <!-- Sap xep -->
+                    <div class="sort-bar">
+                        <label for="sort-select">Sap xep theo:</label>
+                        <select id="sort-select" [(ngModel)]="sortBy" (change)="onSearch()">
+                            <option value="relevance">Do lien quan</option>
+                            <option value="price_asc">Gia tang dan</option>
+                            <option value="price_desc">Gia giam dan</option>
+                            <option value="date_desc">Moi nhat</option>
+                            <option value="date_asc">Cu nhat</option>
+                        </select>
+                    </div>
+
+                    <!-- Grid ket qua -->
+                    <div class="results-grid" *ngIf="paginatedResults().length; else emptyState">
+                        <div class="result-card" *ngFor="let item of paginatedResults()">
+                            <h4 class="result-title">{{ item.title }}</h4>
+                            <p class="result-desc">{{ item.description }}</p>
+                            <div class="result-meta">
+                                <span class="result-category">{{ item.category }}</span>
+                                <span class="result-price">{{ item.price | number }}</span>
+                                <span class="result-date">{{ item.date | date:'dd/MM/yyyy' }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <ng-template #emptyState>
+                        <div class="empty-state">Khong tim thay ket qua nao phu hop.</div>
+                    </ng-template>
+
+                    <!-- Phan trang -->
+                    <nav class="pagination" *ngIf="pagination().totalPages > 1">
+                        <button class="page-btn" [disabled]="pagination().currentPage === 1"
+                            (click)="goToPage(pagination().currentPage - 1)">«</button>
+                        <button class="page-btn" *ngFor="let p of pageNumbers()"
+                            [class.active]="p === pagination().currentPage"
+                            (click)="goToPage(p)">{{ p }}</button>
+                        <button class="page-btn" [disabled]="pagination().currentPage === pagination().totalPages"
+                            (click)="goToPage(pagination().currentPage + 1)">»</button>
+                    </nav>
+                </main>
+            </div>
+        </div>
+    `,
+    styles: [`
+        .faceted-search { display: flex; flex-direction: column; height: 100%; font-family: system-ui, sans-serif; }
+        .search-header { display: flex; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; }
+        .search-input { flex: 1; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.95rem; }
+        .result-count { margin-left: 12px; color: #6b7280; font-size: 0.85rem; line-height: 38px; }
+        .search-body { display: flex; flex: 1; }
+        .filter-sidebar { width: 240px; padding: 16px; border-right: 1px solid #e5e7eb; overflow-y: auto; }
+        .filter-group { margin-bottom: 16px; }
+        .filter-group h4 { margin: 0 0 8px 0; font-size: 0.85rem; color: #374151; }
+        .filter-option { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 0.85rem; cursor: pointer; }
+        .opt-count { color: #9ca3af; margin-left: auto; }
+        .range-inputs { display: flex; gap: 8px; }
+        .range-inputs input { width: 100%; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.8rem; }
+        .results-area { flex: 1; padding: 16px; overflow-y: auto; }
+        .active-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: #e0e7ff; border-radius: 16px; font-size: 0.8rem; }
+        .chip-remove { background: none; border: none; cursor: pointer; font-size: 1rem; line-height: 1; color: #6366f1; }
+        .clear-all { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.8rem; text-decoration: underline; }
+        .sort-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 0.85rem; }
+        .sort-bar select { padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; }
+        .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+        .result-card { padding: 16px; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .result-card:hover { border-color: #6366f1; }
+        .result-title { margin: 0 0 4px 0; font-size: 1rem; }
+        .result-desc { margin: 0 0 8px 0; font-size: 0.85rem; color: #6b7280; }
+        .result-meta { display: flex; gap: 12px; font-size: 0.8rem; color: #9ca3af; }
+        .result-price { color: #16a34a; font-weight: 600; }
+        .pagination { display: flex; justify-content: center; gap: 4px; margin-top: 24px; }
+        .page-btn { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer; }
+        .page-btn.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+        .page-btn:disabled { opacity: 0.4; cursor: default; }
+        .empty-state { text-align: center; padding: 48px 0; color: #9ca3af; }
+    `],
+})
+export class FacetedSearchComponent implements OnInit {
+    public readonly facets = signal<Facet[]>([]);
+    public readonly results = signal<SearchResult[]>([]);
+    public readonly activeFilters = signal<ActiveFilter[]>([]);
+
+    public query = '';
+    public priceMin: number | null = null;
+    public priceMax: number | null = null;
+    public dateFrom = '';
+    public dateTo = '';
+    public sortBy = 'relevance';
+
+    private _page = signal<number>(1);
+    private _pageSize = 12;
+
+    public readonly pagination = computed<PaginationState>(() => {
+        const total = this.filteredResults().length;
+        return {
+            currentPage: this._page(),
+            pageSize: this._pageSize,
+            totalItems: total,
+            totalPages: Math.max(1, Math.ceil(total / this._pageSize)),
+        };
+    });
+
+    public readonly pageNumbers = computed<number[]>(() => {
+        const pages = [];
+        for (let i = 1; i <= this.pagination().totalPages; i++) {
+            pages.push(i);
+        }
+        return pages.slice(0, 5);
+    });
+
+    public readonly filteredResults = computed<SearchResult[]>(() => {
+        /* TODO: xu ly loc theo active filters + price range + date range */
+        return this.results();
+    });
+
+    public readonly paginatedResults = computed<SearchResult[]>(() => {
+        const start = (this._page() - 1) * this._pageSize;
+        return this.filteredResults().slice(start, start + this._pageSize);
+    });
+
+    ngOnInit(): void {
+        /* TODO: goi API tai danh sach facets va ket qua */
+    }
+
+    onSearch(): void {
+        this._page.set(1);
+        /* TODO: ket thuc goi API tim kiem moi */
+    }
+
+    toggleFilter(facetName: string, key: string, label: string): void {
+        const current = this.activeFilters();
+        const exists = current.find(f => f.facetName === facetName && f.key === key);
+        if (exists) {
+            this.activeFilters.set(current.filter(f => !(f.facetName === facetName && f.key === key)));
+        } else {
+            this.activeFilters.set([...current, { facetName, key, label }]);
+        }
+        this.onSearch();
+    }
+
+    removeFilter(facetName: string, key: string): void {
+        this.activeFilters.update(current =>
+            current.filter(f => !(f.facetName === facetName && f.key === key)),
+        );
+        this.onSearch();
+    }
+
+    clearAllFilters(): void {
+        this.activeFilters.set([]);
+        this.priceMin = null;
+        this.priceMax = null;
+        this.dateFrom = '';
+        this.dateTo = '';
+        this.onSearch();
+    }
+
+    isFilterActive(facetName: string, key: string): boolean {
+        return this.activeFilters().some(f => f.facetName === facetName && f.key === key);
+    }
+
+    goToPage(page: number): void {
+        const p = this.pagination();
+        if (page >= 1 && page <= p.totalPages) {
+            this._page.set(page);
+        }
+    }
+}

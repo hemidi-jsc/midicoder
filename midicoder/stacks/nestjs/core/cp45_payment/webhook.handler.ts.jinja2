@@ -1,0 +1,309 @@
+{#
+Jinja2 template cho NestJS Webhook Handler (CP45).
+
+Tự động generate NestJS webhook handler với signature verification.
+
+Usage:
+    context = {
+        "providers": ["stripe"],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+{% raw %}/**
+ * WebhookHandler — Xử lý webhook events từ Payment Gateway.
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Tính năng:
+ * - Signature verification cho Stripe webhook
+ * - Idempotency protection — deduplicate events
+ * - Event routing — route event đến handler phù hợp
+ *
+ * CP45: Payment Gateway Abstraction
+ */
+
+import { Injectable, Logger, BadRequestException } from "@nestjs/common";
+import { EventEmitter2 } from "@nestjs/event-emitter";
+import * as crypto from "crypto";
+
+/**
+ * Stripe event types.
+ */
+type StripeEventType =
+  | "payment_intent.succeeded"
+  | "payment_intent.payment_failed"
+  | "payment_intent.canceled"
+  | "charge.succeeded"
+  | "charge.refunded"
+  | "charge.failed"
+  | "invoice.payment_succeeded"
+  | "invoice.payment_failed"
+  | "customer.subscription.created"
+  | "customer.subscription.updated"
+  | "customer.subscription.deleted";
+
+/**
+ * Stripe webhook event object.
+ */
+interface StripeEvent {
+  id: string;
+  type: StripeEventType;
+  object: string;
+  created: number;
+  data: {
+    object: Record<string, any>;
+    previous_attributes?: Record<string, any>;
+  };
+  livemode: boolean;
+  pending_webhooks: number;
+}
+
+/**
+ * WebhookHandler — Xử lý Stripe webhook events.
+ *
+ * Usage:
+ *   const handler = new WebhookHandler(config);
+ *   const isValid = handler.verifySignature(body, signature);
+ *   const result = await handler.handleEvent(event);
+ */
+@Injectable()
+export class WebhookHandler {
+  private readonly logger = new Logger(WebhookHandler.name);
+  private readonly processedEvents = new Map<string, number>();
+  private readonly EVENT_TTL = 30 * 24 * 60 * 60 * 1000; // 30 ngày
+
+  constructor(
+    private readonly config: {
+      stripeWebhookSecret: string;
+      stripeEndpointSecret?: string;
+      tolerance?: number;
+    },
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
+
+  /**
+   * Xác minh chữ ký Stripe webhook.
+   *
+   * @param body - Raw body từ webhook request
+   * @param signature - Chữ ký từ header Stripe-Signature
+   * @returns Event object nếu hợp lệ
+   * @throws BadRequestException nếu chữ ký không hợp lệ
+   */
+  verifySignature(body: Buffer, signature: string, timestamp?: string): StripeEvent {
+    const tolerance = this.config.tolerance || 300;
+
+    // Parse timestamp
+    if (timestamp) {
+      const eventTime = parseInt(timestamp, 10);
+      if (Math.abs(Date.now() / 1000 - eventTime) > tolerance) {
+        throw new BadRequestException("Webhook timestamp ngoài tolerance");
+      }
+    }
+
+    // Compute expected signature
+    const signedPayload = `${this.extractTimestamp(signature)}.${body.toString("utf-8")}`;
+    const expectedSig = crypto
+      .createHmac("sha256", this.config.stripeWebhookSecret)
+      .update(signedPayload)
+      .digest("hex");
+
+    // Extract v1 signature
+    const sigParts = signature.split(",");
+    const sigV1 = sigParts.find((p) => p.startsWith("v1="));
+    if (!sigV1) {
+      throw new BadRequestException("Không tìm thấy chữ ký v1");
+    }
+    const actualSig = sigParts.split("=")[1];
+
+    if (!crypto.timingSafeEqual(
+      Buffer.from(expectedSig, "hex"),
+      Buffer.from(actualSig, "hex"),
+    )) {
+      throw new BadRequestException("Chữ ký webhook không hợp lệ");
+    }
+
+    return JSON.parse(body.toString("utf-8"));
+  }
+
+  /**
+   * Route và xử lý webhook event.
+   *
+   * @param event - Stripe event object
+   * @returns Kết quả xử lý
+   */
+  async handleEvent(event: StripeEvent): Promise<{ status: string; event_type: string; result?: any }> {
+    const { id: eventId, type: eventType } = event;
+
+    // Idempotency check
+    if (this.processedEvents.has(eventId)) {
+      this.logger.log(`Event đã xử lý rồi: ${eventId}`);
+      return { status: "already_processed", event_type: eventType };
+    }
+
+    // Route to handler
+    const handler = this.getHandler(eventType);
+    if (!handler) {
+      this.logger.log(`Event không được xử lý: ${eventType}`);
+      return { status: "ignored", event_type: eventType };
+    }
+
+    try {
+      const result = await handler(event);
+      this.processedEvents.set(eventId, Date.now());
+      this.logger.log(`Xử lý event thành công: type=${eventType}, id=${eventId}`);
+
+      // Emit event cho event-driven architecture (CP05)
+      this.eventEmitter.emit(`payment.${eventType}`, result);
+
+      return { status: "processed", event_type: eventType, result };
+    } catch (error) {
+      this.logger.error(`Lỗi xử lý event: ${eventType}, ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Xử lý payment_intent.succeeded.
+   */
+  private async handlePaymentSucceeded(event: StripeEvent): Promise<any> {
+    const intent = event.data.object;
+    return {
+      action: "payment_succeeded",
+      paymentIntentId: intent.id,
+      amount: intent.amount,
+      currency: intent.currency,
+      metadata: intent.metadata,
+    };
+  }
+
+  /**
+   * Xử lý payment_intent.payment_failed.
+   */
+  private async handlePaymentFailed(event: StripeEvent): Promise<any> {
+    const intent = event.data.object;
+    return {
+      action: "payment_failed",
+      paymentIntentId: intent.id,
+      failureReason: intent.last_payment_error?.message,
+    };
+  }
+
+  /**
+   * Xử lý payment_intent.canceled.
+   */
+  private async handlePaymentCanceled(event: StripeEvent): Promise<any> {
+    const intent = event.data.object;
+    return {
+      action: "payment_canceled",
+      paymentIntentId: intent.id,
+    };
+  }
+
+  /**
+   * Xử lý charge.refunded.
+   */
+  private async handleRefundCreated(event: StripeEvent): Promise<any> {
+    const charge = event.data.object;
+    return {
+      action: "refund_created",
+      chargeId: charge.id,
+      refundAmount: charge.amount_refunded,
+      balanceTransaction: charge.balance_transaction,
+    };
+  }
+
+  /**
+   * Xử lý charge.failed.
+   */
+  private async handleChargeFailed(event: StripeEvent): Promise<any> {
+    const charge = event.data.object;
+    return {
+      action: "charge_failed",
+      chargeId: charge.id,
+      failureCode: charge.outcome?.seller_message,
+    };
+  }
+
+  /**
+   * Xử lý subscription events.
+   */
+  private async handleSubscriptionCreated(event: StripeEvent): Promise<any> {
+    const subscription = event.data.object;
+    return {
+      action: "subscription_created",
+      subscriptionId: subscription.id,
+      customerId: subscription.customer,
+      status: subscription.status,
+    };
+  }
+
+  private async handleSubscriptionUpdated(event: StripeEvent): Promise<any> {
+    const subscription = event.data.object;
+    return {
+      action: "subscription_updated",
+      subscriptionId: subscription.id,
+      status: subscription.status,
+      currentPeriodEnd: subscription.current_period_end,
+    };
+  }
+
+  private async handleSubscriptionDeleted(event: StripeEvent): Promise<any> {
+    const subscription = event.data.object;
+    return {
+      action: "subscription_deleted",
+      subscriptionId: subscription.id,
+      canceledAt: subscription.canceled_at,
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Internal helpers
+  // ------------------------------------------------------------------
+
+  /**
+   * Route event type đến handler method.
+   */
+  private getHandler(eventType: string): ((event: StripeEvent) => Promise<any>) | null {
+    const routing: Record<string, (event: StripeEvent) => Promise<any>> = {
+      "payment_intent.succeeded": this.handlePaymentSucceeded.bind(this),
+      "payment_intent.payment_failed": this.handlePaymentFailed.bind(this),
+      "payment_intent.canceled": this.handlePaymentCanceled.bind(this),
+      "charge.refunded": this.handleRefundCreated.bind(this),
+      "charge.failed": this.handleChargeFailed.bind(this),
+      "customer.subscription.created": this.handleSubscriptionCreated.bind(this),
+      "customer.subscription.updated": this.handleSubscriptionUpdated.bind(this),
+      "customer.subscription.deleted": this.handleSubscriptionDeleted.bind(this),
+    };
+    return routing[eventType] || null;
+  }
+
+  /**
+   * Extract timestamp từ signature header.
+   */
+  private extractTimestamp(signature: string): string {
+    const parts = signature.split(",");
+    for (const part of parts) {
+      if (part.startsWith("t=")) {
+        return part.split("=")[1];
+      }
+    }
+    return "0";
+  }
+
+  /**
+   * Cleanup old processed events.
+   */
+  cleanupExpired() {
+    const now = Date.now();
+    for (const [id, timestamp] of this.processedEvents.entries()) {
+      if (now - timestamp > this.EVENT_TTL) {
+        this.processedEvents.delete(id);
+      }
+    }
+  }
+}
+{% endraw %}

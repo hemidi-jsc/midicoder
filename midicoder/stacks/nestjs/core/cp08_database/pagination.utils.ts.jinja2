@@ -1,0 +1,158 @@
+{#
+Jinja2 template cho Pagination utils (NestJS/TypeORM).
+
+Tự động generate pagination utilities cho CP08 Database.
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+/**
+ * Pagination utilities cho NestJS/TypeORM.
+ *
+ * Tự động generate — không sửa tay.
+ * Hỗ trợ:
+ * - Offset-based pagination (page + page_size)
+ * - Cursor-based pagination (base64 encoded cursor)
+ * - Response format chuẩn với metadata
+ */
+
+import { Repository, SelectQueryBuilder, FindOptionsWhere } from 'typeorm';
+
+/**
+ * Phân trang kết quả (offset-based).
+ */
+export interface Page<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_next: boolean;
+  has_prev: boolean;
+  total_pages: number;
+}
+
+/**
+ * Cursor-based pagination result.
+ */
+export interface CursorPage<T> {
+  items: T[];
+  next_cursor: string | null;
+  prev_cursor: string | null;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
+/**
+ * Options cho paginate.
+ */
+export interface PaginateOptions {
+  page?: number;
+  page_size?: number;
+  max_page_size?: number;
+  sort_by?: string;
+  ascending?: boolean;
+}
+
+/**
+ * Options cho cursor pagination.
+ */
+export interface CursorPaginateOptions {
+  cursor?: string | null;
+  page_size?: number;
+  order_column?: string;
+  descending?: boolean;
+}
+
+/**
+ * Offset-based paginator.
+ */
+export class OffsetPaginator {
+  static readonly MAX_PAGE_SIZE = 100;
+
+  static async paginate<T>(
+    repository: Repository<T>,
+    options: PaginateOptions = {},
+    where: any = {},
+  ): Promise<Page<T>> {
+    const page = Math.max(1, options.page ?? 1);
+    const pageSize = Math.min(options.page_size ?? 20, options.max_page_size ?? OffsetPaginator.MAX_PAGE_SIZE);
+
+    const [items, total] = await repository.findAndCount({
+      where: where as FindOptionsWhere<T>,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      order: options.sort_by ? { [options.sort_by]: options.ascending ? 'ASC' : 'DESC' } : undefined,
+    });
+
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    return {
+      items,
+      total,
+      page,
+      page_size: pageSize,
+      has_next: page < totalPages,
+      has_prev: page > 1,
+      total_pages: totalPages,
+    };
+  }
+}
+
+/**
+ * Cursor-based paginator.
+ */
+export class CursorPaginator {
+  static readonly MAX_PAGE_SIZE = 100;
+
+  static encodeCursor(value: any): string {
+    return Buffer.from(JSON.stringify(value)).toString('base64url');
+  }
+
+  static decodeCursor(cursor: string): any {
+    return JSON.parse(Buffer.from(cursor, 'base64url').toString('utf-8'));
+  }
+
+  static async paginate<T extends { id: any }>(
+    repository: Repository<T>,
+    options: CursorPaginateOptions = {},
+    where: any = {},
+  ): Promise<CursorPage<T>> {
+    const pageSize = Math.min(options.page_size ?? 20, CursorPaginator.MAX_PAGE_SIZE + 1);
+    const orderColumn = options.order_column ?? 'id';
+    const descending = options.descending ?? false;
+
+    const queryBuilder = repository.createQueryBuilder('e');
+
+    if (where) {
+      queryBuilder.where(where);
+    }
+
+    if (options.cursor) {
+      const cursorValue = CursorPaginator.decodeCursor(options.cursor);
+      if (descending) {
+        queryBuilder.andWhere(`${orderColumn} < :cursor`, { cursor: cursorValue });
+      } else {
+        queryBuilder.andWhere(`${orderColumn} > :cursor`, { cursor: cursorValue });
+      }
+    }
+
+    queryBuilder.orderBy(`e.${orderColumn}`, descending ? 'DESC' : 'ASC');
+    queryBuilder.limit(pageSize);
+
+    const rows = await queryBuilder.getMany();
+    const hasNext = rows.length > pageSize;
+    const items = rows.slice(0, pageSize);
+
+    const nextCursor = hasNext && items.length > 0
+      ? CursorPaginator.encodeCursor((items[items.length - 1] as any)[orderColumn])
+      : null;
+
+    return {
+      items,
+      next_cursor: nextCursor,
+      prev_cursor: options.cursor ?? null,
+      has_next: hasNext,
+      has_prev: options.cursor !== null && options.cursor !== undefined,
+    };
+  }
+}

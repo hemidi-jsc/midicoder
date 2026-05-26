@@ -1,0 +1,150 @@
+{#
+Jinja2 template cho Pagination Service (Angular).
+
+Tự động generate pagination service cho CP08 Database.
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+/**
+ * Pagination service cho Angular.
+ *
+ * Tự động generate — không sửa tay.
+ * Hỗ trợ:
+ * - Offset-based pagination
+ * - Cursor-based pagination
+ * - RxJS observable support
+ * - Cache metadata
+ */
+
+import { Injectable } from '@angular/core';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { shareReplay, switchMap } from 'rxjs/operators';
+
+/**
+ * Pagination metadata.
+ */
+export interface PageMetadata {
+  total: number;
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+  totalPages: number;
+}
+
+/**
+ * Cursor pagination metadata.
+ */
+export interface CursorMetadata {
+  nextCursor: string | null;
+  prevCursor: string | null;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
+/**
+ * Kết quả phân trang.
+ */
+export interface PageResult<T> {
+  items: T[];
+  meta: PageMetadata;
+}
+
+/**
+ * Cursor-based pagination result.
+ */
+export interface CursorResult<T> {
+  items: T[];
+  meta: CursorMetadata;
+}
+
+/**
+ * Query params cho pagination.
+ */
+export interface PageQueryParams {
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  ascending?: boolean;
+}
+
+/**
+ * Query params cho cursor pagination.
+ */
+export interface CursorQueryParams {
+  cursor?: string | null;
+  pageSize?: number;
+  orderColumn?: string;
+  descending?: boolean;
+}
+
+@Injectable({
+  providedIn: 'root',
+})
+export class PaginationService {
+  private readonly MAX_PAGE_SIZE = 100;
+
+  /**
+   * Parse pagination response về PageResult.
+   */
+  parsePageResponse<T>(response: any): PageResult<T> {
+    return {
+      items: response.items ?? response.data ?? [],
+      meta: {
+        total: response.total ?? 0,
+        page: response.page ?? 1,
+        pageSize: response.page_size ?? response.pageSize ?? 20,
+        hasNext: response.has_next ?? response.hasNext ?? false,
+        hasPrev: response.has_prev ?? response.hasPrev ?? false,
+        totalPages: response.total_pages ?? response.totalPages ?? 1,
+      },
+    };
+  }
+
+  /**
+   * Parse cursor pagination response.
+   */
+  parseCursorResponse<T>(response: any): CursorResult<T> {
+    return {
+      items: response.items ?? response.data ?? [],
+      meta: {
+        nextCursor: response.next_cursor ?? response.nextCursor ?? null,
+        prevCursor: response.prev_cursor ?? response.prevCursor ?? null,
+        hasNext: response.has_next ?? response.hasNext ?? false,
+        hasPrev: response.has_prev ?? response.hasPrev ?? false,
+      },
+    };
+  }
+
+  /**
+   * Build query params string cho offset pagination.
+   */
+  buildPageParams(params: PageQueryParams): URLSearchParams {
+    const search = new URLSearchParams();
+    if (params.page) search.set('page', params.page.toString());
+    if (params.pageSize) search.set('page_size', params.pageSize.toString());
+    if (params.sortBy) search.set('sort_by', params.sortBy);
+    if (params.ascending !== undefined) search.set('ascending', params.ascending.toString());
+    return search;
+  }
+
+  /**
+   * Build query params string cho cursor pagination.
+   */
+  buildCursorParams(params: CursorQueryParams): URLSearchParams {
+    const search = new URLSearchParams();
+    if (params.cursor) search.set('cursor', params.cursor);
+    if (params.pageSize) search.set('page_size', params.pageSize.toString());
+    if (params.orderColumn) search.set('order_column', params.orderColumn);
+    if (params.descending !== undefined) search.set('descending', params.descending.toString());
+    return search;
+  }
+
+  /**
+   * Tính total pages.
+   */
+  calculateTotalPages(total: number, pageSize: number): number {
+    return Math.max(1, Math.ceil(total / Math.min(pageSize, this.MAX_PAGE_SIZE)));
+  }
+}

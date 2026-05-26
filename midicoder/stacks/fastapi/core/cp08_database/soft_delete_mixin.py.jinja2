@@ -1,0 +1,150 @@
+{#
+Jinja2 template cho Soft Delete Mixin — FastAPI / SQLAlchemy.
+
+Tự động generate SQLAlchemy mixin hỗ trợ soft delete:
+thêm cột deleted_at, auto-filter bản ghi đã xoá trong query,
+và method soft_delete() để đánh dấu xoá thay vì hard delete.
+
+Usage:
+    context = {
+        "project_name": "my_api",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Soft Delete Mixin cho SQLAlchemy
+
+Tự động generate — không sửa tay.
+
+Pattern: B5 — Soft Delete Standard
+
+Mục đích:
+- Hỗ trợ soft delete cho các model — đánh dấu bản ghi đã xoá thay vì xóa hẳn
+- Tự động lọc bản ghi đã xoá khỏi tất cả query (trừ khi explicit include)
+- Cung cấp method soft_delete() và undelete() để quản lý trạng thái
+- Lưu thời điểm xoá (deleted_at) cho audit trail
+
+Sử dụng:
+    class User(BaseModel, SoftDeleteMixin):
+        __tablename__ = "users"
+        id: Mapped[int] = mapped_column(primary_key=True)
+
+    # Xoá mềm
+    await user.soft_delete(session)
+
+    # Khôi phục
+    await user.undelete(session)
+
+    # Query (tự động lọc deleted records)
+    users = await repo.list(session)
+
+    # Query bao gồm cả deleted records
+    users = await repo.list(session, include_deleted=True)
+
+Error codes:
+    - MDC-CP08-009: Soft delete operation failed
+    - MDC-CP08-010: Cannot undelete non-deleted record
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import Boolean, DateTime, and_, select
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Query
+
+
+class SoftDeleteMixin:
+    """Mixin cho soft delete — đánh dấu bản ghi đã xoá thay vì xóa hẳn.
+
+    Thêm vào model để tự động có chức năng soft delete:
+    - Cột `deleted_at`: NULL nếu còn hoạt động, datetime nếu đã xoá
+    - Property `is_deleted`: kiểm tra nhanh trạng thái
+    - Method `soft_delete()`: đánh dấu bản ghi đã xoá
+    - Method `undelete()`: khôi phục bản ghi đã xoá
+    - Class method `query_options()`: auto-filter trong query
+
+    Kết hợp với BaseModel để có đầy đủ audit trail:
+        class User(BaseModel, SoftDeleteMixin):
+            __tablename__ = "users"
+    """
+
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        default=None,
+        nullable=True,
+        index=True,
+        comment="Thời điểm soft delete — NULL nếu bản ghi còn hoạt động",
+    )
+
+    @property
+    def is_deleted(self) -> bool:
+        """Kiểm tra bản ghi đã được soft delete chưa.
+
+        Returns:
+            True nếu deleted_at đã được set, False nếu còn hoạt động
+        """
+        return self.deleted_at is not None
+
+    async def soft_delete(self, session: Any) -> None:
+        """Đánh dấu bản ghi đã xoá (soft delete).
+
+        Set deleted_at = current UTC timestamp. Không xóa hẳn khỏi database.
+
+        Args:
+            session: SQLAlchemy async session
+
+        Raises:
+            ValueError: Nếu bản ghi đã được soft delete trước đó
+        """
+        if self.is_deleted:
+            raise ValueError(
+                f"Record {self.__class__.__name__} đã được soft delete tại {self.deleted_at}"
+            )
+        self.deleted_at = datetime.now(timezone.utc)
+
+    async def undelete(self, session: Any) -> None:
+        """Khôi phục bản ghi đã soft delete.
+
+        Set deleted_at = NULL để bản ghi trở lại trạng thái hoạt động.
+
+        Args:
+            session: SQLAlchemy async session
+
+        Raises:
+            ValueError: Nếu bản ghi chưa được soft delete
+        """
+        if not self.is_deleted:
+            raise ValueError(
+                "Không thể undelete — bản ghi chưa được soft delete"
+            )
+        self.deleted_at = None
+
+    @classmethod
+    def not_deleted_filter(cls) -> Any:
+        """Trả về filter condition để loại trừ bản ghi đã soft delete.
+
+        Dùng khi cần explicit filter trong query:
+            stmt = select(User).where(User.not_deleted_filter())
+
+        Returns:
+            SQLAlchemy filter condition (deleted_at IS NULL)
+        """
+        return cls.deleted_at.is_(None)
+
+    @classmethod
+    def apply_filter(cls, query: Query) -> Query:
+        """Áp dụng soft delete filter vào SQLAlchemy 1.x Query.
+
+        Args:
+            query: SQLAlchemy Query object
+
+        Returns:
+            Query đã được filter để loại trừ deleted records
+        """
+        return query.filter(cls.not_deleted_filter())

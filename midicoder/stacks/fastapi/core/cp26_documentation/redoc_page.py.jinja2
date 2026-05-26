@@ -1,0 +1,80 @@
+{#
+Jinja2 template cho ReDoc Page — FastAPI.
+
+Tự động generate ReDoc HTML page cho CP26 Documentation Generator.
+
+Usage:
+    context = {
+        "app_title": str,
+        "app_description": str,
+        "app_version": str,
+    }
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+"""
+ReDoc Page cho FastAPI.
+
+Tự động generate từ CP26 Documentation Generator.
+{% if app_description %}
+{{ app_description }}
+{% endif %}
+
+Cung cấp:
+- get_redoc_html(): Tạo HTML page cho ReDoc
+- setup_redoc_page(): Setup ReDoc route cho FastAPI app
+"""
+
+from __future__ import annotations
+
+from fastapi import Request
+from fastapi.responses import HTMLResponse
+
+
+def get_redoc_html(openapi_url: str = "/openapi.json") -> str:
+    """Tạo HTML page cho ReDoc documentation.
+
+    Args:
+        openapi_url: URL đến OpenAPI schema.
+
+    Returns:
+        HTML string cho ReDoc page.
+    """
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>{{ app_title }} - API Documentation</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,600|Roboto:300,400,500" rel="stylesheet">
+        <style>
+            body {{ margin: 0; padding: 0; }}
+        </style>
+    </head>
+    <body>
+        <redoc spec-url="{openapi_url}"
+               hide-hostname="true"
+               hide-download-btn="false"
+               native-scrollbars="true"
+               expand-responses="200,201"
+               path-in-middle-panel="true">
+        </redoc>
+        <script src="https://cdn.jsdelivr.net/npm/redoc@2.0.0/bundles/redoc.standalone.js"></script>
+    </body>
+    </html>
+    """
+
+
+def setup_redoc_page(app, path: str = "/redoc") -> None:
+    """Thiết lập ReDoc page cho FastAPI app.
+
+    Args:
+        app: FastAPI application instance.
+        path: Route path cho ReDoc (mặc định: "/redoc").
+    """
+    @app.get(path, include_in_schema=False)
+    async def redoc_page(request: Request) -> HTMLResponse:
+        """ReDoc documentation page."""
+        return HTMLResponse(content=get_redoc_html())

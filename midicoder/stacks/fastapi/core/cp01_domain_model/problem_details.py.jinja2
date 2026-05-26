@@ -1,0 +1,153 @@
+{#
+Jinja2 template cho RFC 7807 Problem Details — FastAPI.
+
+Tự động generate Pydantic models cho ProblemDetails theo RFC 7807.
+Dùng cho API response đồng nhất khi có lỗi.
+
+Usage:
+    context = {
+        "errors": [Error objects],
+        "entities": [Entity objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+RFC 7807 Problem Details — FastAPI
+
+Tự động generate — không sửa tay.
+
+Pattern: B3 — Standardized Error Response
+
+Mục đích:
+- Implement RFC 7807 Problem Details for HTTP APIs
+- Cung cấp response structure đồng nhất cho tất cả lỗi
+- Hỗ trợ extensibility qua trường `extensions`
+
+Response format:
+    {
+        "type": "about:blank",
+        "title": "Dữ liệu không hợp lệ",
+        "status": 422,
+        "detail": "Trường 'email' không đúng định dạng",
+        "instance": "/api/v1/users",
+        "errors": [...],
+    }
+"""
+
+from __future__ import annotations
+
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
+
+
+class ErrorDetail(BaseModel):
+    """Chi tiết lỗi cho từng field — validation failure.
+
+    Usage:
+        detail = ErrorDetail(
+            field="email",
+            message="Không đúng định dạng email",
+            code="VALIDATION_EMAIL",
+        )
+    """
+
+    field: str = Field(
+        ...,
+        description="Tên field bị lỗi (dot notation cho nested)",
+        examples=["email", "address.city"],
+    )
+    message: str = Field(
+        ...,
+        description="Lời giải thích lỗi bằng tiếng Việt",
+        examples=["Không đúng định dạng email"],
+    )
+    code: Optional[str] = Field(
+        None,
+        description="Error code máy đọc được",
+        examples=["VALIDATION_EMAIL", "REQUIREMENT_MISSING"],
+    )
+
+
+class ValidationErrorDetail(BaseModel):
+    """Chi tiết lỗi validation — danh sách field errors.
+
+    Usage:
+        detail = ValidationErrorDetail(
+            title="Dữ liệu không hợp lệ",
+            status=422,
+            errors=[ErrorDetail(field="email", message=..., code=...)],
+        )
+    """
+
+    title: str = Field(
+        ...,
+        description="Tiêu đề lỗi ngắn gọn",
+        examples=["Dữ liệu không hợp lệ"],
+    )
+    status: int = Field(
+        ...,
+        description="HTTP status code",
+        ge=100,
+        le=599,
+    )
+    errors: list[ErrorDetail] = Field(
+        ...,
+        description="Danh sách chi tiết lỗi theo field",
+    )
+    instance: Optional[str] = Field(
+        None,
+        description="Path của request bị lỗi",
+        examples=["/api/v1/users"],
+    )
+    detail: Optional[str] = Field(
+        None,
+        description="Lời giải thích chi tiết bằng ngôn ngữ tự nhiên",
+    )
+
+
+class ProblemDetail(BaseModel):
+    """RFC 7807 Problem Details — model tổng quát.
+
+    Usage:
+        problem = ProblemDetail(
+            type="about:blank",
+            title="Không tìm thấy tài nguyên",
+            status=404,
+            detail="User với id='abc' không tồn tại",
+            instance="/api/v1/users/abc",
+        )
+    """
+
+    type: str = Field(
+        default="about:blank",
+        description="URI tham chiếu loại lỗi (RFC 3986)",
+        examples=["about:blank", "https://api.example.com/errors/not-found"],
+    )
+    title: str = Field(
+        ...,
+        description="Tiêu đề lỗi ngắn gọn",
+        examples=["Không tìm thấy tài nguyên"],
+    )
+    status: int = Field(
+        ...,
+        description="HTTP status code",
+        ge=100,
+        le=599,
+    )
+    detail: Optional[str] = Field(
+        None,
+        description="Lời giải thích chi tiết",
+    )
+    instance: Optional[str] = Field(
+        None,
+        description="URI của request cụ thể",
+    )
+    extensions: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Trường mở rộng tùy chỉnh",
+    )

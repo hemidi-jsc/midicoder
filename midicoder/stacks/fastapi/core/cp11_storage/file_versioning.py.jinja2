@@ -1,0 +1,252 @@
+{#
+Jinja2 template cho File Versioning Service — FastAPI.
+
+Tự động generate service quản lý phiên bản file: version tracking,
+content hash (SHA-256), file metadata storage, và version diff.
+
+Usage:
+    context = {
+        "project_name": "my_api",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+File Versioning Service cho FastAPI
+
+Tự động generate — không sửa tay.
+
+Pattern: B8 — File Versioning Standard
+
+Mục đích:
+- Quản lý phiên bản file: mỗi lần upload file mới tạo version mới
+- Tính toán content hash (SHA-256) để phát hiện file trùng nội dung
+- Lưu trữ file metadata (size, content_type, hash, upload_time)
+- Hỗ trợ so sánh phiên bản (version diff) và rollback
+
+Sử dụng:
+    # Trong dependency injection
+    from app.storage.file_versioning import FileVersioningService
+
+    @app.get("/files/{file_id}/versions")
+    async def list_versions(file_id: str, service: FileVersioningService = Depends()):
+        return await service.list_versions(file_id)
+
+    @app.post("/files/{file_id}/upload")
+    async def upload_version(
+        file_id: str,
+        file: UploadFile,
+        service: FileVersioningService = Depends(),
+    ):
+        version = await service.create_version(file_id, file)
+        return version
+
+    # Kiểm tra hai phiên bản có khác nhau không
+    is_different = await service.compare_versions(file_id, v1, v2)
+
+Error codes:
+    - MDC-CP11-011: File version creation failed
+    - MDC-CP11-012: Version not found
+    - MDC-CP11-013: Cannot compare different file versions
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any
+
+from pydantic import BaseModel
+
+
+@dataclass
+class FileVersion:
+    """Thông tin một phiên bản file.
+
+    Attributes:
+        version_id: UUID duy nhất của phiên bản
+        file_id: ID của file cha
+        version_number: Số phiên bản (bắt đầu từ 1, tăng dần)
+        content_hash: SHA-256 hash của nội dung file
+        size_bytes: Kích thước file (byte)
+        content_type: MIME type của file
+        uploaded_at: Thời điểm upload (UTC)
+        uploaded_by: Người upload (user ID)
+        comment: Ghi chú về phiên bản này
+    """
+
+    version_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    file_id: str = ""
+    version_number: int = 1
+    content_hash: str = ""
+    size_bytes: int = 0
+    content_type: str = "application/octet-stream"
+    uploaded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    uploaded_by: str = ""
+    comment: str = ""
+
+
+class FileVersioningService:
+    """Service quản lý phiên bản file.
+
+    Cung cấp các chức năng:
+    - Tạo phiên bản mới với content hash
+    - Lấy danh sách tất cả phiên bản của file
+    - So sánh hai phiên bản (dựa trên content hash)
+    - Rollback về phiên bản trước đó
+
+    Lưu ý: Đây là service layer — cần kết hợp với storage backend
+    (S3, local) và database (SQLAlchemy model) để hoạt động đầy đủ.
+
+    Args:
+        storage_backend: Instance của storage backend (S3Client, LocalStorage)
+        db_session: Async session factory để lưu version metadata
+    """
+
+    def __init__(
+        self,
+        storage_backend: Any | None = None,
+        db_session: Any | None = None,
+    ) -> None:
+        self.storage = storage_backend
+        self.session = db_session
+        # In-memory store cho demo — thay bằng database trong production
+        self._versions: dict[str, list[FileVersion]] = {}
+
+    async def create_version(
+        self,
+        file_id: str,
+        file_content: bytes,
+        content_type: str = "application/octet-stream",
+        uploaded_by: str = "system",
+        comment: str = "",
+    ) -> FileVersion:
+        """Tạo phiên bản mới cho file.
+
+        Tính toán SHA-256 hash từ nội dung file để phát hiện trùng lặp.
+        Nếu hash giống phiên bản cuối cùng, không tạo version mới.
+
+        Args:
+            file_id: ID của file cha
+            file_content: Nội dung file (bytes)
+            content_type: MIME type của file
+            uploaded_by: User ID của người upload
+            comment: Ghi chú về phiên bản
+
+        Returns:
+            FileVersion object của phiên bản mới
+
+        Raises:
+            ValueError: Nếu nội dung giống phiên bản hiện tại
+        """
+        # Tính content hash
+        content_hash = hashlib.sha256(file_content).hexdigest()
+
+        # Lấy danh sách phiên bản hiện có
+        versions = self._versions.get(file_id, [])
+        new_number = len(versions) + 1
+
+        # Kiểm tra trùng nội dung với phiên bản cuối
+        if versions and versions[-1].content_hash == content_hash:
+            raise ValueError(
+                "Không tạo phiên bản mới — nội dung giống phiên bản trước đó"
+            )
+
+        version = FileVersion(
+            file_id=file_id,
+            version_number=new_number,
+            content_hash=content_hash,
+            size_bytes=len(file_content),
+            content_type=content_type,
+            uploaded_by=uploaded_by,
+            comment=comment,
+        )
+
+        versions.append(version)
+        self._versions[file_id] = versions
+
+        # TODO: Lưu vào database và upload lên storage backend
+        # await self.storage.put(f"{file_id}/{version.version_id}", file_content)
+
+        return version
+
+    async def list_versions(self, file_id: str) -> list[FileVersion]:
+        """Lấy danh sách tất cả phiên bản của file.
+
+        Sắp xếp theo version_number giảm dần (mới nhất trước).
+
+        Args:
+            file_id: ID của file
+
+        Returns:
+            Danh sách FileVersion sắp xếp theo thời gian giảm dần
+        """
+        versions = self._versions.get(file_id, [])
+        return sorted(versions, key=lambda v: v.version_number, reverse=True)
+
+    async def get_version(self, file_id: str, version_number: int) -> FileVersion:
+        """Lấy thông tin một phiên bản cụ thể.
+
+        Args:
+            file_id: ID của file
+            version_number: Số phiên bản
+
+        Returns:
+            FileVersion object
+
+        Raises:
+            KeyError: Nếu phiên bản không tồn tại
+        """
+        versions = self._versions.get(file_id, [])
+        for v in versions:
+            if v.version_number == version_number:
+                return v
+        raise KeyError(f"Không tìm thấy phiên bản {version_number} của file {file_id}")
+
+    async def compare_versions(
+        self,
+        file_id: str,
+        version_a: int,
+        version_b: int,
+    ) -> dict[str, Any]:
+        """So sánh hai phiên bản của cùng một file.
+
+        Trả về thông tin so sánh: có khác nhau không, chênh lệch kích thước,
+        và hash của mỗi phiên bản.
+
+        Args:
+            file_id: ID của file
+            version_a: Số phiên bản thứ nhất
+            version_b: Số phiên bản thứ hai
+
+        Returns:
+            Dictionary với kết quả so sánh
+
+        Raises:
+            KeyError: Nếu một trong hai phiên bản không tồn tại
+        """
+        va = await self.get_version(file_id, version_a)
+        vb = await self.get_version(file_id, version_b)
+
+        return {
+            "version_a": {
+                "number": va.version_number,
+                "hash": va.content_hash,
+                "size_bytes": va.size_bytes,
+                "uploaded_at": va.uploaded_at.isoformat(),
+            },
+            "version_b": {
+                "number": vb.version_number,
+                "hash": vb.content_hash,
+                "size_bytes": vb.size_bytes,
+                "uploaded_at": vb.uploaded_at.isoformat(),
+            },
+            "is_different": va.content_hash != vb.content_hash,
+            "size_diff_bytes": va.size_bytes - vb.size_bytes,
+        }

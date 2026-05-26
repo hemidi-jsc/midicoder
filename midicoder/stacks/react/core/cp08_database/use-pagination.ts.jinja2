@@ -1,0 +1,246 @@
+{#
+Jinja2 template cho Pagination Hook (React).
+
+Tự động generate usePagination hook cho CP08 Database.
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+/**
+ * Pagination hook cho React.
+ *
+ * Tự động generate — không sửa tay.
+ * Hỗ trợ:
+ * - Offset-based pagination
+ * - Cursor-based pagination
+ * - Infinite scroll
+ * - Loading states
+ * - Error handling
+ */
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+/**
+ * Pagination metadata.
+ */
+export interface PageMetadata {
+  total: number;
+  page: number;
+  pageSize: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+  totalPages: number;
+}
+
+/**
+ * Cursor pagination metadata.
+ */
+export interface CursorMetadata {
+  nextCursor: string | null;
+  prevCursor: string | null;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
+/**
+ * Kết quả pagination.
+ */
+export interface PaginationResult<T> {
+  items: T[];
+  meta: PageMetadata;
+  loading: boolean;
+  error: Error | null;
+  goToPage: (page: number) => void;
+  nextPage: () => void;
+  prevPage: () => void;
+  refresh: () => void;
+}
+
+/**
+ * Kết quả cursor pagination.
+ */
+export interface CursorPaginationResult<T> {
+  items: T[];
+  meta: CursorMetadata;
+  loading: boolean;
+  error: Error | null;
+  loadNext: () => void;
+  loadPrev: () => void;
+  refresh: () => void;
+}
+
+/**
+ * Options cho usePagination.
+ */
+export interface UsePaginationOptions<T> {
+  fetchUrl: (page: number, pageSize: number) => string;
+  initialPage?: number;
+  initialPageSize?: number;
+  enabled?: boolean;
+}
+
+/**
+ * Offset-based pagination hook.
+ *
+ * Usage:
+ *   const result = usePagination({
+ *     fetchUrl: (page, size) => `/api/items?page=${page}&page_size=${size}`,
+ *     initialPage: 1,
+ *     initialPageSize: 20,
+ *   });
+ */
+export function usePagination<T = any>(options: UsePaginationOptions<T>): PaginationResult<T> {
+  const { fetchUrl, initialPage = 1, initialPageSize = 20, enabled = true } = options;
+
+  const [page, setPage] = useState(initialPage);
+  const [pageSize] = useState(initialPageSize);
+  const [items, setItems] = useState<T[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [meta, setMeta] = useState<PageMetadata>({
+    total: 0,
+    page: initialPage,
+    pageSize: initialPageSize,
+    hasNext: false,
+    hasPrev: false,
+    totalPages: 1,
+  });
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const fetchData = useCallback(async (targetPage: number) => {
+    if (!enabled) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const url = fetchUrl(targetPage, pageSize);
+      const response = await fetch(url, { signal: controller.signal });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const parsedItems = data.items ?? data.data ?? [];
+      const total = data.total ?? 0;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+      setItems(parsedItems);
+      setMeta({
+        total,
+        page: targetPage,
+        pageSize,
+        hasNext: targetPage < totalPages,
+        hasPrev: targetPage > 1,
+        totalPages,
+      });
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setError(err);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchUrl, pageSize, enabled]);
+
+  useEffect(() => {
+    fetchData(page);
+  }, [fetchData, page]);
+
+  const goToPage = useCallback((targetPage: number) => {
+    setPage(targetPage);
+  }, []);
+
+  const nextPage = useCallback(() => {
+    if (meta.hasNext) {
+      setPage((p) => p + 1);
+    }
+  }, [meta.hasNext]);
+
+  const prevPage = useCallback(() => {
+    if (meta.hasPrev) {
+      setPage((p) => p - 1);
+    }
+  }, [meta.hasPrev]);
+
+  const refresh = useCallback(() => {
+    fetchData(page);
+  }, [fetchData, page]);
+
+  return {
+    items,
+    meta,
+    loading,
+    error,
+    goToPage,
+    nextPage,
+    prevPage,
+    refresh,
+  };
+}
+
+/**
+ * Infinite scroll hook dùng cursor pagination.
+ */
+export function useInfiniteScroll<T = any>(
+  fetchNext: (cursor: string | null) => Promise<{ items: T[]; nextCursor: string | null; hasNext: boolean }>,
+  rootMargin = '200px'
+) {
+  const [items, setItems] = useState<T[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const cursorRef = useRef<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const loadMore = useCallback(async () => {
+    if (loading || !hasMore) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await fetchNext(cursorRef.current);
+      setItems((prev) => [...prev, ...result.items]);
+      cursorRef.current = result.nextCursor;
+      setHasMore(result.hasNext);
+    } catch (err: any) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [loading, hasMore, fetchNext]);
+
+  useEffect(() => {
+    if (!sentinelRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMore();
+        }
+      },
+      { rootMargin }
+    );
+
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [loadMore, rootMargin]);
+
+  return {
+    items,
+    loading,
+    hasMore,
+    error,
+    sentinelRef,
+    loadMore,
+  };
+}

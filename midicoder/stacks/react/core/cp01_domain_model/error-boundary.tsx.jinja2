@@ -1,0 +1,235 @@
+{#
+Jinja2 template cho Error Boundary + Error Context — React.
+
+Tự động generate class component với componentDidCatch + ErrorContext.
+
+Usage:
+    context = {
+        "errors": [Error objects],
+        "entities": [Entity objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Error Boundary + Error Context cho React
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B3 — Standardized Error Response
+ *
+ * Mục đích:
+ * - Bắt JavaScript errors trong component tree
+ * - Hiển thị fallback UI thay vì crash toàn bộ app
+ * - Cung cấp ErrorContext để các component con truy cập error state
+ * - Hỗ trợ error recovery (retry button)
+ *
+ * Usage:
+ *     import { ErrorBoundary, ErrorContext } from './error-boundary';
+ *
+ *     // Bọc component tree
+ *     <ErrorBoundary
+ *         fallback={({ error, reset }) => (
+ *             <div>
+ *                 <p>Có lỗi xảy ra: {error.message}</p>
+ *                 <button onClick={reset}>Thử lại</button>
+ *             </div>
+ *         )}
+ *     >
+ *         <App />
+ *     </ErrorBoundary>
+ *
+ *     // Sử dụng ErrorContext trong component con
+ *     const { hasError, error, resetError } = useContext(ErrorContext);
+ */
+
+import React, {
+    Component,
+    ComponentType,
+    PropsWithChildren,
+    createContext,
+    useCallback,
+    useContext,
+    useState,
+} from 'react';
+
+/**
+ * Error info structure — thông tin lỗi chuẩn hóa.
+ */
+export interface ErrorInfo {
+    /** Error object gốc */
+    error: Error;
+    /** Thời điểm lỗi xảy ra */
+    timestamp: Date;
+    /** Component stack trace */
+    componentStack?: string;
+}
+
+/**
+ * Error context value — state và actions cho error handling.
+ */
+interface ErrorContextValue {
+    /** Có lỗi xảy ra trong tree không */
+    hasError: boolean;
+    /** Error info chi tiết */
+    error: ErrorInfo | null;
+    /** Reset error state (retry) */
+    resetError: () => void;
+    /** Report error (send to monitoring service) */
+    reportError: (error: Error, componentStack?: string) => void;
+}
+
+/**
+ * ErrorContext — cung cấp error state cho toàn bộ component tree.
+ */
+export const ErrorContext = createContext<ErrorContextValue>({
+    hasError: false,
+    error: null,
+    resetError: () => {},
+    reportError: () => {},
+});
+
+/**
+ * Hook để truy cập ErrorContext.
+ */
+export function useErrorContext(): ErrorContextValue {
+    return useContext(ErrorContext);
+}
+
+/**
+ * Fallback UI props — truyền cho fallback component.
+ */
+export interface FallbackProps {
+    error: ErrorInfo | null;
+    reset: () => void;
+}
+
+/**
+ * ErrorBoundary props.
+ */
+export interface ErrorBoundaryProps {
+    /** Custom fallback component — override UI lỗi mặc định */
+    fallback?: ComponentType<FallbackProps>;
+    /** Callback khi có lỗi — dùng để report lên monitoring */
+    onError?: (error: ErrorInfo) => void;
+}
+
+/**
+ * ErrorBoundary state.
+ */
+interface ErrorBoundaryState {
+    hasError: boolean;
+    errorInfo: ErrorInfo | null;
+}
+
+/**
+ * Default fallback UI — hiển thị khi có lỗi.
+ */
+function DefaultFallback({ error, reset }: FallbackProps): React.ReactElement {
+    return (
+        <div style={{ padding: '2rem', textAlign: 'center' }}>
+            <h2>Đã xảy ra lỗi không mong muốn</h2>
+            {error && (
+                <pre style={{ color: 'red', fontSize: '0.875rem' }}>
+                    {error.error.message}
+                </pre>
+            )}
+            <button onClick={reset} style={{ marginTop: '1rem' }}>
+                Thử lại
+            </button>
+        </div>
+    );
+}
+
+/**
+ * Error Boundary — class component bắt JavaScript errors.
+ *
+ * Lifecycle:
+ * - componentDidCatch: Bắt error từ component tree phía dưới
+ * - componentStack: Cung cấp thông tin component nào gây lỗi
+ */
+export class ErrorBoundary extends Component<
+    PropsWithChildren<ErrorBoundaryProps>,
+    ErrorBoundaryState
+> {
+    constructor(props: PropsWithChildren<ErrorBoundaryProps>) {
+        super(props);
+        this.state = { hasError: false, errorInfo: null };
+    }
+
+    static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+        return {
+            hasError: true,
+            errorInfo: {
+                error,
+                timestamp: new Date(),
+            },
+        };
+    }
+
+    componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+        const errorData: ErrorInfo = {
+            error,
+            timestamp: new Date(),
+            componentStack: errorInfo.componentStack,
+        };
+
+        // Report lên callback nếu có
+        if (this.props.onError) {
+            this.props.onError(errorData);
+        }
+
+        // Log lỗi (production: gửi đến monitoring service)
+        console.error('[ErrorBoundary]', errorData);
+    }
+
+    resetError = (): void => {
+        this.setState({ hasError: false, errorInfo: null });
+    };
+
+    render(): React.ReactElement {
+        if (this.state.hasError) {
+            const Fallback = this.props.fallback || DefaultFallback;
+            return (
+                <ErrorContext.Provider
+                    value={{
+                        hasError: true,
+                        error: this.state.errorInfo,
+                        resetError: this.resetError,
+                        reportError: this.handleReportError,
+                    }}
+                >
+                    <Fallback error={this.state.errorInfo} reset={this.resetError} />
+                </ErrorContext.Provider>
+            );
+        }
+
+        return (
+            <ErrorContext.Provider
+                value={{
+                    hasError: false,
+                    error: null,
+                    resetError: this.resetError,
+                    reportError: this.handleReportError,
+                }}
+            >
+                {this.props.children}
+            </ErrorContext.Provider>
+        );
+    }
+
+    private handleReportError = (error: Error, componentStack?: string): void => {
+        const errorData: ErrorInfo = {
+            error,
+            timestamp: new Date(),
+            componentStack,
+        };
+
+        if (this.props.onError) {
+            this.props.onError(errorData);
+        }
+    };
+}

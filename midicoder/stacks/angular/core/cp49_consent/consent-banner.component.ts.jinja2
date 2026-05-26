@@ -1,0 +1,339 @@
+{#
+Jinja2 template cho Angular Consent Banner Component (CP49).
+
+Tự động generate Angular consent banner component.
+
+Usage:
+    context = {
+        "cookie_categories": ["necessary", "analytics", "marketing", "preferences"],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+{% raw %}/**
+* UI Framework: {{{ ui_framework }}}
+* CP49 Consent & Preference Management — Consent Banner Component.
+*
+* Banner thông báo cookie và thu thập đồng ý từ người dùng.
+* Tuân thủ GDPR với các tùy chọn: Chấp nhận tất cả, Từ chối tất cả,
+* Tùy chỉnh, Cài đặt chi tiết.
+*
+* Sử dụng Signal-based state management của Angular.
+*
+* Tạo tự động bởi CP49 — không sửa thủ công.
+*/
+{% if ui_framework == "material" %}
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatDialogModule } from '@angular/material/dialog';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+// Sử dụng Bootstrap classes trong template
+{% endif %}
+{% raw %}
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { ConsentService } from './consent.service';
+
+/**
+ * Danh sách danh mục cookie.
+ */
+const COOKIE_CATEGORIES = [
+  {
+    id: 'necessary',
+    label: 'Cần thiết',
+    description: 'Cookie cần thiết để website hoạt động. Không thể tắt.',
+    required: true,
+    enabled: true,
+  },
+  {
+    id: 'analytics',
+    label: 'Phân tích',
+    description: 'Giúp chúng tôi hiểu cách bạn sử dụng website để cải thiện trải nghiệm.',
+    required: false,
+    enabled: false,
+  },
+  {
+    id: 'marketing',
+    label: 'Tiếp thị',
+    description: 'Được sử dụng để hiển thị quảng cáo liên quan đến bạn.',
+    required: false,
+    enabled: false,
+  },
+  {
+    id: 'preferences',
+    label: 'Thích',
+    description: 'Cho phép website nhớ thiết lập của bạn như ngôn ngữ.',
+    required: false,
+    enabled: false,
+  },
+] as const;
+
+/**
+ * ConsentBannerComponent — Banner thông báo và thu thập đồng ý cookie.
+ *
+ * Hiển thị banner khi người dùng chưa có cookie preference:
+ * - Chấp nhận tất cả: bật mọi danh mục cookie
+ * - Từ chối tất cả: chỉ giữ danh mục necessary
+ * - Tùy chỉnh: bật/tắt từng danh mục
+ * - Cài đặt: mở preference center
+ *
+ * Banner tự động ẩn khi người dùng đã có preference.
+ */
+@Component({
+  selector: 'app-consent-banner',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  template: `
+    @if (showBanner()) {
+      <div class="consent-banner" role="alert" aria-live="polite">
+        <div class="consent-banner__content">
+          <h2 class="consent-banner__title">Chúng tôi sử dụng cookie</h2>
+          <p class="consent-banner__description">
+            Website này sử dụng cookie để cải thiện trải nghiệm người dùng,
+            phân tích lưu lượng truy cập và phục vụ nội dung liên quan.
+            Bạn có thể quản lý thiết lập cookie của mình.
+          </p>
+
+          @if (showCategories()) {
+            <div class="consent-banner__categories">
+              @for (category of categories(); track category.id) {
+                <label class="consent-banner__category">
+                  <input
+                    type="checkbox"
+                    [checked]="category.enabled"
+                    [disabled]="category.required"
+                    (change)="toggleCategory(category.id)"
+                  />
+                  <span class="consent-banner__category-label">
+                    <strong>{{ category.label }}</strong>
+                    <small>{{ category.description }}</small>
+                    @if (category.required) {
+                      <em class="consent-banner__required">(Bắt buộc)</em>
+                    }
+                  </span>
+                </label>
+              }
+            </div>
+          }
+
+          <div class="consent-banner__actions">
+            <button
+              class="btn btn--primary"
+              (click)="acceptAll()"
+              aria-label="Chấp nhận tất cả cookie"
+            >
+              Chấp nhận tất cả
+            </button>
+            <button
+              class="btn btn--secondary"
+              (click)="rejectAll()"
+              aria-label="Từ chối tất cả cookie không cần thiết"
+            >
+              Chỉ cần thiết
+            </button>
+            <button
+              class="btn btn--outline"
+              (click)="toggleCategories()"
+              aria-label="Tùy chọn cookie"
+            >
+              Tùy chọn
+            </button>
+            <button
+              class="btn btn--ghost"
+              (click)="openPreferences()"
+              aria-label="Mở trang cài đặt cookie"
+            >
+              Cài đặt
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+  `,
+  styles: `
+    .consent-banner {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #ffffff;
+      border-top: 1px solid #e2e8f0;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+      padding: 1.5rem;
+      z-index: 9999;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .consent-banner__content {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .consent-banner__title {
+      margin: 0 0 0.5rem;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    .consent-banner__description {
+      margin: 0 0 1rem;
+      color: #64748b;
+      line-height: 1.5;
+    }
+    .consent-banner__categories {
+      display: grid;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      padding: 1rem;
+      background: #f8fafc;
+      border-radius: 0.5rem;
+    }
+    .consent-banner__category {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+    .consent-banner__category-label {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .consent-banner__category-label small {
+      color: #64748b;
+      font-size: 0.875rem;
+    }
+    .consent-banner__required {
+      color: #94a3b8;
+      font-size: 0.75rem;
+    }
+    .consent-banner__actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .btn {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 0.375rem;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .btn--primary {
+      background: #2563eb;
+      color: white;
+    }
+    .btn--primary:hover { background: #1d4ed8; }
+    .btn--secondary {
+      background: #e2e8f0;
+      color: #1e293b;
+    }
+    .btn--secondary:hover { background: #cbd5e1; }
+    .btn--outline {
+      background: transparent;
+      border: 1px solid #94a3b8;
+      color: #475569;
+    }
+    .btn--outline:hover { background: #f1f5f9; }
+    .btn--ghost {
+      background: transparent;
+      color: #64748b;
+    }
+    .btn--ghost:hover { text-decoration: underline; }
+  `,
+})
+export class ConsentBannerComponent implements OnInit {
+  // ===========================================================================
+  // Inject dependencies
+  // ===========================================================================
+
+  private readonly consentService = inject(ConsentService);
+
+  // ===========================================================================
+  // Signals
+  // ===========================================================================
+
+  /** Hiển thị banner. */
+  readonly showBanner = signal(false);
+
+  /** Hiển thị danh sách categories. */
+  readonly showCategories = signal(false);
+
+  /** Danh sách categories. */
+  readonly categories = signal<typeof COOKIE_CATEGORIES>([...COOKIE_CATEGORIES]);
+
+  // ===========================================================================
+  // Lifecycle
+  // ===========================================================================
+
+  ngOnInit(): void {
+    // Kiểm tra nếu user đã có consent
+    const existing = this.consentService.getStoredConsent();
+    if (!existing) {
+      this.showBanner.set(true);
+    }
+  }
+
+  // ===========================================================================
+  // Actions
+  // ===========================================================================
+
+  /** Chấp nhận tất cả cookie. */
+  acceptAll(): void {
+    const categories = this.categories();
+    categories.forEach((c) => (c.enabled = true));
+    this.saveConsent(true);
+    this.showBanner.set(false);
+  }
+
+  /** Từ chối tất cả cookie không cần thiết. */
+  rejectAll(): void {
+    const categories = this.categories();
+    categories.forEach((c) => (c.enabled = c.required));
+    this.saveConsent(false);
+    this.showBanner.set(false);
+  }
+
+  /** Toggle hiển thị danh sách categories. */
+  toggleCategories(): void {
+    this.showCategories.update((v) => !v);
+  }
+
+  /** Toggle trạng thái một category. */
+  toggleCategory(categoryId: string): void {
+    const categories = this.categories();
+    const category = categories.find((c) => c.id === categoryId);
+    if (category && !category.required) {
+      category.enabled = !category.enabled;
+    }
+  }
+
+  /** Mở preference center. */
+  openPreferences(): void {
+    // Navigate đến preference center
+    this.showBanner.set(false);
+  }
+
+  // ===========================================================================
+  // Internal helpers
+  // ===========================================================================
+
+  /** Lưu consent vào service và localStorage. */
+  private saveConsent(acceptedAll: boolean): void {
+    const categories = this.categories();
+    const preferences: Record<string, boolean> = {};
+    categories.forEach((c) => (preferences[c.id] = c.enabled));
+
+    this.consentService.saveConsent({
+      accepted: acceptedAll,
+      categories: preferences,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+{% endraw %}

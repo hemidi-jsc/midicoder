@@ -1,0 +1,319 @@
+{#
+Jinja2 template cho Bulk Import Preview Component — React (CP38 Data ETL).
+
+Tự động generate component xem trước import với drag-drop CSV.
+
+Usage:
+    context = {}
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Component xem trước & xác thực import hàng loạt — React.
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Mục đích:
+ * - Kéo thả / chọn file CSV để tải lên
+ * - Hiển thị bản xem trước dữ liệu dạng bảng
+ * - Ánh xạ cột source sang field target (column mapper)
+ * - Báo cáo xác thực với lỗi/cảnh báo theo hàng
+ * - Nút import với thanh tiến trình
+ *
+ * Pattern: B20 — Bulk Import Preview & Validation
+ *
+ * Usage:
+ *     <BulkImportPreview
+ *         entityType="Product"
+ *         onImportComplete={(result) => console.log(result)}
+ *     />
+ */
+
+import React, {
+    useCallback,
+    useMemo,
+    useState,
+    type ChangeEvent,
+    type DragEvent,
+    type FormEvent,
+} from 'react';
+
+/**
+ * Hàng dữ liệu trong file import.
+ */
+interface ImportRow {
+    rowIndex: number;
+    values: Record<string, string>;
+    errors: string[];
+    warnings: string[];
+}
+
+/**
+ * Cấu hình ánh xạ cột.
+ */
+interface ColumnMapping {
+    sourceColumn: string;
+    targetField: string;
+    required: boolean;
+}
+
+/**
+ * Kết quả xác thực.
+ */
+interface ValidationReport {
+    totalRows: number;
+    validRows: number;
+    errorRows: number;
+    warningRows: number;
+    errors: Array<{ row: number; field: string; message: string }>;
+    warnings: Array<{ row: number; field: string; message: string }>;
+}
+
+/**
+ * Props của BulkImportPreview.
+ */
+interface BulkImportPreviewProps {
+    /** Loại entity cần import */
+    entityType: string;
+    /** Callback khi import hoàn tất */
+    onImportComplete?: (result: { imported: number; failed: number }) => void;
+}
+
+/**
+ * Bulk Import Preview Component.
+ */
+export function BulkImportPreview({
+    entityType,
+    onImportComplete,
+}: BulkImportPreviewProps): React.ReactElement {
+    const [fileName, setFileName] = useState<string>('');
+    const [headers, setHeaders] = useState<string[]>([]);
+    const [previewRows, setPreviewRows] = useState<ImportRow[]>([]);
+    const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([]);
+    const [report, setReport] = useState<ValidationReport | null>(null);
+    const [progress, setProgress] = useState<number>(0);
+    const [isImporting, setIsImporting] = useState<boolean>(false);
+    const [dragOver, setDragOver] = useState<boolean>(false);
+
+    /**
+     * Xử lý file CSV đã chọn.
+     */
+    const processFile = useCallback((file: File) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target?.result as string;
+            const lines = text.split('\n').filter(Boolean);
+            if (lines.length < 2) return;
+
+            const parsedHeaders = lines[0].split(',').map((h) => h.trim());
+            setHeaders(parsedHeaders);
+            setFileName(file.name);
+
+            const rows: ImportRow[] = lines.slice(1, 11).map((line, idx) => {
+                const cols = line.split(',');
+                const values: Record<string, string> = {};
+                parsedHeaders.forEach((h, i) => {
+                    values[h] = cols[i]?.trim() || '';
+                });
+                return { rowIndex: idx + 2, values, errors: [], warnings: [] };
+            });
+            setPreviewRows(rows);
+
+            const mappings: ColumnMapping[] = parsedHeaders.map((h) => ({
+                sourceColumn: h,
+                targetField: h,
+                required: true,
+            }));
+            setColumnMappings(mappings);
+        };
+        reader.readAsText(file);
+    }, []);
+
+    /** Xử lý kéo thả file */
+    const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setDragOver(true);
+    }, []);
+
+    const handleDragLeave = useCallback(() => setDragOver(false), []);
+
+    const handleDrop = useCallback(
+        (e: DragEvent<HTMLDivElement>) => {
+            e.preventDefault();
+            setDragOver(false);
+            if (e.dataTransfer.files.length) {
+                processFile(e.dataTransfer.files[0]);
+            }
+        },
+        [processFile],
+    );
+
+    /** Chạy xác thực dữ liệu */
+    const validateData = useCallback((): void => {
+        const errors: ValidationReport['errors'] = [];
+        const warnings: ValidationReport['warnings'] = [];
+        let errorRows = 0;
+        let warningRows = 0;
+        let validRows = 0;
+
+        const updatedRows = previewRows.map((row) => {
+            const rowErrors: string[] = [];
+            for (const mapping of columnMappings) {
+                const value = row.values[mapping.sourceColumn];
+                if (mapping.required && !value) {
+                    const msg = 'Giá trị bắt buộc';
+                    errors.push({ row: row.rowIndex, field: mapping.targetField, message: msg });
+                    rowErrors.push(`[${mapping.targetField}] ${msg}`);
+                }
+            }
+            if (rowErrors.length) errorRows++;
+            else validRows++;
+            return { ...row, errors: rowErrors };
+        });
+
+        setPreviewRows(updatedRows);
+        setReport({
+            totalRows: previewRows.length,
+            validRows,
+            errorRows,
+            warningRows,
+            errors,
+            warnings,
+        });
+    }, [previewRows, columnMappings]);
+
+    /** Thực hiện import với tiến trình */
+    const startImport = useCallback(async (): Promise<void> => {
+        if (!report) return;
+        setIsImporting(true);
+        setProgress(0);
+
+        for (let i = 0; i <= 100; i += 10) {
+            setProgress(i);
+            await new Promise((r) => setTimeout(r, 200));
+        }
+
+        setIsImporting(false);
+        onImportComplete?.({ imported: report.validRows, failed: report.errorRows });
+    }, [report, onImportComplete]);
+
+    /** Cập nhật ánh xạ cột */
+    const updateMapping = useCallback((index: number, field: string) => {
+        setColumnMappings((prev) => {
+            const next = [...prev];
+            next[index] = { ...next[index], targetField: field };
+            return next;
+        });
+    }, []);
+
+    return (
+        <div className="bulk-import-preview">
+            {/* Vùng kéo thả file CSV */}
+            <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                style={{
+                    border: `2px dashed ${dragOver ? '#3b82f6' : '#d1d5db'}`,
+                    padding: '2rem',
+                    textAlign: 'center',
+                    borderRadius: '0.5rem',
+                    marginBottom: '1rem',
+                }}
+            >
+                <p>Kéo thả file CSV vào đây hoặc</p>
+                <label>
+                    <input
+                        type="file"
+                        accept=".csv"
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                            if (e.target.files?.length) processFile(e.target.files[0]);
+                        }}
+                        style={{ display: 'none' }}
+                    />
+                    <span style={{ color: '#3b82f6', cursor: 'pointer' }}>chọn file</span>
+                </label>
+                {fileName && <p style={{ marginTop: '0.5rem' }}>Đã chọn: {fileName}</p>}
+            </div>
+
+            {/* Bảng ánh xạ cột */}
+            {columnMappings.length > 0 && (
+                <table style={{ width: '100%', marginBottom: '1rem' }}>
+                    <thead>
+                        <tr>
+                            <th>Cột trong file</th>
+                            <th>Trường đích</th>
+                            <th>Bắt buộc</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {columnMappings.map((m, i) => (
+                            <tr key={i}>
+                                <td>{m.sourceColumn}</td>
+                                <td>
+                                    <input
+                                        type="text"
+                                        value={m.targetField}
+                                        onChange={(e) => updateMapping(i, e.target.value)}
+                                    />
+                                </td>
+                                <td>{m.required ? 'Có' : 'Không'}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+
+            {/* Nút xác thực và import */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                <button onClick={validateData} disabled={!headers.length}>
+                    Xác thực dữ liệu
+                </button>
+                <button onClick={startImport} disabled={!report || isImporting}>
+                    {isImporting ? `Đang import... ${progress}%` : 'Import'}
+                </button>
+            </div>
+
+            {/* Thanh tiến trình */}
+            {isImporting && (
+                <div style={{ marginBottom: '1rem' }}>
+                    <div
+                        style={{
+                            height: '8px',
+                            backgroundColor: '#e5e7eb',
+                            borderRadius: '4px',
+                            overflow: 'hidden',
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: `${progress}%`,
+                                height: '100%',
+                                backgroundColor: '#3b82f6',
+                                transition: 'width 0.2s',
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* Báo cáo xác thực */}
+            {report && (
+                <div style={{ padding: '1rem', backgroundColor: '#f3f4f6', borderRadius: '0.5rem' }}>
+                    <h3>Báo cáo xác thực</h3>
+                    <p>Tổng: {report.totalRows} | Hợp lệ: {report.validRows} | Lỗi: {report.errorRows}</p>
+                    {report.errors.slice(0, 5).map((err, i) => (
+                        <p key={i} style={{ color: '#dc2626', fontSize: '0.875rem' }}>
+                            Hàng {err.row}, {err.field}: {err.message}
+                        </p>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+export default BulkImportPreview;

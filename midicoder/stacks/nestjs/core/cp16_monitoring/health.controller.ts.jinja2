@@ -1,0 +1,118 @@
+{#
+Jinja2 template cho Health Check Controller — NestJS.
+
+Tự động generate HealthCheckController sử dụng @nestjs/terminus
+với HealthCheckService và DatabaseHealthIndicator để kiểm tra
+trạng thái ứng dụng và dependency.
+
+Usage:
+    context = {
+        "project_name": "my_api",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Health Check Controller — NestJS
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B2 — Health Check Standard
+ *
+ * Mục đích:
+ * - Cung cấp các endpoint health check cho Kubernetes và load balancer
+ * - /health: liveness probe — trả về 200 nếu ứng dụng đang chạy
+ * - /ready: readiness probe — kiểm tra DB connectivity qua Terminus
+ * - Sử dụng @nestjs/terminus HealthCheckService để orchestrate health indicators
+ *
+ * Đăng ký:
+ *   @Module({
+ *     imports: [TerminusModule],
+ *     controllers: [HealthCheckController],
+ *   })
+ *   export class HealthModule {}
+ *
+ * Response format:
+ *   {
+ *     "status": "ok",
+ *     "info": { "database": { "status": "up" } },
+ *     "error": {},
+ *     "pixels": 1
+ *   }
+ *
+ * Error codes:
+ *   - MDC-CP16-015: Database connection failed
+ *   - MDC-CP16-016: Health check endpoint error
+ */
+
+import { Controller, Get } from '@nestjs/common';
+import {
+  HealthCheck,
+  HealthCheckService,
+  HttpHealthIndicator,
+} from '@nestjs/terminus';
+
+/**
+ * HealthCheckController — các endpoint health check cho NestJS.
+ *
+ * Sử dụng @nestjs/terminus để orchestrate health indicators.
+ * Hỗ trợ DB health check, HTTP health check, và custom indicators.
+ */
+@Controller('health')
+export class HealthCheckController {
+  constructor(
+    private health: HealthCheckService,
+    private db: any, // DatabaseHealthIndicator — inject từ HealthModule
+    private http: HttpHealthIndicator,
+  ) {}
+
+  /**
+   * Liveness health check — GET /health
+   *
+   * Kiểm tra xem ứng dụng có đang chạy bình thường không.
+   * Dùng cho load balancer health check và K8s liveness probe.
+   *
+   * @returns Response với status "ok" nếu app đang chạy
+   */
+  @Get()
+  @HealthCheck()
+  checkLiveness() {
+    return this.health.check([]);
+  }
+
+  /**
+   * Readiness health check — GET /health/ready
+   *
+   * Kiểm tra đầy đủ dependency (database, external services).
+   * Dùng cho K8s readiness probe. Trả về 503 nếu bất kỳ
+   * health indicator nào thất bại.
+   *
+   * @returns Response chi tiết kết quả từng health indicator
+   */
+  @Get('ready')
+  @HealthCheck()
+  checkReadiness() {
+    return this.health.check([
+      // Kiểm tra kết nối database
+      () => this.db.pingCheck('database', this.db),
+      // Kiểm tra HTTP endpoint nội bộ (nếu có)
+      // () => this.http.isServiceHealthy('api-gateway', 'http://localhost:3000'),
+    ]);
+  }
+
+  /**
+   * K8s liveness probe — GET /health/live
+   *
+   * Lightweight endpoint cho Kubernetes liveness probe.
+   * Tối giản, không thực hiện bất kỳ dependency check.
+   *
+   * @returns Object tối giản với key "status"
+   */
+  @Get('live')
+  checkK8sLive(): { status: string } {
+    return { status: 'alive' };
+  }
+}

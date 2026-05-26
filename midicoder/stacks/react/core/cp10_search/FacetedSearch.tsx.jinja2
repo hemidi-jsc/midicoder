@@ -1,0 +1,384 @@
+{#
+Jinja2 template cho Faceted Search — React (CP10).
+
+Tu dong generate component giao dien tim kiem co loc rat voi
+bang loc co the thu/gioi va grid ket qua.
+
+Usage:
+    context = {
+        "facets": [Facet objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * FacetedSearch — Giao dien tim kiem co loc rat (React).
+ *
+ * Hien thi bang loc ben co the thu/gioi (the loai, gia, tung ngay),
+ * danh sach ket qua grid, phan trang, sap xep, va chip loc hoat dong.
+ *
+ * Tao tu dong boi CP10 — khong sua thu cong.
+ */
+
+import React, { useState, useMemo, useCallback } from 'react';
+
+/** Giao dien ket qua tim kiem. */
+export interface SearchResult {
+    id: string;
+    title: string;
+    description: string;
+    category: string;
+    price: number;
+    date: string;
+    score: number;
+}
+
+/** Giao dien mot tu lua chon facet. */
+export interface FacetOption {
+    key: string;
+    label: string;
+    count: number;
+}
+
+export interface Facet {
+    name: string;
+    type: 'category' | 'price_range' | 'date_range';
+    options: FacetOption[];
+}
+
+/** Giao dien bo loc dang hoat. */
+export interface ActiveFilter {
+    facetName: string;
+    key: string;
+    label: string;
+}
+
+/** FacetedSearch props. */
+interface FacetedSearchProps {
+    facets?: Facet[];
+    results?: SearchResult[];
+    onSearch?: (query: string, filters: ActiveFilter[], sortBy: string) => void;
+}
+
+/**
+ * FacetedSearch — Component tim kiem co loc rat.
+ */
+const FacetedSearch: React.FC<FacetedSearchProps> = ({
+    facets = [],
+    results = [],
+    onSearch,
+}) => {
+    const [query, setQuery] = useState('');
+    const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+    const [sortBy, setSortBy] = useState('relevance');
+    const [priceMin, setPriceMin] = useState<number | null>(null);
+    const [priceMax, setPriceMax] = useState<number | null>(null);
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [page, setPage] = useState(1);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+    const pageSize = 12;
+
+    /* Sap xep ket qua */
+    const sortedResults = useMemo(() => {
+        const sorted = [...results];
+        switch (sortBy) {
+            case 'price_asc':
+                sorted.sort((a, b) => a.price - b.price);
+                break;
+            case 'price_desc':
+                sorted.sort((a, b) => b.price - a.price);
+                break;
+            case 'date_desc':
+                sorted.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                break;
+            case 'date_asc':
+                sorted.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                break;
+            default:
+                sorted.sort((a, b) => b.score - a.score);
+        }
+        return sorted;
+    }, [results, sortBy]);
+
+    /* Phan trang */
+    const totalPages = Math.max(1, Math.ceil(sortedResults.length / pageSize));
+    const paginatedResults = useMemo(
+        () => sortedResults.slice((page - 1) * pageSize, page * pageSize),
+        [sortedResults, page],
+    );
+
+    /* Ket thuc su kien tim kiem */
+    const handleSearch = useCallback(() => {
+        setPage(1);
+        if (onSearch) {
+            onSearch(query, activeFilters, sortBy);
+        }
+    }, [query, activeFilters, sortBy, onSearch]);
+
+    /* Bo sang filter */
+    const toggleFilter = useCallback((facetName: string, key: string, label: string) => {
+        setActiveFilters(prev => {
+            const exists = prev.find(f => f.facetName === facetName && f.key === key);
+            if (exists) {
+                return prev.filter(f => !(f.facetName === facetName && f.key === key));
+            }
+            return [...prev, { facetName, key, label }];
+        });
+    }, []);
+
+    const removeFilter = useCallback((facetName: string, key: string) => {
+        setActiveFilters(prev =>
+            prev.filter(f => !(f.facetName === facetName && f.key === key)),
+        );
+    }, []);
+
+    const clearAllFilters = useCallback(() => {
+        setActiveFilters([]);
+        setPriceMin(null);
+        setPriceMax(null);
+        setDateFrom('');
+        setDateTo('');
+    }, []);
+
+    const isFilterActive = useCallback((facetName: string, key: string) => {
+        return activeFilters.some(f => f.facetName === facetName && f.key === key);
+    }, [activeFilters]);
+
+    /* So trang */
+    const pageNumbers = useMemo(() => {
+        const nums: number[] = [];
+        for (let i = 1; i <= Math.min(totalPages, 5); i++) nums.push(i);
+        return nums;
+    }, [totalPages]);
+
+    return (
+        <div style={styles.container}>
+            {/* Thanh tim kiem */}
+            <header style={styles.header}>
+                <input
+                    type="text"
+                    style={styles.searchInput}
+                    placeholder="Tim kiem..."
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                />
+                <span style={styles.resultCount}>{results.length} ket qua</span>
+            </header>
+
+            <div style={styles.body}>
+                {/* Nut thu/gioi bang loc */}
+                <button
+                    style={styles.collapseBtn}
+                    onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                >
+                    {sidebarCollapsed ? '→' : '←'}
+                </button>
+
+                {/* Bang loc ben */}
+                {!sidebarCollapsed && (
+                    <aside style={styles.sidebar}>
+                        <h3 style={styles.sidebarTitle}>Bo Loc</h3>
+
+                        {/* Loc the loai */}
+                        {facets.map(facet => (
+                            <div key={facet.name} style={styles.filterGroup}>
+                                <h4 style={styles.filterTitle}>{facet.name}</h4>
+                                {facet.options.map(opt => (
+                                    <label key={opt.key} style={styles.filterOption}>
+                                        <input
+                                            type="checkbox"
+                                            checked={isFilterActive(facet.name, opt.key)}
+                                            onChange={() => toggleFilter(facet.name, opt.key, opt.label)}
+                                        />
+                                        <span>{opt.label}</span>
+                                        <span style={styles.optCount}>({opt.count})</span>
+                                    </label>
+                                ))}
+                            </div>
+                        ))}
+
+                        {/* Loc khoang gia */}
+                        <div style={styles.filterGroup}>
+                            <h4 style={styles.filterTitle}>Khoang Gia</h4>
+                            <div style={styles.rangeInputs}>
+                                <input
+                                    type="number"
+                                    placeholder="Tieu"
+                                    style={styles.rangeInput}
+                                    value={priceMin ?? ''}
+                                    onChange={e => setPriceMin(e.target.value ? Number(e.target.value) : null)}
+                                />
+                                <input
+                                    type="number"
+                                    placeholder="Nhat"
+                                    style={styles.rangeInput}
+                                    value={priceMax ?? ''}
+                                    onChange={e => setPriceMax(e.target.value ? Number(e.target.value) : null)}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Loc tung ngay */}
+                        <div style={styles.filterGroup}>
+                            <h4 style={styles.filterTitle}>Tung Ngay</h4>
+                            <input
+                                type="date"
+                                value={dateFrom}
+                                onChange={e => setDateFrom(e.target.value)}
+                                style={styles.dateInput}
+                            />
+                            <input
+                                type="date"
+                                value={dateTo}
+                                onChange={e => setDateTo(e.target.value)}
+                                style={styles.dateInput}
+                            />
+                        </div>
+                    </aside>
+                )}
+
+                {/* Khuong chot ket qua */}
+                <main style={styles.main}>
+                    {/* Chip loc hoat dong */}
+                    {activeFilters.length > 0 && (
+                        <div style={styles.activeFilters}>
+                            {activeFilters.map(f => (
+                                <span key={`${f.facetName}-${f.key}`} style={styles.chip}>
+                                    {f.label}
+                                    <button
+                                        style={styles.chipRemove}
+                                        onClick={() => removeFilter(f.facetName, f.key)}
+                                    >
+                                        ×
+                                    </button>
+                                </span>
+                            ))}
+                            <button style={styles.clearAll} onClick={clearAllFilters}>
+                                Xoa tat ca
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Sap xep */}
+                    <div style={styles.sortBar}>
+                        <label>Sap xep theo:</label>
+                        <select
+                            value={sortBy}
+                            onChange={e => setSortBy(e.target.value)}
+                            style={styles.sortSelect}
+                        >
+                            <option value="relevance">Do lien quan</option>
+                            <option value="price_asc">Gia tang dan</option>
+                            <option value="price_desc">Gia giam dan</option>
+                            <option value="date_desc">Moi nhat</option>
+                            <option value="date_asc">Cu nhat</option>
+                        </select>
+                    </div>
+
+                    {/* Grid ket qua */}
+                    {paginatedResults.length > 0 ? (
+                        <div style={styles.grid}>
+                            {paginatedResults.map(item => (
+                                <div key={item.id} style={styles.card}>
+                                    <h4 style={styles.cardTitle}>{item.title}</h4>
+                                    <p style={styles.cardDesc}>{item.description}</p>
+                                    <div style={styles.cardMeta}>
+                                        <span style={styles.category}>{item.category}</span>
+                                        <span style={styles.price}>{item.price.toLocaleString('vi-VN')}</span>
+                                        <span style={styles.date}>
+                                            {new Date(item.date).toLocaleDateString('vi-VN')}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div style={styles.empty}>Khong tim thay ket qua nao phu hop.</div>
+                    )}
+
+                    {/* Phan trang */}
+                    {totalPages > 1 && (
+                        <nav style={styles.pagination}>
+                            <button
+                                style={styles.pageBtn}
+                                disabled={page === 1}
+                                onClick={() => setPage(p => p - 1)}
+                            >
+                                ‹
+                            </button>
+                            {pageNumbers.map(p => (
+                                <button
+                                    key={p}
+                                    style={{
+                                        ...styles.pageBtn,
+                                        ...(p === page ? styles.pageBtnActive : {}),
+                                    }}
+                                    onClick={() => setPage(p)}
+                                >
+                                    {p}
+                                </button>
+                            ))}
+                            <button
+                                style={styles.pageBtn}
+                                disabled={page === totalPages}
+                                onClick={() => setPage(p => p + 1)}
+                            >
+                                ›
+                            </button>
+                        </nav>
+                    )}
+                </main>
+            </div>
+        </div>
+    );
+};
+
+/* Shared styles */
+const styles: Record<string, React.CSSProperties> = {
+    container: { display: 'flex', flexDirection: 'column', height: '100%', fontFamily: 'system-ui, sans-serif' },
+    header: { display: 'flex', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #e5e7eb' },
+    searchInput: { flex: 1, padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.95rem' },
+    resultCount: { marginLeft: '12px', color: '#6b7280', fontSize: '0.85rem', lineHeight: '38px' },
+    body: { display: 'flex', flex: 1, position: 'relative' },
+    collapseBtn: {
+        position: 'absolute', left: '240px', top: '12px', zIndex: 10,
+        background: '#fff', border: '1px solid #d1d5db', borderRadius: '4px',
+        padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem',
+    },
+    sidebar: { width: '240px', padding: '16px', borderRight: '1px solid #e5e7eb', overflowY: 'auto' },
+    sidebarTitle: { margin: '0 0 16px 0', fontSize: '0.95rem' },
+    filterGroup: { marginBottom: '16px' },
+    filterTitle: { margin: '0 0 8px 0', fontSize: '0.85rem', color: '#374151' },
+    filterOption: { display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 0', fontSize: '0.85rem', cursor: 'pointer' },
+    optCount: { color: '#9ca3af', marginLeft: 'auto' },
+    rangeInputs: { display: 'flex', gap: '8px' },
+    rangeInput: { flex: 1, padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.8rem' },
+    dateInput: { width: '100%', padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.8rem', marginBottom: '4px' },
+    main: { flex: 1, padding: '16px', overflowY: 'auto' },
+    activeFilters: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' },
+    chip: { display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', background: '#e0e7ff', borderRadius: '16px', fontSize: '0.8rem' },
+    chipRemove: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, color: '#6366f1' },
+    clearAll: { background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.8rem', textDecoration: 'underline' },
+    sortBar: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', fontSize: '0.85rem' },
+    sortSelect: { padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px' },
+    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' },
+    card: { padding: '16px', border: '1px solid #e5e7eb', borderRadius: '8px' },
+    cardTitle: { margin: '0 0 4px 0', fontSize: '1rem' },
+    cardDesc: { margin: '0 0 8px 0', fontSize: '0.85rem', color: '#6b7280' },
+    cardMeta: { display: 'flex', gap: '12px', fontSize: '0.8rem', color: '#9ca3af' },
+    category: {},
+    price: { color: '#16a34a', fontWeight: 600 },
+    date: {},
+    pagination: { display: 'flex', justifyContent: 'center', gap: '4px', marginTop: '24px' },
+    pageBtn: { padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', background: '#fff', cursor: 'pointer' },
+    pageBtnActive: { background: '#6366f1', color: '#fff', borderColor: '#6366f1' },
+    empty: { textAlign: 'center', padding: '48px 0', color: '#9ca3af' },
+};
+
+export default FacetedSearch;

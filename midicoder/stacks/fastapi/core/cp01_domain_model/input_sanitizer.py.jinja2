@@ -1,0 +1,283 @@
+{#
+Jinja2 template cho Input Sanitizer — FastAPI.
+
+Tự động generate utility functions cho input sanitization.
+HTML encoding, SQL injection prevention, XSS strip, command injection guard.
+
+Usage:
+    context = {
+        "errors": [Error objects],
+        "entities": [Entity objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Input Sanitization Utility — FastAPI
+
+Tự động generate — không sửa tay.
+
+Pattern: B6 — Input Validation & Sanitization
+
+Mục đích:
+- HTML entity encoding — chống XSS qua output
+- SQL injection prevention — detect patterns nguy hiểm
+- XSS strip — loại bỏ HTML/script tags
+- Command injection guard — detect shell command patterns
+
+Usage:
+    from app.utils.input_sanitizer import (
+        encode_html,
+        strip_html,
+        detect_sql_injection,
+        detect_command_injection,
+        sanitize_input,
+    )
+
+    # Sanitize user input trước khi lưu
+    safe_content = sanitize_input(user_input)
+
+    # Detect SQL injection
+    if detect_sql_injection(user_input):
+        raise ValueError("Phát hiện SQL injection")
+
+    # Encode HTML cho output an toàn
+    safe_output = encode_html(user_content)
+"""
+
+from __future__ import annotations
+
+import re
+import string
+import html
+import shlex
+from typing import Optional
+
+
+def encode_html(text: str) -> str:
+    """Encode HTML entities — chống XSS qua output rendering.
+
+    Chuyển các ký tự đặc biệt thành HTML entity:
+    < -> &lt;
+    > -> &gt;
+    & -> &amp;
+    " -> &quot;
+    ' -> &#x27;
+
+    Args:
+        text: Chuỗi gốc cần encode
+
+    Returns:
+        Chuỗi đã encode HTML entities
+
+    Example:
+        >>> encode_html("<script>alert('xss')</script>")
+        '&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;'
+    """
+    if not text:
+        return text
+    return html.escape(text, quote=True)
+
+
+def strip_html(text: str) -> str:
+    """Loại bỏ tất cả HTML tags — giữ lại text thuần.
+
+    Args:
+        text: Chuỗi chứa HTML
+
+    Returns:
+        Chuỗi đã loại bỏ HTML tags
+
+    Example:
+        >>> strip_html("<p>Xin ch&agrave;o <b>thế giới</b></p>")
+        'Xin ch&agrave;o thế giới'
+    """
+    if not text:
+        return text
+    # Loại bỏ HTML tags
+    clean = re.sub(r"<[^>]+>", "", text)
+    # Giải mã HTML entities cơ bản
+    clean = html.unescape(clean)
+    # Loại bỏ khoảng trắng thừa
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean
+
+
+def strip_xss(text: str) -> str:
+    """Strip các pattern XSS phổ biến từ input.
+
+    Loại bỏ:
+    - <script> tags và nội dung
+    - javascript:, vbscript: URIs
+    - Event handlers (onclick, onerror, onload, ...)
+    - iframe, object, embed, form tags
+
+    Args:
+        text: Chuỗi gốc có thể chứa XSS payload
+
+    Returns:
+        Chuỗi đã loại bỏ XSS patterns
+
+    Example:
+        >>> strip_xss('Hello <script>alert(1)</script>')
+        'Hello '
+    """
+    if not text:
+        return text
+
+    cleaned = text
+
+    # Strip <script> tags và nội dung
+    cleaned = re.sub(
+        r"<script[^>]*>.*?</script>", "", cleaned,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    # Strip javascript: và vbscript: URI
+    cleaned = re.sub(
+        r"(javascript|vbscript)\s*:", "", cleaned,
+        flags=re.IGNORECASE,
+    )
+
+    # Strip event handlers
+    cleaned = re.sub(
+        r"\son\w+\s*=\s*['\"][^'\"]*['\"]", "", cleaned,
+        flags=re.IGNORECASE,
+    )
+
+    # Strip data: URI
+    cleaned = re.sub(
+        r"data\s*:\s*\w+/\w+[^,]*,", "", cleaned,
+        flags=re.IGNORECASE,
+    )
+
+    # Strip dangerous tags
+    dangerous = ["iframe", "object", "embed", "form", "applet", "meta", "link", "base"]
+    for tag in dangerous:
+        cleaned = re.sub(rf"</?{tag}[^>]*>", "", cleaned, flags=re.IGNORECASE)
+
+    return cleaned
+
+
+def detect_sql_injection(text: str) -> bool:
+    """Detect SQL injection patterns — trả về True nếu phát hiện.
+
+    Các pattern được kiểm tra:
+    - SQL keywords (DROP, DELETE, INSERT, UPDATE, UNION, SELECT)
+    - Comment patterns (--, /*, */)
+    - Dấu phân cách lệnh (;)
+    - OR/AND với string literal (= '' OR '1'='1)
+    - Semicolon + keyword
+
+    Args:
+        text: Chuỗi cần kiểm tra
+
+    Returns:
+        True nếu phát hiện pattern SQL injection
+
+    Example:
+        >>> detect_sql_injection("admin' OR '1'='1")
+        True
+        >>> detect_sql_injection("John Doe")
+        False
+    """
+    if not text:
+        return False
+
+    # SQL keywords pattern — case insensitive
+    sql_keywords = re.compile(
+        r"(?:DROP\s+TABLE|DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET"
+        r"|UNION\s+(?:ALL\s+)?SELECT|;\s*(?:DROP|DELETE|INSERT|UPDATE|SELECT)"
+        r"|OR\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+['\"]?"
+        r"|AND\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+['\"]?"
+        r"|--\s*$|/\*|\*/"
+        r")",
+        re.IGNORECASE,
+    )
+
+    return bool(sql_keywords.search(text))
+
+
+def detect_command_injection(text: str) -> bool:
+    """Detect command injection patterns — trả về True nếu phát hiện.
+
+    Các pattern được kiểm tra:
+    - Shell metacharacters: ;, |, &, `, $(), $(...)
+    - Command separators: &&, ||
+    - Subshell: $(), `...`
+    - Redirect: >, >>, <, 2>
+
+    Args:
+        text: Chuỗi cần kiểm tra
+
+    Returns:
+        True nếu phát hiện pattern command injection
+
+    Example:
+        >>> detect_command_injection("; rm -rf /")
+        True
+        >>> detect_command_injection("hello world")
+        False
+    """
+    if not text:
+        return False
+
+    # Shell metacharacters và command patterns
+    cmd_patterns = re.compile(
+        r"(?:;\s*\w+|\|\s*\w+|&&\s*\w+|\|\|\s*\w+"
+        r"|`[^`]*`|\$\([^)]+\)"
+        r"|>\s*/|>>\s*/|<\s*/"
+        r"|\b(?:rm|cat|ls|wget|curl|nc|bash|sh|python|perl|ruby)\b\s)"
+    )
+
+    return bool(cmd_patterns.search(text))
+
+
+def sanitize_input(
+    text: str,
+    strip_tags: bool = True,
+    encode_html_output: bool = False,
+    max_length: Optional[int] = None,
+) -> str:
+    """Sanitize input — hàm tổng hợp cho tất cả các bước.
+
+    Thứ tự xử lý:
+    1. Strip HTML tags (nếu strip_tags=True)
+    2. Strip XSS patterns
+    3. Encode HTML (nếu encode_html_output=True)
+    4. Truncate (nếu max_length được set)
+
+    Args:
+        text: Chuỗi gốc cần sanitize
+        strip_tags: Nếu True, loại bỏ HTML tags
+        encode_html_output: Nếu True, encode HTML entities
+        max_length: Giới hạn độ dài tối đa
+
+    Returns:
+        Chuỗi đã sanitize
+
+    Example:
+        >>> sanitize_input("<script>alert(1)</script>Hello")
+        'Hello'
+        >>> sanitize_input("<b>Bold</b>", encode_html_output=True)
+        '&lt;b&gt;Bold&lt;/b&gt;'
+    """
+    if not text:
+        return text
+
+    result = text
+
+    if strip_tags:
+        result = strip_xss(result)
+        result = strip_html(result)
+
+    if encode_html_output:
+        result = encode_html(result)
+
+    if max_length is not None:
+        result = result[:max_length]
+
+    return result

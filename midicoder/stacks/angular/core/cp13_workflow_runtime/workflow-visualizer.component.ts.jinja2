@@ -1,0 +1,128 @@
+/**
+* Workflow Visualizer Component — CP13: Background Job & Workflow Generator
+*
+* Angular component hiển thị DAG workflow: nodes, edges, status (running/success/failed).
+* Click node để xem chi tiết.
+*/
+
+import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
+
+export type NodeStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped';
+
+export interface DAGNode {
+id: string; label: string; type: string; status: NodeStatus;
+startTime?: string; endTime?: string; error?: string;
+}
+
+export interface DAGEdge { from: string; to: string; label?: string; }
+
+export interface WorkflowGraph {
+workflowId: string; workflowName: string;
+nodes: DAGNode[]; edges: DAGEdge[]; overallStatus: NodeStatus;
+}
+
+const STATUS_LABELS: Record<NodeStatus, string> = {
+    pending: 'Đang chờ', running: 'Đang chạy', success: 'Thành công', failed: 'Thất bại', skipped: 'Bỏ qua',
+    };
+    const STATUS_COLORS: Record<NodeStatus, string> = {
+        pending: '#ff9800', running: '#2196f3', success: '#4caf50', failed: '#f44336', skipped: '#9e9e9e',
+        };
+
+        @Component({
+        selector: 'app-workflow-visualizer',
+        template: `{% raw %}
+        <div class="wf">
+            <div class="wf-header">
+                <h3>{{ graph.workflowName }}</h3>
+                <span class="wf-badge" style="background:{{ graph.overallStatus | wfColor }}">{{ graph.overallStatus |
+                    wfLabel }}</span>
+            </div>
+            <div class="wf-canvas">
+                <svg viewBox="0 0 800 400" class="wf-svg">
+                    <defs>
+                        <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                            <polygon points="0 0, 10 3.5, 0 7" fill="#999" />
+                        </marker>
+                    </defs>
+                    <line *ngFor="let e of graph.edges" [attr.x1]="pos(e.from).x + 140" [attr.y1]="pos(e.from).y + 25"
+                        [attr.x2]="pos(e.to).x" [attr.y2]="pos(e.to).y + 25" stroke="#999" stroke-width="2"
+                        marker-end="url(#arrow)" />
+                    <g *ngFor="let n of graph.nodes" [attr.transform]="'translate('+pos(n.id).x+','+pos(n.id).y+')'"
+                        class="wf-node" (click)="select(n)">
+                        <rect width="140" height="50" rx="6" fill="#fff" [style.stroke]="n.status | wfColor"
+                            stroke-width="2" />
+                        <text x="70" y="22" text-anchor="middle" font-size="12" font-weight="600">{{ n.label }}</text>
+                        <text x="70" y="40" text-anchor="middle" font-size="10" fill="#888">{{ n.type }}</text>
+                        <circle cx="128" cy="12" r="5" [style.fill]="n.status | wfColor" />
+                    </g>
+                </svg>
+            </div>
+            <div *ngIf="sel" class="wf-detail">
+                <h4>Chi tiết: {{ sel.label }}</h4>
+                <div class="wf-grid">
+                    <div><strong>ID:</strong> {{ sel.id }}</div>
+                    <div><strong>Loại:</strong> {{ sel.type }}</div>
+                    <div><strong>Trạng thái:</strong> <span [style.color]="sel.status | wfColor">{{ sel.status | wfLabel
+                            }}</span></div>
+                    <div *ngIf="sel.error" style="color:#f44336"><strong>Lỗi:</strong> {{ sel.error }}</div>
+                </div>
+                <button (click)="sel=null">Đóng</button>
+            </div>
+            <div class="wf-legend">
+                <span *ngFor="let s of ['pending','running','success','failed','skipped']">
+                    <span class="wf-dot" [style.background]="s | wfColor"></span>{{ s | wfLabel }}
+                </span>
+            </div>
+        </div>
+        {% endraw %}`,
+        styles: [`
+        .wf { font-family: system-ui, sans-serif; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px;
+        background: #fafafa; }
+        .wf-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .wf-header h3 { margin: 0; font-size: 1.1rem; }
+        .wf-badge { padding: 4px 12px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; color: #fff; }
+        .wf-canvas { border: 1px solid #ddd; border-radius: 4px; background: #fff; min-height: 300px; }
+        .wf-svg { width: 100%; }
+        .wf-node { cursor: pointer; }
+        .wf-detail { margin-top: 16px; padding: 16px; background: #fff; border: 1px solid #ddd; border-radius: 6px; }
+        .wf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; font-size: 0.9rem; }
+        .wf-legend { display: flex; gap: 16px; margin-top: 12px; font-size: 0.8rem; color: #666; }
+        .wf-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 4px;
+        vertical-align: middle; }
+        `],
+        })
+        export class WorkflowVisualizerComponent implements OnInit {
+        @Input() graph: WorkflowGraph = { workflowId: '', workflowName: '', nodes: [], edges: [], overallStatus:
+        'pending' };
+        @Output() nodeClick = new EventEmitter<DAGNode>();
+            sel: DAGNode | null = null;
+            private positions = new Map<string, { x: number; y: number }>();
+
+                ngOnInit(): void { this.computeLayout(); }
+
+                private computeLayout(): void {
+                const inDeg = new Map<string, number>();
+                    const adj = new Map<string, string[]>();
+                        this.graph.nodes.forEach((n) => { inDeg.set(n.id, 0); adj.set(n.id, []); });
+                        this.graph.edges.forEach((e) => { adj.get(e.from)?.push(e.to); inDeg.set(e.to, (inDeg.get(e.to)
+                        || 0) + 1); });
+                        const q: string[] = [];
+                        inDeg.forEach((d, id) => { if (!d) q.push(id); });
+                        let lvl = 0;
+                        while (q.length) {
+                        q.forEach((id, i) => this.positions.set(id, { x: 20 + lvl * 200, y: 20 + i * 80 }));
+                        const next: string[] = [];
+                        for (const id of q) for (const nb of adj.get(id) || []) { inDeg.set(nb, inDeg.get(nb)! - 1); if
+                        (!inDeg.get(nb)!) next.push(nb); }
+                        q.length = 0; q.push(...next);
+                        lvl++;
+                        }
+                        const placed = new Set(this.positions.keys());
+                        this.graph.nodes.forEach((n, i) => { if (!placed.has(n.id)) this.positions.set(n.id, { x: 20 +
+                        lvl * 200, y: 20 + i * 80 }); });
+                        }
+
+                        pos(id: string): { x: number; y: number } { return this.positions.get(id) || { x: 20, y: 20 }; }
+
+                        select(node: DAGNode): void { this.sel = node; this.nodeClick.emit(node); }
+                        }

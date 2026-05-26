@@ -1,0 +1,292 @@
+{#
+Jinja2 template cho NestJS Data Export Service (CP47 — Article 20).
+
+Tự động generate NestJS data export service với TypeORM.
+
+Usage:
+    context = {
+        "entities": ["User", "Order", "Payment"],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+{% raw %}/**
+ * DataExportService — Dịch vụ xuất dữ liệu GDPR Article 20.
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Hỗ trợ:
+ * - Export toàn bộ dữ liệu người dùng sang JSON/CSV
+ * - Format chuẩn với metadata theo GDPR Article 20
+ * - Tenant isolation với TypeORM query builder
+ *
+ * CP47: Data Retention & Lifecycle Management
+ */
+
+import { Injectable, Logger, BadRequestException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import * as fs from "fs/promises";
+import * as path from "path";
+import * as csv from "csv-stringify/sync";
+
+{% if entities %}
+{% for entity in entities %}
+import { {{ entity }} } from "./{{ entity | lower }}.entity";
+{% endfor %}
+{% endif %}
+
+/**
+ * Export metadata version.
+ */
+const EXPORT_METADATA_VERSION = "1.0";
+const EXPORT_DIR = path.join(process.cwd(), "exports");
+const EXPORT_EXPIRY_HOURS = 48;
+
+/**
+ * Interface cho metadata export.
+ */
+export interface ExportMetadata {
+  version: string;
+  export_type: string;
+  user_id?: string;
+  tenant_id?: string;
+  exported_at: string;
+  expires_at: string;
+  format: string;
+  entity_types?: string[];
+  entity_counts?: Record<string, number>;
+  compliance?: {
+    framework: string;
+    article: string;
+    purpose: string;
+  };
+}
+
+/**
+ * DataExportService — Service xuất dữ liệu người dùng.
+ *
+ * Cung cấp các phương thức:
+ * - exportUserData(): xuất dữ liệu người dùng
+ * - exportTenantData(): xuất dữ liệu tenant
+ * - generateExportMetadata(): generate metadata
+ *
+ * Usage:
+ *   const service = new DataExportService(...);
+ *   const filePath = await service.exportUserData(userId, 'json');
+ */
+@Injectable()
+export class DataExportService {
+  private readonly logger = new Logger(DataExportService.name);
+
+  {% if entities %}
+  {% for entity in entities %}
+  private readonly {{ entity | lower }}Repo: Repository<{{ entity }}>;
+  {% endfor %}
+  {% endif %}
+
+  constructor(
+{% if entities %}
+{% for entity in entities %}
+    @InjectRepository({{ entity }}) {{ entity | lower }}Repo: Repository<{{ entity }}>,
+{% endfor %}
+{% endif %}
+  ) {
+{% if entities %}
+{% for entity in entities %}
+    this.{{ entity | lower }}Repo = {{ entity | lower }}Repo;
+{% endfor %}
+{% endif %}
+  }
+
+  /**
+   * Xuất toàn bộ dữ liệu của người dùng.
+   *
+   * @param userId - ID người dùng
+   * @param exportFormat - Định dạng export (json hoặc csv)
+   * @param entityTypeList - Danh sách entity cần export (undefined = tất cả)
+   * @returns Path đến file export
+   */
+  async exportUserData(
+    userId: string,
+    exportFormat: "json" | "csv" = "json",
+    entityTypeList?: string[],
+  ): Promise<string> {
+    // 1. Gather data from entities
+    const data = await this.gatherUserData(userId);
+
+    // 2. Generate metadata
+    const metadata = this.generateExportMetadata(userId, Object.keys(data), exportFormat);
+
+    // 3. Format output
+    const output = this.formatExport(data, metadata, exportFormat);
+
+    // 4. Save to export directory
+    await fs.mkdir(EXPORT_DIR, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "");
+    const filename = `export_${userId}_${timestamp}.${exportFormat}`;
+    const filePath = path.join(EXPORT_DIR, filename);
+
+    await fs.writeFile(filePath, output, "utf-8");
+
+    this.logger.log(`Export dữ liệu user hoàn tất: userId=${userId}, file=${filePath}`);
+    return filePath;
+  }
+
+  /**
+   * Xuất toàn bộ dữ liệu của tenant.
+   *
+   * @param tenantId - ID tenant
+   * @param exportFormat - Định dạng export
+   * @returns Path đến file export
+   */
+  async exportTenantData(
+    tenantId: string,
+    exportFormat: "json" | "csv" = "json",
+  ): Promise<string> {
+    // Validate tenant ownership (thực tế nên dùng Guard)
+    // currentTenantId !== tenantId → throw ForbiddenException
+
+    const data = await this.gatherTenantData(tenantId);
+    const metadata: ExportMetadata = {
+      version: EXPORT_METADATA_VERSION,
+      export_type: "tenant",
+      tenant_id: tenantId,
+      exported_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + EXPORT_EXPIRY_HOURS * 3600 * 1000).toISOString(),
+      format: exportFormat,
+      entity_counts: Object.fromEntries(
+        Object.entries(data).map(([k, v]) => [k, v.length]),
+      ),
+    };
+
+    const output = this.formatExport(data, metadata, exportFormat);
+
+    await fs.mkdir(EXPORT_DIR, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "");
+    const filename = `export_tenant_${tenantId}_${timestamp}.${exportFormat}`;
+    const filePath = path.join(EXPORT_DIR, filename);
+
+    await fs.writeFile(filePath, output, "utf-8");
+    this.logger.log(`Export tenant data hoàn tất: tenantId=${tenantId}, file=${filePath}`);
+    return filePath;
+  }
+
+  /**
+   * Generate export metadata theo chuẩn GDPR Article 20.
+   *
+   * @param userId - ID người dùng
+   * @param entityTypes - Danh sách entity types
+   * @param exportFormat - Định dạng export
+   * @returns Metadata export
+   */
+  generateExportMetadata(
+    userId: string,
+    entityTypes: string[],
+    exportFormat: string = "json",
+  ): ExportMetadata {
+    const now = new Date();
+    return {
+      version: EXPORT_METADATA_VERSION,
+      export_type: "user",
+      user_id: userId,
+      exported_at: now.toISOString(),
+      expires_at: new Date(now.getTime() + EXPORT_EXPIRY_HOURS * 3600 * 1000).toISOString(),
+      format: exportFormat,
+      entity_types: entityTypes,
+      compliance: {
+        framework: "GDPR",
+        article: "Article 20 - Right to data portability",
+        purpose: "Data portability request",
+      },
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Internal helpers
+  // ------------------------------------------------------------------
+
+  /**
+   * Gather dữ liệu người dùng từ tất cả entities.
+   */
+  private async gatherUserData(
+    userId: string,
+  ): Promise<Record<string, any[]>> {
+    const data: Record<string, any[]> = {};
+
+{% if entities %}
+{% for entity in entities %}
+    // {{ entity }} entities
+    const {{ entity | lower }}s = await this.{{ entity | lower }}Repo.find({
+      where: { user_id: userId },
+    });
+    if ({{ entity | lower }}s.length) {
+      data["{{ entity | lower }}s"] = {{ entity | lower }}s;
+    }
+{% endfor %}
+{% endif %}
+
+    return data;
+  }
+
+  /**
+   * Gather dữ liệu tenant từ tất cả entities.
+   */
+  private async gatherTenantData(
+    tenantId: string,
+  ): Promise<Record<string, any[]>> {
+    const data: Record<string, any[]> = {};
+
+{% if entities %}
+{% for entity in entities %}
+    const {{ entity | lower }}s = await this.{{ entity | lower }}Repo.find({
+      where: { tenant_id: tenantId },
+    });
+    if ({{ entity | lower }}s.length) {
+      data["{{ entity | lower }}s"] = {{ entity | lower }}s;
+    }
+{% endfor %}
+{% endif %}
+
+    return data;
+  }
+
+  /**
+   * Format dữ liệu export theo định dạng yêu cầu.
+   */
+  private formatExport(
+    data: Record<string, any[]>,
+    metadata: ExportMetadata,
+    exportFormat: string,
+  ): string {
+    if (exportFormat === "json") {
+      return JSON.stringify(
+        { metadata, data },
+        null,
+        2,
+      );
+    } else if (exportFormat === "csv") {
+      let output = `# GDPR Data Export\n`;
+      output += `# Exported: ${metadata.exported_at}\n`;
+      output += `# Format: ${metadata.format}\n\n`;
+
+      for (const [entityType, records] of Object.entries(data)) {
+        output += `## ${entityType}\n`;
+        if (records.length) {
+          const csvOutput = csv(records, {
+            header: true,
+            cast: { date: (d: Date) => d.toISOString() },
+          });
+          output += csvOutput + "\n";
+        }
+        output += "\n";
+      }
+      return output;
+    } else {
+      throw new BadRequestException(`Định dạng không hỗ trợ: ${exportFormat}`);
+    }
+  }
+}% endraw %

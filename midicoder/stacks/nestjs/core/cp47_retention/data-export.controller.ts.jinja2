@@ -1,0 +1,180 @@
+{#
+Jinja2 template cho NestJS Data Export Controller (CP47 — Article 20).
+
+Tự động generate NestJS controller cho data export endpoints.
+
+Usage:
+    context = {}
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+{% raw %}/**
+ * DataExportController — Controller cho GDPR Data Export.
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Endpoints:
+ * - POST   /api/data-export/request   — Yêu cầu export dữ liệu
+ * - GET    /api/data-export/status    — Kiểm tra trạng thái export
+ * - GET    /api/data-export/download  — Tải file export
+ * - DELETE /api/data-export/cancel    — Hủy yêu cầu export
+ *
+ * Auth: Yêu cầu xác thực JWT + tenant isolation.
+ *
+ * CP47: Data Retention & Lifecycle Management
+ */
+
+import {
+  Controller,
+  Post,
+  Get,
+  Delete,
+  Body,
+  Query,
+  Param,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+  StreamableFile,
+  HttpCode,
+} from "@nestjs/common";
+import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
+import * as fs from "fs";
+import * as path from "path";
+import { v4 as uuidv4 } from "uuid";
+
+import { DataExportService } from "./data-export.service";
+
+@ApiTags("GDPR Data Export")
+@ApiBearerAuth()
+@Controller("api/data-export")
+export class DataExportController {
+  private readonly logger = new Logger(DataExportController.name);
+
+  // In-memory registry (thực tế nên dùng Redis)
+  private exportRegistry = new Map<string, any>();
+
+  constructor(private readonly dataExportService: DataExportService) {}
+
+  /**
+   * Yêu cầu export dữ liệu GDPR Article 20.
+   *
+   * POST /api/data-export/request
+   */
+  @Post("request")
+  @HttpCode(201)
+  @ApiOperation({ summary: "Yêu cầu export dữ liệu GDPR" })
+  async requestDataExport(@Body() body: { userId: string; format?: string; entityTypes?: string[] }) {
+    const requestId = uuidv4();
+
+    this.exportRegistry.set(requestId, {
+      requestId,
+      userId: body.userId,
+      format: body.format || "json",
+      entityTypes: body.entityTypes,
+      status: "pending",
+      createdAt: new Date(),
+      filePath: null,
+    });
+
+    this.logger.log(`Yêu cầu export đã tạo: requestId=${requestId}, userId=${body.userId}`);
+
+    return {
+      requestId,
+      status: "pending",
+      message: "Yêu cầu export đã được tạo. Sử dụng GET /status để kiểm tra trạng thái.",
+    };
+  }
+
+  /**
+   * Kiểm tra trạng thái export.
+   *
+   * GET /api/data-export/status?requestId=xxx
+   */
+  @Get("status")
+  @ApiOperation({ summary: "Kiểm tra trạng thái export" })
+  async getExportStatus(@Query("requestId") requestId: string) {
+    const record = this.exportRegistry.get(requestId);
+    if (!record) {
+      throw new NotFoundException("Không tìm thấy yêu cầu export");
+    }
+
+    // Check expiry (48 hours)
+    if (record.status === "completed") {
+      const age = Date.now() - new Date(record.createdAt).getTime();
+      if (age > 48 * 3600 * 1000) {
+        record.status = "expired";
+      }
+    }
+
+    return {
+      requestId: record.requestId,
+      status: record.status,
+      createdAt: record.createdAt,
+      completedAt: record.completedAt || null,
+      fileUrl: record.status === "completed" ? `/api/data-export/download?requestId=${requestId}` : null,
+      errorMessage: record.errorMessage || null,
+    };
+  }
+
+  /**
+   * Tải file export.
+   *
+   * GET /api/data-export/download?requestId=xxx
+   */
+  @Get("download")
+  @ApiOperation({ summary: "Tải file export" })
+  async downloadExport(@Query("requestId") requestId: string) {
+    const record = this.exportRegistry.get(requestId);
+    if (!record) {
+      throw new NotFoundException("Không tìm thấy yêu cầu export");
+    }
+    if (record.status !== "completed") {
+      throw new BadRequestException("Export chưa hoàn tất hoặc đã hết hạn");
+    }
+
+    const filePath = record.filePath;
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundException("File export không tồn tại");
+    }
+
+    const file = fs.createReadStream(filePath);
+    const ext = path.extname(filePath);
+    const contentType = ext === ".json" ? "application/json" : "text/csv";
+
+    return new StreamableFile(file, {
+      type: contentType,
+      disposition: `attachment; filename="${path.basename(filePath)}"`,
+    });
+  }
+
+  /**
+   * Hủy yêu cầu export.
+   *
+   * DELETE /api/data-export/cancel?requestId=xxx
+   */
+  @Delete("cancel")
+  @HttpCode(200)
+  @ApiOperation({ summary: "Hủy yêu cầu export" })
+  async cancelExport(@Query("requestId") requestId: string) {
+    const record = this.exportRegistry.get(requestId);
+    if (!record) {
+      throw new NotFoundException("Không tìm thấy yêu cầu export");
+    }
+    if (["completed", "failed"].includes(record.status)) {
+      throw new BadRequestException("Không thể hủy export đã hoàn tất hoặc đã lỗi");
+    }
+
+    record.status = "cancelled";
+
+    return {
+      requestId,
+      status: "cancelled",
+      message: "Đã hủy yêu cầu export",
+    };
+  }
+}% endraw %

@@ -1,0 +1,122 @@
+"""
+Notification Preference Service cho FastAPI.
+
+CP12: Notification & Communication
+Cung cap: channel opt-in/out, quiet hours, frequency capping, CRUD.
+"""
+
+import logging
+from typing import Optional, Dict, Any
+from enum import Enum
+from dataclasses import dataclass, field
+from datetime import datetime, time
+
+logger = logging.getLogger(__name__)
+
+
+class NotificationChannel(str, Enum):
+    EMAIL = "email"
+    SMS = "sms"
+    PUSH = "push"
+    IN_APP = "in_app"
+
+
+class FrequencyCap(str, Enum):
+    NONE = "none"
+    HOURLY = "hourly"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+
+
+@dataclass
+class QuietHoursConfig:
+    enabled: bool = False
+    start_time: time = field(default_factory=lambda: time(22, 0))
+    end_time: time = field(default_factory=lambda: time(7, 0))
+    timezone: str = "Asia/Ho_Chi_Minh"
+
+
+@dataclass
+class ChannelPreference:
+    enabled: bool = True
+    frequency_cap: FrequencyCap = FrequencyCap.NONE
+    max_per_period: int = 0
+
+
+@dataclass
+class NotificationPreference:
+    user_id: str
+    quiet_hours: QuietHoursConfig = field(default_factory=QuietHoursConfig)
+    channels: Dict[str, ChannelPreference] = field(default_factory=dict)
+    updated_at: datetime = field(default_factory=datetime.utcnow)
+
+
+class NotificationPreferenceService:
+    """Service quan ly notification preferences: channel opt-in/out, quiet hours, frequency cap."""
+
+    def __init__(self):
+        self._preferences: Dict[str, NotificationPreference] = {}
+
+    def get_preference(self, user_id: str) -> Optional[NotificationPreference]:
+        return self._preferences.get(user_id)
+
+    def create_preference(self, user_id: str) -> NotificationPreference:
+        if user_id in self._preferences:
+            raise ValueError(f"MDC-CP12-003: Preference da ton tai cho user {user_id}")
+        pref = NotificationPreference(
+            user_id=user_id,
+            channels={ch.value: ChannelPreference() for ch in NotificationChannel},
+        )
+        self._preferences[user_id] = pref
+        return pref
+
+    def update_channel_opt(self, user_id: str, channel: str, enabled: bool) -> Optional[NotificationPreference]:
+        pref = self._preferences.get(user_id)
+        if not pref:
+            return None
+        pref.channels[channel] = ChannelPreference(enabled=enabled)
+        pref.updated_at = datetime.utcnow()
+        return pref
+
+    def update_quiet_hours(
+        self, user_id: str, enabled: bool,
+        start_time_str: str = "22:00", end_time_str: str = "07:00",
+    ) -> Optional[NotificationPreference]:
+        pref = self._preferences.get(user_id)
+        if not pref:
+            return None
+        sh, sm = map(int, start_time_str.split(":"))
+        eh, em = map(int, end_time_str.split(":"))
+        pref.quiet_hours = QuietHoursConfig(enabled=enabled, start_time=time(sh, sm), end_time=time(eh, em))
+        pref.updated_at = datetime.utcnow()
+        return pref
+
+    def update_frequency_cap(self, user_id: str, channel: str, cap: str, max_per_period: int = 0) -> Optional[NotificationPreference]:
+        pref = self._preferences.get(user_id)
+        if not pref or channel not in pref.channels:
+            return None
+        pref.channels[channel].frequency_cap = FrequencyCap(cap)
+        pref.channels[channel].max_per_period = max_per_period
+        pref.updated_at = datetime.utcnow()
+        return pref
+
+    def should_notify(self, user_id: str, channel: str) -> bool:
+        pref = self._preferences.get(user_id)
+        if not pref:
+            return False
+        ch = pref.channels.get(channel)
+        if not ch or not ch.enabled:
+            return False
+        if pref.quiet_hours.enabled:
+            now = datetime.utcnow().time()
+            s, e = pref.quiet_hours.start_time, pref.quiet_hours.end_time
+            if s < e:
+                if s <= now <= e:
+                    return False
+            else:
+                if now >= s or now <= e:
+                    return False
+        return True
+
+    def delete_preference(self, user_id: str) -> bool:
+        return self._preferences.pop(user_id, None) is not None

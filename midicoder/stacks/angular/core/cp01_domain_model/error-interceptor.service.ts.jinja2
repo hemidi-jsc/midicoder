@@ -1,0 +1,193 @@
+{#
+Jinja2 template cho HTTP Error Interceptor — Angular.
+
+Tự động generate HttpInterceptor với catchError để normalize lỗi.
+
+Usage:
+    context = {
+        "errors": [Error objects],
+        "entities": [Entity objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * HTTP Error Interceptor cho Angular
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B3 — Standardized Error Response
+ *
+ * Mục đích:
+ * - Bắt tất cả HTTP errors và normalize thành format chuẩn
+ * - Cung cấp client-side error handling đồng nhất
+ * - Map HTTP status codes thành error types
+ * - Hỗ trợ toast notification / global error handler
+ *
+ * Đăng ký:
+ *     // Trong app.module.ts hoặc app.config.ts
+ *     { provide: HTTP_INTERCEPTORS, useClass: ErrorInterceptor, multi: true }
+ *
+ * Response format (normalized):
+ *     {
+ *         error: 'VALIDATION_ERROR',
+ *         message: 'Dữ liệu đầu vào không hợp lệ',
+ *         details: [...],
+ *         path: '/api/v1/users',
+ *         status: 422,
+ *     }
+ */
+
+import {
+    Injectable,
+    Inject,
+} from '@angular/core';
+import {
+    HttpInterceptor,
+    HttpRequest,
+    HttpHandler,
+    HttpEvent,
+    HttpResponse,
+    HttpErrorResponse,
+} from '@angular/common/http';
+import { Observable, throwError } from 'rxjs';
+import { catchError } from 'rxjs/operators';
+
+/**
+ * Error response structure chuẩn hóa.
+ */
+export interface StandardizedError {
+    /** Loại lỗi: VALIDATION_ERROR, HTTP_ERROR, INTERNAL_ERROR, NETWORK_ERROR */
+    error: string;
+    /** Lời giải thích lỗi bằng tiếng Việt */
+    message: string;
+    /** Chi tiết lỗi (validation fields, v.v.) */
+    details?: any[];
+    /** Path của request bị lỗi */
+    path: string;
+    /** HTTP status code */
+    status: number;
+    /** Stack trace (chỉ development mode) */
+    stack?: string;
+}
+
+/**
+ * Error Interceptor — normalize tất cả HTTP errors.
+ */
+@Injectable()
+export class ErrorInterceptor implements HttpInterceptor {
+    intercept(
+        request: HttpRequest<any>,
+        next: HttpHandler,
+    ): Observable<HttpEvent<any>> {
+        return next.handle(request).pipe(
+            catchError((error: HttpErrorResponse) => {
+                const standardized = this.normalizeError(request, error);
+
+                // Log lỗi (có thể inject Logger service ở đây)
+                console.error('[ErrorInterceptor]', standardized);
+
+                return throwError(() => standardized);
+            }),
+        );
+    }
+
+    /**
+     * Normalize HTTP error response thành format chuẩn.
+     */
+    private normalizeError(
+        request: HttpRequest<any>,
+        error: HttpErrorResponse,
+    ): StandardizedError {
+        // Network error — không có response body
+        if (error.status === 0) {
+            return {
+                error: 'NETWORK_ERROR',
+                message: 'Không thể kết nối đến server',
+                path: request.url,
+                status: 0,
+            };
+        }
+
+        // Validation error — 422 / 400
+        if (error.status === 422 || error.status === 400) {
+            const body = error.error;
+            return {
+                error: 'VALIDATION_ERROR',
+                message: body?.message || 'Dữ liệu đầu vào không hợp lệ',
+                details: body?.details || body?.errors || this.extractErrorsFromBody(body),
+                path: request.url,
+                status: error.status,
+            };
+        }
+
+        // Unauthorized — 401
+        if (error.status === 401) {
+            return {
+                error: 'AUTHENTICATION_ERROR',
+                message: 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ',
+                path: request.url,
+                status: error.status,
+            };
+        }
+
+        // Forbidden — 403
+        if (error.status === 403) {
+            return {
+                error: 'AUTHORIZATION_ERROR',
+                message: 'Bạn không có quyền thực hiện hành động này',
+                path: request.url,
+                status: error.status,
+            };
+        }
+
+        // Not Found — 404
+        if (error.status === 404) {
+            return {
+                error: 'NOT_FOUND_ERROR',
+                message: 'Không tìm thấy tài nguyên',
+                path: request.url,
+                status: error.status,
+            };
+        }
+
+        // Server error — 5xx
+        if (error.status >= 500) {
+            return {
+                error: 'INTERNAL_ERROR',
+                message: 'Đã xảy ra lỗi nội bộ server',
+                path: request.url,
+                status: error.status,
+            };
+        }
+
+        // Default — HTTP error
+        return {
+            error: 'HTTP_ERROR',
+            message: error.error?.message || `Lỗi HTTP ${error.status}`,
+            path: request.url,
+            status: error.status,
+        };
+    }
+
+    /**
+     * Extract validation errors từ response body.
+     */
+    private extractErrorsFromBody(body: any): any[] | undefined {
+        if (typeof body === 'object' && body !== null) {
+            if (Array.isArray(body?.message)) {
+                return body.message.map((m: string) => ({
+                    field: 'unknown',
+                    message: m,
+                }));
+            }
+            if (body?.details) {
+                return Array.isArray(body.details) ? body.details : [body.details];
+            }
+        }
+        return undefined;
+    }
+}

@@ -1,0 +1,293 @@
+{#
+Jinja2 template cho Use Validation Hook — React.
+
+Tự động generate React hook với zod schema integration.
+
+Usage:
+    context = {
+        "errors": [Error objects],
+        "entities": [Entity objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Use Validation Hook cho React
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B6 — Input Validation & Sanitization
+ *
+ * Mục đích:
+ * - React hook để validate form data với Zod schema
+ * - Hỗ trợ field-level và whole-form validation
+ * - Tự động track touched/dirty state
+ * - Sanitize input (strip XSS, trim whitespace)
+ *
+ * Usage:
+ *     import { useValidation } from './use-validation';
+ *     import { z } from 'zod';
+ *
+ *     const schema = z.object({
+ *         email: z.string().email('Email không đúng định dạng'),
+ *         password: z.string().min(8, 'Tối thiểu 8 ký tự'),
+ *     });
+ *
+ *     function MyForm() {
+ *         const { errors, isValid, validate, validateField, hasErrors } =
+ *             useValidation(schema);
+ *
+ *         const handleSubmit = (e) => {
+ *             e.preventDefault();
+ *             if (validate(formData)) {
+ *                 // Submit valid data
+ *             }
+ *         };
+ *
+ *         return (
+ *             <form onSubmit={handleSubmit}>
+ *                 <input
+ *                     onChange={(e) => setFormData({...formData, email: e.target.value})}
+ *                 />
+ *                 {errors.email && <span>{errors.email}</span>}
+ *             </form>
+ *         );
+ *     }
+ */
+
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { ZodSchema, z } from 'zod';
+
+/**
+ * Error state — lỗi theo field.
+ */
+export interface FieldErrors {
+    [field: string]: string | undefined;
+}
+
+/**
+ * Touched state — field nào đã được tương tác.
+ */
+export interface TouchedFields {
+    [field: string]: boolean;
+}
+
+/**
+ * Return value của useValidation hook.
+ */
+export interface UseValidationReturn<T = any> {
+    /** Errors theo field — chỉ hiển thị khi field được touched */
+    errors: FieldErrors;
+    /** Form có hợp lệ không */
+    isValid: boolean;
+    /** Có lỗi nào không (dù chưa touched) */
+    hasErrors: boolean;
+    /** Validate toàn bộ form data — trả về boolean */
+    validate: (data: T) => boolean;
+    /** Validate single field — cập nhật error cho field đó */
+    validateField: (field: string, value: any, data: T) => string | undefined;
+    /** Mark field là touched */
+    touchField: (field: string) => void;
+    /** Reset validation state */
+    reset: () => void;
+    /** Sanitize field value — strip XSS và trim */
+    sanitize: (value: string) => string;
+    /** Raw errors (không filter theo touched) */
+    rawErrors: FieldErrors;
+}
+
+/**
+ * HTML/XSS strip function — dùng trong sanitize.
+ */
+function stripXss(input: string): string {
+    if (!input) return input;
+
+    return input
+        .replace(/<script[^>]*>.*?<\/script>/gi, '')
+        .replace(/javascript\s*:/gi, '')
+        .replace(/vbscript\s*:/gi, '')
+        .replace(/\son\w+\s*=\s*['"][^'"]*['"]/gi, '')
+        .replace(/<(iframe|object|embed|form|applet|meta|link|base)[^>]*>/gi, '')
+        .trim();
+}
+
+/**
+ * Extract field errors từ Zod error response.
+ */
+function extractZodErrors(zodError: z.ZodError): FieldErrors {
+    const errors: FieldErrors = {};
+
+    for (const issue of zodError.errors) {
+        const path = issue.path.join('.');
+        errors[path] = issue.message;
+    }
+
+    return errors;
+}
+
+/**
+ * Use Validation Hook — validate form data với Zod schema.
+ *
+ * @param schema - Zod schema cho form data
+ * @param options - Tùy chọn validate
+ * @returns UseValidationReturn object
+ */
+export function useValidation<T>(
+    schema: ZodSchema<T>,
+    options: {
+        /** Validate on mount? Mặc định false */
+        validateOnMount?: boolean;
+        /** Sanitize input trước khi validate? Mặc định true */
+        sanitizeBeforeValidate?: boolean;
+    } = {},
+): UseValidationReturn<T> {
+    const { validateOnMount = false, sanitizeBeforeValidate = true } = options;
+
+    const [rawErrors, setRawErrors] = useState<FieldErrors>({});
+    const [touched, setTouched] = useState<TouchedFields>({});
+    const dataRef = useRef<T | null>(null);
+
+    /**
+     * Validate toàn bộ form data.
+     */
+    const validate = useCallback(
+        (data: T): boolean => {
+            dataRef.current = data;
+
+            let dataToValidate = data;
+            if (sanitizeBeforeValidate) {
+                dataToValidate = sanitizeObject(data) as T;
+            }
+
+            const result = schema.safeParse(dataToValidate);
+
+            if (!result.success) {
+                const errors = extractZodErrors(result.error);
+                setRawErrors(errors);
+                return false;
+            }
+
+            setRawErrors({});
+            return true;
+        },
+        [schema, sanitizeBeforeValidate],
+    );
+
+    /**
+     * Validate single field.
+     */
+    const validateField = useCallback(
+        (field: string, value: any, data: T): string | undefined => {
+            // Patch the field into data for context-aware validation
+            const patched = { ...data, [field]: value };
+            const result = schema.safeParse(patched);
+
+            if (!result.success) {
+                const errors = extractZodErrors(result.error);
+                const fieldError = errors[field];
+                // Only update error for the specific field
+                setRawErrors((prev) => ({
+                    ...prev,
+                    [field]: fieldError,
+                }));
+                return fieldError;
+            }
+
+            setRawErrors((prev) => {
+                const next = { ...prev };
+                delete next[field];
+                return next;
+            });
+            return undefined;
+        },
+        [schema],
+    );
+
+    /**
+     * Mark field là touched — errors sẽ hiển thị.
+     */
+    const touchField = useCallback((field: string) => {
+        setTouched((prev) => ({ ...prev, [field]: true }));
+    }, []);
+
+    /**
+     * Reset validation state.
+     */
+    const reset = useCallback(() => {
+        setRawErrors({});
+        setTouched({});
+        dataRef.current = null;
+    }, []);
+
+    /**
+     * Sanitize single string value.
+     */
+    const sanitize = useCallback((value: string): string => {
+        return stripXss(value);
+    }, []);
+
+    /**
+     * Errors — chỉ hiển thị cho các field đã touched.
+     */
+    const errors = useMemo(() => {
+        const visibleErrors: FieldErrors = {};
+        for (const [field, error] of Object.entries(rawErrors)) {
+            if (touched[field] || error) {
+                visibleErrors[field] = error;
+            }
+        }
+        return visibleErrors;
+    }, [rawErrors, touched]);
+
+    const isValid = useMemo(
+        () => Object.keys(rawErrors).length === 0,
+        [rawErrors],
+    );
+
+    const hasErrors = useMemo(
+        () => Object.keys(rawErrors).length > 0,
+        [rawErrors],
+    );
+
+    // Validate on mount nếu cần
+    useMemo(() => {
+        if (validateOnMount && dataRef.current) {
+            validate(dataRef.current);
+        }
+    }, [validateOnMount, validate]);
+
+    return {
+        errors,
+        isValid,
+        hasErrors,
+        validate,
+        validateField,
+        touchField,
+        reset,
+        sanitize,
+        rawErrors,
+    };
+}
+
+/**
+ * Sanitize object — recursive sanitize strings.
+ */
+function sanitizeObject(obj: any): any {
+    if (typeof obj === 'string') {
+        return stripXss(obj);
+    }
+    if (Array.isArray(obj)) {
+        return obj.map(sanitizeObject);
+    }
+    if (obj && typeof obj === 'object') {
+        const sanitized: any = {};
+        for (const [key, value] of Object.entries(obj)) {
+            sanitized[key] = sanitizeObject(value);
+        }
+        return sanitized;
+    }
+    return obj;
+}

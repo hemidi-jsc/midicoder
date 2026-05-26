@@ -1,0 +1,111 @@
+/**
+* Notification Preference Component — CP12: Notification & Communication
+*
+* React component: toggle channel opt-in/out, quiet hours time picker.
+*/
+
+import React, { useState, useEffect, useCallback } from 'react';
+
+interface ChannelPref { name: string; label: string; enabled: boolean; }
+interface QuietHours { enabled: boolean; startTime: string; endTime: string; }
+
+interface NotificationPreferenceProps {
+apiBaseUrl?: string;
+}
+
+export function NotificationPreference({
+apiBaseUrl = '/api/notifications/preferences',
+}: NotificationPreferenceProps): JSX.Element {
+const [channels, setChannels] = useState<ChannelPref[]>([]);
+    const [qh, setQh] = useState<QuietHours>({ enabled: false, startTime: '22:00', endTime: '07:00' });
+        const [saved, setSaved] = useState(false);
+        const [error, setError] = useState<string | null>(null);
+
+            useEffect(() => {
+            fetch(apiBaseUrl).then((r) => r.json()).then((d) => {
+            setChannels(d.channels);
+            setQh(d.quietHours);
+            }).catch((e: any) => setError(e.message));
+            }, [apiBaseUrl]);
+
+            const toggle = useCallback(async (name: string) => {
+            try {
+            const res = await fetch(`${apiBaseUrl}/channel/${name}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: !channels.find((c) => c.name === name)?.enabled }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            setChannels((p) => p.map((c) => c.name === name ? { ...c, enabled: !c.enabled } : c));
+            flash();
+            } catch (e: any) { setError(e.message); }
+            }, [apiBaseUrl, channels]);
+
+            const toggleQh = useCallback(async () => {
+            const ne = !qh.enabled;
+            setQh((p) => ({ ...p, enabled: ne }));
+            try {
+            const res = await fetch(`${apiBaseUrl}/quiet-hours`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...qh, enabled: ne }),
+            });
+            if (!res.ok) { setQh((p) => ({ ...p, enabled: !ne })); throw new Error(`HTTP ${res.status}`); }
+            flash();
+            } catch (e: any) { setError(e.message); }
+            }, [apiBaseUrl, qh]);
+
+            const flash = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+
+            if (error) return <div style={{ padding: 24, color: '#c62828' }}>{error}</div>;
+
+            return (
+            <div style={{ maxWidth: 600, padding: 24, fontFamily: 'system-ui, sans-serif' }}>
+                <h2 style={{ margin: '0 0 24px' }}>Cài đặt Notification</h2>
+                <section style={{ marginBottom: 24 }}>
+                    <h3>Kênh notification</h3>
+                    {channels.map((ch) => (
+                    <div key={ch.name} style={{ display: 'flex' , alignItems: 'center' , justifyContent: 'space-between'
+                        , padding: '12px 0' , borderBottom: '1px solid #eee' }}>
+                        <span style={{ fontWeight: 500 }}>{ch.label}</span>
+                        <label style={{ position: 'relative' , width: 48, height: 26 }}>
+                            <input type="checkbox" checked={ch.enabled} onChange={()=> toggle(ch.name)} style={{
+                            opacity: 0, width: 0, height: 0 }} />
+                            <span style={{ position: 'absolute' , top: 0, left: 0, right: 0, bottom: 0, background:
+                                ch.enabled ? '#2196f3' : '#ccc' , borderRadius: 26, cursor: 'pointer' ,
+                                transition: '0.3s' , }} />
+                        </label>
+                    </div>
+                    ))}
+                </section>
+                <section style={{ marginBottom: 24 }}>
+                    <h3>Quiet Hours</h3>
+                    <div style={{ display: 'flex' , alignItems: 'center' , justifyContent: 'space-between' ,
+                        padding: '12px 0' }}>
+                        <span>Thời gian im lặng</span>
+                        <label style={{ position: 'relative' , width: 48, height: 26 }}>
+                            <input type="checkbox" checked={qh.enabled} onChange={toggleQh} style={{ opacity: 0, width:
+                                0, height: 0 }} />
+                            <span style={{ position: 'absolute' , top: 0, left: 0, right: 0, bottom: 0, background:
+                                qh.enabled ? '#2196f3' : '#ccc' , borderRadius: 26, cursor: 'pointer' ,
+                                transition: '0.3s' , }} />
+                        </label>
+                    </div>
+                    {qh.enabled && (
+                    <div style={{ display: 'flex' , gap: 16, marginTop: 12 }}>
+                        <label style={{ display: 'flex' , flexDirection: 'column' , gap: 4, fontSize: '0.9rem' }}>
+                            Từ: <input type="time" value={qh.startTime} onChange={(e)=> setQh((p) => ({ ...p, startTime:
+                            e.target.value }))} style={{ padding: 8, border: '1px solid #ccc', borderRadius: 4 }} />
+                        </label>
+                        <label style={{ display: 'flex' , flexDirection: 'column' , gap: 4, fontSize: '0.9rem' }}>
+                            Đến: <input type="time" value={qh.endTime} onChange={(e)=> setQh((p) => ({ ...p, endTime:
+                            e.target.value }))} style={{ padding: 8, border: '1px solid #ccc', borderRadius: 4 }} />
+                        </label>
+                    </div>
+                    )}
+                </section>
+                {saved && <div style={{ padding: '8px 16px' , background: '#e8f5e9' , borderRadius: 4, color: '#2e7d32'
+                    , textAlign: 'center' }}>Đã lưu cài đặt</div>}
+            </div>
+            );
+            }
+
+            export default NotificationPreference;

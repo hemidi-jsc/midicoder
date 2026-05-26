@@ -1,0 +1,21 @@
+# {{ "=".center(66, "=") }}
+# CP54: Kubernetes PersistentVolumeClaim Manifest
+# {{ "=".center(66, "=") }}
+{% for pvc in pvcs %}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ pvc.name }}
+  labels:
+    app: {{ pvc.name }}
+spec:
+  storageClassName: {{ pvc.storage_class }}
+  accessModes:
+    - {{ pvc.access_mode }}
+  resources:
+    requests:
+      storage: {{ pvc.size_gb }}Gi
+{% if not loop.last %}
+---
+{% endif %}
+{% endfor %}

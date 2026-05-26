@@ -1,0 +1,218 @@
+{#
+Jinja2 template cho Custom Validation Pipe — NestJS.
+
+Tự động generate validation pipe với DTO sanitization.
+
+Usage:
+    context = {
+        "errors": [Error objects],
+        "entities": [Entity objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Custom Validation Pipe cho NestJS
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B6 — Input Validation & Sanitization
+ *
+ * Mục đích:
+ * - Validation pipe tự động apply cho tất cả route
+ * - DTO sanitization trước khi validation
+ * - Transform input: trim string, strip XSS, normalize
+ * - Trả về validation error đồng nhất
+ *
+ * Đăng ký:
+ *     // Trong main.ts
+ *     app.useGlobalPipes(new ValidationPipe());
+ *     // hoặc
+ *     @UsePipes(GlobalValidationPipe)
+ *
+ * Features:
+ * - Trim whitespace cho tất cả string fields
+ * - Strip XSS patterns
+ * - Validate class-validator decorators
+ * - Transform validation errors thành format chuẩn
+ */
+
+import {
+    PipeTransform,
+    Injectable,
+    ArgumentMetadata,
+    BadRequestException,
+    HttpStatus,
+} from '@nestjs/common';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
+
+/**
+ * Validation error detail — chi tiết lỗi theo field.
+ */
+interface ValidationErrorDetail {
+    field: string;
+    message: string;
+    constraints?: Record<string, string>;
+}
+
+/**
+ * Standardized validation error response.
+ */
+interface StandardValidationError {
+    error: string;
+    message: string;
+    details: ValidationErrorDetail[];
+    path: string;
+}
+
+/**
+ * Global Validation Pipe — tự động validate và sanitize input.
+ *
+ * Thứ tự xử lý:
+ * 1. Sanitize input (trim, strip XSS)
+ * 2. Transform plain object thành class instance
+ * 3. Validate với class-validator
+ * 4. Trả về lỗi đồng nhất nếu validation fail
+ */
+@Injectable()
+export class GlobalValidationPipe implements PipeTransform<any> {
+    async transform(value: any, metadata: ArgumentMetadata): Promise<any> {
+        // Chỉ xử lý body — ignore query params và route params
+        if (metadata.type !== 'body') {
+            return this.sanitizePlain(value);
+        }
+
+        // Nếu không có class reference — sanitize và trả về
+        if (!metadata.metatype) {
+            return this.sanitizePlain(value);
+        }
+
+        // Transform plain object thành class instance
+        const instance = plainToInstance(metadata.metatype, value, {
+            enableImplicitConversion: true,
+            excludeExtraneousValues: true,
+        });
+
+        // Sanitize các field trong instance
+        this.sanitizeObject(instance);
+
+        // Validate với class-validator decorators
+        const errors = await validate(instance, {
+            whitelist: true,
+            forbidNonWhitelisted: true,
+            stripNullProperties: false,
+            validationError: {
+                target: false,
+                value: false,
+            },
+        });
+
+        // Nếu có validation errors — trả về lỗi đồng nhất
+        if (errors.length > 0) {
+            const details = this.extractValidationErrors(errors);
+            throw new BadRequestException({
+                error: 'VALIDATION_ERROR',
+                message: 'Dữ liệu đầu vào không hợp lệ',
+                details,
+                path: '/', // Will be overridden by exception filter
+            });
+        }
+
+        return instance;
+    }
+
+    /**
+     * Sanitize object — trim strings và strip XSS.
+     */
+    private sanitizeObject(obj: any): void {
+        if (!obj || typeof obj !== 'object') {
+            return;
+        }
+
+        for (const key of Object.keys(obj)) {
+            const value = obj[key];
+
+            if (typeof value === 'string') {
+                obj[key] = this.sanitizeString(value);
+            } else if (Array.isArray(value)) {
+                obj[key] = value.map((item) =>
+                    typeof item === 'string'
+                        ? this.sanitizeString(item)
+                        : this.sanitizeObject(item) || item,
+                );
+            } else if (value && typeof value === 'object') {
+                this.sanitizeObject(value);
+            }
+        }
+    }
+
+    /**
+     * Sanitize single string — trim và strip XSS.
+     */
+    private sanitizeString(value: string): string {
+        let sanitized = value.trim();
+
+        // Strip XSS patterns
+        sanitized = sanitized.replace(/<script[^>]*>.*?<\/script>/gi, '');
+        sanitized = sanitized.replace(/javascript\s*:/gi, '');
+        sanitized = sanitized.replace(/\son\w+\s*=\s*['"][^'"]*['"]/gi, '');
+        sanitized = sanitized.replace(/<(iframe|object|embed|form|applet)[^>]*>/gi, '');
+
+        return sanitized;
+    }
+
+    /**
+     * Sanitize plain value — không phải class instance.
+     */
+    private sanitizePlain(value: any): any {
+        if (typeof value === 'string') {
+            return this.sanitizeString(value);
+        }
+        if (value && typeof value === 'object') {
+            this.sanitizeObject(value);
+        }
+        return value;
+    }
+
+    /**
+     * Extract validation errors thành details array.
+     */
+    private extractValidationErrors(errors: any[]): ValidationErrorDetail[] {
+        return errors.flatMap((error) => {
+            const details: ValidationErrorDetail[] = [];
+            const constraints = error.constraints;
+
+            if (constraints) {
+                for (const [key, message] of Object.entries(constraints)) {
+                    details.push({
+                        field: error.property,
+                        message,
+                        constraints: { [key]: message },
+                    });
+                }
+            }
+
+            // Nested children errors
+            if (error.children && error.children.length > 0) {
+                for (const child of error.children) {
+                    const childField = `${error.property}.${child.property}`;
+                    if (child.constraints) {
+                        for (const [key, message] of Object.entries(child.constraints)) {
+                            details.push({
+                                field: childField,
+                                message,
+                                constraints: { [key]: message },
+                            });
+                        }
+                    }
+                }
+            }
+
+            return details;
+        });
+    }
+}

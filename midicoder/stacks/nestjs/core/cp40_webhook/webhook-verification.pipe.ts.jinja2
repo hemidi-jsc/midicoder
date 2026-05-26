@@ -1,0 +1,174 @@
+{#
+Jinja2 template cho Webhook Signature Verification Pipe — NestJS.
+
+Tự động generate pipe verify HMAC-SHA256 signature cho webhook,
+tương thích Stripe, Slack, GitHub.
+
+Usage:
+    context = {
+        "service_name": "my-service",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Webhook HMAC-SHA256 Signature Verification Pipe — NestJS
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B15 — Webhook Signature Verification (CP40)
+ *
+ * Mục đích:
+ * - Pipe xác minh HMAC-SHA256 signature cho webhook payload
+ * - Timestamp validation chống replay attack
+ * - Tương thích Stripe, Slack, GitHub
+ * - Cung cấp decorator @UseWebhookVerification()
+ *
+ * Usage:
+ *     @Post('webhook/stripe')
+ *     @UseWebhookVerification('stripe', process.env.STRIPE_WEBHOOK_SECRET)
+ *     handleStripeWebhook(@RequestBody() payload: any) {
+ *         // payload đã được verify
+ *     }
+ */
+import {
+    Injectable,
+    PipeTransform,
+    ArgumentMetadata,
+    BadRequestException,
+    UnauthorizedException,
+} from '@nestjs/common';
+import { createHmac, timingSafeEqual } from 'crypto';
+
+/** Provider webhook được hỗ trợ. */
+export type WebhookProvider = 'stripe' | 'slack' | 'github' | 'generic';
+
+/** Timeout cho timestamp validation (giây). */
+const MAX_TIMESTAMP_DRIFT = 300; // 5 phút
+
+/**
+ * Verify HMAC-SHA256 signature.
+ */
+function verifyHmacSignature(payload: Buffer, signature: string, secret: string): boolean {
+    const expected = createHmac('sha256', secret).update(payload).digest('hex');
+    // Timing-safe comparison để chống timing attack
+    return timingSafeEqual(
+        Buffer.from(expected.padEnd(signature.length)),
+        Buffer.from(signature.padEnd(expected.length)),
+    );
+}
+
+/**
+ * Validate timestamp để chống replay attack.
+ */
+function validateTimestamp(timestamp: string | number, maxDrift: number = MAX_TIMESTAMP_DRIFT): boolean {
+    const ts = parseInt(String(timestamp), 10);
+    if (isNaN(ts)) return false;
+    const now = Math.floor(Date.now() / 1000);
+    return Math.abs(now - ts) <= maxDrift;
+}
+
+/**
+ * WebhookSignatureVerificationPipe — NestJS Pipe cho webhook signature.
+ */
+@Injectable()
+export class WebhookSignatureVerificationPipe implements PipeTransform {
+    constructor(
+        private provider: WebhookProvider = 'generic',
+        private secret: string,
+    ) {}
+
+    transform(value: any, metadata: ArgumentMetadata): any {
+        if (metadata.type !== 'body') {
+            throw new BadRequestException('WebhookVerificationPipe chỉ dùng cho body');
+        }
+
+        const request = metadata.metatype?.prototype?.constructor
+            ? (value as any)?.req
+            : (value as any);
+
+        // Trong NestJS, raw body được lưu ở request.rawBody
+        const rawBody = request?.rawBody || Buffer.from(JSON.stringify(value));
+        const headers = request?.headers || {};
+
+        switch (this.provider) {
+            case 'stripe':
+                this.verifyStripe(rawBody, headers);
+                break;
+            case 'slack':
+                this.verifySlack(rawBody, headers);
+                break;
+            case 'github':
+                this.verifyGithub(rawBody, headers);
+                break;
+            default:
+                this.verifyGeneric(rawBody, headers);
+        }
+
+        return value;
+    }
+
+    private verifyStripe(rawBody: Buffer, headers: Record<string, string>): void {
+        const header = headers['stripe-signature'];
+        if (!header) {
+            throw new UnauthorizedException('Thiếu Stripe-Signature header');
+        }
+
+        // Parse: t=1692912000,v1.abc123...
+        const parts: Record<string, string> = {};
+        header.split(',').forEach((p) => {
+            const [key, val] = p.split('=');
+            if (key && val) parts[key] = val;
+        });
+
+        const timestamp = parts['t'] || '0';
+        const signature = parts['v1'] || '';
+
+        if (!validateTimestamp(timestamp)) {
+            throw new UnauthorizedException('Stripe timestamp đã hết hạn');
+        }
+
+        const signedPayload = `${timestamp}.${rawBody.toString('utf-8')}`;
+        if (!verifyHmacSignature(Buffer.from(signedPayload), signature, this.secret)) {
+            throw new UnauthorizedException('Stripe signature không hợp lệ');
+        }
+    }
+
+    private verifySlack(rawBody: Buffer, headers: Record<string, string>): void {
+        const signature = headers['x-slack-signature'] || '';
+        const timestamp = headers['x-slack-request-timestamp'] || '0';
+
+        if (!signature || !validateTimestamp(timestamp)) {
+            throw new UnauthorizedException('Slack timestamp/signature không hợp lệ');
+        }
+
+        const signedPayload = `v0:${timestamp}:${rawBody.toString('utf-8')}`;
+        const expected = `v0=${createHmac('sha256', this.secret).update(signedPayload).digest('hex')}`;
+
+        if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) {
+            throw new UnauthorizedException('Slack signature không hợp lệ');
+        }
+    }
+
+    private verifyGithub(rawBody: Buffer, headers: Record<string, string>): void {
+        const signature = headers['x-hub-signature-256'] || '';
+        if (!signature) {
+            throw new UnauthorizedException('Thiếu X-Hub-Signature-256 header');
+        }
+
+        const rawSig = signature.replace('sha256=', '');
+        if (!verifyHmacSignature(rawBody, rawSig, this.secret)) {
+            throw new UnauthorizedException('GitHub signature không hợp lệ');
+        }
+    }
+
+    private verifyGeneric(rawBody: Buffer, headers: Record<string, string>): void {
+        const signature = headers['x-webhook-signature'] || '';
+        if (!signature || !verifyHmacSignature(rawBody, signature, this.secret)) {
+            throw new UnauthorizedException('Webhook signature không hợp lệ');
+        }
+    }
+}

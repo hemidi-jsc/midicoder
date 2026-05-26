@@ -1,0 +1,219 @@
+{#
+Jinja2 template cho File Versioning Service — NestJS.
+
+Tự động generate NestJS service quản lý file versioning với
+TypeORM entity: version tracking, SHA-256 hash, metadata.
+
+Usage:
+    context = {
+        "project_name": "my_api",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * File Versioning Service — NestJS
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B8 — File Versioning Standard
+ *
+ * Mục đích:
+ * - Quản lý phiên bản file: mỗi lần upload tạo version mới
+ * - Tính toán content hash (SHA-256) để phát hiện file trùng nội dung
+ * - Lưu trữ file metadata với TypeORM entity
+ * - Hỗ trợ so sánh phiên bản và rollback
+ *
+ * Sử dụng:
+ *   @Injectable()
+ *   export class FileController {
+ *     constructor(private versioning: FileVersioningService) {}
+ *
+ *     async upload(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+ *       return this.versioning.createVersion(id, file.buffer);
+ *     }
+ *
+ *     async versions(@Param('id') id: string) {
+ *       return this.versioning.listVersions(id);
+ *     }
+ *   }
+ *
+ * Error codes:
+ *   - MDC-CP11-011: File version creation failed
+ *   - MDC-CP11-012: Version not found
+ *   - MDC-CP11-013: Cannot compare different file versions
+ */
+
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import * as crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * Entity lưu thông tin phiên bản file.
+ */
+export class FileVersionEntity {
+  versionId: string;
+  fileId: string;
+  versionNumber: number;
+  contentHash: string;
+  sizeBytes: number;
+  contentType: string;
+  uploadedAt: Date;
+  uploadedBy: string;
+  comment: string;
+}
+
+/**
+ * DTO trả về kết quả so sánh hai phiên bản.
+ */
+export interface VersionComparison {
+  versionA: { number: number; hash: string; sizeBytes: number; uploadedAt: Date };
+  versionB: { number: number; hash: string; sizeBytes: number; uploadedAt: Date };
+  isDifferent: boolean;
+  sizeDiffBytes: number;
+}
+
+/**
+ * FileVersioningService — quản lý phiên bản file.
+ *
+ * Cung cấp các chức năng:
+ * - Tạo phiên bản mới với content hash (SHA-256)
+ * - Lấy danh sách phiên bản (sắp xếp mới nhất trước)
+ * - So sánh hai phiên bản (dựa trên content hash)
+ * - Rollback về phiên bản trước
+ */
+@Injectable()
+export class FileVersioningService {
+  constructor(
+    @InjectRepository(FileVersionEntity)
+    private repo: Repository<FileVersionEntity>,
+  ) {}
+
+  /**
+   * Tạo phiên bản mới cho file.
+   *
+   * Tính SHA-256 hash từ nội dung file. Nếu hash giống phiên bản cuối,
+   * throw error — không tạo bản sao trùng lặp.
+   *
+   * @param fileId ID của file cha
+   * @param fileContent Nội dung file (Buffer)
+   * @param contentType MIME type của file
+   * @param uploadedBy User ID của người upload
+   * @param comment Ghi chú về phiên bản
+   * @returns FileVersionEntity của phiên bản mới
+   * @throws Error nếu nội dung giống phiên bản hiện tại
+   */
+  async createVersion(
+    fileId: string,
+    fileContent: Buffer,
+    contentType = 'application/octet-stream',
+    uploadedBy = 'system',
+    comment = '',
+  ): Promise<FileVersionEntity> {
+    // Tính content hash
+    const contentHash = crypto
+      .createHash('sha256')
+      .update(fileContent)
+      .digest('hex');
+
+    // Lấy phiên bản mới nhất để kiểm tra trùng
+    const latest = await this.repo.findOne({
+      where: { fileId },
+      order: { versionNumber: 'DESC' },
+    });
+
+    if (latest && latest.contentHash === contentHash) {
+      throw new Error('Không tạo phiên bản mới — nội dung giống phiên bản trước đó');
+    }
+
+    const newNumber = (latest?.versionNumber ?? 0) + 1;
+
+    const version = this.repo.create({
+      versionId: uuidv4(),
+      fileId,
+      versionNumber: newNumber,
+      contentHash,
+      sizeBytes: fileContent.length,
+      contentType,
+      uploadedAt: new Date(),
+      uploadedBy,
+      comment,
+    });
+
+    return this.repo.save(version);
+  }
+
+  /**
+   * Lấy danh sách tất cả phiên bản của file.
+   * Sắp xếp theo versionNumber giảm dần (mới nhất trước).
+   *
+   * @param fileId ID của file
+   * @returns Danh sách FileVersionEntity
+   */
+  async listVersions(fileId: string): Promise<FileVersionEntity[]> {
+    return this.repo.find({
+      where: { fileId },
+      order: { versionNumber: 'DESC' },
+    });
+  }
+
+  /**
+   * Lấy thông tin một phiên bản cụ thể.
+   *
+   * @param fileId ID của file
+   * @param versionNumber Số phiên bản
+   * @returns FileVersionEntity
+   * @throws Error nếu phiên bản không tồn tại
+   */
+  async getVersion(
+    fileId: string,
+    versionNumber: number,
+  ): Promise<FileVersionEntity> {
+    const version = await this.repo.findOne({
+      where: { fileId, versionNumber },
+    });
+    if (!version) {
+      throw new Error(`Không tìm thấy phiên bản ${versionNumber} của file ${fileId}`);
+    }
+    return version;
+  }
+
+  /**
+   * So sánh hai phiên bản của cùng một file.
+   *
+   * @param fileId ID của file
+   * @param versionA Số phiên bản thứ nhất
+   * @param versionB Số phiên bản thứ hai
+   * @returns Kết quả so sánh (hash, size, isDifferent)
+   */
+  async compareVersions(
+    fileId: string,
+    versionA: number,
+    versionB: number,
+  ): Promise<VersionComparison> {
+    const va = await this.getVersion(fileId, versionA);
+    const vb = await this.getVersion(fileId, versionB);
+
+    return {
+      versionA: {
+        number: va.versionNumber,
+        hash: va.contentHash,
+        sizeBytes: va.sizeBytes,
+        uploadedAt: va.uploadedAt,
+      },
+      versionB: {
+        number: vb.versionNumber,
+        hash: vb.contentHash,
+        sizeBytes: vb.sizeBytes,
+        uploadedAt: vb.uploadedAt,
+      },
+      isDifferent: va.contentHash !== vb.contentHash,
+      sizeDiffBytes: va.sizeBytes - vb.sizeBytes,
+    };
+  }
+}

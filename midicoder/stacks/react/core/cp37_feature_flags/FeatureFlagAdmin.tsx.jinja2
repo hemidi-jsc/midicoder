@@ -1,0 +1,349 @@
+{#
+Jinja2 template cho Feature Flag Admin Component — React (CP37 Feature Flags).
+
+Tự động generate dashboard quản lý feature flag với toggle, targeting, experiment.
+
+Usage:
+    context = {}
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Dashboard quản lý Feature Flag — React.
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Mục đích:
+ * - Hiển thị danh sách feature flags với toggle bật/tắt
+ * - Cấu hình target audience (tenant/user/environment)
+ * - Hiển thị kết quả A/B experiment và metrics
+ *
+ * Pattern: B21 — Feature Flag Admin UI
+ *
+ * Usage:
+ *     <FeatureFlagAdmin />
+ */
+
+import React, {
+    useCallback,
+    useMemo,
+    useState,
+    type ChangeEvent,
+} from 'react';
+
+/**
+ * Trạng thái feature flag.
+ */
+type FlagState = 'enabled' | 'disabled' | 'percentage' | 'targeted';
+
+/**
+ * Cấu hình targeting cho flag.
+ */
+interface FlagTarget {
+    type: 'tenant' | 'user' | 'environment';
+    values: string[];
+}
+
+/**
+ * Feature flag entity.
+ */
+interface FeatureFlag {
+    id: string;
+    key: string;
+    name: string;
+    description: string;
+    state: FlagState;
+    percentage: number; // 0-100, dùng khi state === 'percentage'
+    targets: FlagTarget[];
+    createdAt: string;
+    updatedAt: string;
+}
+
+/**
+ * Kết quả A/B experiment.
+ */
+interface ABExperimentResult {
+    experimentId: string;
+    variantName: string;
+    conversions: number;
+    impressions: number;
+    conversionRate: number;
+}
+
+/**
+ * Toggle switch component.
+ */
+function ToggleSwitch({
+    enabled,
+    onChange,
+}: {
+    enabled: boolean;
+    onChange: (val: boolean) => void;
+}): React.ReactElement {
+    return (
+        <button
+            role="switch"
+            aria-checked={enabled}
+            onClick={() => onChange(!enabled)}
+            style={{
+                width: '44px',
+                height: '24px',
+                borderRadius: '12px',
+                border: 'none',
+                backgroundColor: enabled ? '#22c55e' : '#d1d5db',
+                position: 'relative',
+                cursor: 'pointer',
+            }}
+        >
+            <span
+                style={{
+                    display: 'block',
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    backgroundColor: 'white',
+                    position: 'absolute',
+                    top: '2px',
+                    left: enabled ? '22px' : '2px',
+                    transition: 'left 0.2s',
+                }}
+            />
+        </button>
+    );
+}
+
+/**
+ * Feature Flag Admin Dashboard Component.
+ */
+export function FeatureFlagAdmin(): React.ReactElement {
+    const [flags, setFlags] = useState<FeatureFlag[]>([
+        {
+            id: '1',
+            key: 'new-checkout-flow',
+            name: 'Quy trình checkout mới',
+            description: 'Giao diện checkout phiên bản 2.0',
+            state: 'percentage',
+            percentage: 50,
+            targets: [],
+            createdAt: '2026-01-15',
+            updatedAt: '2026-03-20',
+        },
+        {
+            id: '2',
+            key: 'dark-mode',
+            name: 'Giao diện tối',
+            description: 'Cho phép người dùng chuyển sang dark mode',
+            state: 'targeted',
+            percentage: 0,
+            targets: [
+                { type: 'tenant', values: ['tenant-abc', 'tenant-xyz'] },
+                { type: 'environment', values: ['staging'] },
+            ],
+            createdAt: '2026-02-01',
+            updatedAt: '2026-04-10',
+        },
+    ]);
+    const [experimentResults] = useState<ABExperimentResult[]>([
+        { experimentId: 'exp-1', variantName: 'Control (A)', conversions: 120, impressions: 1000, conversionRate: 12.0 },
+        { experimentId: 'exp-1', variantName: 'Variant (B)', conversions: 150, impressions: 1000, conversionRate: 15.0 },
+    ]);
+    const [filter, setFilter] = useState<string>('');
+
+    /** Bật/tắt feature flag */
+    const toggleFlag = useCallback((id: string) => {
+        setFlags((prev) =>
+            prev.map((f) =>
+                f.id === id
+                    ? {
+                        ...f,
+                        state: (f.state === 'enabled' ? 'disabled' : 'enabled') as FlagState,
+                        updatedAt: new Date().toISOString().split('T')[0],
+                    }
+                    : f,
+            ),
+        );
+    }, []);
+
+    /** Cập nhật tỷ lệ phần trăm */
+    const updatePercentage = useCallback((id: string, value: number) => {
+        setFlags((prev) =>
+            prev.map((f) =>
+                f.id === id
+                    ? {
+                        ...f,
+                        percentage: Math.min(100, Math.max(0, value)),
+                        state: 'percentage' as FlagState,
+                        updatedAt: new Date().toISOString().split('T')[0],
+                    }
+                    : f,
+            ),
+        );
+    }, []);
+
+    /** Thêm targeting rule */
+    const addTarget = useCallback((id: string, type: 'tenant' | 'user' | 'environment', value: string) => {
+        setFlags((prev) =>
+            prev.map((f) => {
+                if (f.id !== id) return f;
+                const existing = f.targets.find((t) => t.type === type);
+                if (existing) {
+                    if (!existing.values.includes(value)) {
+                        existing.values.push(value);
+                    }
+                } else {
+                    f.targets.push({ type, values: [value] });
+                }
+                return { ...f, state: 'targeted' as FlagState, updatedAt: new Date().toISOString().split('T')[0] };
+            }),
+        );
+    }, []);
+
+    /** Lọc danh sách flags */
+    const filteredFlags = useMemo(() => {
+        if (!filter) return flags;
+        const lower = filter.toLowerCase();
+        return flags.filter(
+            (f) => f.key.toLowerCase().includes(lower) || f.name.toLowerCase().includes(lower),
+        );
+    }, [flags, filter]);
+
+    /** Label trạng thái */
+    const stateLabels: Record<FlagState, string> = {
+        enabled: 'Bật',
+        disabled: 'Tắt',
+        percentage: 'Theo tỷ lệ',
+        targeted: 'Theo đối tượng',
+    };
+
+    return (
+        <div className="feature-flag-admin">
+            <h2>Quản lý Feature Flags</h2>
+
+            {/* Bộ lọc */}
+            <input
+                type="text"
+                placeholder="Tìm kiếm flag..."
+                value={filter}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setFilter(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem' }}
+            />
+
+            {/* Danh sách flags */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {filteredFlags.map((flag) => (
+                    <div
+                        key={flag.id}
+                        style={{
+                            padding: '1rem',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '0.5rem',
+                        }}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <strong>{flag.name}</strong>
+                                <code style={{ marginLeft: '0.5rem', color: '#6b7280' }}>{flag.key}</code>
+                                <p style={{ fontSize: '0.875rem', color: '#6b7280', margin: '0.25rem 0 0' }}>
+                                    {flag.description}
+                                </p>
+                            </div>
+                            <ToggleSwitch
+                                enabled={flag.state === 'enabled' || flag.state === 'percentage' || flag.state === 'targeted'}
+                                onChange={() => toggleFlag(flag.id)}
+                            />
+                        </div>
+
+                        <div style={{ marginTop: '0.75rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.875rem' }}>Trạng thái: {stateLabels[flag.state]}</span>
+                            {flag.state === 'percentage' && (
+                                <label style={{ fontSize: '0.875rem' }}>
+                                    Tỷ lệ:
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={100}
+                                        value={flag.percentage}
+                                        onChange={(e) => updatePercentage(flag.id, parseInt(e.target.value, 10))}
+                                        style={{ marginLeft: '0.5rem' }}
+                                    />
+                                    {flag.percentage}%
+                                </label>
+                            )}
+                        </div>
+
+                        {/* Targeting config */}
+                        {flag.targets.length > 0 && (
+                            <div style={{ marginTop: '0.5rem' }}>
+                                <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>Đối tượng mục tiêu:</span>
+                                {flag.targets.map((t, i) => (
+                                    <span
+                                        key={i}
+                                        style={{
+                                            display: 'inline-block',
+                                            marginLeft: '0.5rem',
+                                            padding: '0.2rem 0.5rem',
+                                            backgroundColor: '#e0f2fe',
+                                            borderRadius: '0.25rem',
+                                            fontSize: '0.75rem',
+                                        }}
+                                    >
+                                        {t.type}: {t.values.join(', ')}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            {/* A/B Experiment Results */}
+            {experimentResults.length > 0 && (
+                <div style={{ marginTop: '2rem' }}>
+                    <h3>Kết quả A/B Experiment</h3>
+                    <table style={{ width: '100%', marginTop: '0.5rem' }}>
+                        <thead>
+                            <tr>
+                                <th>Biến thể</th>
+                                <th>Lượt hiển thị</th>
+                                <th>Chuyển đổi</th>
+                                <th>Tỷ lệ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {experimentResults.map((r, i) => (
+                                <tr key={i}>
+                                    <td>{r.variantName}</td>
+                                    <td>{r.impressions.toLocaleString()}</td>
+                                    <td>{r.conversions.toLocaleString()}</td>
+                                    <td>{r.conversionRate.toFixed(1)}%</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    {/* Thanh biểu đồ đơn giản */}
+                    <div style={{ marginTop: '0.5rem' }}>
+                        {experimentResults.map((r, i) => (
+                            <div key={i} style={{ marginBottom: '0.25rem' }}>
+                                <span style={{ fontSize: '0.75rem', marginRight: '0.5rem' }}>{r.variantName}</span>
+                                <div
+                                    style={{
+                                        display: 'inline-block',
+                                        height: '8px',
+                                        width: `${r.conversionRate * 5}px`,
+                                        backgroundColor: '#3b82f6',
+                                        borderRadius: '4px',
+                                    }}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+export default FeatureFlagAdmin;

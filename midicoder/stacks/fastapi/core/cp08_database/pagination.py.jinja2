@@ -1,0 +1,199 @@
+{#
+Jinja2 template cho Pagination utilities (FastAPI/SQLAlchemy).
+
+Tự động generate pagination helpers cho CP08 Database.
+
+Context:
+    {"entities": [...]}
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+"""
+Pagination helpers cho SQLAlchemy/FastAPI.
+
+Tự động generate — không sửa tay.
+Hỗ trợ:
+- Offset-based pagination (page + page_size)
+- Cursor-based pagination (base64 encoded cursor)
+- Response format chuẩn với metadata
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+from dataclasses import dataclass, field
+from typing import Any, Generic, Sequence, TypeVar
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import Select
+
+T = TypeVar("T")
+
+
+@dataclass
+class Page(Generic[T]):
+    """Trang kết quả phân trang (offset-based).
+
+    Attributes:
+        items: Danh sách items trong trang
+        total: Tổng số records
+        page: Số trang hiện tại (1-based)
+        page_size: Số items mỗi trang
+        has_next: Có trang tiếp theo không
+        has_prev: Có trang trước không
+        total_pages: Tổng số trang
+    """
+
+    items: list[T]
+    total: int
+    page: int
+    page_size: int
+    has_next: bool = field(init=False)
+    has_prev: bool = field(init=False)
+    total_pages: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.total_pages = max(1, (self.total + self.page_size - 1) // self.page_size)
+        self.has_next = self.page < self.total_pages
+        self.has_prev = self.page > 1
+
+
+@dataclass
+class CursorPage(Generic[T]):
+    """Cursor-based pagination result.
+
+    Attributes:
+        items: Danh sách items trong trang
+        next_cursor: Cursor cho trang tiếp theo (base64 encoded)
+        prev_cursor: Cursor cho trang trước (base64 encoded)
+        has_next: Có trang tiếp theo không
+        has_prev: Có trang trước không
+    """
+
+    items: list[T]
+    next_cursor: str | None
+    prev_cursor: str | None
+    has_next: bool
+    has_prev: bool
+
+
+class OffsetPaginator:
+    """Offset-based paginator cho SQLAlchemy async queries."""
+
+    MAX_PAGE_SIZE = 100
+
+    @staticmethod
+    async def paginate(
+        db: AsyncSession,
+        stmt: Select,
+        page: int = 1,
+        page_size: int = 20,
+        max_page_size: int | None = None,
+    ) -> Page:
+        """Phân trang offset-based.
+
+        Args:
+            db: AsyncSession
+            stmt: SQLAlchemy select statement
+            page: Số trang (1-based)
+            page_size: Số items mỗi trang
+            max_page_size: Giới hạn tối đa page_size
+
+        Returns:
+            Page chứa items và metadata
+        """
+        max_size = max_page_size or OffsetPaginator.MAX_PAGE_SIZE
+        page_size = min(page_size, max_size)
+        page = max(1, page)
+
+        # Count total
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_result = await db.execute(count_stmt)
+        total = total_result.scalar() or 0
+
+        # Fetch page
+        paginated_stmt = stmt.limit(page_size).offset((page - 1) * page_size)
+        result = await db.execute(paginated_stmt)
+        items = list(result.scalars().all())
+
+        return Page(items=items, total=total, page=page, page_size=page_size)
+
+
+class CursorPaginator:
+    """Cursor-based paginator cho SQLAlchemy async queries.
+
+    Cursor là base64 encoded JSON chứa offset hoặc primary key value.
+    """
+
+    MAX_PAGE_SIZE = 100
+
+    @staticmethod
+    def encode_cursor(value: Any) -> str:
+        """Encode cursor value sang base64."""
+        raw = json.dumps(value).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("utf-8")
+
+    @staticmethod
+    def decode_cursor(cursor: str) -> Any:
+        """Decode base64 cursor về value."""
+        raw = base64.urlsafe_b64decode(cursor.encode("utf-8"))
+        return json.loads(raw.decode("utf-8"))
+
+    @staticmethod
+    async def paginate(
+        db: AsyncSession,
+        stmt: Select,
+        cursor: str | None,
+        page_size: int = 20,
+        order_column: str = "id",
+        descending: bool = False,
+    ) -> CursorPage:
+        """Cursor-based pagination.
+
+        Args:
+            db: AsyncSession
+            stmt: SQLAlchemy select statement
+            cursor: Cursor từ trang trước (None cho trang đầu)
+            page_size: Số items mỗi trang
+            order_column: Column để order (mặc định: "id")
+            descending: Order descending
+
+        Returns:
+            CursorPage chứa items và next/prev cursors
+        """
+        max_size = CursorPaginator.MAX_PAGE_SIZE
+        page_size = min(page_size, max_size + 1)
+
+        if cursor:
+            cursor_value = CursorPaginator.decode_cursor(cursor)
+            # Import model dynamically
+            if descending:
+                stmt = stmt.where(stmt._raw_columns[0].key < cursor_value)  # type: ignore
+            else:
+                stmt = stmt.where(stmt._raw_columns[0].key > cursor_value)  # type: ignore
+
+        result = await db.execute(stmt.limit(page_size))
+        rows = list(result.scalars().all())
+
+        has_next = len(rows) > page_size
+        items = rows[:page_size]
+        rows_obj = result.all()
+
+        next_cursor = None
+        prev_cursor = None
+        if items:
+            last_item = rows_obj[-1]
+            next_cursor = CursorPaginator.encode_cursor(last_item.id)
+        if cursor:
+            prev_cursor = cursor
+
+        return CursorPage(
+            items=items,
+            next_cursor=next_cursor if has_next else None,
+            prev_cursor=prev_cursor,
+            has_next=has_next,
+            has_prev=cursor is not None,
+        )

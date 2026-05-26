@@ -1,0 +1,384 @@
+{#
+Jinja2 template cho Tenant Admin Dashboard Component — React (CP36 Tenant Onboarding).
+
+Tự động generate dashboard quản lý tenant với card, status badge, detail drawer.
+
+Usage:
+    context = {}
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Dashboard quản lý tenant — React.
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Mục đích:
+ * - Hiển thị danh sách tenant dạng card với status badge
+ * - Quản lý subscription (gói, chu kỳ thanh toán)
+ * - Cảnh báo hết hạn trial
+ * - Detail drawer để xem thông tin chi tiết
+ * - Các hành động nhanh (tạm dừng, kích hoạt, gia hạn)
+ *
+ * Pattern: B23 — Tenant Admin Dashboard
+ *
+ * Usage:
+ *     <TenantAdminDashboard />
+ */
+
+import React, {
+    useCallback,
+    useMemo,
+    useState,
+    type ChangeEvent,
+} from 'react';
+
+/**
+ * Trạng thái lifecycle của tenant.
+ */
+type TenantLifecycleStatus = 'trial' | 'active' | 'suspended' | 'expired' | 'cancelled';
+
+/**
+ * Gói subscription.
+ */
+type SubscriptionPlan = 'free' | 'starter' | 'professional' | 'enterprise';
+
+/**
+ * Thông tin subscription.
+ */
+interface TenantSubscription {
+    plan: SubscriptionPlan;
+    status: 'trial' | 'active' | 'past_due' | 'cancelled' | 'expired';
+    billingCycle: 'monthly' | 'yearly';
+    currentPeriodEnd: string;
+    seatsUsed: number;
+    seatsLimit: number;
+}
+
+/**
+ * Thông tin tenant.
+ */
+interface TenantInfo {
+    id: string;
+    name: string;
+    domain: string;
+    adminEmail: string;
+    lifecycleStatus: TenantLifecycleStatus;
+    subscription: TenantSubscription;
+    createdAt: string;
+    trialExpiresAt: string | null;
+    userCount: number;
+}
+
+/**
+ * Status badge component.
+ */
+function StatusBadge({ status }: { status: TenantLifecycleStatus }): React.ReactElement {
+    const config: Record<TenantLifecycleStatus, { color: string; label: string }> = {
+        trial:     { color: '#f59e0b', label: 'Thử nghiệm' },
+        active:    { color: '#22c55e', label: 'Hoạt động' },
+        suspended: { color: '#ef4444', label: 'Tạm dừng' },
+        expired:   { color: '#6b7280', label: 'Hết hạn' },
+        cancelled: { color: '#6b7280', label: 'Đã hủy' },
+    };
+    const { color, label } = config[status];
+    return (
+        <span
+            style={{
+                display: 'inline-block',
+                padding: '0.2rem 0.6rem',
+                borderRadius: '9999px',
+                backgroundColor: color + '20',
+                color,
+                fontSize: '0.75rem',
+                fontWeight: 600,
+            }}
+        >
+            {label}
+        </span>
+    );
+}
+
+/**
+ * Detail drawer cho tenant.
+ */
+function TenantDetailDrawer({
+    tenant,
+    onClose,
+}: {
+    tenant: TenantInfo;
+    onClose: () => void;
+}): React.ReactElement {
+    return (
+        <div
+            style={{
+                position: 'fixed',
+                right: 0,
+                top: 0,
+                width: '380px',
+                height: '100%',
+                backgroundColor: 'white',
+                boxShadow: '-4px 0 20px rgba(0,0,0,0.1)',
+                padding: '1.5rem',
+                overflowY: 'auto',
+                zIndex: 50,
+            }}
+        >
+            <button onClick={onClose} style={{ float: 'right', border: 'none', background: 'none', fontSize: '1.25rem' }}>
+                ×
+            </button>
+            <h3 style={{ marginTop: '0' }}>{tenant.name}</h3>
+            <table style={{ width: '100%', fontSize: '0.875rem' }}>
+                <tbody>
+                    <tr><td style={{ padding: '0.4rem 0.5rem' }}>ID</td><td>{tenant.id}</td></tr>
+                    <tr><td style={{ padding: '0.4rem 0.5rem' }}>Domain</td><td>{tenant.domain}</td></tr>
+                    <tr><td style={{ padding: '0.4rem 0.5rem' }}>Email admin</td><td>{tenant.adminEmail}</td></tr>
+                    <tr><td style={{ padding: '0.4rem 0.5rem' }}>Gói</td><td>{tenant.subscription.plan}</td></tr>
+                    <tr><td style={{ padding: '0.4rem 0.5rem' }}>Chu kỳ</td><td>{tenant.subscription.billingCycle}</td></tr>
+                    <tr><td style={{ padding: '0.4rem 0.5rem' }}>Seats</td><td>{tenant.subscription.seatsUsed}/{tenant.subscription.seatsLimit}</td></tr>
+                    <tr><td style={{ padding: '0.4rem 0.5rem' }}>Hết hạn chu kỳ</td><td>{tenant.subscription.currentPeriodEnd}</td></tr>
+                    <tr><td style={{ padding: '0.4rem 0.5rem' }}>Ngày tạo</td><td>{tenant.createdAt}</td></tr>
+                </tbody>
+            </table>
+            {tenant.trialExpiresAt && (
+                <p style={{ marginTop: '1rem', color: '#f59e0b', fontSize: '0.875rem' }}>
+                    ⚠ Trial hết hạn: {tenant.trialExpiresAt}
+                </p>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Tenant Admin Dashboard Component.
+ */
+export function TenantAdminDashboard(): React.ReactElement {
+    const [tenants, setTenants] = useState<TenantInfo[]>([
+        {
+            id: 't-001',
+            name: 'Công ty ABC',
+            domain: 'abc.example.com',
+            adminEmail: 'admin@abc.com',
+            lifecycleStatus: 'active',
+            subscription: {
+                plan: 'professional',
+                status: 'active',
+                billingCycle: 'yearly',
+                currentPeriodEnd: '2026-12-31',
+                seatsUsed: 25,
+                seatsLimit: 50,
+            },
+            createdAt: '2025-06-15',
+            trialExpiresAt: null,
+            userCount: 25,
+        },
+        {
+            id: 't-002',
+            name: 'Startup XYZ',
+            domain: 'xyz.example.com',
+            adminEmail: 'ceo@xyz.io',
+            lifecycleStatus: 'trial',
+            subscription: {
+                plan: 'starter',
+                status: 'trial',
+                billingCycle: 'monthly',
+                currentPeriodEnd: '2026-06-10',
+                seatsUsed: 3,
+                seatsLimit: 5,
+            },
+            createdAt: '2026-05-27',
+            trialExpiresAt: '2026-06-10',
+            userCount: 3,
+        },
+        {
+            id: 't-003',
+            name: 'Enterprise Corp',
+            domain: 'enterprise.example.com',
+            adminEmail: 'it@enterprise.com',
+            lifecycleStatus: 'suspended',
+            subscription: {
+                plan: 'enterprise',
+                status: 'past_due',
+                billingCycle: 'yearly',
+                currentPeriodEnd: '2026-03-01',
+                seatsUsed: 200,
+                seatsLimit: 500,
+            },
+            createdAt: '2024-03-01',
+            trialExpiresAt: null,
+            userCount: 200,
+        },
+    ]);
+    const [filter, setFilter] = useState<string>('');
+    const [statusFilter, setStatusFilter] = useState<TenantLifecycleStatus | 'all'>('all');
+    const [selectedTenant, setSelectedTenant] = useState<TenantInfo | null>(null);
+
+    /** Tính số ngày trial còn lại */
+    const getTrialDaysRemaining = useCallback((expiresAt: string | null): number => {
+        if (!expiresAt) return 0;
+        const diff = new Date(expiresAt).getTime() - new Date().getTime();
+        return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+    }, []);
+
+    /** Tạm dừng tenant */
+    const suspendTenant = useCallback((id: string) => {
+        setTenants((prev) =>
+            prev.map((t) =>
+                t.id === id
+                    ? {
+                        ...t,
+                        lifecycleStatus: 'suspended' as TenantLifecycleStatus,
+                        subscription: { ...t.subscription, status: 'cancelled' },
+                    }
+                    : t,
+            ),
+        );
+    }, []);
+
+    /** Kích hoạt tenant */
+    const activateTenant = useCallback((id: string) => {
+        setTenants((prev) =>
+            prev.map((t) =>
+                t.id === id
+                    ? {
+                        ...t,
+                        lifecycleStatus: 'active' as TenantLifecycleStatus,
+                        subscription: { ...t.subscription, status: 'active' },
+                    }
+                    : t,
+            ),
+        );
+    }, []);
+
+    /** Lọc danh sách tenant */
+    const filteredTenants = useMemo(() => {
+        return tenants.filter((t) => {
+            const matchStatus = statusFilter === 'all' || t.lifecycleStatus === statusFilter;
+            const matchText = !filter ||
+                t.name.toLowerCase().includes(filter.toLowerCase()) ||
+                t.domain.toLowerCase().includes(filter.toLowerCase());
+            return matchStatus && matchText;
+        });
+    }, [tenants, filter, statusFilter]);
+
+    return (
+        <div className="tenant-admin-dashboard">
+            <h2>Quản lý Tenant</h2>
+
+            {/* Bộ lọc */}
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+                <input
+                    type="text"
+                    placeholder="Tìm tenant..."
+                    value={filter}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setFilter(e.target.value)}
+                    style={{ flex: 1, padding: '0.5rem' }}
+                />
+                <select
+                    value={statusFilter}
+                    onChange={(e: ChangeEvent<HTMLSelectElement>) => setStatusFilter(e.target.value as any)}
+                    style={{ padding: '0.5rem' }}
+                >
+                    <option value="all">Tất cả</option>
+                    <option value="trial">Thử nghiệm</option>
+                    <option value="active">Hoạt động</option>
+                    <option value="suspended">Tạm dừng</option>
+                    <option value="expired">Hết hạn</option>
+                </select>
+            </div>
+
+            {/* Grid tenant cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+                {filteredTenants.map((tenant) => {
+                    const trialDays = getTrialDaysRemaining(tenant.trialExpiresAt);
+                    const isTrialExpiring = tenant.lifecycleStatus === 'trial' && trialDays <= 7 && trialDays > 0;
+                    return (
+                        <div
+                            key={tenant.id}
+                            style={{
+                                border: `1px solid ${isTrialExpiring ? '#f59e0b' : '#e5e7eb'}`,
+                                borderRadius: '0.5rem',
+                                padding: '1rem',
+                                cursor: 'pointer',
+                                backgroundColor: isTrialExpiring ? '#fffbeb' : 'white',
+                            }}
+                            onClick={() => setSelectedTenant(tenant)}
+                        >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                                <div>
+                                    <h3 style={{ margin: 0 }}>{tenant.name}</h3>
+                                    <p style={{ margin: '0.25rem 0', color: '#6b7280', fontSize: '0.875rem' }}>
+                                        {tenant.domain}
+                                    </p>
+                                </div>
+                                <StatusBadge status={tenant.lifecycleStatus} />
+                            </div>
+
+                            <div style={{ marginTop: '0.75rem', fontSize: '0.875rem' }}>
+                                <p style={{ margin: '0.25rem 0' }}>
+                                    Gói: <strong>{tenant.subscription.plan}</strong> |{' '}
+                                    {tenant.subscription.billingCycle === 'yearly' ? 'Hàng năm' : 'Hàng tháng'}
+                                </p>
+                                <p style={{ margin: '0.25rem 0' }}>
+                                    Seats: {tenant.subscription.seatsUsed}/{tenant.subscription.seatsLimit}
+                                </p>
+                                {isTrialExpiring && (
+                                    <p style={{ margin: '0.25rem 0', color: '#f59e0b', fontWeight: 600 }}>
+                                        ⚠ Trial hết hạn sau {trialDays} ngày
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Hành động nhanh */}
+                            <div
+                                style={{
+                                    marginTop: '0.75rem',
+                                    display: 'flex',
+                                    gap: '0.5rem',
+                                    borderTop: '1px solid #e5e7eb',
+                                    paddingTop: '0.5rem',
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {tenant.lifecycleStatus === 'active' && (
+                                    <button onClick={() => suspendTenant(tenant.id)} style={{ fontSize: '0.75rem' }}>
+                                        Tạm dừng
+                                    </button>
+                                )}
+                                {tenant.lifecycleStatus === 'suspended' && (
+                                    <button onClick={() => activateTenant(tenant.id)} style={{ fontSize: '0.75rem' }}>
+                                        Kích hoạt
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Detail Drawer */}
+            {selectedTenant && (
+                <>
+                    <div
+                        onClick={() => setSelectedTenant(null)}
+                        style={{
+                            position: 'fixed',
+                            inset: 0,
+                            backgroundColor: 'rgba(0,0,0,0.3)',
+                            zIndex: 40,
+                        }}
+                    />
+                    <TenantDetailDrawer
+                        tenant={selectedTenant}
+                        onClose={() => setSelectedTenant(null)}
+                    />
+                </>
+            )}
+        </div>
+    );
+}
+
+export default TenantAdminDashboard;

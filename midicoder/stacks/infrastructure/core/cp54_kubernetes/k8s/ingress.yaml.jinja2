@@ -1,0 +1,40 @@
+# {{ "=".center(66, "=") }}
+# CP54: Kubernetes Ingress Manifest
+# {{ "=".center(66, "=") }}
+{% for ingress in ingresses %}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ ingress.name }}
+  labels:
+    app: {{ ingress.name }}
+{% if ingress.annotations %}
+  annotations:
+{% for key, value in ingress.annotations.items() %}
+    {{ key }}: "{{ value }}"
+{% endfor %}
+{% endif %}
+spec:
+{% if ingress.tls and ingress.tls.secret_name %}
+  tls:
+    - hosts:
+        - {{ ingress.host }}
+      secretName: {{ ingress.tls.secret_name }}
+{% endif %}
+  rules:
+    - host: {{ ingress.host }}
+      http:
+        paths:
+{% for path_rule in ingress.paths %}
+          - path: {{ path_rule.path }}
+            pathType: {{ path_rule.path_type }}
+            backend:
+              service:
+                name: {{ path_rule.service_name }}
+                port:
+                  number: {{ path_rule.service_port }}
+{% endfor %}
+{% if not loop.last %}
+---
+{% endif %}
+{% endfor %}

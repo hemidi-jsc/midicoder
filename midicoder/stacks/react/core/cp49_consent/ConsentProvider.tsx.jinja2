@@ -1,0 +1,265 @@
+{#
+Jinja2 template cho React Consent Provider (CP49).
+
+Tự động generate React Consent Context Provider.
+
+Usage:
+    context = {}
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+* ConsentProvider — Context provider cho quản lý đồng ý cookie.
+* Sinh bởi CP49 Consent.
+*
+* Cung cấp:
+* - acceptAll(): chấp nhận tất cả cookie
+* - rejectAll(): từ chối tất cả cookie không cần thiết
+* - setPreferences(): đặt preferences tùy chỉnh
+* - preferences(): đọc trạng thái preferences hiện tại
+* - hasConsent(): kiểm tra đã có consent chưa
+*
+* Lưu trữ: localStorage + sync với backend API.
+*
+* Tạo tự động bởi CP49 — không sửa thủ công.
+*/
+
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useCallback,
+  useContext,
+  ReactNode,
+} from 'react';
+
+/* ---- Types ---- */
+export type CookieCategory = 'necessary' | 'analytics' | 'marketing' | 'preferences';
+
+export interface ConsentPreferences {
+  [key: string]: boolean;
+}
+
+export interface ConsentState {
+  /** Người dùng đã có consent. */
+  hasConsent: boolean;
+  /** Dữ liệu preferences. */
+  preferences: ConsentPreferences | null;
+  /** Thời gian consent. */
+  timestamp: string | null;
+}
+
+export interface ConsentContextValue extends ConsentState {
+  /** Chấp nhận tất cả cookie. */
+  acceptAll: (preferences: ConsentPreferences) => void;
+  /** Từ chối tất cả cookie không cần thiết. */
+  rejectAll: (preferences: ConsentPreferences) => void;
+  /** Đặt preferences tùy chỉnh. */
+  setPreferences: (preferences: ConsentPreferences) => void;
+  /** Reset consent — xóa toàn bộ. */
+  resetConsent: () => void;
+  /** Sync consent với backend. */
+  syncConsent: (preferences: ConsentPreferences) => Promise<void>;
+}
+
+/* ---- Constants ---- */
+const STORAGE_KEY = 'midicoder_consent_v1';
+const API_BASE_URL = '/api/consent';
+
+const DEFAULT_PREFERENCES: ConsentPreferences = {
+  necessary: true,
+  analytics: false,
+  marketing: false,
+  preferences: false,
+};
+
+/* ---- Context ---- */
+const ConsentContext = createContext<ConsentContextValue>({
+  hasConsent: false,
+  preferences: null,
+  timestamp: null,
+  acceptAll: () => {},
+  rejectAll: () => {},
+  setPreferences: () => {},
+  resetConsent: () => {},
+  syncConsent: async () => {},
+});
+
+/* ---- Hook ---- */
+/**
+ * Hook để đọc và tương tác với Consent context.
+ *
+ * Usage:
+ *   const { hasConsent, acceptAll, preferences } = useConsent();
+ */
+export function useConsent(): ConsentContextValue {
+  return useContext(ConsentContext);
+}
+
+/* ---- Provider ---- */
+export interface ConsentProviderProps {
+  /** Children components. */
+  children: ReactNode;
+  /** API base URL (tùy chọn). */
+  apiBaseUrl?: string;
+  /** User ID để sync consent với backend. */
+  userId?: string;
+  /** Tenant ID cho multi-tenant. */
+  tenantId?: string;
+}
+
+/**
+ * ConsentProvider — Provider cho cookie consent management.
+ *
+ * Wrap ứng dụng với provider này để cung cấp consent state
+ * và actions cho tất cả components.
+ *
+ * Usage:
+ *   <ConsentProvider userId={user.id} tenantId={tenant.id}>
+ *     <App />
+ *   </ConsentProvider>
+ */
+export function ConsentProvider({
+  children,
+  apiBaseUrl = API_BASE_URL,
+  userId,
+  tenantId,
+}: ConsentProviderProps): JSX.Element {
+  const [state, setState] = useState<ConsentState>(() => {
+    // Load từ localStorage
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return {
+          hasConsent: true,
+          preferences: parsed.categories || parsed,
+          timestamp: parsed.timestamp || null,
+        };
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return {
+      hasConsent: false,
+      preferences: null,
+      timestamp: null,
+    };
+  });
+
+  /** Chấp nhận tất cả cookie. */
+  const acceptAll = useCallback((preferences: ConsentPreferences) => {
+    const timestamp = new Date().toISOString();
+    const consentData = {
+      accepted: true,
+      categories: preferences,
+      timestamp,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(consentData));
+    setState({
+      hasConsent: true,
+      preferences,
+      timestamp,
+    });
+  }, []);
+
+  /** Từ chối tất cả cookie không cần thiết. */
+  const rejectAll = useCallback((preferences: ConsentPreferences) => {
+    const timestamp = new Date().toISOString();
+    const consentData = {
+      accepted: false,
+      categories: preferences,
+      timestamp,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(consentData));
+    setState({
+      hasConsent: true,
+      preferences,
+      timestamp,
+    });
+  }, []);
+
+  /** Đặt preferences tùy chỉnh. */
+  const setPreferences = useCallback((preferences: ConsentPreferences) => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    const timestamp = stored ? JSON.parse(stored).timestamp : new Date().toISOString();
+    const consentData = {
+      accepted: false,
+      categories: preferences,
+      timestamp,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(consentData));
+    setState((prev) => ({
+      ...prev,
+      preferences,
+      hasConsent: true,
+    }));
+  }, []);
+
+  /** Reset consent. */
+  const resetConsent = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEY);
+    setState({
+      hasConsent: false,
+      preferences: null,
+      timestamp: null,
+    });
+  }, []);
+
+  /** Sync consent với backend API. */
+  const syncConsent = useCallback(
+    async (preferences: ConsentPreferences) => {
+      if (!userId) return;
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/cookie-consent`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(tenantId ? { 'X-Tenant-ID': tenantId } : {}),
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            categories: preferences,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+
+        if (!response.ok) {
+          console.warn('Không thể sync consent với backend:', response.status);
+        }
+      } catch (error) {
+        console.warn('Lỗi sync consent:', error);
+      }
+    },
+    [apiBaseUrl, userId, tenantId],
+  );
+
+  // Auto-sync khi có userId và consent đã được lưu
+  useEffect(() => {
+    if (userId && state.hasConsent && state.preferences) {
+      syncConsent(state.preferences);
+    }
+  }, [userId, state.hasConsent, state.preferences, syncConsent]);
+
+  const value: ConsentContextValue = {
+    ...state,
+    acceptAll,
+    rejectAll,
+    setPreferences,
+    resetConsent,
+    syncConsent,
+  };
+
+  return (
+    <ConsentContext.Provider value={value}>
+      {children}
+    </ConsentContext.Provider>
+  );
+}
+
+/* ---- Export context cho direct access ---- */
+export { ConsentContext };

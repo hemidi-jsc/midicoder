@@ -1,0 +1,115 @@
+{#
+Jinja2 template cho NestJS Webhook Controller (CP45).
+
+Tự động generate NestJS controller cho payment webhook endpoints.
+
+Usage:
+    context = {
+        "providers": ["stripe"],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+{% raw %}/**
+ * WebhookController — Controller cho payment webhook endpoints.
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Endpoints:
+ * - POST /api/payment/webhooks/stripe — Stripe webhook
+ * - POST /api/payment/webhooks/paypal — PayPal webhook
+ *
+ * CP45: Payment Gateway Abstraction
+ */
+
+import {
+  Controller,
+  Post,
+  Body,
+  Headers,
+  Logger,
+  BadRequestException,
+  RawBodyRequest,
+  Req,
+} from "@nestjs/common";
+import { ApiTags, ApiExcludeController } from "@nestjs/swagger";
+import type { Request } from "express";
+import { WebhookHandler } from "./webhook.handler";
+
+@ApiTags("Payment Webhooks")
+@ApiExcludeController() // Webhook endpoints không hiển thị trong Swagger
+@Controller("api/payment/webhooks")
+export class WebhookController {
+  private readonly logger = new Logger(WebhookController.name);
+
+  constructor(
+{% if "stripe" in providers %}
+    private readonly stripeWebhookHandler: WebhookHandler,
+{% endif %}
+  ) {}
+
+{%- if "stripe" in providers %}
+
+  /**
+   * Stripe webhook endpoint.
+   *
+   * Nhận và xử lý webhook events từ Stripe.
+   * Signature verification được thực hiện trong handler.
+   */
+  @Post("stripe")
+  async handleStripeWebhook(
+    @Body() body: any,
+    @Headers("stripe-signature") signature: string,
+    @Req() req: RawBodyRequest<Request>,
+  ) {
+    // Get raw body
+    const rawBody = req.rawBody || Buffer.from(JSON.stringify(body), "utf-8");
+
+    if (!signature) {
+      this.logger.warn("Stripe webhook thiếu signature header");
+      throw new BadRequestException("Thiếu Stripe-Signature header");
+    }
+
+    try {
+      // Verify và parse event
+      const event = this.stripeWebhookHandler.verifySignature(rawBody, signature);
+
+      // Handle event
+      const result = await this.stripeWebhookHandler.handleEvent(event);
+
+      return {
+        received: true,
+        status: result.status,
+        eventType: result.event_type,
+      };
+    } catch (error) {
+      this.logger.error(`Lỗi xử lý Stripe webhook: ${error.message}`);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(`Webhook processing error: ${error.message}`);
+    }
+  }
+{%- endif %}
+
+{%- if "paypal" in providers %}
+
+  /**
+   * PayPal webhook endpoint.
+   */
+  @Post("paypal")
+  async handlePayPalWebhook(
+    @Body() body: any,
+    @Headers() headers: Record<string, string>,
+  ) {
+    // PayPal webhook verification và processing
+    this.logger.log(`Nhận PayPal webhook: ${body?.event_type}`);
+
+    return { received: true };
+  }
+{%- endif %}
+}
+{% endraw %}

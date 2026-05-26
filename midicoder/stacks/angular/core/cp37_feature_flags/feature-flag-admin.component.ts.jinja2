@@ -1,0 +1,210 @@
+{#
+Jinja2 template cho Feature Flag Admin Component — Angular (CP37 Feature Flags).
+
+Tự động generate dashboard quản lý feature flag.
+
+Usage:
+    context = {}
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Dashboard quản lý Feature Flag — Angular.
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Mục đích:
+ * - Hiển thị danh sách feature flags với toggle bật/tắt
+ * - Cấu hình target audience (tenant/user/environment)
+ * - Hiển thị kết quả A/B experiment dạng biểu đồ
+ *
+ * Pattern: B21 — Feature Flag Admin UI
+ *
+ * Usage:
+ *     <app-feature-flag-admin></app-feature-flag-admin>
+ */
+
+import {
+    Component,
+    OnInit,
+    OnDestroy,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
+
+/**
+ * Trạng thái feature flag.
+ */
+export type FlagState = 'enabled' | 'disabled' | 'percentage' | 'targeted';
+
+/**
+ * Cấu hình targeting cho flag.
+ */
+export interface FlagTarget {
+    type: 'tenant' | 'user' | 'environment';
+    values: string[];
+}
+
+/**
+ * Feature flag entity.
+ */
+export interface FeatureFlag {
+    id: string;
+    key: string;
+    name: string;
+    description: string;
+    state: FlagState;
+    percentage: number; // 0-100, dùng khi state === 'percentage'
+    targets: FlagTarget[];
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+/**
+ * Kết quả A/B experiment.
+ */
+export interface ABExperimentResult {
+    experimentId: string;
+    variantName: string;
+    conversions: number;
+    impressions: number;
+    conversionRate: number;
+}
+
+@Component({
+    selector: 'app-feature-flag-admin',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
+    templateUrl: './feature-flag-admin.component.html',
+})
+export class FeatureFlagAdminComponent implements OnInit, OnDestroy {
+    // Danh sách feature flags
+    flags: FeatureFlag[] = [];
+    // Kết quả A/B experiment
+    experimentResults: ABExperimentResult[] = [];
+    // Flag đang được chỉnh sửa
+    editingFlag: FeatureFlag | null = null;
+    // Bộ lọc
+    filterText: string = '';
+    private subscriptions = new Subscription();
+
+    ngOnInit(): void {
+        this.loadFlags();
+        this.loadExperimentResults();
+    }
+
+    ngOnDestroy(): void {
+        this.subscriptions.unsubscribe();
+    }
+
+    /**
+     * Tải danh sách feature flags từ API.
+     */
+    private loadFlags(): void {
+        // TODO: gọi API GET /api/feature-flags
+        // this.flagService.getAllFlags().subscribe(...)
+        this.flags = [
+            {
+                id: '1',
+                key: 'new-checkout-flow',
+                name: 'Quy trình checkout mới',
+                description: 'Giao diện checkout phiên bản 2.0',
+                state: 'percentage',
+                percentage: 50,
+                targets: [],
+                createdAt: new Date('2026-01-15'),
+                updatedAt: new Date('2026-03-20'),
+            },
+            {
+                id: '2',
+                key: 'dark-mode',
+                name: 'Giao diện tối',
+                description: 'Cho phép người dùng chuyển sang dark mode',
+                state: 'targeted',
+                percentage: 0,
+                targets: [
+                    { type: 'tenant', values: ['tenant-abc', 'tenant-xyz'] },
+                    { type: 'environment', values: ['staging'] },
+                ],
+                createdAt: new Date('2026-02-01'),
+                updatedAt: new Date('2026-04-10'),
+            },
+        ];
+    }
+
+    /**
+     * Tải kết quả A/B experiment.
+     */
+    private loadExperimentResults(): void {
+        // TODO: gọi API GET /api/experiments/results
+        this.experimentResults = [
+            { experimentId: 'exp-1', variantName: 'Control (A)', conversions: 120, impressions: 1000, conversionRate: 12.0 },
+            { experimentId: 'exp-1', variantName: 'Variant (B)', conversions: 150, impressions: 1000, conversionRate: 15.0 },
+        ];
+    }
+
+    /**
+     * Bật/tắt feature flag.
+     */
+    toggleFlag(flag: FeatureFlag): void {
+        const newState: FlagState = flag.state === 'enabled' ? 'disabled' : 'enabled';
+        flag.state = newState;
+        flag.updatedAt = new Date();
+        // TODO: gọi API PATCH /api/feature-flags/:id
+        // this.flagService.updateFlag(flag.id, { state: newState }).subscribe(...)
+    }
+
+    /**
+     * Cập nhật tỷ lệ phần trăm cho flag.
+     */
+    updatePercentage(flag: FeatureFlag, percentage: number): void {
+        flag.percentage = Math.min(100, Math.max(0, percentage));
+        flag.state = 'percentage';
+        flag.updatedAt = new Date();
+        // TODO: gọi API PATCH /api/feature-flags/:id
+    }
+
+    /**
+     * Thêm cấu hình targeting cho flag.
+     */
+    addTarget(flag: FeatureFlag, targetType: 'tenant' | 'user' | 'environment', value: string): void {
+        let target = flag.targets.find((t) => t.type === targetType);
+        if (!target) {
+            target = { type: targetType, values: [] };
+            flag.targets.push(target);
+        }
+        if (!target.values.includes(value)) {
+            target.values.push(value);
+        }
+        flag.state = 'targeted';
+        flag.updatedAt = new Date();
+    }
+
+    /**
+     * Lọc danh sách flag theo tên.
+     */
+    get filteredFlags(): FeatureFlag[] {
+        if (!this.filterText) return this.flags;
+        const lower = this.filterText.toLowerCase();
+        return this.flags.filter(
+            (f) => f.key.toLowerCase().includes(lower) || f.name.toLowerCase().includes(lower),
+        );
+    }
+
+    /**
+     * Tạo label hiển thị trạng thái.
+     */
+    getStateLabel(state: FlagState): string {
+        const labels: Record<FlagState, string> = {
+            enabled: 'Bật',
+            disabled: 'Tắt',
+            percentage: 'Theo tỷ lệ',
+            targeted: 'Theo đối tượng',
+        };
+        return labels[state];
+    }
+}

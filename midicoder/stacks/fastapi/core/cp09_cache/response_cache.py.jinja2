@@ -1,0 +1,208 @@
+{#
+Jinja2 template cho Response Cache Middleware — FastAPI.
+
+Tự động generate HTTP cache header middleware: ETag, Cache-Control,
+Last-Modified, Vary headers với cấu hình TTL per route pattern.
+
+Usage:
+    context = {
+        "project_name": "my_api",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Response Cache Headers Middleware cho FastAPI
+
+Tự động generate — không sửa tay.
+
+Pattern: B7 — Response Caching Standard
+
+Mục đích:
+- Tự động thêm HTTP cache headers vào response (ETag, Cache-Control, Last-Modified)
+- Hỗ trợ TTL cấu hình per route pattern để tối ưu caching
+- Giảm bandwidth và server load bằng cách tận dụng client/browser cache
+- Hỗ trợ conditional request (If-None-Match, If-Modified-Since)
+
+Đăng ký:
+    # Trong main.py hoặc app factory
+    from app.cache.response_cache import ResponseCacheMiddleware
+    app.add_middleware(ResponseCacheMiddleware, default_ttl=300)
+
+Cache headers:
+    - ETag: Content hash (SHA-256) cho cache validation
+    - Cache-Control: max-age, public/private, no-cache directives
+    - Last-Modified: Timestamp nội dung cuối cùng thay đổi
+    - Vary: Headers ảnh hưởng đến cache key (Accept, Accept-Encoding)
+
+TTL cấu hình:
+    default_ttl=300  # 5 phút mặc định
+    route_overrides={
+        "/api/v1/users": 60,       # 1 phút
+        "/api/v1/config": 3600,    # 1 giờ
+    }
+
+Error codes:
+    - MDC-CP09-004: Cache middleware error
+    - MDC-CP09-005: ETag generation failed
+"""
+
+from __future__ import annotations
+
+import hashlib
+import re
+import time
+from datetime import datetime, timezone
+from typing import Any, Callable
+
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse, Response as FastAPIResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
+
+
+class ResponseCacheMiddleware(BaseHTTPMiddleware):
+    """Middleware tự động thêm HTTP cache headers vào response.
+
+    Tính toán ETag từ response body, kiểm tra conditional request headers
+    (If-None-Match, If-Modified-Since) để trả về 304 Not Modified khi phù hợp.
+
+    Args:
+        app: ASGI application
+        default_ttl: Thời gian cache mặc định (giây), 0 = no-cache
+        route_overrides: TTL override theo route pattern (dict: pattern -> ttl)
+        excluded_paths: Danh sách path không áp dụng cache headers
+        vary_headers: Danh sách headers để thêm vào Vary header
+    """
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        default_ttl: int = 300,
+        route_overrides: dict[str, int] | None = None,
+        excluded_paths: list[str] | None = None,
+        vary_headers: list[str] | None = None,
+    ) -> None:
+        super().__init__(app)
+        self.default_ttl = default_ttl
+        self.route_overrides = route_overrides or {}
+        self.excluded_paths = excluded_paths or ["/health", "/ready", "/live"]
+        self.vary_headers = vary_headers or ["Accept", "Accept-Encoding"]
+
+        # Compile regex patterns cho route matching
+        self._compiled_patterns: list[tuple[re.Pattern, int]] = [
+            (re.compile(pattern.replace("*", ".*")), ttl)
+            for pattern, ttl in self.route_overrides.items()
+        ]
+
+    def _should_cache(self, request: Request) -> bool:
+        """Kiểm tra xem request có nên áp dụng cache headers không.
+
+        Args:
+            request: FastAPI Request object
+
+        Returns:
+            True nếu nên áp dụng cache, False nếu nên skip
+        """
+        path = request.url.path
+
+        # Skip các path được exclude
+        for excluded in self.excluded_paths:
+            if path.startswith(excluded):
+                return False
+
+        # POST/PUT/DELETE/PATCH không cache
+        if request.method not in ("GET", "HEAD"):
+            return False
+
+        return True
+
+    def _get_ttl_for_path(self, path: str) -> int:
+        """Tìm TTL phù hợp cho route path.
+
+        Check route_overrides theo thứ tự, fallback đến default_ttl.
+
+        Args:
+            path: Request URL path
+
+        Returns:
+            TTL tính bằng giây
+        """
+        for pattern, ttl in self._compiled_patterns:
+            if pattern.match(path):
+                return ttl
+        return self.default_ttl
+
+    def _generate_etag(self, body: bytes) -> str:
+        """Tính toán ETag từ response body bằng SHA-256.
+
+        Args:
+            body: Response body bytes
+
+        Returns:
+            ETag string (SHA-256 hash được quote)
+        """
+        hash_value = hashlib.sha256(body).hexdigest()
+        return f'"{hash_value}"'
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], FastAPIResponse],
+    ) -> FastAPIResponse:
+        """Xử lý request và thêm cache headers vào response.
+
+        Flow:
+        1. Kiểm tra xem request có nên cache không
+        2. Gọi downstream handler
+        3. Tính ETag từ response body
+        4. Kiểm tra If-None-Match — trả về 304 nếu match
+        5. Thêm Cache-Control, ETag, Last-Modified, Vary headers
+
+        Args:
+            request: FastAPI Request
+            call_next: Downstream ASGI handler
+
+        Returns:
+            Response với cache headers (hoặc 304 Not Modified)
+        """
+        if not self._should_cache(request):
+            return await call_next(request)
+
+        # Gọi downstream để lấy response gốc
+        response = await call_next(request)
+
+        # Lấy TTL cho route này
+        ttl = self._get_ttl_for_path(request.url.path)
+
+        # Không áp dụng nếu TTL = 0
+        if ttl <= 0:
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            return response
+
+        # Tính ETag từ response body
+        body = b""
+        if hasattr(response, "body") and response.body:
+            body = response.body
+        etag = self._generate_etag(body) if body else None
+
+        # Kiểm tra conditional request — If-None-Match
+        if etag:
+            if_none_match = request.headers.get("if-none-match")
+            if if_none_match and if_none_match == etag:
+                return Response(status_code=304, headers={"ETag": etag})
+
+        # Thêm cache headers
+        if etag:
+            response.headers["ETag"] = etag
+
+        response.headers["Cache-Control"] = f"public, max-age={ttl}"
+        response.headers["Last-Modified"] = datetime.now(
+            timezone.utc
+        ).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        response.headers["Vary"] = ", ".join(self.vary_headers)
+
+        return response

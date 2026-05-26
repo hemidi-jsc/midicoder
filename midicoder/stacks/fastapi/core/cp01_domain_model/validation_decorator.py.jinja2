@@ -1,0 +1,264 @@
+{#
+Jinja2 template cho Validation Decorators — FastAPI.
+
+Tự động generate validation decorators với decorator pattern.
+Auto-apply vào Pydantic model validators cho input sanitization.
+
+Usage:
+    context = {
+        "errors": [Error objects],
+        "entities": [Entity objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Validation Decorators cho FastAPI
+
+Tự động generate — không sửa tay.
+
+Pattern: B6 — Input Validation & Sanitization
+
+Mục đích:
+- Cung cấp decorators cho auto-validation trên Pydantic models
+- Hỗ trợ validate email, phone, URL, và strip HTML/XSS
+- Dễ dàng attach vào Pydantic field validators
+
+Usage:
+    from app.utils.validation_decorator import (
+        sanitize_html,
+        validate_email,
+        validate_phone,
+        strip_xss,
+    )
+
+    class CreateUserDTO(BaseModel):
+        email: str = field_validator(validate_email)
+        phone: str = field_validator(validate_phone)
+        bio: str = field_validator(sanitize_html, strip_xss)
+
+    # Hoặc dùng làm decorator trên field
+    from pydantic import field_validator
+
+    class UserInput(BaseModel):
+        email: str
+        bio: str
+
+        @field_validator("email")
+        @validate_email
+        def validate_email_field(cls, v):
+            return v
+
+        @field_validator("bio")
+        @sanitize_html
+        def sanitize_bio(cls, v):
+            return v
+"""
+
+from __future__ import annotations
+
+import re
+from functools import wraps
+from typing import Any, Callable, TypeVar
+
+import html
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def sanitize_html(func: F) -> F:
+    """Decorator — encode HTML entities trong string.
+
+    Chuyển các ký tự đặc biệt thành HTML entity:
+    < -> &lt;, > -> &gt;, & -> &amp;, " -> &quot;, ' -> &#x27;
+
+    Usage:
+        @field_validator("content")
+        @sanitize_html
+        def sanitize_content(cls, v: str) -> str:
+            return v
+
+    Args:
+        func: Hàm validator gốc
+
+    Returns:
+        Hàm đã được wrap với sanitize logic
+    """
+
+    @wraps(func)
+    def wrapper(value: str, *args: Any, **kwargs: Any) -> str:
+        sanitized = html.escape(value, quote=True)
+        return func(sanitized, *args, **kwargs) if callable(func) else sanitized  # type: ignore[return-value]
+
+    return wrapper  # type: ignore[return-value]
+
+
+def validate_email(func: F) -> F:
+    """Decorator — validate định dạng email.
+
+    Pattern: RFC 5322 simplified
+    - Có @ và domain
+    - Domain có ít nhất một dot
+    - Không có khoảng trắng
+
+    Usage:
+        @field_validator("email")
+        @validate_email
+        def validate_email_field(cls, v: str) -> str:
+            return v.lower()
+
+    Args:
+        func: Hàm validator gốc
+
+    Returns:
+        Hàm đã được wrap với email validation
+
+    Raises:
+        ValueError: Nếu email không đúng định dạng
+    """
+    EMAIL_PATTERN = re.compile(
+        r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    )
+
+    @wraps(func)
+    def wrapper(value: str, *args: Any, **kwargs: Any) -> str:
+        if not value or not EMAIL_PATTERN.match(value.strip()):
+            raise ValueError(
+                f"Email '{value}' không đúng định dạng. "
+                "Ví dụ: user@example.com"
+            )
+        cleaned = value.strip().lower()
+        return func(cleaned, *args, **kwargs) if callable(func) else cleaned  # type: ignore[return-value]
+
+    return wrapper  # type: ignore[return-value]
+
+
+def validate_phone(func: F) -> F:
+    """Decorator — validate định dạng số điện thoại.
+
+    Hỗ trợ:
+    - Việt Nam: +84, 0开头
+    - Quốc tế: +[country_code]
+    - Chỉ cho phép số, dấu +, dấu -, dấu khoảng trắng
+
+    Usage:
+        @field_validator("phone")
+        @validate_phone
+        def validate_phone_field(cls, v: str) -> str:
+            return v
+
+    Args:
+        func: Hàm validator gốc
+
+    Returns:
+        Hàm đã được wrap với phone validation
+
+    Raises:
+        ValueError: Nếu phone không đúng định dạng
+    """
+    PHONE_PATTERN = re.compile(
+        r"^(\+?\d{1,3}[-.\s]?)?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}$"
+    )
+
+    @wraps(func)
+    def wrapper(value: str, *args: Any, **kwargs: Any) -> str:
+        cleaned = re.sub(r"[\s\-()]+", "", value.strip())
+        if not cleaned or not PHONE_PATTERN.match(value.strip()):
+            raise ValueError(
+                f"Số điện thoại '{value}' không đúng định dạng. "
+                "Ví dụ: +84123456789 hoặc 0912345678"
+            )
+        return func(cleaned, *args, **kwargs) if callable(func) else cleaned  # type: ignore[return-value]
+
+    return wrapper  # type: ignore[return-value]
+
+
+def strip_xss(func: F) -> F:
+    """Decorator — strip các pattern XSS phổ biến.
+
+    Loại bỏ:
+    - <script> tags
+    - javascript: URIs
+    - onclick/onerror/onload event handlers
+    - <iframe>, <object>, <embed> tags
+
+    Usage:
+        @field_validator("content")
+        @strip_xss
+        def strip_xss_from_content(cls, v: str) -> str:
+            return v
+
+    Args:
+        func: Hàm validator gốc
+
+    Returns:
+        Hàm đã được wrap với XSS stripping
+    """
+
+    @wraps(func)
+    def wrapper(value: str, *args: Any, **kwargs: Any) -> str:
+        if not value:
+            return func(value, *args, **kwargs) if callable(func) else value  # type: ignore[return-value]
+
+        cleaned = value
+
+        # Strip <script> tags
+        cleaned = re.sub(r"<script[^>]*>.*?</script>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+
+        # Strip javascript: URI
+        cleaned = re.sub(r"javascript\s*:", "", cleaned, flags=re.IGNORECASE)
+
+        # Strip event handlers (onclick, onerror, onload, onmouseover, ...)
+        cleaned = re.sub(r"\son\w+\s*=\s*['\"][^'\"]*['\"]", "", cleaned, flags=re.IGNORECASE)
+
+        # Strip dangerous tags
+        dangerous_tags = ["iframe", "object", "embed", "form", "applet", "meta", "link", "base"]
+        for tag in dangerous_tags:
+            cleaned = re.sub(
+                rf"</?{tag}[^>]*>", "", cleaned, flags=re.IGNORECASE
+            )
+
+        result = func(cleaned, *args, **kwargs) if callable(func) else cleaned  # type: ignore[return-value]
+        return result
+
+    return wrapper  # type: ignore[return-value]
+
+
+def validate_url(func: F) -> F:
+    """Decorator — validate định dạng URL.
+
+    Hỗ trợ HTTP, HTTPS, và relative URLs.
+
+    Usage:
+        @field_validator("website")
+        @validate_url
+        def validate_url_field(cls, v: str) -> str:
+            return v
+
+    Args:
+        func: Hàm validator gốc
+
+    Returns:
+        Hàm đã được wrap với URL validation
+
+    Raises:
+        ValueError: Nếu URL không đúng định dạng
+    """
+    URL_PATTERN = re.compile(
+        r"^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$"
+    )
+
+    @wraps(func)
+    def wrapper(value: str, *args: Any, **kwargs: Any) -> str:
+        if not value or not URL_PATTERN.match(value.strip()):
+            raise ValueError(
+                f"URL '{value}' không đúng định dạng. "
+                "Ví dụ: https://example.com"
+            )
+        cleaned = value.strip()
+        return func(cleaned, *args, **kwargs) if callable(func) else cleaned  # type: ignore[return-value]
+
+    return wrapper  # type: ignore[return-value]

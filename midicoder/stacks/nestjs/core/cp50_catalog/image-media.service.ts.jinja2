@@ -1,0 +1,184 @@
+{#
+Jinja2 template cho Image Media Service — NestJS (CP50 Catalog).
+
+Tự động generate dịch vụ xử lý ảnh với Sharp integration.
+
+Usage:
+    context = {}
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Dịch vụ quản lý hình ảnh & phương tiện cho catalog sản phẩm.
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Mục đích:
+ * - Tải lên hình ảnh sản phẩm và phương tiện liên quan
+ * - Tạo thumbnail tự động bằng Sharp (nhiều kích thước)
+ * - Sinh URL CDN cho hình ảnh
+ * - Trích xuất metadata từ file ảnh
+ *
+ * Pattern: B19 — Catalog Image Media Management
+ *
+ * Usage:
+ *     @Injectable()
+ *     export class ProductModule {}
+ *     // Inject ImageMediaService vào controller hoặc service khác
+ */
+
+import { Injectable, BadRequestException, PayloadTooLargeException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import * as sharp from 'sharp';
+import { Readable } from 'stream';
+
+/**
+ * Cấu hình kích thước thumbnail.
+ */
+const THUMBNAIL_SIZES: Record<string, { width: number; height: number }> = {
+    tiny:   { width: 48,  height: 48  },
+    small:  { width: 128, height: 128 },
+    medium: { width: 400, height: 400 },
+    large:  { width: 800, height: 800 },
+};
+
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+/**
+ * Kết quả tải lên hình ảnh.
+ */
+export interface UploadImageResult {
+    imageId: string;
+    originalKey: string;
+    originalUrl: string;
+    thumbnails: Record<string, string>;
+    metadata: sharp.OutputInfo & { aspectRatio: number };
+    isPrimary: boolean;
+    productId: string;
+}
+
+/**
+ * File upload metadata.
+ */
+export interface ImageUploadDto {
+    file: Express.Multer.File;
+    productId: string;
+    tenantId: string;
+    isPrimary?: boolean;
+}
+
+@Injectable()
+export class ImageMediaService {
+    /**
+     * Dịch vụ xử lý hình ảnh cho catalog sản phẩm.
+     *
+     * Tích hợp Sharp để resize/crop ảnh hiệu năng cao,
+     * kết hợp với CP11 File Storage cho lưu trữ phân tán.
+     */
+    constructor(
+        private readonly storageService: any,  // CP11FileStorage
+        private readonly cdnBaseUrl: string = '',
+    ) {}
+
+    /**
+     * Tải lên hình ảnh sản phẩm và tạo thumbnail tự động.
+     *
+     * @param dto — Dữ liệu tải lên (file, product, tenant).
+     * @returns Kết quả chứa CDN URLs và metadata.
+     */
+    async uploadImage(dto: ImageUploadDto): Promise<UploadImageResult> {
+        const { file, productId, tenantId, isPrimary = false } = dto;
+
+        // Xác thực loại file
+        if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+            throw new BadRequestException(`Định dạng không hỗ trợ: ${file.mimetype}`);
+        }
+
+        // Kiểm tra kích thước file
+        if (file.size > MAX_FILE_SIZE) {
+            throw new PayloadTooLargeException('File quá lớn (tối đa 10 MB)');
+        }
+
+        // Trích xuất metadata
+        const metadata = await this.extractMetadata(file.buffer);
+
+        // Lưu ảnh gốc
+        const extension = file.originalname?.split('.').pop() || 'jpg';
+        const originalKey = `${tenantId}/catalog/${productId}/original/${this.uuid()}.${extension}`;
+        await this.storageService.save(originalKey, file.buffer, file.mimetype);
+
+        // Tạo thumbnail
+        const thumbnails = await this.generateThumbnails(file.buffer, tenantId, productId, extension);
+
+        const originalUrl = `${this.cdnBaseUrl}/${originalKey}`;
+
+        return {
+            imageId: this.uuid(),
+            originalKey,
+            originalUrl,
+            thumbnails,
+            metadata: { ...metadata, aspectRatio: parseFloat((metadata.width / metadata.height).toFixed(2)) },
+            isPrimary,
+            productId,
+        };
+    }
+
+    /**
+     * Tạo nhiều kích thước thumbnail từ ảnh gốc bằng Sharp.
+     */
+    private async generateThumbnails(
+        buffer: Buffer,
+        tenantId: string,
+        productId: string,
+        extension: string,
+    ): Promise<Record<string, string>> {
+        const urls: Record<string, string> = {};
+
+        for (const [sizeName, size] of Object.entries(THUMBNAIL_SIZES)) {
+            const processed = await sharp(buffer)
+                .resize(size.width, size.height, {
+                    fit: sharp.fit.inside,
+                    withoutEnlargement: true,
+                })
+                .toBuffer();
+
+            const thumbKey = `${tenantId}/catalog/${productId}/${sizeName}/${this.uuid()}.${extension}`;
+            await this.storageService.save(thumbKey, processed, 'image/jpeg');
+            urls[sizeName] = `${this.cdnBaseUrl}/${thumbKey}`;
+        }
+
+        return urls;
+    }
+
+    /**
+     * Trích xuất metadata từ file ảnh.
+     */
+    private async extractMetadata(buffer: Buffer): Promise<sharp.OutputInfo> {
+        return sharp(buffer).metadata();
+    }
+
+    /**
+     * Sinh URL CDN từ storage key.
+     */
+    getCdnUrl(storageKey: string): string {
+        return `${this.cdnBaseUrl}/${storageKey}`;
+    }
+
+    /**
+     * Xóa tất cả tài nguyên ảnh liên quan đến một sản phẩm.
+     */
+    async deleteImageAssets(tenantId: string, productId: string, imageId: string): Promise<void> {
+        await this.storageService.deletePrefix(`${tenantId}/catalog/${productId}/`);
+    }
+
+    private uuid(): string {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+            const r = (Math.random() * 16) | 0;
+            return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
+    }
+}

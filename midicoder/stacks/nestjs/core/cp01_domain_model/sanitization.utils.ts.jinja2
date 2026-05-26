@@ -1,0 +1,213 @@
+{#
+Jinja2 template cho Input Sanitization Utilities — NestJS.
+
+Tự động generate TypeScript utilities cho input sanitization.
+
+Usage:
+    context = {
+        "errors": [Error objects],
+        "entities": [Entity objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Input Sanitization Utilities — NestJS
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B6 — Input Validation & Sanitization
+ *
+ * Mục đích:
+ * - HTML entity encoding — chống XSS qua output
+ * - XSS strip — loại bỏ HTML/script tags
+ * - SQL injection detect — pattern matching
+ * - Command injection detect — shell metacharacters
+ * - URL validation
+ *
+ * Usage:
+ *     import { encodeHtml, stripXss, detectSqlInjection } from './sanitization.utils';
+ *
+ *     const safe = encodeHtml(userInput);
+ *     const clean = stripXss(userInput);
+ *     const isDangerous = detectSqlInjection(userInput);
+ */
+
+/**
+ * Encode HTML entities — chống XSS qua output rendering.
+ *
+ * @param text - Chuỗi gốc cần encode
+ * @returns Chuỗi đã encode HTML entities
+ */
+export function encodeHtml(text: string): string {
+    if (!text) return text;
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
+}
+
+/**
+ * Strip tất cả HTML tags — giữ lại text thuần.
+ *
+ * @param text - Chuỗi chứa HTML
+ * @returns Chuỗi đã loại bỏ HTML tags
+ */
+export function stripHtml(text: string): string {
+    if (!text) return text;
+    return text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Strip các pattern XSS phổ biến từ input.
+ *
+ * @param text - Chuỗi có thể chứa XSS payload
+ * @returns Chuỗi đã loại bỏ XSS patterns
+ */
+export function stripXss(text: string): string {
+    if (!text) return text;
+
+    let cleaned = text;
+
+    // Strip <script> tags
+    cleaned = cleaned.replace(/<script[^>]*>.*?<\/script>/gi, '');
+
+    // Strip javascript: URI
+    cleaned = cleaned.replace(/javascript\s*:/gi, '');
+    cleaned = cleaned.replace(/vbscript\s*:/gi, '');
+
+    // Strip event handlers
+    cleaned = cleaned.replace(/\son\w+\s*=\s*['"][^'"]*['"]/gi, '');
+
+    // Strip data: URI
+    cleaned = cleaned.replace(/data\s*:\s*\w+\/\w+[^,]*,/gi, '');
+
+    // Strip dangerous tags
+    const dangerousTags = ['iframe', 'object', 'embed', 'form', 'applet', 'meta', 'link', 'base'];
+    for (const tag of dangerousTags) {
+        cleaned = cleaned.replace(new RegExp(`</?${tag}[^>]*>`, 'gi'), '');
+    }
+
+    return cleaned;
+}
+
+/**
+ * Detect SQL injection patterns.
+ *
+ * @param text - Chuỗi cần kiểm tra
+ * @returns True nếu phát hiện pattern SQL injection
+ */
+export function detectSqlInjection(text: string): boolean {
+    if (!text) return false;
+
+    const patterns = [
+        /(?:DROP\s+TABLE|DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET)/i,
+        /(?:UNION\s+(?:ALL\s+)?SELECT)/i,
+        /;\s*(?:DROP|DELETE|INSERT|UPDATE|SELECT)/i,
+        /OR\s+['"]?\d+['"]?\s*=\s*['"]?\d+/i,
+        /AND\s+['"]?\d+['"]?\s*=\s*['"]?\d+/i,
+        /--\s*$/,
+        /\/\*/,
+        /\*\//,
+    ];
+
+    return patterns.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Detect command injection patterns.
+ *
+ * @param text - Chuỗi cần kiểm tra
+ * @returns True nếu phát hiện pattern command injection
+ */
+export function detectCommandInjection(text: string): boolean {
+    if (!text) return false;
+
+    const patterns = [
+        /;\s*\w+/,
+        /\|\s*\w+/,
+        /&&\s*\w+/,
+        /\|\|\s*\w+/,
+        /`[^`]*`/,
+        /\$\([^)]+\)/,
+        />+\s*\//,
+        /(?:rm|cat|ls|wget|curl|nc|bash|sh|python|perl|ruby)\s/,
+    ];
+
+    return patterns.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Sanitize input — hàm tổng hợp.
+ *
+ * @param text - Chuỗi cần sanitize
+ * @param options - Tùy chọn sanitize
+ * @returns Chuỗi đã sanitize
+ */
+export function sanitizeInput(
+    text: string,
+    options: {
+        stripTags?: boolean;
+        encodeHtmlOutput?: boolean;
+        maxLength?: number;
+    } = {},
+): string {
+    const { stripTags = true, encodeHtmlOutput = false, maxLength } = options;
+
+    if (!text) return text;
+
+    let result = text.trim();
+
+    if (stripTags) {
+        result = stripXss(result);
+        result = stripHtml(result);
+    }
+
+    if (encodeHtmlOutput) {
+        result = encodeHtml(result);
+    }
+
+    if (maxLength !== undefined) {
+        result = result.substring(0, maxLength);
+    }
+
+    return result;
+}
+
+/**
+ * Validate định dạng email.
+ *
+ * @param email - Email cần validate
+ * @returns True nếu email đúng định dạng
+ */
+export function isValidEmail(email: string): boolean {
+    const pattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    return pattern.test(email.trim());
+}
+
+/**
+ * Validate định dạng số điện thoại.
+ *
+ * @param phone - Số điện thoại cần validate
+ * @returns True nếu phone đúng định dạng
+ */
+export function isValidPhone(phone: string): boolean {
+    const pattern = /^(\+?\d{1,3}[-.\s]?)?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}$/;
+    return pattern.test(phone.trim());
+}
+
+/**
+ * Validate định dạng URL.
+ *
+ * @param url - URL cần validate
+ * @returns True nếu URL đúng định dạng
+ */
+export function isValidUrl(url: string): boolean {
+    const pattern = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/;
+    return pattern.test(url.trim());
+}

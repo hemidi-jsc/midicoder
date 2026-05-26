@@ -1,0 +1,330 @@
+{#
+Jinja2 template cho React Consent Banner Component (CP49).
+
+Tự động generate React consent banner component với Context API.
+
+Usage:
+    context = {
+        "ui_framework": "tailwind",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+* UI Framework: {% raw %}{{{ ui_framework }}}{% endraw %}
+* ConsentBanner — Banner cookie đồng ý: hiển thị fixed, glassmorphism, toggle danh mục.
+* Sinh bởi CP49 Consent.
+*
+* Sử dụng Context API để quản lý trạng thái consent.
+* Accessible UI với ARIA attributes.
+*
+* Tạo tự động bởi CP49 — không sửa thủ công.
+*/
+{% if ui_framework == "material" %}
+import { Button, Paper, Typography, Switch, FormControlLabel, Divider, Box } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Sử dụng Tailwind CSS utility classes inline
+{% elif ui_framework == "bootstrap" %}
+import { Button, Card, Form, Row, Col } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Button, Switch, Divider, Typography, Card } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, Toggle, Layer } from '@carbon/react';
+{% endif %}
+import React, { useState, useCallback, useContext } from 'react';
+import { ConsentContext } from './ConsentProvider';
+
+/* ---- Danh mục cookie ---- */
+export type CookieCategory = 'necessary' | 'analytics' | 'marketing' | 'preferences';
+
+export interface CookieCategoryDef {
+  key: CookieCategory;
+  label: string;
+  description: string;
+  mandatory?: boolean;
+}
+
+const COOKIE_CATEGORIES: CookieCategoryDef[] = [
+  {
+    key: 'necessary',
+    label: 'Cần thiết',
+    description: 'Cookie cần thiết để website hoạt động. Không thể tắt.',
+    mandatory: true,
+  },
+  {
+    key: 'analytics',
+    label: 'Phân tích',
+    description: 'Giúp chúng tôi hiểu cách bạn sử dụng website để cải thiện trải nghiệm.',
+  },
+  {
+    key: 'marketing',
+    label: 'Tiếp thị',
+    description: 'Được sử dụng để hiển thị quảng cáo liên quan đến bạn.',
+  },
+  {
+    key: 'preferences',
+    label: 'Thích',
+    description: 'Cho phép website nhớ thiết lập của bạn như ngôn ngữ.',
+  },
+];
+
+/* ---- Props ---- */
+export interface ConsentBannerProps {
+  /** Class CSS tùy chỉnh. */
+  className?: string;
+  /** Callback khi user accept. */
+  onAccept?: (categories: Record<string, boolean>) => void;
+  /** Callback khi user reject. */
+  onReject?: () => void;
+}
+
+/* ---- Component ---- */
+/**
+ * ConsentBanner — Banner cookie đồng ý.
+ *
+ * Hiển thị banner khi người dùng chưa có consent:
+ * - Chấp nhận tất cả: bật mọi danh mục
+ * - Từ chối tất cả: chỉ giữ necessary
+ * - Tùy chọn: toggle từng category
+ * - Cài đặt: mở preference center
+ */
+export function ConsentBanner({ className, onAccept, onReject }: ConsentBannerProps): JSX.Element | null {
+  const { hasConsent, acceptAll, rejectAll, setPreferences, preferences } = useContext(ConsentContext);
+
+  const [showCategories, setShowCategories] = useState(false);
+  const [localCategories, setLocalCategories] = useState<Record<CookieCategory, boolean>>(() => {
+    if (preferences) {
+      return {
+        necessary: true,
+        analytics: preferences['analytics'] ?? false,
+        marketing: preferences['marketing'] ?? false,
+        preferences: preferences['preferences'] ?? false,
+      };
+    }
+    return {
+      necessary: true,
+      analytics: false,
+      marketing: false,
+      preferences: false,
+    };
+  });
+
+  // Không hiển thị nếu đã có consent
+  if (hasConsent) {
+    return null;
+  }
+
+  /* ---- Handlers ---- */
+  const handleAcceptAll = useCallback(() => {
+    const allEnabled: Record<string, boolean> = {};
+    COOKIE_CATEGORIES.forEach((cat) => {
+      allEnabled[cat.key] = true;
+    });
+    acceptAll(allEnabled);
+    onAccept?.(allEnabled);
+  }, [acceptAll, onAccept]);
+
+  const handleRejectAll = useCallback(() => {
+    const minimal: Record<string, boolean> = {
+      necessary: true,
+      analytics: false,
+      marketing: false,
+      preferences: false,
+    };
+    rejectAll(minimal);
+    onReject?.();
+  }, [rejectAll, onReject]);
+
+  const handleToggleCategory = useCallback((key: CookieCategory) => {
+    setLocalCategories((prev) => {
+      const updated = { ...prev, [key]: !prev[key] };
+      setPreferences(updated);
+      return updated;
+    });
+  }, [setPreferences]);
+
+  const handleToggleList = useCallback(() => {
+    setShowCategories((v) => !v);
+  }, []);
+
+  /* ---- Render ---- */
+  return (
+    <div
+      className={`consent-banner ${className || ''}`}
+      role="alert"
+      aria-live="polite"
+      aria-label="Thông báo cookie"
+      style={styles.banner}
+    >
+      <div style={styles.content}>
+        <h2 style={styles.title}>Chúng tôi sử dụng cookie</h2>
+        <p style={styles.description}>
+          Website này sử dụng cookie để cải thiện trải nghiệm người dùng,
+          phân tích lưu lượng truy cập và phục vụ nội dung liên quan.
+          Bạn có thể quản lý thiết lập cookie của mình bất cứ lúc nào.
+        </p>
+
+        {/* Categories list */}
+        {showCategories && (
+          <div style={styles.categories} role="group" aria-label="Danh mục cookie">
+            {COOKIE_CATEGORIES.map((cat) => (
+              <label key={cat.key} style={styles.categoryLabel}>
+                <input
+                  type="checkbox"
+                  checked={localCategories[cat.key]}
+                  disabled={cat.mandatory}
+                  onChange={() => handleToggleCategory(cat.key)}
+                  aria-label={`${cat.label}: ${cat.description}`}
+                />
+                <span style={styles.categoryText}>
+                  <strong>{cat.label}</strong>
+                  {' — '}
+                  {cat.description}
+                  {cat.mandatory && <em style={styles.required}> (Bắt buộc)</em>}
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div style={styles.actions}>
+          <button
+            style={styles.btnPrimary}
+            onClick={handleAcceptAll}
+            aria-label="Chấp nhận tất cả cookie"
+          >
+            Chấp nhận tất cả
+          </button>
+          <button
+            style={styles.btnSecondary}
+            onClick={handleRejectAll}
+            aria-label="Từ chối tất cả cookie không cần thiết"
+          >
+            Chỉ cần thiết
+          </button>
+          <button
+            style={styles.btnOutline}
+            onClick={handleToggleList}
+            aria-expanded={showCategories}
+            aria-label="Tùy chọn cookie"
+          >
+            Tùy chọn
+          </button>
+          <button
+            style={styles.btnGhost}
+            onClick={() => {/* Navigate to preference center */}}
+            aria-label="Mở trang cài đặt cookie"
+          >
+            Cài đặt
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Inline styles ---- */
+const styles: Record<string, React.CSSProperties> = {
+  banner: {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    background: 'rgba(255, 255, 255, 0.95)',
+    backdropFilter: 'blur(10px)',
+    borderTop: '1px solid #e2e8f0',
+    boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.1)',
+    padding: '1.5rem',
+    zIndex: 9999,
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+  },
+  content: {
+    maxWidth: '900px',
+    margin: '0 auto',
+  },
+  title: {
+    margin: '0 0 0.5rem',
+    fontSize: '1.25rem',
+    fontWeight: 600,
+  },
+  description: {
+    margin: '0 0 1rem',
+    color: '#64748b',
+    lineHeight: 1.5,
+  },
+  categories: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.75rem',
+    marginBottom: '1rem',
+    padding: '1rem',
+    background: '#f8fafc',
+    borderRadius: '0.5rem',
+  },
+  categoryLabel: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '0.5rem',
+    cursor: 'pointer',
+  },
+  categoryText: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.125rem',
+    fontSize: '0.875rem',
+  },
+  required: {
+    color: '#94a3b8',
+    fontSize: '0.75rem',
+  },
+  actions: {
+    display: 'flex',
+    gap: '0.5rem',
+    flexWrap: 'wrap',
+  },
+  btnPrimary: {
+    padding: '0.5rem 1rem',
+    border: 'none',
+    borderRadius: '0.375rem',
+    background: '#2563eb',
+    color: 'white',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: 500,
+  },
+  btnSecondary: {
+    padding: '0.5rem 1rem',
+    border: 'none',
+    borderRadius: '0.375rem',
+    background: '#e2e8f0',
+    color: '#1e293b',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: 500,
+  },
+  btnOutline: {
+    padding: '0.5rem 1rem',
+    border: '1px solid #94a3b8',
+    borderRadius: '0.375rem',
+    background: 'transparent',
+    color: '#475569',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: 500,
+  },
+  btnGhost: {
+    padding: '0.5rem 1rem',
+    border: 'none',
+    borderRadius: '0.375rem',
+    background: 'transparent',
+    color: '#64748b',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+    fontWeight: 500,
+    textDecoration: 'underline',
+  },
+};

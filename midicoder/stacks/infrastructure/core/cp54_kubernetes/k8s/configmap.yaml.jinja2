@@ -1,0 +1,18 @@
+# {{ "=".center(66, "=") }}
+# CP54: Kubernetes ConfigMap Manifest
+# {{ "=".center(66, "=") }}
+{% for configmap in configmaps %}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ configmap.name }}
+  labels:
+    app: {{ configmap.name }}
+data:
+{% for key, value in configmap.data.items() %}
+  {{ key }}: "{{ value }}"
+{% endfor %}
+{% if not loop.last %}
+---
+{% endif %}
+{% endfor %}

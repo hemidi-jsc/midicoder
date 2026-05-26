@@ -1,0 +1,154 @@
+{#
+Jinja2 template cho Response Cache Interceptor — NestJS.
+
+Tự động generate NestJS interceptor inject HTTP cache headers
+vào response: ETag, Cache-Control, Last-Modified, Vary.
+
+Usage:
+    context = {
+        "project_name": "my_api",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Response Cache Interceptor — NestJS
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B7 — Response Caching Standard
+ *
+ * Mục đích:
+ * - Tự động thêm HTTP cache headers vào response (ETag, Cache-Control)
+ * - Hỗ trợ TTL cấu hình per route decorator
+ * - Giảm bandwidth bằng cách tận dụng client/browser cache
+ * - Hỗ trợ conditional request (If-None-Match -> 304)
+ *
+ * Sử dụng:
+ *   // Global — apply cho tất cả controller
+ *   app.useGlobalInterceptors(new ResponseCacheInterceptor());
+ *
+ *   // Per controller/method — với TTL tùy chỉnh
+ *   @UseInterceptors(new ResponseCacheInterceptor({ ttl: 60 }))
+ *   @Get()
+ *   findAll() { ... }
+ *
+ *   // Disable cache cho route cụ thể
+ *   @UseInterceptors(new ResponseCacheInterceptor({ ttl: 0 }))
+ *   @Get('/realtime')
+ *   getRealtime() { ... }
+ *
+ * Cache headers:
+ *   - ETag: SHA-256 hash của response body
+ *   - Cache-Control: max-age, public/private
+ *   - Last-Modified: Timestamp nội dung cuối thay đổi
+ *   - Vary: Accept, Accept-Encoding
+ *
+ * Error codes:
+ *   - MDC-CP09-004: Cache middleware error
+ *   - MDC-CP09-005: ETag generation failed
+ */
+
+import {
+  CallHandler,
+  ExecutionContext,
+  Injectable,
+  NestInterceptor,
+  StreamableFile,
+} from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
+import * as crypto from 'crypto';
+
+/**
+ * Options cho ResponseCacheInterceptor.
+ */
+export interface ResponseCacheOptions {
+  /** Thời gian cache mặc định (giây), 0 = no-cache */
+  ttl?: number;
+  /** Các path không áp dụng cache */
+  excludePaths?: string[];
+  /** Headers cho Vary header */
+  varyHeaders?: string[];
+}
+
+/**
+ * ResponseCacheInterceptor — tự động inject HTTP cache headers.
+ *
+ * Tính toán ETag từ response body, kiểm tra If-None-Match
+ * header để trả về 304 Not Modified khi client cache vẫn hợp lệ.
+ */
+@Injectable()
+export class ResponseCacheInterceptor implements NestInterceptor {
+  private ttl: number;
+  private excludePaths: string[];
+  private varyHeaders: string[];
+
+  constructor(options: ResponseCacheOptions = {}) {
+    this.ttl = options.ttl ?? 300; // 5 phút mặc định
+    this.excludePaths = options.excludePaths ?? ['/health', '/ready', '/live'];
+    this.varyHeaders = options.varyHeaders ?? ['Accept', 'Accept-Encoding'];
+  }
+
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    const request = context.switchToHttp().getRequest<Request>();
+    const response = context.switchToHttp().getResponse<Response>();
+    const path = request.url;
+
+    // Skip nếu path bị exclude
+    if (this.shouldExclude(path)) {
+      return next.handle();
+    }
+
+    // Không cache cho POST/PUT/DELETE/PATCH
+    if (!['GET', 'HEAD'].includes(request.method)) {
+      return next.handle();
+    }
+
+    return next.handle().pipe(
+      map((data) => {
+        // Không xử lý StreamableFile
+        if (data instanceof StreamableFile) {
+          return response;
+        }
+
+        // Tính ETag từ response body
+        const body = JSON.stringify(data);
+        const etag = `"${crypto.createHash('sha256').update(body).digest('hex')}"`;
+
+        // Kiểm tra If-None-Match — trả về 304
+        const ifNoneMatch = request.headers['if-none-match'];
+        if (ifNoneMatch === etag) {
+          response.removeHeader('content-type');
+          response.set('ETag', etag);
+          response.status(304).send();
+          return response;
+        }
+
+        // Thêm cache headers
+        if (this.ttl > 0) {
+          response.set({
+            ETag: etag,
+            'Cache-Control': `public, max-age=${this.ttl}`,
+            'Last-Modified': new Date().toUTCString(),
+            Vary: this.varyHeaders.join(', '),
+          });
+        } else {
+          response.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        }
+
+        return response;
+      }),
+    );
+  }
+
+  /**
+   * Kiểm tra path có nên skip cache không.
+   */
+  private shouldExclude(path: string): boolean {
+    return this.excludePaths.some((exclude) => path.startsWith(exclude));
+  }
+}

@@ -1,0 +1,105 @@
+{#
+Jinja2 template cho RFC 7807 Problem Details DTO — NestJS.
+
+Tự động generate TypeScript DTO cho ProblemDetails theo RFC 7807.
+
+Usage:
+    context = {
+        "errors": [Error objects],
+        "entities": [Entity objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * RFC 7807 Problem Details — NestJS
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Pattern: B3 — Standardized Error Response
+ *
+ * Mục đích:
+ * - TypeScript DTO cho RFC 7807 Problem Details
+ * - Response structure đồng nhất cho tất cả lỗi
+ * - Hỗ trợ validation decorator từ class-validator
+ *
+ * Usage:
+ *     const problem = new ProblemDetail({
+ *         type: 'about:blank',
+ *         title: 'Không tìm thấy tài nguyên',
+ *         status: 404,
+ *         instance: '/api/v1/users/abc',
+ *     });
+ */
+
+/**
+ * Chi tiết lỗi cho từng field — validation failure.
+ */
+export interface ErrorDetail {
+    /** Tên field bị lỗi (dot notation cho nested) */
+    field: string;
+    /** Lời giải thích lỗi bằng tiếng Việt */
+    message: string;
+    /** Error code máy đọc được */
+    code?: string;
+}
+
+/**
+ * Chi tiết lỗi validation — danh sách field errors.
+ */
+export interface ValidationErrorDetail {
+    /** Tiêu đề lỗi ngắn gọn */
+    title: string;
+    /** HTTP status code */
+    status: number;
+    /** Danh sách chi tiết lỗi theo field */
+    errors: ErrorDetail[];
+    /** Path của request bị lỗi */
+    instance?: string;
+    /** Lời giải thích chi tiết */
+    detail?: string;
+}
+
+/**
+ * RFC 7807 Problem Details — interface tổng quát.
+ */
+export interface ProblemDetail {
+    /** URI tham chiếu loại lỗi (RFC 3986) */
+    type?: string;
+    /** Tiêu đề lỗi ngắn gọn */
+    title: string;
+    /** HTTP status code */
+    status: number;
+    /** Lời giải thích chi tiết */
+    detail?: string;
+    /** URI của request cụ thể */
+    instance?: string;
+    /** Trường mở rộng tùy chỉnh */
+    [key: string]: unknown;
+}
+
+/**
+ * Factory — tạo ProblemDetail với defaults hợp lý.
+ */
+export function createProblemDetail(
+    title: string,
+    status: number,
+    options?: {
+        type?: string;
+        detail?: string;
+        instance?: string;
+        extensions?: Record<string, unknown>;
+    },
+): ProblemDetail {
+    return {
+        type: options?.type ?? 'about:blank',
+        title,
+        status,
+        detail: options?.detail,
+        instance: options?.instance,
+        ...options?.extensions,
+    };
+}

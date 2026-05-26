@@ -1,0 +1,78 @@
+/**
+* Notification Preference Service - NestJS.
+*
+* Cung cap: channel opt-in/out, quiet hours, preference filtering.
+* CP12: Notification & Communication
+*/
+
+import { Injectable } from "@nestjs/common";
+
+export enum NotificationChannel {
+EMAIL = "email",
+SMS = "sms",
+PUSH = "push",
+IN_APP = "in_app",
+}
+
+export enum FrequencyCap { NONE = "none", HOURLY = "hourly", DAILY = "daily", WEEKLY = "weekly" }
+
+export interface ChannelPreference {
+enabled: boolean;
+frequencyCap: FrequencyCap;
+maxPerPeriod: number;
+}
+
+export interface NotificationPreference {
+userId: string;
+quietHours: { enabled: boolean; startTime: string; endTime: string; timezone: string };
+channels: Record<string, ChannelPreference>;
+    updatedAt: Date;
+    }
+
+    @Injectable()
+    export class NotificationPreferenceService {
+    private readonly prefs = new Map<string, NotificationPreference>();
+
+        getPreference(userId: string): NotificationPreference | undefined {
+        return this.prefs.get(userId);
+        }
+
+        createPreference(userId: string): NotificationPreference {
+        if (this.prefs.has(userId)) throw new Error(`MDC-CP12-003: Preference da ton tai`);
+        const pref: NotificationPreference = {
+        userId,
+        quietHours: { enabled: false, startTime: "22:00", endTime: "07:00", timezone: "Asia/Ho_Chi_Minh" },
+        channels: Object.fromEntries(
+        Object.values(NotificationChannel).map((ch) => [ch, { enabled: true, frequencyCap: FrequencyCap.NONE,
+        maxPerPeriod: 0 }])
+        ),
+        updatedAt: new Date(),
+        };
+        this.prefs.set(userId, pref);
+        return pref;
+        }
+
+        updateChannelOpt(userId: string, channel: string, enabled: boolean): NotificationPreference | undefined {
+        const pref = this.prefs.get(userId);
+        if (!pref) return undefined;
+        pref.channels[channel] = { enabled, frequencyCap: FrequencyCap.NONE, maxPerPeriod: 0 };
+        pref.updatedAt = new Date();
+        return pref;
+        }
+
+        updateQuietHours(userId: string, enabled: boolean, startTime = "22:00", endTime = "07:00", timezone =
+        "Asia/Ho_Chi_Minh") {
+        const pref = this.prefs.get(userId);
+        if (!pref) return undefined;
+        pref.quietHours = { enabled, startTime, endTime, timezone };
+        pref.updatedAt = new Date();
+        return pref;
+        }
+
+        /** Loc danh sach channels co the gui notification. */
+        getActiveChannels(userId: string): string[] {
+        const pref = this.prefs.get(userId);
+        if (!pref) return [];
+        return Object.entries(pref.channels).filter(([, ch]) => ch.enabled).map(([k]) => k);
+        }
+        }

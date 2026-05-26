@@ -1,0 +1,220 @@
+{#
+Jinja2 template cho Bulk Import Preview Component — Angular (CP38 Data ETL).
+
+Tự động generate component xem trước & validate dữ liệu import hàng loạt.
+
+Usage:
+    context = {}
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Component xem trước & xác thực dữ liệu import hàng loạt.
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Mục đích:
+ * - Tải lên file CSV và hiển thị bản xem trước
+ * - Ánh xạ cột source sang field target (column mapper)
+ * - Hiển thị báo cáo xác thực (lỗi/cảnh báo theo hàng)
+ * - Nút import với thanh tiến trình
+ *
+ * Pattern: B20 — Bulk Import Preview & Validation
+ *
+ * Usage:
+ *     <app-bulk-import-preview
+ *         [entityType]="'Product'"
+ *         (importComplete)="onImportComplete($event)">
+ *     </app-bulk-import-preview>
+ */
+
+import {
+    Component,
+    EventEmitter,
+    Input,
+    OnDestroy,
+    OnInit,
+    Output,
+    ViewChild,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
+
+/**
+ * Hàng dữ liệu trong file import.
+ */
+export interface ImportRow {
+    rowIndex: number;
+    values: Record<string, string>;
+    errors: string[];
+    warnings: string[];
+}
+
+/**
+ * Cấu hình ánh xạ cột.
+ */
+export interface ColumnMapping {
+    sourceColumn: string;
+    targetField: string;
+    required: boolean;
+}
+
+/**
+ * Kết quả xác thực tổng thể.
+ */
+export interface ValidationReport {
+    totalRows: number;
+    validRows: number;
+    errorRows: number;
+    warningRows: number;
+    errors: Array<{ row: number; field: string; message: string }>;
+    warnings: Array<{ row: number; field: string; message: string }>;
+}
+
+@Component({
+    selector: 'app-bulk-import-preview',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
+    templateUrl: './bulk-import-preview.component.html',
+})
+export class BulkImportPreviewComponent implements OnInit, OnDestroy {
+    /** Loại entity cần import (ví dụ: 'Product', 'Category') */
+    @Input() entityType: string = '';
+    /** Sự kiện khi import hoàn tất */
+    @Output() importComplete = new EventEmitter<{ imported: number; failed: number }>();
+
+    @ViewChild('fileInput') fileInput: any;
+
+    // Trạng thái component
+    uploadedFileName: string = '';
+    headers: string[] = [];
+    previewRows: ImportRow[] = [];
+    columnMappings: ColumnMapping[] = [];
+    validationReport: ValidationReport | null = null;
+    importProgress: number = 0;
+    isImporting: boolean = false;
+    selectedFile: File | null = null;
+
+    private subscriptions = new Subscription();
+
+    ngOnInit(): void {
+        // Khởi tạo column mappings dựa trên entityType
+    }
+
+    ngOnDestroy(): void {
+        this.subscriptions.unsubscribe();
+    }
+
+    /**
+     * Xử lý khi người dùng chọn file CSV.
+     */
+    onFileSelected(event: Event): void {
+        const input = event.target as HTMLInputElement;
+        if (!input?.files?.length) return;
+
+        this.selectedFile = input.files[0];
+        this.uploadedFileName = this.selectedFile.name;
+        this.parseCsvAndPreview(this.selectedFile);
+    }
+
+    /**
+     * Phân tích file CSV và hiển thị bản xem trước.
+     */
+    private parseCsvAndPreview(file: File): void {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target?.result as string;
+            const lines = text.split('\n').filter(Boolean);
+            if (lines.length < 2) return;
+
+            this.headers = lines[0].split(',').map((h) => h.trim());
+            this.previewRows = lines.slice(1, 11).map((line, idx) => ({
+                rowIndex: idx + 2, // dòng 1-indexed, skip header
+                values: this.headers.reduce(
+                    (acc, h, i) => ({ ...acc, [h]: line.split(',')[i]?.trim() || '' }),
+                    {},
+                ),
+                errors: [],
+                warnings: [],
+            }));
+            this.initializeColumnMappings();
+        };
+        reader.readAsText(file);
+    }
+
+    /**
+     * Khởi tạo ánh xạ cột mặc định từ headers CSV.
+     */
+    private initializeColumnMappings(): void {
+        this.columnMappings = this.headers.map((header) => ({
+            sourceColumn: header,
+            targetField: header,
+            required: true,
+        }));
+    }
+
+    /**
+     * Chạy xác thực dữ liệu trước khi import.
+     */
+    async validateData(): Promise<void> {
+        if (!this.selectedFile) return;
+
+        const report: ValidationReport = {
+            totalRows: this.previewRows.length,
+            validRows: 0,
+            errorRows: 0,
+            warningRows: 0,
+            errors: [],
+            warnings: [],
+        };
+
+        for (const row of this.previewRows) {
+            for (const mapping of this.columnMappings) {
+                const value = row.values[mapping.sourceColumn];
+                if (mapping.required && !value) {
+                    report.errors.push({ row: row.rowIndex, field: mapping.targetField, message: 'Giá trị bắt buộc' });
+                    row.errors.push(`[${mapping.targetField}] Giá trị bắt buộc`);
+                }
+            }
+            if (row.errors.length) report.errorRows++;
+            else if (row.warnings.length) report.warningRows++;
+            else report.validRows++;
+        }
+
+        this.validationReport = report;
+    }
+
+    /**
+     * Thực hiện import dữ liệu với tiến trình.
+     */
+    async startImport(): Promise<void> {
+        if (!this.selectedFile || !this.validationReport) return;
+        this.isImporting = true;
+        this.importProgress = 0;
+
+        // Simulate progressive import
+        for (let i = 0; i <= 100; i += 10) {
+            this.importProgress = i;
+            await new Promise((r) => setTimeout(r, 200));
+        }
+
+        this.isImporting = false;
+        this.importComplete.emit({
+            imported: this.validationReport.validRows,
+            failed: this.validationReport.errorRows,
+        });
+    }
+
+    /**
+     * Cập nhật ánh xạ cột từ UI.
+     */
+    updateMapping(index: number, targetField: string): void {
+        if (this.columnMappings[index]) {
+            this.columnMappings[index].targetField = targetField;
+        }
+    }
+}

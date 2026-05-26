@@ -1,0 +1,245 @@
+{#
+Jinja2 template cho Financial Transaction Dashboard — Angular (CP33).
+
+Tu dong generate component bang dieu khien giao dich tai chinh:
+bang ke giao dich, loi chuyen tien, trang thai doi choi, xem double-entry.
+
+Usage:
+    context = {
+        "transactions": [Transaction objects],
+        "accounts": [Account objects],
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * TransactionDashboardComponent — Bang dieu khien giao dich tai chinh.
+ *
+ * Hien thi bang ke giao dich, lịch sử tỷ giá FX, trạng thái đối chiếu,
+ * và góc nhìn double-entry.
+ *
+ * Tao tu dong boi CP33 — khong sua thu cong.
+ */
+
+import {
+    Component,
+    OnInit,
+    ChangeDetectionStrategy,
+    inject,
+    signal,
+    computed,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+
+/** Giao dien giao dich tai chinh. */
+export interface Transaction {
+    id: string;
+    date: string;
+    description: string;
+    type: 'single_entry' | 'double_entry';
+    status: 'draft' | 'posted' | 'reconciled';
+    totalDebit: number;
+    totalCredit: number;
+    currency: string;
+    entries: LedgerEntry[];
+}
+
+/** Giao dien mot phan tu ke. */
+export interface LedgerEntry {
+    id: string;
+    accountCode: string;
+    accountName: string;
+    entryType: 'debit' | 'credit';
+    amount: number;
+    currency: string;
+}
+
+/** Giao dien ty gia FX. */
+export interface FXRate {
+    pair: string;
+    rate: number;
+    effectiveFrom: string;
+    effectiveTo: string;
+    isActive: boolean;
+}
+
+/** Giao dien trang thai doi choi. */
+export interface ReconciliationStatus {
+    accountId: string;
+    accountName: string;
+    internalBalance: number;
+    externalBalance: number;
+    difference: number;
+    isBalanced: boolean;
+    lastReconciled: string;
+}
+
+@Component({
+    selector: 'app-transaction-dashboard',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    template: `
+        <div class="tx-dashboard">
+            <!-- Bang ke giao dich -->
+            <section class="ledger-section">
+                <h2>Bang Ke Giao Dich</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Ngay</th>
+                            <th>Mota</th>
+                            <th>Loai</th>
+                            <th>Trang thai</th>
+                            <th>No</th>
+                            <th>Co</th>
+                            <th>TCB</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr *ngFor="let tx of filteredTransactions()">
+                            <td class="tx-id">#{{ tx.id | slice:0:8 }}</td>
+                            <td>{{ tx.date | date:'dd/MM/yyyy' }}</td>
+                            <td>{{ tx.description }}</td>
+                            <td>{{ tx.type }}</td>
+                            <td><span [class]="getStatusClass(tx.status)">{{ tx.status }}</span></td>
+                            <td class="amount">{{ formatMoney(tx.totalDebit, tx.currency) }}</td>
+                            <td class="amount">{{ formatMoney(tx.totalCredit, tx.currency) }}</td>
+                            <td>
+                                <button (click)="toggleEntries(tx.id)" class="btn-sm">
+                                    {{ expandedTx() === tx.id ? 'Thu' : 'Mo' }}
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Xem double-entry -->
+            <section class="entries-section" *ngIf="expandedTx()">
+                <h3>Chi Tiet Double-Entry: #{{ expandedTx() }}</h3>
+                <table>
+                    <thead>
+                        <tr><th>Ma TK</th><th>Ten TK</th><th>Loai</th><th>Sophai</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr *ngFor="let e of selectedEntries()">
+                            <td>{{ e.accountCode }}</td>
+                            <td>{{ e.accountName }}</td>
+                            <td>{{ e.entryType === 'debit' ? 'No' : 'Co' }}</td>
+                            <td class="amount">{{ formatMoney(e.amount, e.currency) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Li su ty gia FX -->
+            <section class="fx-section">
+                <h2>Li Su Ty Gia FX</h2>
+                <table>
+                    <thead>
+                        <tr><th>Cup</th><th>Ty gia</th><th>Hieu luc</th><th>Trang thai</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr *ngFor="let fx of fxRates()">
+                            <td>{{ fx.pair }}</td>
+                            <td>{{ fx.rate | number:'1.4-4' }}</td>
+                            <td>{{ fx.effectiveFrom | date:'dd/MM/yyyy' }}</td>
+                            <td><span [class]="fx.isActive ? 'active' : 'inactive'">
+                                {{ fx.isActive ? 'Hoat dong' : 'Khoa' }}
+                            </span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Trang thai doi choi -->
+            <section class="recon-section">
+                <h2>Trang Thai Doi Choi</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>TK</th><th>Ten TK</th><th>Sodu noi bo</th>
+                            <th>Sodo ben ngoai</th><th>Chenh lech</th><th>Tinh trang</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr *ngFor="let r of reconStatus()">
+                            <td>{{ r.accountId }}</td>
+                            <td>{{ r.accountName }}</td>
+                            <td>{{ formatMoney(r.internalBalance) }}</td>
+                            <td>{{ formatMoney(r.externalBalance) }}</td>
+                            <td [class]="r.isBalanced ? 'balanced' : 'unbalanced'">
+                                {{ formatMoney(r.difference) }}
+                            </td>
+                            <td>
+                                <span [class]="r.isBalanced ? 'status-ok' : 'status-error'">
+                                    {{ r.isBalanced ? 'Dung' : 'Lech' }}
+                                </span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+        </div>
+    `,
+    styles: [`
+        .tx-dashboard { padding: 16px; font-family: system-ui, sans-serif; }
+        h2 { margin-bottom: 12px; font-size: 1.1rem; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; font-size: 0.85rem; }
+        th { background: #f9fafb; font-weight: 600; }
+        .tx-id { font-family: monospace; }
+        .amount { font-family: monospace; text-align: right; }
+        .btn-sm { padding: 2px 8px; border: 1px solid #d1d5db; border-radius: 4px; cursor: pointer; background: #fff; }
+        .status-draft { color: #6b7280; }
+        .status-posted { color: #2563eb; }
+        .status-reconciled { color: #16a34a; }
+        .active { color: #16a34a; font-weight: 600; }
+        .inactive { color: #9ca3af; }
+        .balanced { color: #16a34a; }
+        .unbalanced { color: #dc2626; }
+        .status-ok { color: #16a34a; font-weight: 600; }
+        .status-error { color: #dc2626; font-weight: 600; }
+    `],
+})
+export class TransactionDashboardComponent implements OnInit {
+    private readonly _transactions = signal<Transaction[]>([]);
+    private readonly _fxRates = signal<FXRate[]>([]);
+    private readonly _reconStatus = signal<ReconciliationStatus[]>([]);
+    private readonly _expandedTx = signal<string | null>(null);
+
+    public readonly filteredTransactions = this._transactions;
+    public readonly fxRates = this._fxRates;
+    public readonly reconStatus = this._reconStatus;
+    public readonly expandedTx = this._expandedTx;
+
+    public readonly selectedEntries = computed<LedgerEntry[]>(() => {
+        const tx = this._transactions().find(t => t.id === this._expandedTx());
+        return tx?.entries ?? [];
+    });
+
+    ngOnInit(): void {
+        /* TODO: goi API tai danh sach giao dich */
+    }
+
+    toggleEntries(txId: string): void {
+        this._expandedTx.update(prev => prev === txId ? null : txId);
+    }
+
+    getStatusClass(status: string): string {
+        return `status-${status}`;
+    }
+
+    formatMoney(amount: number, currency: string = 'VND'): string {
+        return new Intl.NumberFormat('vi-VN', {
+            style: 'currency',
+            currency,
+        }).format(amount);
+    }
+}

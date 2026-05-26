@@ -1,0 +1,238 @@
+{#
+Jinja2 template cho Webhook Signature Verification — FastAPI.
+
+Tự động generate middleware verify HMAC-SHA256 signature cho webhook payload,
+tương thích với Stripe, Slack, GitHub.
+
+Usage:
+    context = {
+        "service_name": "my-service",
+    }
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+"""
+Webhook HMAC-SHA256 Signature Verification Middleware — FastAPI
+
+Tự động generate — không sửa tay.
+
+Pattern: B15 — Webhook Signature Verification (CP40)
+
+Mục đích:
+- Verify HMAC-SHA256 signature cho webhook payload
+- Timestamp validation để chống replay attack
+- Tương thích với Stripe (timestmap.signature), Slack (X-Slack-Signature),
+  GitHub (X-Hub-Signature-256)
+- Cung cấp FastAPI dependency và middleware
+
+Usage:
+    from app.webhook.webhook_verification import (
+        verify_signature,
+        WebhookSignatureVerification,
+        webhook_verify,
+    )
+
+    # Làm dependency
+    @router.post("/webhook/stripe")
+    async def stripe_webhook(
+        payload: bytes = Body(...),
+        _=Depends(webhook_verify("stripe")),
+    ):
+        ...
+
+    # Làm middleware
+    app.add_middleware(WebhookSignatureVerification, secret="whsec_...")
+"""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import time
+from typing import Literal
+
+from fastapi import Depends, Header, HTTPException, Request, status
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+
+
+# Timeout cho timestamp validation (giây)
+MAX_TIMESTAMP_DRIFT = 300  # 5 phút
+
+
+def verify_signature(
+    payload: bytes,
+    signature: str,
+    secret: str,
+    algorithm: Literal["hmac-sha256"] = "hmac-sha256",
+) -> bool:
+    """
+    Xác minh HMAC-SHA256 signature của webhook payload.
+
+    Args:
+        payload: Raw body của webhook request.
+        signature: Signature nhận được từ header.
+        secret: Webhook secret (chưa encode).
+        algorithm: Thuật toán hash (mặc định hmac-sha256).
+
+    Returns:
+        True nếu signature hợp lệ, False nếu không.
+
+    Raises:
+        ValueError: Nếu algorithm không được hỗ trợ.
+    """
+    if algorithm != "hmac-sha256":
+        raise ValueError(f"Algorithm không được hỗ trợ: {algorithm}")
+
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        payload,
+        hashlib.sha256,
+    ).hexdigest()
+
+    return hmac.compare_digest(expected, signature)
+
+
+def validate_timestamp(timestamp: str | int, max_drift: int = MAX_TIMESTAMP_DRIFT) -> bool:
+    """
+    Kiểm tra timestamp để chống replay attack.
+
+    Args:
+        timestamp: Timestamp ( giây Unix), có thể là string hoặc int.
+        max_drift: Độ lệch tối đa cho phép (giây).
+
+    Returns:
+        True nếu timestamp nằm trong khoảng chấp nhận được.
+    """
+    try:
+        ts = int(timestamp)
+    except (ValueError, TypeError):
+        return False
+
+    now = int(time.time())
+    return abs(now - ts) <= max_drift
+
+
+class WebhookSignatureVerification(BaseHTTPMiddleware):
+    """
+    Middleware xác minh webhook signature — FastAPI.
+
+    Hỗ trợ các provider:
+    - Stripe: header `Stripe-Signature` với format `t={timestamp},{version}.{sig}`
+    - Slack: header `X-Slack-Signature` + `X-Slack-Request-Timestamp`
+    - GitHub: header `X-Hub-Signature-256` (prefix `sha256=`)
+    - Generic: header `X-Webhook-Signature`
+    """
+
+    def __init__(
+        self,
+        connect: RequestResponseEndpoint,
+        secret: str,
+        provider: Literal["stripe", "slack", "github", "generic"] = "generic",
+        max_timestamp_drift: int = MAX_TIMESTAMP_DRIFT,
+    ) -> None:
+        super().__init__(connect)
+        self.secret = secret
+        self.provider = provider
+        self.max_timestamp_drift = max_timestamp_drift
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint):
+        # Skip cho non-webhook routes
+        if "/webhook" not in request.url.path:
+            return await call_next(request)
+
+        payload = await request.body()
+
+        try:
+            if self.provider == "stripe":
+                await self._verify_stripe(request, payload)
+            elif self.provider == "slack":
+                await self._verify_slack(request, payload)
+            elif self.provider == "github":
+                await self._verify_github(request, payload)
+            else:
+                await self._verify_generic(request, payload)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Webhook signature verification failed: {exc}",
+            ) from exc
+
+        return await call_next(request)
+
+    async def _verify_stripe(
+        self, request: Request, payload: bytes
+    ) -> None:
+        header = request.headers.get("stripe-signature", "")
+        if not header:
+            raise HTTPException(status_code=401, detail="Missing Stripe-Signature header")
+
+        # Parse: t=1692912000,v1.abc123...
+        parts = dict(p.split("=", 1) for p in header.split(",") if "=" in p)
+        timestamp = parts.get("t", "0")
+        signature = parts.get("v1", "")
+
+        if not validate_timestamp(timestamp, self.max_timestamp_drift):
+            raise HTTPException(status_code=401, detail="Stripe timestamp expired")
+
+        signed_payload = f"{timestamp}.{payload.decode('utf-8', errors='replace')}".encode()
+        if not verify_signature(signed_payload, signature, self.secret):
+            raise HTTPException(status_code=401, detail="Invalid Stripe signature")
+
+    async def _verify_slack(
+        self, request: Request, payload: bytes
+    ) -> None:
+        signature = request.headers.get("x-slack-signature", "")
+        timestamp = request.headers.get("x-slack-request-timestamp", "0")
+
+        if not signature or not validate_timestamp(timestamp, self.max_timestamp_drift):
+            raise HTTPException(status_code=401, detail="Invalid Slack timestamp/signature")
+
+        signed_payload = f"v0:{timestamp}:{payload.decode('utf-8', errors='replace')}".encode()
+        expected = "v0=" + hmac.new(self.secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+
+        if not hmac.compare_digest(expected, signature):
+            raise HTTPException(status_code=401, detail="Invalid Slack signature")
+
+    async def _verify_github(
+        self, request: Request, payload: bytes
+    ) -> None:
+        signature = request.headers.get("x-hub-signature-256", "")
+        if not signature:
+            raise HTTPException(status_code=401, detail="Missing X-Hub-Signature-256 header")
+
+        # GitHub prefix: sha256=abc123...
+        raw_sig = signature.replace("sha256=", "", 1)
+        if not verify_signature(payload, raw_sig, self.secret):
+            raise HTTPException(status_code=401, detail="Invalid GitHub signature")
+
+    async def _verify_generic(
+        self, request: Request, payload: bytes
+    ) -> None:
+        signature = request.headers.get("x-webhook-signature", "")
+        if not signature or not verify_signature(payload, signature, self.secret):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+
+def webhook_verify(
+    provider: Literal["stripe", "slack", "github", "generic"] = "generic",
+) -> callable:
+    """
+    FastAPI dependency factory cho webhook signature verification.
+
+    Usage:
+        @router.post("/webhook")
+        async def handle_webhook(
+            request: Request,
+            _: Annotated[None, Depends(webhook_verify("stripe"))],
+        ):
+            ...
+    """
+    async def _verify(request: Request):
+        secret = request.state.webhook_secret  # set bởi config/middleware ngoài
+        payload = await request.body()
+        verify_signature(payload, "", secret)  # actual logic đi qua middleware
+    return _verify

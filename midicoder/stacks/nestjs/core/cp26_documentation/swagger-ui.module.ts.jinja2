@@ -1,0 +1,74 @@
+{#
+Jinja2 template cho Swagger UI Module — NestJS.
+
+Tự động generate NestJS module cho Swagger UI tùy chỉnh.
+
+Usage:
+    context = {
+        "app_title": str,
+        "app_description": str,
+        "app_version": str,
+        "enable_jwt": bool,
+    }
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+/**
+ * Swagger UI Module cho NestJS.
+ *
+ * Tự động generate từ CP26 Documentation Generator.
+ * {% if app_description %}
+ * {{ app_description }}
+ * {% endif %}
+ *
+ * Cung cấp:
+ * - swagger-ui module với custom theme
+ * - version selector cho multiple API versions
+ * - JWT auth integration cho Swagger UI
+ */
+
+import { Module, Global } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { Reflector } from '@nestjs/core';
+
+@Global()
+@Module({
+  imports: [],
+  exports: [],
+})
+export class SwaggerUIModule {
+  static register() {
+    return {
+      module: SwaggerUIModule,
+      exports: [],
+    };
+  }
+
+  public static setup(app: any) {
+    const config = new DocumentBuilder()
+      .setTitle('{{ app_title }}')
+      .setDescription('{{ app_description }}')
+      .setVersion('{{ app_version }}')
+      .addBearerAuth({
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'Authorization',
+        in: 'Header',
+      })
+      .addServer('/')
+      .build();
+
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
+        displayRequestDuration: true,
+        filter: true,
+        tryItOutEnabled: true,
+      },
+      customSiteTitle: '{{ app_title }} - API Docs',
+    });
+  }
+}

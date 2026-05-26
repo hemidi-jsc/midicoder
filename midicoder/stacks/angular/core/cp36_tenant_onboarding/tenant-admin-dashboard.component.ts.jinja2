@@ -1,0 +1,248 @@
+{#
+Jinja2 template cho Tenant Admin Dashboard Component — Angular (CP36 Tenant Onboarding).
+
+Tự động generate dashboard quản lý tenant của admin.
+
+Usage:
+    context = {}
+    template.render(**context)
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+
+/**
+ * Dashboard quản lý tenant — Angular.
+ *
+ * Tự động generate — không sửa tay.
+ *
+ * Mục đích:
+ * - Hiển thị danh sách tenant với trạng thái lifecycle
+ * - Quản lý subscription (gói, chu kỳ thanh toán)
+ * - Cảnh báo hết hạn trial
+ * - Các hành động nhanh (tạm dừng, kích hoạt, gia hạn)
+ *
+ * Pattern: B23 — Tenant Admin Dashboard
+ *
+ * Usage:
+ *     <app-tenant-admin-dashboard></app-tenant-admin-dashboard>
+ */
+
+import {
+    Component,
+    OnInit,
+    OnDestroy,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
+
+/**
+ * Trạng thái lifecycle của tenant.
+ */
+export type TenantLifecycleStatus = 'trial' | 'active' | 'suspended' | 'expired' | 'cancelled';
+
+/**
+ * Gói subscription.
+ */
+export type SubscriptionPlan = 'free' | 'starter' | 'professional' | 'enterprise';
+
+/**
+ * Trạng thái subscription.
+ */
+export type SubscriptionStatus = 'trial' | 'active' | 'past_due' | 'cancelled' | 'expired';
+
+/**
+ * Thông tin tenant.
+ */
+export interface TenantInfo {
+    id: string;
+    name: string;
+    domain: string;
+    adminEmail: string;
+    lifecycleStatus: TenantLifecycleStatus;
+    subscription: TenantSubscription;
+    createdAt: Date;
+    trialExpiresAt: Date | null;
+    userCount: number;
+}
+
+/**
+ * Thông tin subscription của tenant.
+ */
+export interface TenantSubscription {
+    plan: SubscriptionPlan;
+    status: SubscriptionStatus;
+    billingCycle: 'monthly' | 'yearly';
+    currentPeriodEnd: Date;
+    seatsUsed: number;
+    seatsLimit: number;
+}
+
+@Component({
+    selector: 'app-tenant-admin-dashboard',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
+    templateUrl: './tenant-admin-dashboard.component.html',
+})
+export class TenantAdminDashboardComponent implements OnInit, OnDestroy {
+    tenants: TenantInfo[] = [];
+    filterText: string = '';
+    statusFilter: TenantLifecycleStatus | 'all' = 'all';
+    private subscriptions = new Subscription();
+
+    ngOnInit(): void {
+        this.loadTenants();
+    }
+
+    ngOnDestroy(): void {
+        this.subscriptions.unsubscribe();
+    }
+
+    /**
+     * Tải danh sách tenant từ API.
+     */
+    private loadTenants(): void {
+        // TODO: gọi API GET /api/tenants
+        this.tenants = [
+            {
+                id: 't-001',
+                name: 'Công ty ABC',
+                domain: 'abc.example.com',
+                adminEmail: 'admin@abc.com',
+                lifecycleStatus: 'active',
+                subscription: {
+                    plan: 'professional',
+                    status: 'active',
+                    billingCycle: 'yearly',
+                    currentPeriodEnd: new Date('2026-12-31'),
+                    seatsUsed: 25,
+                    seatsLimit: 50,
+                },
+                createdAt: new Date('2025-06-15'),
+                trialExpiresAt: null,
+                userCount: 25,
+            },
+            {
+                id: 't-002',
+                name: 'Startup XYZ',
+                domain: 'xyz.example.com',
+                adminEmail: 'ceo@xyz.io',
+                lifecycleStatus: 'trial',
+                subscription: {
+                    plan: 'starter',
+                    status: 'trial',
+                    billingCycle: 'monthly',
+                    currentPeriodEnd: new Date('2026-06-10'),
+                    seatsUsed: 3,
+                    seatsLimit: 5,
+                },
+                createdAt: new Date('2026-05-27'),
+                trialExpiresAt: new Date('2026-06-10'),
+                userCount: 3,
+            },
+            {
+                id: 't-003',
+                name: 'Enterprise Corp',
+                domain: 'enterprise.example.com',
+                adminEmail: 'it@enterprise.com',
+                lifecycleStatus: 'suspended',
+                subscription: {
+                    plan: 'enterprise',
+                    status: 'past_due',
+                    billingCycle: 'yearly',
+                    currentPeriodEnd: new Date('2026-03-01'),
+                    seatsUsed: 200,
+                    seatsLimit: 500,
+                },
+                createdAt: new Date('2024-03-01'),
+                trialExpiresAt: null,
+                userCount: 200,
+            },
+        ];
+    }
+
+    /**
+     * Lọc danh sách tenant theo tên và trạng thái.
+     */
+    get filteredTenants(): TenantInfo[] {
+        return this.tenants.filter((t) => {
+            const matchStatus = this.statusFilter === 'all' || t.lifecycleStatus === this.statusFilter;
+            const matchText = !this.filterText ||
+                t.name.toLowerCase().includes(this.filterText.toLowerCase()) ||
+                t.domain.toLowerCase().includes(this.filterText.toLowerCase());
+            return matchStatus && matchText;
+        });
+    }
+
+    /**
+     * Kiểm tra tenant đang trial có sắp hết hạn không (trong 7 ngày).
+     */
+    isTrialExpiringSoon(tenant: TenantInfo): boolean {
+        if (!tenant.trialExpiresAt || tenant.lifecycleStatus !== 'trial') return false;
+        const now = new Date();
+        const diff = tenant.trialExpiresAt.getTime() - now.getTime();
+        return diff > 0 && diff <= 7 * 24 * 60 * 60 * 1000;
+    }
+
+    /**
+     * Tạm dừng tenant.
+     */
+    suspendTenant(id: string): void {
+        const tenant = this.tenants.find((t) => t.id === id);
+        if (tenant) {
+            tenant.lifecycleStatus = 'suspended';
+            tenant.subscription.status = 'cancelled';
+        }
+        // TODO: gọi API PATCH /api/tenants/:id/suspend
+    }
+
+    /**
+     * Kích hoạt lại tenant.
+     */
+    activateTenant(id: string): void {
+        const tenant = this.tenants.find((t) => t.id === id);
+        if (tenant) {
+            tenant.lifecycleStatus = 'active';
+            tenant.subscription.status = 'active';
+        }
+        // TODO: gọi API PATCH /api/tenants/:id/activate
+    }
+
+    /**
+     * Label màu cho trạng thái lifecycle.
+     */
+    getStatusColor(status: TenantLifecycleStatus): string {
+        const colors: Record<TenantLifecycleStatus, string> = {
+            trial: '#f59e0b',
+            active: '#22c55e',
+            suspended: '#ef4444',
+            expired: '#6b7280',
+            cancelled: '#6b7280',
+        };
+        return colors[status];
+    }
+
+    /**
+     * Label tiếng Việt cho trạng thái.
+     */
+    getStatusLabel(status: TenantLifecycleStatus): string {
+        const labels: Record<TenantLifecycleStatus, string> = {
+            trial: 'Thử nghiệm',
+            active: 'Hoạt động',
+            suspended: 'Tạm dừng',
+            expired: 'Hết hạn',
+            cancelled: 'Đã hủy',
+        };
+        return labels[status];
+    }
+
+    /**
+     * Tính số ngày còn lại của trial.
+     */
+    getTrialDaysRemaining(tenant: TenantInfo): number {
+        if (!tenant.trialExpiresAt) return 0;
+        const diff = tenant.trialExpiresAt.getTime() - new Date().getTime();
+        return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+    }
+}

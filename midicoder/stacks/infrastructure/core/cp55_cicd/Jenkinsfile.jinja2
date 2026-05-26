@@ -1,0 +1,221 @@
+// CP55: Declarative Jenkins Pipeline
+// Tự động generate bởi Midicoder CE
+
+pipeline {
+    agent any
+
+    environment {
+        PYTHON_VERSION = '3.12'
+        DOCKER_IMAGE = "midicoder-ce"
+        SONAR_HOST_URL = 'http://sonarqube:9000'
+    }
+
+    // =========================================================================
+    // Tool definitions
+    // =========================================================================
+    tools {
+        python "Python${PYTHON_VERSION}"
+    }
+
+    // =========================================================================
+    // Stages
+    // =========================================================================
+    stages {
+        // Stage 1: Setup
+        stage('Setup') {
+            steps {
+                script {
+                    echo '=== Chuẩn bị môi trường ==='
+                    sh '''
+                        python --version
+                        pip --version
+                        pip install -e ".[dev]"
+                    '''
+                }
+            }
+        }
+
+        // Stage 2: Lint
+        stage('Lint') {
+            steps {
+                script {
+                    echo '=== Kiểm tra code quality ==='
+                    sh '''
+                        pip install flake8 black isort mypy
+                        flake8 midicoder/ --count --select=E9,F63,F7,F82 --show-source --statistics
+                        black --check midicoder/
+                        isort --check-only midicoder/
+                    '''
+                }
+            }
+        }
+
+        // Stage 3: Build
+        stage('Build') {
+            steps {
+                script {
+                    echo '=== Build ứng dụng ==='
+                    sh '''
+                        python setup.py build
+                        python setup.py sdist bdist_wheel
+                    '''
+                }
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'dist/**', allowEmptyArchive: true
+                }
+            }
+        }
+
+        // Stage 4: Unit Tests
+        stage('Unit Tests') {
+            steps {
+                script {
+                    echo '=== Chạy unit tests ==='
+                    sh '''
+                        pip install -e ".[test]"
+                        python -m pytest tests/unit/ -v --cov=midicoder --cov-report=xml --junitxml=unit-report.xml
+                    '''
+                }
+            }
+            post {
+                always {
+                    junit 'unit-report.xml'
+                    publishHTML(target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'htmlcov',
+                        reportFiles: 'index.html',
+                        reportName: 'Coverage Report'
+                    ])
+                }
+            }
+        }
+
+        // Stage 5: Integration Tests
+        stage('Integration Tests') {
+            parallel {
+                stage('with-docker') {
+                    agent {
+                        docker {
+                            image 'python:3.12-slim'
+                            args '-v $HOME/.cache/pip:/root/.cache/pip'
+                        }
+                    }
+                    steps {
+                        script {
+                            sh '''
+                                pip install -e ".[test]"
+                                python -m pytest tests/integration/ -v
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        // Stage 6: Docker Build & Scan
+        stage('Docker') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo '=== Build và scan Docker image ==='
+                    sh """
+                        docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} .
+                        docker tag ${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_IMAGE}:latest
+                    """
+                }
+            }
+        }
+
+        // Stage 7: Security Scan
+        stage('Security Scan') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo '=== Container security scan (Trivy) ==='
+                    sh """
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \\
+                            aquasec/trivy:latest image \\
+                            --severity HIGH,CRITICAL --exit-code 1 \\
+                            ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                    """
+                }
+            }
+            post {
+                failure {
+                    echo 'Cảnh báo: Container scan phát hiện lỗ hổng bảo mật'
+                }
+            }
+        }
+
+        // Stage 8: Deploy to Staging
+        stage('Deploy Staging') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo '=== Deploy lên staging ==='
+                    sh '''
+                        echo "Deploying to staging environment"
+                        python scripts/deploy.py --env staging
+                    '''
+                }
+            }
+        }
+
+        // Stage 9: Deploy to Production
+        stage('Deploy Production') {
+            when {
+                expression { env.GIT_TAG != null }
+            }
+            steps {
+                input message: 'Deploy lên production?', ok: 'Deploy'
+                script {
+                    echo '=== Deploy lên production ==='
+                    sh '''
+                        echo "Deploying to production environment"
+                        python scripts/deploy.py --env production
+                    '''
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Post-actions
+    // =========================================================================
+    post {
+        always {
+            archiveArtifacts artifacts: 'dist/**,coverage.xml', allowEmptyArchive: true
+            cleanWs()
+            echo 'Pipeline hoàn tất'
+        }
+        success {
+            echo 'Pipeline thành công'
+            slackSend(
+                channel: '#ci-cd',
+                color: 'good',
+                message: "Pipeline *${env.JOB_NAME}* build *${env.BUILD_NUMBER}* thành công"
+            )
+        }
+        failure {
+            echo 'Pipeline thất bại'
+            slackSend(
+                channel: '#ci-cd',
+                color: 'danger',
+                message: "Pipeline *${env.JOB_NAME}* build *${env.BUILD_NUMBER}* thất bại"
+            )
+        }
+        unstable {
+            echo 'Pipeline không ổn định (test fail nhưng không critical)'
+        }
+    }
+}

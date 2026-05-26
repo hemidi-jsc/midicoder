@@ -1,0 +1,136 @@
+{#
+Jinja2 template cho Filter Builder (NestJS/TypeORM).
+
+Tự động generate dynamic filter builder cho CP08 Database.
+
+Author: Midicoder Team
+Version: 1.0.0
+#}
+/**
+ * Dynamic Filter Builder cho TypeORM.
+ *
+ * Tự động generate — không sửa tay.
+ * Hỗ trợ:
+ * - eq, ne, gt, gte, lt, lte
+ * - contains, like, ilike
+ * - in, notIn
+ * - isNull, isNotNull
+ * - between
+ */
+
+import { FindOptionsWhere, Between, Like, ILike, In, Not } from 'typeorm';
+
+/**
+ * Các operator hỗ trợ.
+ */
+export const FILTER_OPERATORS = [
+  'eq', 'ne', 'gt', 'gte', 'lt', 'lte',
+  'contains', 'like', 'ilike',
+  'in', 'notIn',
+  'isNull', 'isNotNull',
+  'between',
+] as const;
+
+export type FilterOperator = typeof FILTER_OPERATORS[number];
+
+/**
+ * Filter entry.
+ */
+export interface FilterEntry {
+  column: string;
+  operator: FilterOperator;
+  value: any;
+}
+
+/**
+ * Parse filter param string thành FilterEntry.
+ * Format: "column__operator=value" hoặc "column=value" (default eq)
+ */
+export function parseFilterParam(param: string, value: string): FilterEntry {
+  if (param.includes('__')) {
+    const parts = param.rsplit('__', 1);
+    return {
+      column: parts[0],
+      operator: parts[1] as FilterOperator,
+      value: parseValue(value),
+    };
+  }
+  return { column: param, operator: 'eq', value: parseValue(value) };
+}
+
+/**
+ * Parse raw value thành type phù hợp.
+ */
+function parseValue(value: string): any {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (value === 'null') return null;
+  if (!isNaN(Number(value))) return Number(value);
+  if (value.includes(',')) return value.split(',');
+  return value;
+}
+
+/**
+ * Build TypeORM FindOptionsWhere từ FilterEntry array.
+ */
+export function buildWhereConditions(filters: FilterEntry[]): FindOptionsWhere<any> {
+  const where: any = {};
+
+  for (const filter of filters) {
+    switch (filter.operator) {
+      case 'eq':
+        where[filter.column] = filter.value;
+        break;
+      case 'ne':
+        where[filter.column] = Not(filter.value);
+        break;
+      case 'gt':
+        where[filter.column] = () => ({ [filter.column]: { $gt: filter.value } });
+        break;
+      case 'gte':
+        where[filter.column] = () => ({ [filter.column]: { $gte: filter.value } });
+        break;
+      case 'lt':
+        where[filter.column] = () => ({ [filter.column]: { $lt: filter.value } });
+        break;
+      case 'lte':
+        where[filter.column] = () => ({ [filter.column]: { $lte: filter.value } });
+        break;
+      case 'contains':
+      case 'like':
+        where[filter.column] = Like(`%${filter.value}%`);
+        break;
+      case 'ilike':
+        where[filter.column] = ILike(`%${filter.value}%`);
+        break;
+      case 'in':
+        where[filter.column] = In(Array.isArray(filter.value) ? filter.value : [filter.value]);
+        break;
+      case 'notIn':
+        where[filter.column] = Not(In(Array.isArray(filter.value) ? filter.value : [filter.value]));
+        break;
+      case 'isNull':
+        where[filter.column] = null;
+        break;
+      case 'isNotNull':
+        where[filter.column] = () => ({ $notNull: true });
+        break;
+      case 'between':
+        if (Array.isArray(filter.value) && filter.value.length === 2) {
+          where[filter.column] = Between(filter.value[0], filter.value[1]);
+        }
+        break;
+    }
+  }
+
+  return where;
+}
+
+/**
+ * Parse query params thành FilterEntry array.
+ */
+export function parseQueryFilters(query: Record<string, string>): FilterEntry[] {
+  return Object.entries(query)
+    .filter(([key]) => !['page', 'page_size', 'sort_by', 'ascending'].includes(key))
+    .map(([key, value]) => parseFilterParam(key, value));
+}
