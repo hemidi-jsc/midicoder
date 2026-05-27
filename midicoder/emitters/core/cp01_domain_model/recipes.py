@@ -79,6 +79,15 @@ from midicoder.emitters.core.cp01_domain_model.models import (
     VOFieldType,
 )
 
+from midicoder.emitters.core.cp01_domain_model.error_handler_models import (
+    ErrorHandlingStrategy,
+    ErrorLevel,
+    ErrorLoggingConfig,
+    ErrorMapper,
+    ErrorNotificationConfig,
+    GlobalErrorHandler,
+)
+
 
 # ===========================================================================
 # Common building blocks
@@ -715,6 +724,147 @@ def ValueObjectRecipe(
     )
 
 
+# ===========================================================================
+# GlobalErrorHandlerRecipe
+# ===========================================================================
+
+
+def GlobalErrorHandlerRecipe(
+    name: str = "AppErrorHandler",
+    strategy: ErrorHandlingStrategy = ErrorHandlingStrategy.FALLBACK,
+    log_level: ErrorLevel = ErrorLevel.ERROR,
+    include_stack_trace: bool = False,
+    with_logging: bool = True,
+    with_notification: bool = False,
+    common_mappers: bool = True,
+    custom_error_pages: dict[int, str] | None = None,
+    sentry_dsn: str = "",
+    slack_webhook: str = "",
+    email_recipients: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    Global error handler recipe — middleware + mapping + logging + notification.
+
+    Concrete value assignment:
+    - GlobalErrorHandler với fallback strategy (production-safe)
+    - ErrorMappers cho các exception phổ biến (ValueError, KeyError, PermissionError)
+    - ErrorLoggingConfig (structured JSON, stdout)
+    - ErrorNotificationConfig (optional Slack/Sentry)
+
+    Args:
+        name: Handler name (PascalCase)
+        strategy: Error handling strategy
+        log_level: Mức log mặc định
+        include_stack_trace: Có include stack trace không (tắt trong production)
+        with_logging: Có bao gồm ErrorLoggingConfig không
+        with_notification: Có bao gồm ErrorNotificationConfig không
+        common_mappers: Có thêm common exception mappers không
+        custom_error_pages: Custom error page templates
+        sentry_dsn: Sentry DSN (nếu with_notification)
+        slack_webhook: Slack webhook URL (nếu with_notification)
+        email_recipients: Email recipients (nếu with_notification)
+
+    Returns:
+        Dict với keys: "handler", "mappers", "logging_config", "notification_config"
+
+    Example:
+        >>> result = GlobalErrorHandlerRecipe("ProdHandler", with_notification=True)
+        >>> result["handler"].strategy == ErrorHandlingStrategy.FALLBACK
+        True
+    """
+    handler = GlobalErrorHandler(
+        id=name.lower().replace(" ", "_"),
+        name=name,
+        strategy=strategy,
+        log_level=log_level,
+        include_stack_trace=include_stack_trace,
+        custom_error_pages=custom_error_pages or {},
+    )
+
+    mappers: list[ErrorMapper] = []
+    if common_mappers:
+        mappers = [
+            ErrorMapper(
+                id=f"{handler.id}_value_error",
+                exception_type="ValueError",
+                http_status=400,
+                error_code="INVALID_INPUT",
+                user_message="Invalid input provided",
+            ),
+            ErrorMapper(
+                id=f"{handler.id}_key_error",
+                exception_type="KeyError",
+                http_status=404,
+                error_code="NOT_FOUND",
+                user_message="Resource not found",
+            ),
+            ErrorMapper(
+                id=f"{handler.id}_permission_error",
+                exception_type="PermissionError",
+                http_status=403,
+                error_code="FORBIDDEN",
+                user_message="Access denied",
+            ),
+            ErrorMapper(
+                id=f"{handler.id}_type_error",
+                exception_type="TypeError",
+                http_status=500,
+                error_code="INTERNAL_ERROR",
+                user_message="An unexpected error occurred",
+            ),
+            ErrorMapper(
+                id=f"{handler.id}_connection_error",
+                exception_type="ConnectionError",
+                http_status=503,
+                error_code="SERVICE_UNAVAILABLE",
+                user_message="Service temporarily unavailable",
+                retryable=True,
+            ),
+            ErrorMapper(
+                id=f"{handler.id}_timeout_error",
+                exception_type="TimeoutError",
+                http_status=504,
+                error_code="GATEWAY_TIMEOUT",
+                user_message="Request timed out",
+                retryable=True,
+            ),
+        ]
+
+    logging_config: ErrorLoggingConfig | None = None
+    if with_logging:
+        logging_config = ErrorLoggingConfig(
+            id=f"{handler.id}_logger",
+            name=f"{name} Logger",
+            log_format="structured",
+            log_destination="stdout",
+            max_log_size_mb=100,
+            log_rotation_days=30,
+            include_request_context=True,
+            include_user_context=True,
+            redact_fields=["password", "token", "ssn", "credit_card", "api_key"],
+        )
+
+    notification_config: ErrorNotificationConfig | None = None
+    if with_notification:
+        notification_config = ErrorNotificationConfig(
+            id=f"{handler.id}_notifier",
+            name=f"{name} Notifier",
+            notify_on_level=ErrorLevel.ERROR,
+            slack_webhook=slack_webhook,
+            email_recipients=email_recipients or [],
+            include_sentry_integration=bool(sentry_dsn),
+            sentry_dsn=sentry_dsn,
+            rate_limit_per_hour=50,
+        )
+
+    return {
+        "handler": handler,
+        "mappers": mappers,
+        "logging_config": logging_config,
+        "notification_config": notification_config,
+    }
+
+
 __all__ = [
     # Entity recipes
     "SimpleEntityRecipe",
@@ -731,4 +881,6 @@ __all__ = [
     "SagaRecipe",
     # Value object recipe
     "ValueObjectRecipe",
+    # Error handler recipe
+    "GlobalErrorHandlerRecipe",
 ]

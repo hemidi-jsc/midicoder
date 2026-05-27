@@ -149,6 +149,19 @@ from .vo_inheritance import InheritanceResolver, InheritanceChain
 from .vo_computed import ComputedFieldEvaluator, FormulaError
 
 # ===========================================================================
+# Error Handler
+# ===========================================================================
+from .error_handler_models import (
+    ErrorHandlingStrategy,
+    ErrorLevel,
+    ErrorLoggingConfig,
+    ErrorMapper,
+    ErrorNotificationConfig,
+    GlobalErrorHandler,
+)
+from .error_handler_fastapi import FastAPIErrorHandlerEmitter
+
+# ===========================================================================
 # Recipes
 # ===========================================================================
 from .recipes import (
@@ -162,6 +175,7 @@ from .recipes import (
     SagaRecipe,
     ProjectionRecipe,
     ValueObjectRecipe,
+    GlobalErrorHandlerRecipe,
 )
 
 # ===========================================================================
@@ -276,4 +290,13 @@ __all__ = [
     "SagaRecipe",
     "ProjectionRecipe",
     "ValueObjectRecipe",
+    "GlobalErrorHandlerRecipe",
+    # -- Error Handler --
+    "ErrorLevel",
+    "ErrorHandlingStrategy",
+    "GlobalErrorHandler",
+    "ErrorMapper",
+    "ErrorLoggingConfig",
+    "ErrorNotificationConfig",
+    "FastAPIErrorHandlerEmitter",
 ]

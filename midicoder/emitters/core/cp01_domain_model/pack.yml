@@ -8,7 +8,7 @@ pack:
   depends_on: []
   definitions_count: 14
   obligations_count: 4
-  recipes_count: 10
+  recipes_count: 11
   error_codes:
     prefix: "MDC-CP01"
     range: "MDC-CP01-001 to MDC-CP01-099"
@@ -39,6 +39,8 @@ pack:
     - id: "saga"
       emitter: "fastapi, nestjs"
     - id: "recipes"
+      emitter: "fastapi, nestjs"
+    - id: "global_error_handler"
       emitter: "fastapi, nestjs"
   definitions:
     - name: "Entity"
@@ -90,6 +92,8 @@ pack:
       description: "CQRS read model subscribing to domain events"
     - name: "ValueObjectRecipe"
       description: "Immutable, equality-by-value domain primitive"
+    - name: "GlobalErrorHandlerRecipe"
+      description: "Global error handler with exception mapping, logging, and notification"
   obligations:
     - name: "EntityIdentity"
       description: "Every entity must have unique, non-null identifier"
