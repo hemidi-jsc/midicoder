@@ -178,20 +178,6 @@ class InvariantRegistry:
                 if inv_id and inv_id in self._invariants:
                     result[inv_id] = self._invariants[inv_id]
 
-        # 2. Invariants từ regulatory overlays
-        if hasattr(blueprint, 'regulatory_overlays'):
-            for rx in blueprint.regulatory_overlays:
-                rx_id = rx if isinstance(rx, str) else rx.get("id", "")
-                for inv in self.get_by_overlay(rx_id):
-                    result[inv.id] = inv
-
-        # 3. Invariants từ domain packs
-        if hasattr(blueprint, 'domain_packs'):
-            for dp in blueprint.domain_packs:
-                dp_id = dp if isinstance(dp, str) else dp.get("id", "")
-                for inv in self.get_by_domain(dp_id):
-                    result[inv.id] = inv
-
         return list(result.values())
 
     def get_all(self) -> list[InvariantDefinition]:

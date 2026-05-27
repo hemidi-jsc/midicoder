@@ -742,8 +742,8 @@ class CompositionNode:
     về thứ tự emit và dependencies.
 
     Attributes:
-        pack_id: ID của pack (CP01, DP01, RX01)
-        pack_type: Loại pack (core_pack, domain_pack, regulatory_overlay)
+        pack_id: ID của pack (CP01, CP02, ...)
+        pack_type: Loại pack (pack)
         emit_order: Thứ tự emit (1-based, nhỏ hơn = emit trước)
         phase: Phase của pack (P0, P1, P2, P3, P4)
         dependencies: Danh sách pack IDs phải emit trước pack này

@@ -20,8 +20,8 @@ class RBACParser:
     RBAC Parser — Parse DSL YAML nodes thành RBAC models.
 
     Parser chuyển đổi DSL YAML (Role nodes + Guard nodes) thành:
-    - Role objects (từ emitters.core.rbac.models)
-    - PolicyRule objects (từ emitters.core.rbac.models)
+    - Role objects (từ packs.cp04_rbac.models)
+    - PolicyRule objects (từ packs.cp04_rbac.models)
     - RBACConfig (tổng hợp roles + policies)
     """
 

@@ -138,7 +138,7 @@ class CompositionEngine:
 
     def _gather_blueprint_packs(self, blueprint: CompiledBlueprint) -> list[Pack]:
         """
-        Lấy tất cả packs từ blueprint (CPs + DPs + RXs).
+        Lấy tất cả packs từ blueprint (chỉ CPs).
 
         Args:
             blueprint: CompiledBlueprint
@@ -155,18 +155,6 @@ class CompositionEngine:
             if pack is not None:
                 packs.append(pack)
 
-        # Domain Packs
-        for dp_ref in blueprint.domain_packs:
-            pack = self.registry.get_pack(dp_ref.id)
-            if pack is not None:
-                packs.append(pack)
-
-        # Regulatory Overlays
-        for rx_ref in blueprint.regulatory_overlays:
-            pack = self.registry.get_pack(rx_ref.id)
-            if pack is not None:
-                packs.append(pack)
-
         return packs
 
     def _build_emit_order(
@@ -178,9 +166,7 @@ class CompositionEngine:
         Build topological emit order.
 
         Thứ tự:
-        1. Core Packs trước (P0 → P1 → P2 → P3 → P4)
-        2. Domain Packs sau (theo thứ tự trong blueprint)
-        3. Regulatory Overlays cuối (theo thứ tự trong blueprint)
+        1. Packs theo phase (P0 → P1 → P2 → P3 → P4)
 
         Trong mỗi nhóm, sort theo phase order + dependency order.
 
@@ -194,10 +180,8 @@ class CompositionEngine:
         nodes: list[CompositionNode] = []
         order_counter = 0
 
-        # Chia packs theo type
+        # Chia packs theo type — chỉ còn core_pack
         core_packs = [p for p in packs if p.pack_type == "core_pack"]
-        domain_packs = [p for p in packs if p.pack_type == "domain_pack"]
-        rx_packs = [p for p in packs if p.pack_type == "regulatory_overlay"]
 
         # Sort CPs theo phase + CP number (deterministic)
         core_packs.sort(key=lambda p: (
@@ -214,30 +198,6 @@ class CompositionEngine:
                 pack_type=pack.pack_type,
                 emit_order=order_counter,
                 phase=pack.phase or "P0",
-                dependencies=deps,
-            ))
-
-        # Emit Domain Packs
-        for pack in domain_packs:
-            order_counter += 1
-            deps = self._get_pack_dependencies(pack, resolutions)
-            nodes.append(CompositionNode(
-                pack_id=pack.id,
-                pack_type=pack.pack_type,
-                emit_order=order_counter,
-                phase=pack.phase or "P1",
-                dependencies=deps,
-            ))
-
-        # Emit Regulatory Overlays
-        for pack in rx_packs:
-            order_counter += 1
-            deps = self._get_pack_dependencies(pack, resolutions)
-            nodes.append(CompositionNode(
-                pack_id=pack.id,
-                pack_type=pack.pack_type,
-                emit_order=order_counter,
-                phase=pack.phase or "P1",
                 dependencies=deps,
             ))
 
@@ -359,10 +319,8 @@ class CompositionEngine:
                 continue
             checked_paths.add(path_key)
 
-            # Tìm template trong core hoặc domain
-            template_path = stacks_root / binding.stack / "core" / binding.template_path
-            if not template_path.exists():
-                template_path = stacks_root / binding.stack / "domain" / binding.template_path
+            # Tìm template trực tiếp trong stack directory
+            template_path = stacks_root / binding.stack / binding.template_path
 
             if not template_path.exists():
                 plan.add_warning(
@@ -378,9 +336,7 @@ class CompositionEngine:
                     continue
                 checked_paths.add(path_key)
 
-                template_path = stacks_root / binding.stack / "core" / binding.template_path
-                if not template_path.exists():
-                    template_path = stacks_root / binding.stack / "domain" / binding.template_path
+                template_path = stacks_root / binding.stack / binding.template_path
 
                 if not template_path.exists():
                     plan.add_warning(

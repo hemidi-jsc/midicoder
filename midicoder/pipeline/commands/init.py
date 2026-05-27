@@ -212,8 +212,6 @@ def _create_project_config(workspace_dir: Path, version: str = "v1.0.0") -> None
         "max_versions": 5,  # Auto-cleanup khi vượt quá
         "capabilities": {
             "enabled": [],  # Ví dụ: CP01, CP02, CP03
-            "domain_packs": [],  # Ví dụ: DP01 (E-commerce)
-            "regulatory_overlays": [],  # Ví dụ: RX01 (GDPR)
         },
     }
 

@@ -166,34 +166,9 @@ class PackResolver:
         if pack.pack_type == "core_pack":
             num = pack.id.replace("CP", "").zfill(2)
             return f"cp{num}-{short_name}"
-        elif pack.pack_type == "domain_pack":
-            num = pack.id.replace("DP", "").zfill(2)
-            return f"dp{num}-{short_name}"
-        elif pack.pack_type == "regulatory_overlay":
-            num = pack.id.replace("RX", "").zfill(2)
-            return f"rx{num}-{short_name}"
 
         return f"{pack.pack_type}-{pack.id}"
 
-    def _dp_id_to_dir_name(self, dp_id: str) -> str:
-        """Map DP ID → directory name."""
-        mapping = {
-            "DP01": "commerce",
-            "DP02": "marketplace",
-            "DP03": "travel",
-            "DP04": "logistics",
-            "DP05": "manufacturing",
-            "DP11": "banking",
-            "DP12": "payments",
-        }
-        return mapping.get(dp_id, dp_id.lower())
-
     def _rx_id_to_dir_name(self, rx_id: str) -> str:
-        """Map RX ID → directory name."""
-        mapping = {
-            "RX01": "privacy",
-            "RX02": "financial",
-            "RX04": "clinical",
-            "RX11": "audit",
-        }
-        return mapping.get(rx_id, rx_id.lower())
+        """Map RX ID → directory name (deprecated, kept for backward compat)."""
+        return rx_id.lower()

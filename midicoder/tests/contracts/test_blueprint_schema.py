@@ -145,8 +145,6 @@ class TestSchemaFileStructure:
             "metadata",
             "industry",
             "core_packs",
-            "domain_packs",
-            "regulatory_overlays",
             "target_profiles",
             "invariants",
             "config",

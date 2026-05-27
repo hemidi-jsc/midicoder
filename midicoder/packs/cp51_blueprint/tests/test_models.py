@@ -452,8 +452,8 @@ class TestCompositionNode:
 
     def test_to_dict(self):
         cn = CompositionNode(
-            pack_id="DP01",
-            pack_type="domain_pack",
+            pack_id="CP02",
+            pack_type="pack",
             emit_order=2,
             phase="P1",
             dependencies=["CP01"],
@@ -468,11 +468,11 @@ class TestCompositionNode:
 
     def test_roundtrip(self):
         original = CompositionNode(
-            pack_id="RX01",
-            pack_type="regulatory_overlay",
+            pack_id="CP03",
+            pack_type="pack",
             emit_order=3,
             phase="P3",
-            dependencies=["CP01", "DP01"],
+            dependencies=["CP01", "CP02"],
         )
         restored = CompositionNode.from_dict(original.to_dict())
         assert restored.dependencies == original.dependencies
@@ -506,13 +506,13 @@ class TestPackResolution:
 
     def test_from_dict(self):
         data = {
-            "pack_id": "DP01",
-            "pack_type": "domain_pack",
-            "internal_id": "dp01-commerce",
+            "pack_id": "CP01",
+            "pack_type": "pack",
+            "internal_id": "cp01",
             "status": "stable",
         }
         pr = PackResolution.from_dict(data)
-        assert pr.internal_id == "dp01-commerce"
+        assert pr.internal_id == "cp01"
 
     def test_roundtrip(self):
         original = PackResolution(

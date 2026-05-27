@@ -449,7 +449,5 @@ class TestDefaultConfig:
     def test_default_capabilities_empty(self):
         """Default capabilities là empty list."""
         caps = DEFAULT_PROJECT_CONFIG["capabilities"]
-        
+
         assert caps["enabled"] == []
-        assert caps["domain_packs"] == []
-        assert caps["regulatory_overlays"] == []

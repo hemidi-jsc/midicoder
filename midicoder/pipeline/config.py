@@ -100,8 +100,6 @@ DEFAULT_PROJECT_CONFIG = {
     "active_version": "v1.0.0",
     "capabilities": {
         "enabled": [],  # Ví dụ: CP01, CP02, CP03
-        "domain_packs": [],  # Ví dụ: DP01 (E-commerce)
-        "regulatory_overlays": [],  # Ví dụ: RX01 (GDPR)
     },
 }
 

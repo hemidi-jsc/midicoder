@@ -187,7 +187,7 @@ class TestTaxonomyRegistryBlueprint:
         p0_packs = self.registry.find_packs(pack_type="core_pack", phase="P0")
         blueprint = {
             "core_packs": [{"id": p.id} for p in p0_packs],
-            "domain_packs": [{"id": "DP999"}],  # Does not exist
+            "core_packs_extra": [{"id": "CP999"}],  # Does not exist
         }
         issues = self.registry.validate_pack_combination(blueprint)
         error_rules = [i.rule for i in issues if i.severity == "error"]
