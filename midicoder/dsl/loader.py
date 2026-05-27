@@ -1,4 +1,4 @@
-﻿"""
+"""
 DSL v1 Loader - Load YAML files into ProjectionTree.
 
 Module này cung cấp functions để load DSL YAML files và convert thành
@@ -832,6 +832,14 @@ def _load_ui_components(path: Path) -> list[ProjectionNode]:
     # UI Components
     if "ui_components" in data:
         for comp in data["ui_components"]:
+            
+            rc = comp.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=comp.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=comp.get("id", ""),
                 kind=NodeKind.UI_COMPONENT,
@@ -843,6 +851,7 @@ def _load_ui_components(path: Path) -> list[ProjectionNode]:
                     "properties": comp.get("properties", {}),
                     "tags": comp.get("tags", []),
                     "source": "ui-components.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -850,6 +859,14 @@ def _load_ui_components(path: Path) -> list[ProjectionNode]:
     # UI Layouts
     if "ui_layouts" in data:
         for layout in data["ui_layouts"]:
+            
+            rc = layout.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=layout.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=layout.get("id", ""),
                 kind=NodeKind.UI_LAYOUT,
@@ -861,6 +878,7 @@ def _load_ui_components(path: Path) -> list[ProjectionNode]:
                     "properties": layout.get("properties", {}),
                     "tags": layout.get("tags", []),
                     "source": "ui-components.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -868,6 +886,14 @@ def _load_ui_components(path: Path) -> list[ProjectionNode]:
     # UI Themes
     if "ui_themes" in data:
         for theme in data["ui_themes"]:
+            
+            rc = theme.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=theme.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=theme.get("id", ""),
                 kind=NodeKind.UI_THEME,
@@ -879,6 +905,7 @@ def _load_ui_components(path: Path) -> list[ProjectionNode]:
                     "dark_mode": theme.get("dark_mode", False),
                     "tags": theme.get("tags", []),
                     "source": "ui-components.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -886,6 +913,14 @@ def _load_ui_components(path: Path) -> list[ProjectionNode]:
     # UI Form Builders
     if "ui_form_builders" in data:
         for fb in data["ui_form_builders"]:
+            
+            rc = fb.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=fb.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=fb.get("id", ""),
                 kind=NodeKind.UI_FORM_BUILDER,
@@ -898,6 +933,7 @@ def _load_ui_components(path: Path) -> list[ProjectionNode]:
                     "properties": fb.get("properties", {}),
                     "tags": fb.get("tags", []),
                     "source": "ui-components.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -916,6 +952,14 @@ def _load_entities(path: Path) -> list[ProjectionNode]:
     
     if "entities" in data:
         for entity in data["entities"]:
+            
+            rc = entity.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=entity.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=entity.get("id", ""),
                 kind=NodeKind.ENTITY,
@@ -929,6 +973,7 @@ def _load_entities(path: Path) -> list[ProjectionNode]:
                     "tags": entity.get("tags", []),
                     "tenant_scope": entity.get("tenant_scope"),
                     "source": "entities.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -943,6 +988,14 @@ def _load_value_objects(path: Path) -> list[ProjectionNode]:
     
     if "value_objects" in data:
         for vo in data["value_objects"]:
+            
+            rc = vo.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=vo.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=vo.get("id", ""),
                 kind=NodeKind.VALUE_OBJECT,
@@ -954,6 +1007,7 @@ def _load_value_objects(path: Path) -> list[ProjectionNode]:
                     "comparable": vo.get("comparable", False),
                     "tags": vo.get("tags", []),
                     "source": "value-objects.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -968,6 +1022,14 @@ def _load_enums(path: Path) -> list[ProjectionNode]:
     
     if "enums" in data:
         for enum_def in data["enums"]:
+            
+            rc = enum_def.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=enum_def.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=enum_def.get("id", ""),
                 kind=NodeKind.ENUM,
@@ -978,6 +1040,7 @@ def _load_enums(path: Path) -> list[ProjectionNode]:
                     "underlying_type": enum_def.get("underlying_type", "string"),
                     "tags": enum_def.get("tags", []),
                     "source": "enums.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -992,6 +1055,14 @@ def _load_errors(path: Path) -> list[ProjectionNode]:
     
     if "errors" in data:
         for error in data["errors"]:
+            
+            rc = error.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=error.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=error.get("id", ""),
                 kind=NodeKind.ERROR,
@@ -1006,6 +1077,7 @@ def _load_errors(path: Path) -> list[ProjectionNode]:
                     "fields": error.get("fields", []),
                     "tags": error.get("tags", []),
                     "source": "errors.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1020,6 +1092,14 @@ def _load_events(path: Path) -> list[ProjectionNode]:
     
     if "events" in data:
         for event in data["events"]:
+            
+            rc = event.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=event.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=event.get("id", ""),
                 kind=NodeKind.EVENT,
@@ -1033,6 +1113,7 @@ def _load_events(path: Path) -> list[ProjectionNode]:
                     "tags": event.get("tags", []),
                     "tenant_scope": event.get("tenant_scope"),
                     "source": "events.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1051,6 +1132,14 @@ def _load_commands(path: Path) -> list[ProjectionNode]:
     
     if "commands" in data:
         for command in data["commands"]:
+            
+            rc = command.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=command.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=command.get("id", ""),
                 kind=NodeKind.COMMAND,
@@ -1073,6 +1162,7 @@ def _load_commands(path: Path) -> list[ProjectionNode]:
                     "tenant_scope": command.get("tenant_scope"),
                     "source": "commands.yaml",
                     "tags": command.get("tags", []),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1087,6 +1177,14 @@ def _load_queries(path: Path) -> list[ProjectionNode]:
     
     if "queries" in data:
         for query in data["queries"]:
+            
+            rc = query.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=query.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=query.get("id", ""),
                 kind=NodeKind.QUERY,
@@ -1105,6 +1203,7 @@ def _load_queries(path: Path) -> list[ProjectionNode]:
                     "tenant_scope": query.get("tenant_scope"),
                     "source": "queries.yaml",
                     "tags": query.get("tags", []),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1119,6 +1218,14 @@ def _load_workflows(path: Path) -> list[ProjectionNode]:
     
     if "workflows" in data:
         for workflow in data["workflows"]:
+            
+            rc = workflow.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=workflow.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=workflow.get("id", ""),
                 kind=NodeKind.WORKFLOW,
@@ -1136,6 +1243,7 @@ def _load_workflows(path: Path) -> list[ProjectionNode]:
                     "compensation": workflow.get("compensation", []),
                     "human_tasks": workflow.get("human_tasks", []),
                     "timers": workflow.get("timers", []),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1150,6 +1258,14 @@ def _load_rules(path: Path) -> list[ProjectionNode]:
     
     if "rules" in data:
         for rule in data["rules"]:
+            
+            rc = rule.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=rule.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=rule.get("id", ""),
                 kind=NodeKind.RULE,
@@ -1162,6 +1278,7 @@ def _load_rules(path: Path) -> list[ProjectionNode]:
                     "priority": rule.get("priority", 0),
                     "enabled": rule.get("enabled", True),
                     "tags": rule.get("tags", []),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1180,6 +1297,14 @@ def _load_http(path: Path) -> list[ProjectionNode]:
     
     if "routes" in data:
         for route in data["routes"]:
+            
+            rc = route.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=route.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=route.get("id", ""),
                 kind=NodeKind.HTTP_ROUTE,
@@ -1195,6 +1320,7 @@ def _load_http(path: Path) -> list[ProjectionNode]:
                     "request_schema": route.get("request_schema", {}),
                     "response_schema": route.get("response_schema", {}),
                     "tags": route.get("tags", []),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1209,6 +1335,14 @@ def _load_graphql(path: Path) -> list[ProjectionNode]:
     
     if "types" in data:
         for gql_type in data["types"]:
+            
+            rc = gql_type.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=gql_type.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=gql_type.get("id", ""),
                 kind=NodeKind.GRAPHQL_RESOLVER,
@@ -1224,6 +1358,7 @@ def _load_graphql(path: Path) -> list[ProjectionNode]:
                     "returns": gql_type.get("returns", {}),
                     "auth_required": gql_type.get("auth_required", True),
                     "tags": gql_type.get("tags", []),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1242,6 +1377,14 @@ def _load_projections(path: Path) -> list[ProjectionNode]:
     
     if "projections" in data:
         for projection in data["projections"]:
+            
+            rc = projection.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=projection.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             # Projections can be various types, default to generic
             node = ProjectionNode(
                 id=projection.get("id", ""),
@@ -1254,6 +1397,7 @@ def _load_projections(path: Path) -> list[ProjectionNode]:
                     "transformation": projection.get("transformation", {}),
                     "materialization": projection.get("materialization", "read_model"),
                     "tags": projection.get("tags", []),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1268,6 +1412,14 @@ def _load_policies(path: Path) -> list[ProjectionNode]:
     
     if "policies" in data:
         for policy in data["policies"]:
+            
+            rc = policy.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=policy.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=policy.get("id", ""),
                 kind=NodeKind.POLICY,
@@ -1280,6 +1432,7 @@ def _load_policies(path: Path) -> list[ProjectionNode]:
                     "resource": policy.get("resource", {}),
                     "conditions": policy.get("conditions", []),
                     "tags": policy.get("tags", []),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1295,6 +1448,14 @@ def _load_access_policy(path: Path) -> list[ProjectionNode]:
     # Load roles
     if "roles" in data:
         for role in data["roles"]:
+            
+            rc = role.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=role.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=role.get("id", ""),
                 kind=NodeKind.ROLE,
@@ -1305,6 +1466,7 @@ def _load_access_policy(path: Path) -> list[ProjectionNode]:
                     "parent_roles": role.get("parent_roles", []),
                     "tenant_scope": role.get("tenant_scope"),
                     "tags": role.get("tags", []),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1312,6 +1474,14 @@ def _load_access_policy(path: Path) -> list[ProjectionNode]:
     # Load permissions
     if "permissions" in data:
         for perm in data["permissions"]:
+            
+            rc = perm.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=perm.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=perm.get("id", ""),
                 kind=NodeKind.PERMISSION,
@@ -1322,6 +1492,7 @@ def _load_access_policy(path: Path) -> list[ProjectionNode]:
                     "action": perm.get("action"),
                     "conditions": perm.get("conditions", []),
                     "tags": perm.get("tags", []),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1337,6 +1508,14 @@ def _load_persistence(path: Path) -> list[ProjectionNode]:
     # Load datasources
     if "datasources" in data:
         for ds in data["datasources"]:
+            
+            rc = ds.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=ds.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=ds.get("id", ""),
                 kind=NodeKind.DATASOURCE,
@@ -1347,6 +1526,7 @@ def _load_persistence(path: Path) -> list[ProjectionNode]:
                     "connection_string": ds.get("connection_string"),
                     "schema": ds.get("schema"),
                     "config": ds.get("config", {}),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1354,6 +1534,14 @@ def _load_persistence(path: Path) -> list[ProjectionNode]:
     # Load tables
     if "tables" in data:
         for table in data["tables"]:
+            
+            rc = table.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=table.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=table.get("id", ""),
                 kind=NodeKind.TABLE,
@@ -1366,6 +1554,7 @@ def _load_persistence(path: Path) -> list[ProjectionNode]:
                     "columns": table.get("columns", []),
                     "indexes": table.get("indexes", []),
                     "constraints": table.get("constraints", []),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1373,6 +1562,14 @@ def _load_persistence(path: Path) -> list[ProjectionNode]:
     # Load indexes
     if "indexes" in data:
         for index in data["indexes"]:
+            
+            rc = index.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=index.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=index.get("id", ""),
                 kind=NodeKind.INDEX,
@@ -1384,6 +1581,7 @@ def _load_persistence(path: Path) -> list[ProjectionNode]:
                     "unique": index.get("unique", False),
                     "type": index.get("type", "btree"),
                     "config": index.get("config", {}),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1398,6 +1596,14 @@ def _load_integrations(path: Path) -> list[ProjectionNode]:
     
     if "integrations" in data:
         for integration in data["integrations"]:
+            
+            rc = integration.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=integration.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=integration.get("id", ""),
                 kind=NodeKind.INTEGRATION,
@@ -1409,6 +1615,7 @@ def _load_integrations(path: Path) -> list[ProjectionNode]:
                     "auth_type": integration.get("auth_type"),
                     "config": integration.get("config", {}),
                     "required": integration.get("required", False),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1416,6 +1623,14 @@ def _load_integrations(path: Path) -> list[ProjectionNode]:
     # Load auth providers
     if "auth_providers" in data:
         for auth in data["auth_providers"]:
+            
+            rc = auth.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=auth.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=auth.get("id", ""),
                 kind=NodeKind.AUTH_PROVIDER,
@@ -1428,6 +1643,7 @@ def _load_integrations(path: Path) -> list[ProjectionNode]:
                     "token_endpoint": auth.get("token_endpoint"),
                     "auth_endpoint": auth.get("auth_endpoint"),
                     "jwks_uri": auth.get("jwks_uri"),
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1446,6 +1662,14 @@ def _load_observability(path: Path) -> list[ProjectionNode]:
         # Load metrics
         if "metrics" in obs:
             for metric in obs["metrics"]:
+                
+                rc = metric.get("render_context") or {}
+                if not isinstance(rc, dict):
+                    raise EM.raise_error(
+                        ErrorCode.DSL_INVALID_NODE_KIND,
+                        node_id=metric.get("id", "unknown"),
+                        detail="render_context phải là dict"
+                    )
                 node = ProjectionNode(
                     id=metric.get("id", ""),
                     kind=NodeKind.METRIC,
@@ -1458,6 +1682,7 @@ def _load_observability(path: Path) -> list[ProjectionNode]:
                         "labels": metric.get("labels", []),
                         "aggregation": metric.get("aggregation"),
                         "config": metric.get("config", {}),
+                        "render_context": rc,  
                     },
                 )
                 nodes.append(node)
@@ -1465,6 +1690,14 @@ def _load_observability(path: Path) -> list[ProjectionNode]:
         # Load logs
         if "logs" in obs:
             for log in obs["logs"]:
+                
+                rc = log.get("render_context") or {}
+                if not isinstance(rc, dict):
+                    raise EM.raise_error(
+                        ErrorCode.DSL_INVALID_NODE_KIND,
+                        node_id=log.get("id", "unknown"),
+                        detail="render_context phải là dict"
+                    )
                 node = ProjectionNode(
                     id=log.get("id", ""),
                     kind=NodeKind.LOG,
@@ -1477,6 +1710,7 @@ def _load_observability(path: Path) -> list[ProjectionNode]:
                         "fields": log.get("fields", []),
                         "output": log.get("output"),
                         "config": log.get("config", {}),
+                        "render_context": rc,  
                     },
                 )
                 nodes.append(node)
@@ -1484,6 +1718,14 @@ def _load_observability(path: Path) -> list[ProjectionNode]:
         # Load alerts
         if "alerts" in obs:
             for alert in obs["alerts"]:
+                
+                rc = alert.get("render_context") or {}
+                if not isinstance(rc, dict):
+                    raise EM.raise_error(
+                        ErrorCode.DSL_INVALID_NODE_KIND,
+                        node_id=alert.get("id", "unknown"),
+                        detail="render_context phải là dict"
+                    )
                 node = ProjectionNode(
                     id=alert.get("id", ""),
                     kind=NodeKind.ALERT,
@@ -1496,6 +1738,7 @@ def _load_observability(path: Path) -> list[ProjectionNode]:
                         "channels": alert.get("channels", []),
                         "cooldown": alert.get("cooldown"),
                         "config": alert.get("config", {}),
+                        "render_context": rc,  
                     },
                 )
                 nodes.append(node)
@@ -1503,6 +1746,14 @@ def _load_observability(path: Path) -> list[ProjectionNode]:
         # Load traces
         if "traces" in obs:
             for trace in obs["traces"]:
+                
+                rc = trace.get("render_context") or {}
+                if not isinstance(rc, dict):
+                    raise EM.raise_error(
+                        ErrorCode.DSL_INVALID_NODE_KIND,
+                        node_id=trace.get("id", "unknown"),
+                        detail="render_context phải là dict"
+                    )
                 node = ProjectionNode(
                     id=trace.get("id", ""),
                     kind=NodeKind.TRACE,
@@ -1513,6 +1764,7 @@ def _load_observability(path: Path) -> list[ProjectionNode]:
                         "sampling_rate": trace.get("sampling_rate", 1.0),
                         "exporter": trace.get("exporter"),
                         "config": trace.get("config", {}),
+                        "render_context": rc,  
                     },
                 )
                 nodes.append(node)
@@ -1541,6 +1793,14 @@ def _load_frontends(path: Path) -> list[ProjectionNode]:
     # Load frontend apps
     if "apps" in data:
         for app in data["apps"]:
+            
+            rc = app.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=app.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=app.get("id", ""),
                 kind=NodeKind.FRONTEND_APP,
@@ -1556,6 +1816,7 @@ def _load_frontends(path: Path) -> list[ProjectionNode]:
                     "router_strategy": app.get("router_strategy", "lazy"),
                     "tags": app.get("tags", []),
                     "source": "frontends.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1563,6 +1824,14 @@ def _load_frontends(path: Path) -> list[ProjectionNode]:
     # Load individual routes (nếu tách riêng)
     if "routes" in data:
         for route in data["routes"]:
+            
+            rc = route.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=route.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=route.get("id", ""),
                 kind=NodeKind.FRONTEND_ROUTE,
@@ -1577,6 +1846,7 @@ def _load_frontends(path: Path) -> list[ProjectionNode]:
                     "data": route.get("data", {}),
                     "tags": route.get("tags", []),
                     "source": "frontends.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1584,6 +1854,14 @@ def _load_frontends(path: Path) -> list[ProjectionNode]:
     # Load state stores (nếu tách riêng)
     if "stores" in data:
         for store in data["stores"]:
+            
+            rc = store.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=store.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=store.get("id", ""),
                 kind=NodeKind.FRONTEND_STORE,
@@ -1596,6 +1874,7 @@ def _load_frontends(path: Path) -> list[ProjectionNode]:
                     "persistence": store.get("persistence", "none"),
                     "tags": store.get("tags", []),
                     "source": "frontends.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1624,6 +1903,14 @@ def _load_plugins(path: Path) -> list[ProjectionNode]:
     # Plugin slots
     if "slots" in data:
         for slot in data["slots"]:
+            
+            rc = slot.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=slot.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=slot.get("id", ""),
                 kind=NodeKind.PLUGIN_SLOT,
@@ -1637,6 +1924,7 @@ def _load_plugins(path: Path) -> list[ProjectionNode]:
                     "entities": slot.get("entities", []),
                     "tags": slot.get("tags", []),
                     "source": "plugins.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1644,6 +1932,14 @@ def _load_plugins(path: Path) -> list[ProjectionNode]:
     # Plugin contracts
     if "contracts" in data:
         for contract in data["contracts"]:
+            
+            rc = contract.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=contract.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=contract.get("id", ""),
                 kind=NodeKind.PLUGIN_CONTRACT,
@@ -1654,6 +1950,7 @@ def _load_plugins(path: Path) -> list[ProjectionNode]:
                     "dependencies": contract.get("dependencies", []),
                     "tags": contract.get("tags", []),
                     "source": "plugins.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1661,6 +1958,14 @@ def _load_plugins(path: Path) -> list[ProjectionNode]:
     # Plugin policies
     if "policies" in data:
         for policy in data["policies"]:
+            
+            rc = policy.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=policy.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=policy.get("id", ""),
                 kind=NodeKind.PLUGIN_POLICY,
@@ -1672,6 +1977,7 @@ def _load_plugins(path: Path) -> list[ProjectionNode]:
                     "config": policy.get("config", {}),
                     "tags": policy.get("tags", []),
                     "source": "plugins.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1695,6 +2001,14 @@ def _load_schedules(path: Path) -> list[ProjectionNode]:
 
     if "schedules" in data:
         for schedule in data["schedules"]:
+            
+            rc = schedule.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=schedule.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=schedule.get("id", ""),
                 kind=NodeKind.CALENDAR_SCHEDULE,
@@ -1711,6 +2025,7 @@ def _load_schedules(path: Path) -> list[ProjectionNode]:
                     "timezone": schedule.get("timezone"),
                     "tags": schedule.get("tags", []),
                     "source": "schedules.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1736,6 +2051,14 @@ def _load_financial(path: Path) -> list[ProjectionNode]:
     # General ledgers
     if "ledgers" in data:
         for ledger in data["ledgers"]:
+            
+            rc = ledger.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=ledger.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=ledger.get("id", ""),
                 kind=NodeKind.GENERAL_LEDGER,
@@ -1751,6 +2074,7 @@ def _load_financial(path: Path) -> list[ProjectionNode]:
                     "entries": ledger.get("entries", []),
                     "tags": ledger.get("tags", []),
                     "source": "financial.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1758,6 +2082,14 @@ def _load_financial(path: Path) -> list[ProjectionNode]:
     # Financial instruments
     if "instruments" in data:
         for instrument in data["instruments"]:
+            
+            rc = instrument.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=instrument.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=instrument.get("id", ""),
                 kind=NodeKind.FINANCIAL_INSTRUMENT,
@@ -1769,6 +2101,7 @@ def _load_financial(path: Path) -> list[ProjectionNode]:
                     "entities": instrument.get("entities", []),
                     "tags": instrument.get("tags", []),
                     "source": "financial.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1776,6 +2109,14 @@ def _load_financial(path: Path) -> list[ProjectionNode]:
     # Currency exchange
     if "currency_exchanges" in data:
         for exchange in data["currency_exchanges"]:
+            
+            rc = exchange.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=exchange.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=exchange.get("id", ""),
                 kind=NodeKind.CURRENCY_EXCHANGE,
@@ -1787,6 +2128,7 @@ def _load_financial(path: Path) -> list[ProjectionNode]:
                     "entity_id": exchange.get("entity_id"),
                     "tags": exchange.get("tags", []),
                     "source": "financial.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1794,6 +2136,14 @@ def _load_financial(path: Path) -> list[ProjectionNode]:
     # Tax rules
     if "tax_rules" in data:
         for rule in data["tax_rules"]:
+            
+            rc = rule.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=rule.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=rule.get("id", ""),
                 kind=NodeKind.TAX_RULE,
@@ -1805,6 +2155,7 @@ def _load_financial(path: Path) -> list[ProjectionNode]:
                     "applicable_items": rule.get("applicable_items", []),
                     "tags": rule.get("tags", []),
                     "source": "financial.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1812,6 +2163,14 @@ def _load_financial(path: Path) -> list[ProjectionNode]:
     # Subledgers
     if "subledgers" in data:
         for subledger in data["subledgers"]:
+            
+            rc = subledger.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=subledger.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=subledger.get("id", ""),
                 kind=NodeKind.SUBLEDGER,
@@ -1822,6 +2181,7 @@ def _load_financial(path: Path) -> list[ProjectionNode]:
                     "entries": subledger.get("entries", []),
                     "tags": subledger.get("tags", []),
                     "source": "financial.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1846,6 +2206,14 @@ def _load_reports(path: Path) -> list[ProjectionNode]:
     # Reports
     if "reports" in data:
         for report in data["reports"]:
+            
+            rc = report.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=report.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=report.get("id", ""),
                 kind=NodeKind.REPORT,
@@ -1860,6 +2228,7 @@ def _load_reports(path: Path) -> list[ProjectionNode]:
                     "aggregations": report.get("aggregations", []),
                     "tags": report.get("tags", []),
                     "source": "reports.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1867,6 +2236,14 @@ def _load_reports(path: Path) -> list[ProjectionNode]:
     # Dashboards
     if "dashboards" in data:
         for dashboard in data["dashboards"]:
+            
+            rc = dashboard.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=dashboard.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=dashboard.get("id", ""),
                 kind=NodeKind.DASHBOARD,
@@ -1879,6 +2256,7 @@ def _load_reports(path: Path) -> list[ProjectionNode]:
                     "refresh_interval": dashboard.get("refresh_interval"),
                     "tags": dashboard.get("tags", []),
                     "source": "reports.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1886,6 +2264,14 @@ def _load_reports(path: Path) -> list[ProjectionNode]:
     # Exports
     if "exports" in data:
         for export in data["exports"]:
+            
+            rc = export.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=export.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=export.get("id", ""),
                 kind=NodeKind.EXPORT,
@@ -1897,6 +2283,7 @@ def _load_reports(path: Path) -> list[ProjectionNode]:
                     "format": export.get("format"),
                     "tags": export.get("tags", []),
                     "source": "reports.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1904,6 +2291,14 @@ def _load_reports(path: Path) -> list[ProjectionNode]:
     # Scheduled reports
     if "scheduled_reports" in data:
         for scheduled in data["scheduled_reports"]:
+            
+            rc = scheduled.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=scheduled.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=scheduled.get("id", ""),
                 kind=NodeKind.SCHEDULED_REPORT,
@@ -1915,6 +2310,7 @@ def _load_reports(path: Path) -> list[ProjectionNode]:
                     "recipients": scheduled.get("recipients", []),
                     "tags": scheduled.get("tags", []),
                     "source": "reports.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1939,6 +2335,14 @@ def _load_etl(path: Path) -> list[ProjectionNode]:
     # Data migrations
     if "migrations" in data:
         for migration in data["migrations"]:
+            
+            rc = migration.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=migration.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=migration.get("id", ""),
                 kind=NodeKind.DATA_MIGRATION,
@@ -1953,6 +2357,7 @@ def _load_etl(path: Path) -> list[ProjectionNode]:
                     "output_destinations": migration.get("output_destinations", []),
                     "tags": migration.get("tags", []),
                     "source": "etl.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1960,6 +2365,14 @@ def _load_etl(path: Path) -> list[ProjectionNode]:
     # Batch jobs
     if "batch_jobs" in data:
         for job in data["batch_jobs"]:
+            
+            rc = job.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=job.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=job.get("id", ""),
                 kind=NodeKind.BATCH_JOB,
@@ -1973,6 +2386,7 @@ def _load_etl(path: Path) -> list[ProjectionNode]:
                     "output_destinations": job.get("output_destinations", []),
                     "tags": job.get("tags", []),
                     "source": "etl.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -1996,6 +2410,14 @@ def _load_localization(path: Path) -> list[ProjectionNode]:
 
     if "localizations" in data:
         for loc in data["localizations"]:
+            
+            rc = loc.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=loc.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=loc.get("id", ""),
                 kind=NodeKind.LOCALIZATION,
@@ -2009,6 +2431,7 @@ def _load_localization(path: Path) -> list[ProjectionNode]:
                     "fallback_strategy": loc.get("fallback_strategy"),
                     "tags": loc.get("tags", []),
                     "source": "localization.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2033,6 +2456,14 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
     # API versions
     if "api_versions" in data:
         for version in data["api_versions"]:
+            
+            rc = version.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=version.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=version.get("id", ""),
                 kind=NodeKind.API_VERSION,
@@ -2048,6 +2479,7 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
                     "entities": version.get("entities", []),
                     "tags": version.get("tags", []),
                     "source": "versioning.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2055,6 +2487,14 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
     # Deprecation notices
     if "deprecation_notices" in data:
         for notice in data["deprecation_notices"]:
+            
+            rc = notice.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=notice.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=notice.get("id", ""),
                 kind=NodeKind.DEPRECATION_NOTICE,
@@ -2067,6 +2507,7 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
                     "migration_guide": notice.get("migration_guide"),
                     "tags": notice.get("tags", []),
                     "source": "versioning.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2074,6 +2515,14 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
     # Pagination specs
     if "pagination_specs" in data:
         for spec in data["pagination_specs"]:
+            
+            rc = spec.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=spec.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=spec.get("id", ""),
                 kind=NodeKind.PAGINATION_SPEC,
@@ -2087,6 +2536,7 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
                     "sort_fields": spec.get("sort_fields", []),
                     "tags": spec.get("tags", []),
                     "source": "versioning.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2110,6 +2560,14 @@ def _load_payment(path: Path) -> list[ProjectionNode]:
 
     if "payment_gateways" in data:
         for gateway in data["payment_gateways"]:
+            
+            rc = gateway.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=gateway.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=gateway.get("id", ""),
                 kind=NodeKind.PAYMENT_GATEWAY,
@@ -2124,6 +2582,7 @@ def _load_payment(path: Path) -> list[ProjectionNode]:
                     "sandbox_mode": gateway.get("sandbox_mode", False),
                     "tags": gateway.get("tags", []),
                     "source": "payment.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2148,6 +2607,14 @@ def _load_catalog(path: Path) -> list[ProjectionNode]:
     # Product catalogs
     if "catalogs" in data:
         for catalog in data["catalogs"]:
+            
+            rc = catalog.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=catalog.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=catalog.get("id", ""),
                 kind=NodeKind.PRODUCT_CATALOG,
@@ -2161,6 +2628,7 @@ def _load_catalog(path: Path) -> list[ProjectionNode]:
                     "search_index_id": catalog.get("search_index_id"),
                     "tags": catalog.get("tags", []),
                     "source": "catalog.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2168,6 +2636,14 @@ def _load_catalog(path: Path) -> list[ProjectionNode]:
     # Faceted search indexes
     if "faceted_search" in data:
         for search in data["faceted_search"]:
+            
+            rc = search.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=search.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=search.get("id", ""),
                 kind=NodeKind.FACETED_SEARCH_INDEX,
@@ -2179,6 +2655,7 @@ def _load_catalog(path: Path) -> list[ProjectionNode]:
                     "facets": search.get("facets", []),
                     "tags": search.get("tags", []),
                     "source": "catalog.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2207,6 +2684,14 @@ def _load_state_machines(path: Path) -> list[ProjectionNode]:
     # State machines
     if "state_machines" in data:
         for sm in data["state_machines"]:
+            
+            rc = sm.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=sm.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=sm.get("id", ""),
                 kind=NodeKind.STATE_MACHINE,
@@ -2221,6 +2706,7 @@ def _load_state_machines(path: Path) -> list[ProjectionNode]:
                     "is_global": sm.get("is_global", False),
                     "tags": sm.get("tags", []),
                     "source": "state_machines.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2228,6 +2714,14 @@ def _load_state_machines(path: Path) -> list[ProjectionNode]:
     # State transitions
     if "transitions" in data:
         for trans in data["transitions"]:
+            
+            rc = trans.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=trans.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=trans.get("id", ""),
                 kind=NodeKind.STATE_TRANSITION,
@@ -2241,6 +2735,7 @@ def _load_state_machines(path: Path) -> list[ProjectionNode]:
                     "effect": trans.get("effect"),
                     "tags": trans.get("tags", []),
                     "source": "state_machines.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2269,6 +2764,14 @@ def _load_feature_flags(path: Path) -> list[ProjectionNode]:
     # Feature flags
     if "feature_flags" in data:
         for flag in data["feature_flags"]:
+            
+            rc = flag.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=flag.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=flag.get("id", ""),
                 kind=NodeKind.FEATURE_FLAG,
@@ -2284,6 +2787,7 @@ def _load_feature_flags(path: Path) -> list[ProjectionNode]:
                     "targeted_users": flag.get("targeted_users", []),
                     "tags": flag.get("tags", []),
                     "source": "feature_flags.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2291,6 +2795,14 @@ def _load_feature_flags(path: Path) -> list[ProjectionNode]:
     # A/B experiments
     if "experiments" in data:
         for exp in data["experiments"]:
+            
+            rc = exp.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=exp.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=exp.get("id", ""),
                 kind=NodeKind.AB_EXPERIMENT,
@@ -2304,6 +2816,7 @@ def _load_feature_flags(path: Path) -> list[ProjectionNode]:
                     "is_active": exp.get("is_active", True),
                     "tags": exp.get("tags", []),
                     "source": "feature_flags.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2311,6 +2824,14 @@ def _load_feature_flags(path: Path) -> list[ProjectionNode]:
     # Dynamic configs
     if "dynamic_configs" in data:
         for config in data["dynamic_configs"]:
+            
+            rc = config.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=config.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=config.get("id", ""),
                 kind=NodeKind.DYNAMIC_CONFIG,
@@ -2323,6 +2844,7 @@ def _load_feature_flags(path: Path) -> list[ProjectionNode]:
                     "scope": config.get("scope", "global"),
                     "tags": config.get("tags", []),
                     "source": "feature_flags.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2348,6 +2870,14 @@ def _load_auth_ui(path: Path) -> list[ProjectionNode]:
 
     if "auth_ui" in data:
         config = data["auth_ui"]
+        
+        rc = config.get("render_context") or {}
+        if not isinstance(rc, dict):
+            raise EM.raise_error(
+                ErrorCode.DSL_INVALID_NODE_KIND,
+                node_id=config.get("id", "unknown"),
+                detail="render_context phải là dict"
+            )
         node = ProjectionNode(
             id=config.get("id", "auth_ui"),
             kind=NodeKind.AUTH_UI_CONFIG,
@@ -2363,6 +2893,7 @@ def _load_auth_ui(path: Path) -> list[ProjectionNode]:
                 "enable_self_register": config.get("enable_self_register", True),
                 "tags": config.get("tags", []),
                 "source": "auth_ui.yaml",
+                "render_context": rc,  
             },
         )
         nodes.append(node)
@@ -2388,6 +2919,14 @@ def _load_realtime_ui(path: Path) -> list[ProjectionNode]:
 
     if "channels" in data:
         for ch in data["channels"]:
+            
+            rc = ch.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=ch.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=ch.get("id", ""),
                 kind=NodeKind.CHANNEL_SPEC,
@@ -2400,12 +2939,21 @@ def _load_realtime_ui(path: Path) -> list[ProjectionNode]:
                     "auth_required": ch.get("auth_required", True),
                     "tags": ch.get("tags", []),
                     "source": "realtime_ui.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "widgets" in data:
         for w in data["widgets"]:
+            
+            rc = w.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=w.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=w.get("id", ""),
                 kind=NodeKind.WIDGET_CONFIG,
@@ -2418,6 +2966,7 @@ def _load_realtime_ui(path: Path) -> list[ProjectionNode]:
                     "refresh_interval_ms": w.get("refresh_interval_ms", 5000),
                     "tags": w.get("tags", []),
                     "source": "realtime_ui.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2443,6 +2992,14 @@ def _load_custom_code(path: Path) -> list[ProjectionNode]:
 
     if "code_blocks" in data:
         for block in data["code_blocks"]:
+            
+            rc = block.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=block.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=block.get("id", ""),
                 kind=NodeKind.CUSTOM_CODE_BLOCK,
@@ -2456,12 +3013,21 @@ def _load_custom_code(path: Path) -> list[ProjectionNode]:
                     "condition": block.get("condition"),
                     "tags": block.get("tags", []),
                     "source": "custom_code.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "hooks" in data:
         for h in data["hooks"]:
+            
+            rc = h.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=h.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=h.get("id", ""),
                 kind=NodeKind.CUSTOM_HOOK,
@@ -2473,12 +3039,21 @@ def _load_custom_code(path: Path) -> list[ProjectionNode]:
                     "priority": h.get("priority", 100),
                     "tags": h.get("tags", []),
                     "source": "custom_code.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "patch_rules" in data:
         for p in data["patch_rules"]:
+            
+            rc = p.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=p.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=p.get("id", ""),
                 kind=NodeKind.CUSTOM_PATCH_RULE,
@@ -2491,6 +3066,7 @@ def _load_custom_code(path: Path) -> list[ProjectionNode]:
                     "flags": p.get("flags", ""),
                     "tags": p.get("tags", []),
                     "source": "custom_code.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2516,6 +3092,14 @@ def _load_scheduler(path: Path) -> list[ProjectionNode]:
 
     if "schedules" in data:
         for s in data["schedules"]:
+            
+            rc = s.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=s.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=s.get("id", ""),
                 kind=NodeKind.SCHEDULE,
@@ -2528,6 +3112,7 @@ def _load_scheduler(path: Path) -> list[ProjectionNode]:
                     "enabled": s.get("enabled", True),
                     "tags": s.get("tags", []),
                     "source": "scheduler.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2553,6 +3138,14 @@ def _load_geospatial(path: Path) -> list[ProjectionNode]:
 
     if "specs" in data:
         for spec in data["specs"]:
+            
+            rc = spec.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=spec.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=spec.get("id", ""),
                 kind=NodeKind.GEOSPATIAL_SPEC,
@@ -2566,12 +3159,21 @@ def _load_geospatial(path: Path) -> list[ProjectionNode]:
                     "enable_distance": spec.get("enable_distance", False),
                     "tags": spec.get("tags", []),
                     "source": "geospatial.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "geofences" in data:
         for gf in data["geofences"]:
+            
+            rc = gf.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=gf.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=gf.get("id", ""),
                 kind=NodeKind.GEOFENCE,
@@ -2589,6 +3191,7 @@ def _load_geospatial(path: Path) -> list[ProjectionNode]:
                     "notification_channel": gf.get("notification_channel"),
                     "tags": gf.get("tags", []),
                     "source": "geospatial.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2614,6 +3217,14 @@ def _load_tenant_onboarding(path: Path) -> list[ProjectionNode]:
 
     if "registration" in data:
         reg = data["registration"]
+        
+        rc = reg.get("render_context") or {}
+        if not isinstance(rc, dict):
+            raise EM.raise_error(
+                ErrorCode.DSL_INVALID_NODE_KIND,
+                node_id=reg.get("id", "unknown"),
+                detail="render_context phải là dict"
+            )
         node = ProjectionNode(
             id=reg.get("id", "tenant_registration"),
             kind=NodeKind.TENANT_REGISTRATION,
@@ -2627,12 +3238,21 @@ def _load_tenant_onboarding(path: Path) -> list[ProjectionNode]:
                 "auto_provision": reg.get("auto_provision", True),
                 "tags": reg.get("tags", []),
                 "source": "tenant_onboarding.yaml",
+                "render_context": rc,  
             },
         )
         nodes.append(node)
 
     if "subscriptions" in data:
         for sub in data["subscriptions"]:
+            
+            rc = sub.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=sub.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=sub.get("id", ""),
                 kind=NodeKind.TENANT_SUBSCRIPTION,
@@ -2648,6 +3268,7 @@ def _load_tenant_onboarding(path: Path) -> list[ProjectionNode]:
                     "currency": sub.get("currency", "USD"),
                     "tags": sub.get("tags", []),
                     "source": "tenant_onboarding.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2673,6 +3294,14 @@ def _load_webhook(path: Path) -> list[ProjectionNode]:
 
     if "subscriptions" in data:
         for sub in data["subscriptions"]:
+            
+            rc = sub.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=sub.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=sub.get("id", ""),
                 kind=NodeKind.WEBHOOK_SUBSCRIPTION,
@@ -2688,12 +3317,21 @@ def _load_webhook(path: Path) -> list[ProjectionNode]:
                     "is_active": sub.get("is_active", True),
                     "tags": sub.get("tags", []),
                     "source": "webhook.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "retry_policies" in data:
         for rp in data["retry_policies"]:
+            
+            rc = rp.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=rp.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=rp.get("id", ""),
                 kind=NodeKind.WEBHOOK_RETRY_POLICY,
@@ -2707,6 +3345,7 @@ def _load_webhook(path: Path) -> list[ProjectionNode]:
                     "http_retry_codes": rp.get("http_retry_codes", [500, 502, 503]),
                     "tags": rp.get("tags", []),
                     "source": "webhook.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2732,6 +3371,14 @@ def _load_chat(path: Path) -> list[ProjectionNode]:
 
     if "conversations" in data:
         for conv in data["conversations"]:
+            
+            rc = conv.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=conv.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=conv.get("id", ""),
                 kind=NodeKind.CONVERSATION,
@@ -2746,12 +3393,21 @@ def _load_chat(path: Path) -> list[ProjectionNode]:
                     "enable_read_receipt": conv.get("enable_read_receipt", True),
                     "tags": conv.get("tags", []),
                     "source": "chat.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "messages" in data:
         for msg in data["messages"]:
+            
+            rc = msg.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=msg.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=msg.get("id", ""),
                 kind=NodeKind.CHAT_MESSAGE,
@@ -2766,6 +3422,7 @@ def _load_chat(path: Path) -> list[ProjectionNode]:
                     "enable_reactions": msg.get("enable_reactions", True),
                     "tags": msg.get("tags", []),
                     "source": "chat.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2791,6 +3448,14 @@ def _load_approval(path: Path) -> list[ProjectionNode]:
 
     if "requests" in data:
         for req in data["requests"]:
+            
+            rc = req.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=req.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=req.get("id", ""),
                 kind=NodeKind.APPROVAL_REQUEST,
@@ -2803,12 +3468,21 @@ def _load_approval(path: Path) -> list[ProjectionNode]:
                     "escalation_rule_id": req.get("escalation_rule_id"),
                     "tags": req.get("tags", []),
                     "source": "approval.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "steps" in data:
         for step in data["steps"]:
+            
+            rc = step.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=step.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=step.get("id", ""),
                 kind=NodeKind.APPROVAL_STEP,
@@ -2823,12 +3497,21 @@ def _load_approval(path: Path) -> list[ProjectionNode]:
                     "can_delegate": step.get("can_delegate", True),
                     "tags": step.get("tags", []),
                     "source": "approval.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "escalation_rules" in data:
         for esc in data["escalation_rules"]:
+            
+            rc = esc.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=esc.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=esc.get("id", ""),
                 kind=NodeKind.ESCALATION_RULE,
@@ -2842,6 +3525,7 @@ def _load_approval(path: Path) -> list[ProjectionNode]:
                     "max_escalations": esc.get("max_escalations", 3),
                     "tags": esc.get("tags", []),
                     "source": "approval.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2868,6 +3552,14 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
     # CP43: Versioning configs
     if "versioning_configs" in data:
         for vc in data["versioning_configs"]:
+            
+            rc = vc.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=vc.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=vc.get("id", ""),
                 kind=NodeKind.VERSION_CONFIG,
@@ -2882,6 +3574,7 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
                     "auto_cleanup": vc.get("auto_cleanup", False),
                     "tags": vc.get("tags", []),
                     "source": "versioning.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2889,6 +3582,14 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
     # CP43: History records
     if "history_records" in data:
         for hr in data["history_records"]:
+            
+            rc = hr.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=hr.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=hr.get("id", ""),
                 kind=NodeKind.HISTORY_RECORD,
@@ -2901,6 +3602,7 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
                     "retention_days": hr.get("retention_days", 365),
                     "tags": hr.get("tags", []),
                     "source": "versioning.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2908,6 +3610,14 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
     # Legacy: API versions
     if "api_versions" in data:
         for av in data["api_versions"]:
+            
+            rc = av.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=av.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=av.get("id", ""),
                 kind=NodeKind.API_VERSION,
@@ -2918,6 +3628,7 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
                     "status": av.get("status", "active"),
                     "tags": av.get("tags", []),
                     "source": "versioning.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2925,6 +3636,14 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
     # Legacy: Deprecation notices
     if "deprecation_notices" in data:
         for dep in data["deprecation_notices"]:
+            
+            rc = dep.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=dep.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=dep.get("id", ""),
                 kind=NodeKind.DEPRECATION_NOTICE,
@@ -2934,6 +3653,7 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
                     "reason": dep.get("reason", ""),
                     "tags": dep.get("tags", []),
                     "source": "versioning.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2941,6 +3661,14 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
     # Legacy: Pagination specs
     if "pagination_specs" in data:
         for ps in data["pagination_specs"]:
+            
+            rc = ps.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=ps.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=ps.get("id", ""),
                 kind=NodeKind.PAGINATION_SPEC,
@@ -2949,6 +3677,7 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
                     "page_size": ps.get("page_size", 20),
                     "tags": ps.get("tags", []),
                     "source": "versioning.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -2974,6 +3703,14 @@ def _load_bulk_ops(path: Path) -> list[ProjectionNode]:
 
     if "jobs" in data:
         for job in data["jobs"]:
+            
+            rc = job.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=job.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=job.get("id", ""),
                 kind=NodeKind.BULK_JOB,
@@ -2989,6 +3726,7 @@ def _load_bulk_ops(path: Path) -> list[ProjectionNode]:
                     "dlq_enabled": job.get("dlq_enabled", True),
                     "tags": job.get("tags", []),
                     "source": "bulk_ops.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3014,6 +3752,14 @@ def _load_mfa(path: Path) -> list[ProjectionNode]:
 
     if "credentials" in data:
         for cred in data["credentials"]:
+            
+            rc = cred.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=cred.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=cred.get("id", ""),
                 kind=NodeKind.MFA_CREDENTIAL,
@@ -3026,12 +3772,21 @@ def _load_mfa(path: Path) -> list[ProjectionNode]:
                     "backup_codes_count": cred.get("backup_codes_count", 10),
                     "tags": cred.get("tags", []),
                     "source": "mfa.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "challenges" in data:
         for ch in data["challenges"]:
+            
+            rc = ch.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=ch.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=ch.get("id", ""),
                 kind=NodeKind.MFA_CHALLENGE,
@@ -3044,6 +3799,7 @@ def _load_mfa(path: Path) -> list[ProjectionNode]:
                     "lockout_minutes": ch.get("lockout_minutes", 15),
                     "tags": ch.get("tags", []),
                     "source": "mfa.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3069,6 +3825,14 @@ def _load_retention(path: Path) -> list[ProjectionNode]:
 
     if "policies" in data:
         for p in data["policies"]:
+            
+            rc = p.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=p.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=p.get("id", ""),
                 kind=NodeKind.RETENTION_POLICY,
@@ -3082,12 +3846,21 @@ def _load_retention(path: Path) -> list[ProjectionNode]:
                     "exempt_entities": p.get("exempt_entities", []),
                     "tags": p.get("tags", []),
                     "source": "retention.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "erasure_requests" in data:
         for er in data["erasure_requests"]:
+            
+            rc = er.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=er.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=er.get("id", ""),
                 kind=NodeKind.ERASURE_REQUEST,
@@ -3102,6 +3875,7 @@ def _load_retention(path: Path) -> list[ProjectionNode]:
                     "deadline_days": er.get("deadline_days", 30),
                     "tags": er.get("tags", []),
                     "source": "retention.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3127,6 +3901,14 @@ def _load_rate_limiting(path: Path) -> list[ProjectionNode]:
 
     if "policies" in data:
         for p in data["policies"]:
+            
+            rc = p.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=p.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=p.get("id", ""),
                 kind=NodeKind.RATE_LIMIT_POLICY,
@@ -3141,12 +3923,21 @@ def _load_rate_limiting(path: Path) -> list[ProjectionNode]:
                     "endpoints": p.get("endpoints", []),
                     "tags": p.get("tags", []),
                     "source": "rate_limiting.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "quotas" in data:
         for q in data["quotas"]:
+            
+            rc = q.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=q.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=q.get("id", ""),
                 kind=NodeKind.QUOTA_CONFIG,
@@ -3160,6 +3951,7 @@ def _load_rate_limiting(path: Path) -> list[ProjectionNode]:
                     "overage_action": q.get("overage_action", "reject"),
                     "tags": q.get("tags", []),
                     "source": "rate_limiting.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3185,6 +3977,14 @@ def _load_consent(path: Path) -> list[ProjectionNode]:
 
     if "records" in data:
         for rec in data["records"]:
+            
+            rc = rec.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=rec.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=rec.get("id", ""),
                 kind=NodeKind.CONSENT_RECORD,
@@ -3198,12 +3998,21 @@ def _load_consent(path: Path) -> list[ProjectionNode]:
                     "policy_version": rec.get("policy_version"),
                     "tags": rec.get("tags", []),
                     "source": "consent.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "policies" in data:
         for pol in data["policies"]:
+            
+            rc = pol.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=pol.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=pol.get("id", ""),
                 kind=NodeKind.CONSENT_POLICY,
@@ -3217,12 +4026,21 @@ def _load_consent(path: Path) -> list[ProjectionNode]:
                     "data_retention_days": pol.get("data_retention_days", 365),
                     "tags": pol.get("tags", []),
                     "source": "consent.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "cookie_preferences" in data:
         for cp in data["cookie_preferences"]:
+            
+            rc = cp.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=cp.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=cp.get("id", ""),
                 kind=NodeKind.COOKIE_PREFERENCE,
@@ -3236,12 +4054,21 @@ def _load_consent(path: Path) -> list[ProjectionNode]:
                     "preferences": cp.get("preferences", True),
                     "tags": cp.get("tags", []),
                     "source": "consent.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "communication_preferences" in data:
         for cm in data["communication_preferences"]:
+            
+            rc = cm.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=cm.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=cm.get("id", ""),
                 kind=NodeKind.COMM_PREFERENCE,
@@ -3256,6 +4083,7 @@ def _load_consent(path: Path) -> list[ProjectionNode]:
                     "frequency": cm.get("frequency", "realtime"),
                     "tags": cm.get("tags", []),
                     "source": "consent.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3283,6 +4111,14 @@ def _load_tenancy(path: Path) -> list[ProjectionNode]:
 
     if "tenancy_config" in data:
         cfg = data["tenancy_config"]
+        
+        rc = cfg.get("render_context") or {}
+        if not isinstance(rc, dict):
+            raise EM.raise_error(
+                ErrorCode.DSL_INVALID_NODE_KIND,
+                node_id=cfg.get("id", "unknown"),
+                detail="render_context phải là dict"
+            )
         node = ProjectionNode(
             id=cfg.get("id", "default_tenancy"),
             kind=NodeKind.TENANCY_CONFIG,
@@ -3295,12 +4131,21 @@ def _load_tenancy(path: Path) -> list[ProjectionNode]:
                 "max_tenants": cfg.get("max_tenants", 1000),
                 "tags": cfg.get("tags", []),
                 "source": "tenancy.yaml",
+                "render_context": rc,  
             },
         )
         nodes.append(node)
 
     if "isolation_policies" in data:
         for pol in data["isolation_policies"]:
+            
+            rc = pol.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=pol.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=pol.get("id", ""),
                 kind=NodeKind.TENANT_ISOLATION_POLICY,
@@ -3312,6 +4157,7 @@ def _load_tenancy(path: Path) -> list[ProjectionNode]:
                     "cross_tenant_query_allowed": pol.get("cross_tenant_query_allowed", False),
                     "tags": pol.get("tags", []),
                     "source": "tenancy.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3335,6 +4181,14 @@ def _load_auth(path: Path) -> list[ProjectionNode]:
 
     if "providers" in data:
         for prov in data["providers"]:
+            
+            rc = prov.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=prov.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=prov.get("id", ""),
                 kind=NodeKind.AUTH_PROVIDER,
@@ -3348,6 +4202,7 @@ def _load_auth(path: Path) -> list[ProjectionNode]:
                     "auth_endpoint": prov.get("auth_endpoint", ""),
                     "tags": prov.get("tags", []),
                     "source": "auth.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3371,6 +4226,14 @@ def _load_infrastructure(path: Path) -> list[ProjectionNode]:
 
     if "resources" in data:
         for res in data["resources"]:
+            
+            rc = res.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=res.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=res.get("id", ""),
                 kind=NodeKind.IAC_RESOURCE,
@@ -3383,12 +4246,21 @@ def _load_infrastructure(path: Path) -> list[ProjectionNode]:
                     "configuration": res.get("configuration", {}),
                     "tags": res.get("tags", []),
                     "source": "infrastructure.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "networks" in data:
         for net in data["networks"]:
+            
+            rc = net.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=net.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=net.get("id", ""),
                 kind=NodeKind.IAC_NETWORK,
@@ -3400,6 +4272,7 @@ def _load_infrastructure(path: Path) -> list[ProjectionNode]:
                     "security_groups": net.get("security_groups", []),
                     "tags": net.get("tags", []),
                     "source": "infrastructure.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3423,6 +4296,14 @@ def _load_caching(path: Path) -> list[ProjectionNode]:
 
     if "caches" in data:
         for cache in data["caches"]:
+            
+            rc = cache.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=cache.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=cache.get("id", ""),
                 kind=NodeKind.CACHE,
@@ -3435,12 +4316,21 @@ def _load_caching(path: Path) -> list[ProjectionNode]:
                     "eviction_policy": cache.get("eviction_policy", "lru"),
                     "tags": cache.get("tags", []),
                     "source": "caching.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "strategies" in data:
         for strat in data["strategies"]:
+            
+            rc = strat.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=strat.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=strat.get("id", ""),
                 kind=NodeKind.CACHE_STRATEGY,
@@ -3451,6 +4341,7 @@ def _load_caching(path: Path) -> list[ProjectionNode]:
                     "invalidation": strat.get("invalidation", "ttl"),
                     "tags": strat.get("tags", []),
                     "source": "caching.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3474,6 +4365,14 @@ def _load_search(path: Path) -> list[ProjectionNode]:
 
     if "indexes" in data:
         for idx in data["indexes"]:
+            
+            rc = idx.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=idx.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=idx.get("id", ""),
                 kind=NodeKind.SEARCH_INDEX,
@@ -3485,12 +4384,21 @@ def _load_search(path: Path) -> list[ProjectionNode]:
                     "fields": idx.get("fields", []),
                     "tags": idx.get("tags", []),
                     "source": "search.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "queries" in data:
         for q in data["queries"]:
+            
+            rc = q.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=q.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=q.get("id", ""),
                 kind=NodeKind.SEARCH_QUERY,
@@ -3502,6 +4410,7 @@ def _load_search(path: Path) -> list[ProjectionNode]:
                     "filters": q.get("filters", []),
                     "tags": q.get("tags", []),
                     "source": "search.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3525,6 +4434,14 @@ def _load_storage(path: Path) -> list[ProjectionNode]:
 
     if "buckets" in data:
         for bucket in data["buckets"]:
+            
+            rc = bucket.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=bucket.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=bucket.get("id", ""),
                 kind=NodeKind.FILE_STORAGE,
@@ -3539,12 +4456,21 @@ def _load_storage(path: Path) -> list[ProjectionNode]:
                     "cdn_enabled": bucket.get("cdn_enabled", False),
                     "tags": bucket.get("tags", []),
                     "source": "storage.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "processing_pipelines" in data:
         for pipe in data["processing_pipelines"]:
+            
+            rc = pipe.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=pipe.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=pipe.get("id", ""),
                 kind=NodeKind.MEDIA_PROCESSING,
@@ -3557,6 +4483,7 @@ def _load_storage(path: Path) -> list[ProjectionNode]:
                     "quality": pipe.get("quality", "high"),
                     "tags": pipe.get("tags", []),
                     "source": "storage.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3581,6 +4508,14 @@ def _load_monitoring(path: Path) -> list[ProjectionNode]:
 
     if "metrics" in data:
         for metric in data["metrics"]:
+            
+            rc = metric.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=metric.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=metric.get("id", ""),
                 kind=NodeKind.METRIC,
@@ -3594,12 +4529,21 @@ def _load_monitoring(path: Path) -> list[ProjectionNode]:
                     "config": metric.get("config", {}),
                     "tags": metric.get("tags", []),
                     "source": "monitoring.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "alerts" in data:
         for alert in data["alerts"]:
+            
+            rc = alert.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=alert.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=alert.get("id", ""),
                 kind=NodeKind.ALERT,
@@ -3614,12 +4558,21 @@ def _load_monitoring(path: Path) -> list[ProjectionNode]:
                     "config": alert.get("config", {}),
                     "tags": alert.get("tags", []),
                     "source": "monitoring.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "dashboards" in data:
         for dash in data["dashboards"]:
+            
+            rc = dash.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=dash.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=dash.get("id", ""),
                 kind=NodeKind.DASHBOARD,
@@ -3631,6 +4584,7 @@ def _load_monitoring(path: Path) -> list[ProjectionNode]:
                     "refresh_interval": dash.get("refresh_interval", 30),
                     "tags": dash.get("tags", []),
                     "source": "monitoring.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3654,6 +4608,14 @@ def _load_api_client(path: Path) -> list[ProjectionNode]:
 
     if "clients" in data:
         for client in data["clients"]:
+            
+            rc = client.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=client.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=client.get("id", ""),
                 kind=NodeKind.API_CLIENT,
@@ -3667,12 +4629,21 @@ def _load_api_client(path: Path) -> list[ProjectionNode]:
                     "retry_count": client.get("retry_count", 3),
                     "tags": client.get("tags", []),
                     "source": "api_client.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "endpoints" in data:
         for ep in data["endpoints"]:
+            
+            rc = ep.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=ep.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=ep.get("id", ""),
                 kind=NodeKind.API_CLIENT_ENDPOINT,
@@ -3686,6 +4657,7 @@ def _load_api_client(path: Path) -> list[ProjectionNode]:
                     "response_schema": ep.get("response_schema", {}),
                     "tags": ep.get("tags", []),
                     "source": "api_client.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3709,6 +4681,14 @@ def _load_testing(path: Path) -> list[ProjectionNode]:
 
     if "suites" in data:
         for suite in data["suites"]:
+            
+            rc = suite.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=suite.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=suite.get("id", ""),
                 kind=NodeKind.TEST_SUITE,
@@ -3722,6 +4702,7 @@ def _load_testing(path: Path) -> list[ProjectionNode]:
                     "parallel": suite.get("parallel", False),
                     "tags": suite.get("tags", []),
                     "source": "testing.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3745,6 +4726,14 @@ def _load_quality(path: Path) -> list[ProjectionNode]:
 
     if "gates" in data:
         for gate in data["gates"]:
+            
+            rc = gate.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=gate.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=gate.get("id", ""),
                 kind=NodeKind.QUALITY_GATE,
@@ -3756,6 +4745,7 @@ def _load_quality(path: Path) -> list[ProjectionNode]:
                     "fail_threshold": gate.get("fail_threshold", 0),
                     "tags": gate.get("tags", []),
                     "source": "quality.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3779,6 +4769,14 @@ def _load_performance(path: Path) -> list[ProjectionNode]:
 
     if "scenarios" in data:
         for scenario in data["scenarios"]:
+            
+            rc = scenario.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=scenario.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=scenario.get("id", ""),
                 kind=NodeKind.PERFORMANCE_TEST,
@@ -3792,12 +4790,21 @@ def _load_performance(path: Path) -> list[ProjectionNode]:
                     "success_criteria": scenario.get("success_criteria", {}),
                     "tags": scenario.get("tags", []),
                     "source": "performance.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "load_profiles" in data:
         for profile in data["load_profiles"]:
+            
+            rc = profile.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=profile.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=profile.get("id", ""),
                 kind=NodeKind.LOAD_PROFILE,
@@ -3810,6 +4817,7 @@ def _load_performance(path: Path) -> list[ProjectionNode]:
                     "think_time_ms": profile.get("think_time_ms", 1000),
                     "tags": profile.get("tags", []),
                     "source": "performance.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3833,6 +4841,14 @@ def _load_documentation(path: Path) -> list[ProjectionNode]:
 
     if "specs" in data:
         for spec in data["specs"]:
+            
+            rc = spec.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=spec.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=spec.get("id", ""),
                 kind=NodeKind.DOCUMENTATION_SPEC,
@@ -3845,12 +4861,21 @@ def _load_documentation(path: Path) -> list[ProjectionNode]:
                     "output_path": spec.get("output_path", ""),
                     "tags": spec.get("tags", []),
                     "source": "documentation.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "sections" in data:
         for section in data["sections"]:
+            
+            rc = section.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=section.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=section.get("id", ""),
                 kind=NodeKind.API_DOC_SECTION,
@@ -3862,6 +4887,7 @@ def _load_documentation(path: Path) -> list[ProjectionNode]:
                     "examples": section.get("examples", []),
                     "tags": section.get("tags", []),
                     "source": "documentation.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3885,6 +4911,14 @@ def _load_ai_assisted(path: Path) -> list[ProjectionNode]:
 
     if "services" in data:
         for svc in data["services"]:
+            
+            rc = svc.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=svc.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=svc.get("id", ""),
                 kind=NodeKind.AI_SERVICE,
@@ -3899,12 +4933,21 @@ def _load_ai_assisted(path: Path) -> list[ProjectionNode]:
                     "temperature": svc.get("temperature", 0.7),
                     "tags": svc.get("tags", []),
                     "source": "ai_assisted.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "prompt_templates" in data:
         for tmpl in data["prompt_templates"]:
+            
+            rc = tmpl.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=tmpl.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=tmpl.get("id", ""),
                 kind=NodeKind.AI_PROMPT_TEMPLATE,
@@ -3917,12 +4960,21 @@ def _load_ai_assisted(path: Path) -> list[ProjectionNode]:
                     "max_tokens": tmpl.get("max_tokens", 2048),
                     "tags": tmpl.get("tags", []),
                     "source": "ai_assisted.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "tool_calls" in data:
         for tool in data["tool_calls"]:
+            
+            rc = tool.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=tool.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=tool.get("id", ""),
                 kind=NodeKind.AI_TOOL_CALL,
@@ -3935,6 +4987,7 @@ def _load_ai_assisted(path: Path) -> list[ProjectionNode]:
                     "required": tool.get("required", False),
                     "tags": tool.get("tags", []),
                     "source": "ai_assisted.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -3961,6 +5014,14 @@ def _load_kubernetes(path: Path) -> list[ProjectionNode]:
     # Deployments
     if "deployments" in data:
         for dep in data["deployments"]:
+            
+            rc = dep.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=dep.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=dep.get("id", ""),
                 kind=NodeKind.K8S_DEPLOYMENT,
@@ -3977,12 +5038,21 @@ def _load_kubernetes(path: Path) -> list[ProjectionNode]:
                     "volume_mounts": dep.get("volume_mounts", []),
                     "tags": dep.get("tags", []),
                     "source": "kubernetes.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Services
     if "services" in data:
         for svc in data["services"]:
+            
+            rc = svc.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=svc.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=svc.get("id", ""),
                 kind=NodeKind.K8S_SERVICE,
@@ -3994,12 +5064,21 @@ def _load_kubernetes(path: Path) -> list[ProjectionNode]:
                     "selector": svc.get("selector", {}),
                     "tags": svc.get("tags", []),
                     "source": "kubernetes.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Ingresses
     if "ingresses" in data:
         for ing in data["ingresses"]:
+            
+            rc = ing.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=ing.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=ing.get("id", ""),
                 kind=NodeKind.K8S_INGRESS,
@@ -4012,12 +5091,21 @@ def _load_kubernetes(path: Path) -> list[ProjectionNode]:
                     "annotations": ing.get("annotations", {}),
                     "tags": ing.get("tags", []),
                     "source": "kubernetes.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # HPAs
     if "hpas" in data:
         for hpa in data["hpas"]:
+            
+            rc = hpa.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=hpa.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=hpa.get("id", ""),
                 kind=NodeKind.K8S_HPA,
@@ -4030,12 +5118,21 @@ def _load_kubernetes(path: Path) -> list[ProjectionNode]:
                     "target_memory": hpa.get("target_memory", 80),
                     "tags": hpa.get("tags", []),
                     "source": "kubernetes.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Helm charts
     if "helm_charts" in data:
         for chart in data["helm_charts"]:
+            
+            rc = chart.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=chart.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=chart.get("id", ""),
                 kind=NodeKind.HELM_CHART,
@@ -4047,6 +5144,7 @@ def _load_kubernetes(path: Path) -> list[ProjectionNode]:
                     "values": chart.get("values", {}),
                     "tags": chart.get("tags", []),
                     "source": "kubernetes.yaml",
+                    "render_context": rc,  
                 },
             ))
 
@@ -4072,6 +5170,14 @@ def _load_cicd(path: Path) -> list[ProjectionNode]:
     # Load pipeline configurations
     if "pipelines" in data:
         for pipeline in data["pipelines"]:
+            
+            rc = pipeline.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=pipeline.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=pipeline.get("id", ""),
                 kind=NodeKind.CI_PIPELINE,
@@ -4085,6 +5191,7 @@ def _load_cicd(path: Path) -> list[ProjectionNode]:
                     "env_vars": pipeline.get("env_vars", {}),
                     "tags": pipeline.get("tags", []),
                     "source": "cicd.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4092,6 +5199,14 @@ def _load_cicd(path: Path) -> list[ProjectionNode]:
     # Load pipeline stages
     if "stages" in data:
         for stage in data["stages"]:
+            
+            rc = stage.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=stage.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=stage.get("id", ""),
                 kind=NodeKind.CI_STAGE,
@@ -4104,6 +5219,7 @@ def _load_cicd(path: Path) -> list[ProjectionNode]:
                     "allow_failure": stage.get("allow_failure", False),
                     "tags": stage.get("tags", []),
                     "source": "cicd.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4111,6 +5227,14 @@ def _load_cicd(path: Path) -> list[ProjectionNode]:
     # Load pipeline jobs/steps
     if "jobs" in data:
         for job in data["jobs"]:
+            
+            rc = job.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=job.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=job.get("id", ""),
                 kind=NodeKind.CI_JOB,
@@ -4125,6 +5249,7 @@ def _load_cicd(path: Path) -> list[ProjectionNode]:
                     "artifacts": job.get("artifacts", []),
                     "tags": job.get("tags", []),
                     "source": "cicd.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4150,6 +5275,14 @@ def _load_env_secrets(path: Path) -> list[ProjectionNode]:
 
     if "env_configs" in data:
         for e in data["env_configs"]:
+            
+            rc = e.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=e.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=e.get("id", ""),
                 kind=NodeKind.ENV_CONFIG,
@@ -4162,12 +5295,21 @@ def _load_env_secrets(path: Path) -> list[ProjectionNode]:
                     "export_to_dotenv": e.get("export_to_dotenv", True),
                     "tags": e.get("tags", []),
                     "source": "env_secrets.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "secret_configs" in data:
         for s in data["secret_configs"]:
+            
+            rc = s.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=s.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=s.get("id", ""),
                 kind=NodeKind.SECRET_CONFIG,
@@ -4181,12 +5323,21 @@ def _load_env_secrets(path: Path) -> list[ProjectionNode]:
                     "access_policy": s.get("access_policy", "read-only"),
                     "tags": s.get("tags", []),
                     "source": "env_secrets.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
 
     if "vault_configs" in data:
         for v in data["vault_configs"]:
+            
+            rc = v.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=v.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=v.get("id", ""),
                 kind=NodeKind.VAULT_CONFIG,
@@ -4198,6 +5349,7 @@ def _load_env_secrets(path: Path) -> list[ProjectionNode]:
                     "auto_auth": v.get("auto_auth", {}),
                     "tags": v.get("tags", []),
                     "source": "env_secrets.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4228,6 +5380,14 @@ def _load_encryption(path: Path) -> list[ProjectionNode]:
     if "configs" in data or "encryption_configs" in data:
         configs = data.get("configs", data.get("encryption_configs", []))
         for c in configs:
+            
+            rc = c.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=c.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=c.get("id", ""),
                 kind=NodeKind.ENCRYPTION_CONFIG,
@@ -4240,6 +5400,7 @@ def _load_encryption(path: Path) -> list[ProjectionNode]:
                     "key_management": c.get("key_management", "local"),
                     "tags": c.get("tags", []),
                     "source": "encryption.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4248,6 +5409,14 @@ def _load_encryption(path: Path) -> list[ProjectionNode]:
     if "fields" in data or "encrypted_fields" in data:
         fields = data.get("fields", data.get("encrypted_fields", []))
         for f in fields:
+            
+            rc = f.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=f.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=f.get("id", ""),
                 kind=NodeKind.ENCRYPTED_FIELD,
@@ -4261,6 +5430,7 @@ def _load_encryption(path: Path) -> list[ProjectionNode]:
                     "auto_decrypt": f.get("auto_decrypt", True),
                     "tags": f.get("tags", []),
                     "source": "encryption.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4269,6 +5439,14 @@ def _load_encryption(path: Path) -> list[ProjectionNode]:
     if "policies" in data or "encryption_policies" in data:
         policies = data.get("policies", data.get("encryption_policies", []))
         for p in policies:
+            
+            rc = p.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=p.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=p.get("id", ""),
                 kind=NodeKind.ENCRYPTION_POLICY,
@@ -4282,6 +5460,7 @@ def _load_encryption(path: Path) -> list[ProjectionNode]:
                     "compliance_standards": p.get("compliance_standards", []),
                     "tags": p.get("tags", []),
                     "source": "encryption.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4310,6 +5489,14 @@ def _load_graphql_federation(path: Path) -> list[ProjectionNode]:
     # Federation services
     if "services" in data:
         for service in data["services"]:
+            
+            rc = service.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=service.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=service.get("id", ""),
                 kind=NodeKind.FEDERATION_SERVICE,
@@ -4323,6 +5510,7 @@ def _load_graphql_federation(path: Path) -> list[ProjectionNode]:
                     "entity_ownerships": service.get("entity_ownerships", []),
                     "tags": service.get("tags", []),
                     "source": "graphql_federation.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4330,6 +5518,14 @@ def _load_graphql_federation(path: Path) -> list[ProjectionNode]:
     # Federated types
     if "types" in data:
         for ft in data["types"]:
+            
+            rc = ft.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=ft.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=ft.get("id", ""),
                 kind=NodeKind.FEDERATED_TYPE,
@@ -4342,6 +5538,7 @@ def _load_graphql_federation(path: Path) -> list[ProjectionNode]:
                     "extensions": ft.get("extensions", []),
                     "tags": ft.get("tags", []),
                     "source": "graphql_federation.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4349,6 +5546,14 @@ def _load_graphql_federation(path: Path) -> list[ProjectionNode]:
     # Federated resolvers
     if "resolvers" in data:
         for resolver in data["resolvers"]:
+            
+            rc = resolver.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=resolver.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=resolver.get("id", ""),
                 kind=NodeKind.FEDERATED_RESOLVER,
@@ -4359,6 +5564,7 @@ def _load_graphql_federation(path: Path) -> list[ProjectionNode]:
                     "resolve_reference_service": resolver.get("resolve_reference_service", ""),
                     "tags": resolver.get("tags", []),
                     "source": "graphql_federation.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4366,6 +5572,14 @@ def _load_graphql_federation(path: Path) -> list[ProjectionNode]:
     # Gateway config
     if "gateway_config" in data:
         gw = data["gateway_config"]
+        
+        rc = gw.get("render_context") or {}
+        if not isinstance(rc, dict):
+            raise EM.raise_error(
+                ErrorCode.DSL_INVALID_NODE_KIND,
+                node_id=gw.get("id", "unknown"),
+                detail="render_context phải là dict"
+            )
         node = ProjectionNode(
             id=gw.get("id", "default_gateway"),
             kind=NodeKind.GATEWAY_CONFIG,
@@ -4378,6 +5592,7 @@ def _load_graphql_federation(path: Path) -> list[ProjectionNode]:
                 "rate_limit_rps": gw.get("rate_limit_rps", 100),
                 "tags": gw.get("tags", []),
                 "source": "graphql_federation.yaml",
+                "render_context": rc,  
             },
         )
         nodes.append(node)
@@ -4404,6 +5619,14 @@ def _load_service_discovery(path: Path) -> list[ProjectionNode]:
     # Service instances
     if "instances" in data:
         for inst in data["instances"]:
+            
+            rc = inst.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=inst.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=inst.get("instance_id", inst.get("id", "")),
                 kind=NodeKind.SERVICE_INSTANCE,
@@ -4417,6 +5640,7 @@ def _load_service_discovery(path: Path) -> list[ProjectionNode]:
                     "health_check_path": inst.get("health_check_path", "/health"),
                     "tags": inst.get("tags", []),
                     "source": "service_discovery.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4424,6 +5648,14 @@ def _load_service_discovery(path: Path) -> list[ProjectionNode]:
     # Service registries
     if "registries" in data:
         for reg in data["registries"]:
+            
+            rc = reg.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=reg.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=reg.get("registry_id", reg.get("id", "")),
                 kind=NodeKind.SERVICE_REGISTRY,
@@ -4436,6 +5668,7 @@ def _load_service_discovery(path: Path) -> list[ProjectionNode]:
                     "peer_nodes": reg.get("peer_nodes", []),
                     "metadata": reg.get("metadata", {}),
                     "source": "service_discovery.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4443,6 +5676,14 @@ def _load_service_discovery(path: Path) -> list[ProjectionNode]:
     # Config entries
     if "configs" in data:
         for cfg in data["configs"]:
+            
+            rc = cfg.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=cfg.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=cfg.get("entry_id", cfg.get("id", "")),
                 kind=NodeKind.CONFIG_ENTRY,
@@ -4456,6 +5697,7 @@ def _load_service_discovery(path: Path) -> list[ProjectionNode]:
                     "watchers": cfg.get("watchers", []),
                     "metadata": cfg.get("metadata", {}),
                     "source": "service_discovery.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4463,6 +5705,14 @@ def _load_service_discovery(path: Path) -> list[ProjectionNode]:
     # Load balancing configs
     if "load_balancers" in data:
         for lb in data["load_balancers"]:
+            
+            rc = lb.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=lb.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=lb.get("config_id", lb.get("id", "")),
                 kind=NodeKind.LOAD_BALANCING_CONFIG,
@@ -4474,6 +5724,7 @@ def _load_service_discovery(path: Path) -> list[ProjectionNode]:
                     "max_retries": lb.get("max_retries", 3),
                     "metadata": lb.get("metadata", {}),
                     "source": "service_discovery.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4503,6 +5754,14 @@ def _load_mobile_backend(path: Path) -> list[ProjectionNode]:
     # Push notification configs
     if "push_configs" in data:
         for push in data["push_configs"]:
+            
+            rc = push.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=push.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=push.get("id", ""),
                 kind=NodeKind.PUSH_NOTIFICATION_CONFIG,
@@ -4518,6 +5777,7 @@ def _load_mobile_backend(path: Path) -> list[ProjectionNode]:
                     "data_payload": push.get("data_payload", True),
                     "tags": push.get("tags", []),
                     "source": "mobile_backend.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4525,6 +5785,14 @@ def _load_mobile_backend(path: Path) -> list[ProjectionNode]:
     # Deep link routes
     if "deep_links" in data:
         for link in data["deep_links"]:
+            
+            rc = link.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=link.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=link.get("id", ""),
                 kind=NodeKind.DEEP_LINK_ROUTE,
@@ -4539,6 +5807,7 @@ def _load_mobile_backend(path: Path) -> list[ProjectionNode]:
                     "universal_link_enabled": link.get("universal_link_enabled", False),
                     "tags": link.get("tags", []),
                     "source": "mobile_backend.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4546,6 +5815,14 @@ def _load_mobile_backend(path: Path) -> list[ProjectionNode]:
     # Mobile auth providers
     if "auth_providers" in data:
         for auth in data["auth_providers"]:
+            
+            rc = auth.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=auth.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=auth.get("id", ""),
                 kind=NodeKind.MOBILE_AUTH_PROVIDER,
@@ -4559,6 +5836,7 @@ def _load_mobile_backend(path: Path) -> list[ProjectionNode]:
                     "scopes": auth.get("scopes", []),
                     "tags": auth.get("tags", []),
                     "source": "mobile_backend.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4566,6 +5844,14 @@ def _load_mobile_backend(path: Path) -> list[ProjectionNode]:
     # OTA update configs
     if "ota_configs" in data:
         for ota in data["ota_configs"]:
+            
+            rc = ota.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=ota.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=ota.get("id", ""),
                 kind=NodeKind.OTA_UPDATE_CONFIG,
@@ -4580,6 +5866,7 @@ def _load_mobile_backend(path: Path) -> list[ProjectionNode]:
                     "rollout_percentage": ota.get("rollout_percentage", 100),
                     "tags": ota.get("tags", []),
                     "source": "mobile_backend.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4608,6 +5895,14 @@ def _load_tenant_billing(path: Path) -> list[ProjectionNode]:
     # Billing plans
     if "billing_plans" in data:
         for plan in data["billing_plans"]:
+            
+            rc = plan.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=plan.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=plan.get("id", ""),
                 kind=NodeKind.BILLING_PLAN,
@@ -4622,6 +5917,7 @@ def _load_tenant_billing(path: Path) -> list[ProjectionNode]:
                     "usage_limits": plan.get("usage_limits", {}),
                     "tags": plan.get("tags", []),
                     "source": "tenant_billing.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4629,6 +5925,14 @@ def _load_tenant_billing(path: Path) -> list[ProjectionNode]:
     # Billing cycles
     if "billing_cycles" in data:
         for cycle in data["billing_cycles"]:
+            
+            rc = cycle.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=cycle.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=cycle.get("id", ""),
                 kind=NodeKind.BILLING_CYCLE,
@@ -4642,6 +5946,7 @@ def _load_tenant_billing(path: Path) -> list[ProjectionNode]:
                     "metadata": cycle.get("metadata", {}),
                     "tags": cycle.get("tags", []),
                     "source": "tenant_billing.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4649,6 +5954,14 @@ def _load_tenant_billing(path: Path) -> list[ProjectionNode]:
     # Usage meters
     if "usage_meters" in data:
         for meter in data["usage_meters"]:
+            
+            rc = meter.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=meter.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=meter.get("id", ""),
                 kind=NodeKind.USAGE_METER,
@@ -4662,6 +5975,7 @@ def _load_tenant_billing(path: Path) -> list[ProjectionNode]:
                     "metadata": meter.get("metadata", {}),
                     "tags": meter.get("tags", []),
                     "source": "tenant_billing.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4669,6 +5983,14 @@ def _load_tenant_billing(path: Path) -> list[ProjectionNode]:
     # Invoice configs
     if "invoice_configs" in data:
         for invoice in data["invoice_configs"]:
+            
+            rc = invoice.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=invoice.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             node = ProjectionNode(
                 id=invoice.get("id", ""),
                 kind=NodeKind.INVOICE_CONFIG,
@@ -4685,6 +6007,7 @@ def _load_tenant_billing(path: Path) -> list[ProjectionNode]:
                     "metadata": invoice.get("metadata", {}),
                     "tags": invoice.get("tags", []),
                     "source": "tenant_billing.yaml",
+                    "render_context": rc,  
                 },
             )
             nodes.append(node)
@@ -4714,6 +6037,14 @@ def _load_recommendation(path: Path) -> list[ProjectionNode]:
     if "configs" in data or "recommendation_configs" in data:
         configs = data.get("configs", data.get("recommendation_configs", []))
         for config in configs:
+            
+            rc = config.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=config.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=config.get("id", ""),
                 kind=NodeKind.RECOMMENDATION_CONFIG,
@@ -4732,6 +6063,7 @@ def _load_recommendation(path: Path) -> list[ProjectionNode]:
                     "metadata": config.get("metadata", {}),
                     "tags": config.get("tags", []),
                     "source": "recommendation.yaml",
+                    "render_context": rc,  
                 },
             ))
 
@@ -4739,6 +6071,14 @@ def _load_recommendation(path: Path) -> list[ProjectionNode]:
     if "embeddings" in data or "item_embeddings" in data:
         embeddings = data.get("embeddings", data.get("item_embeddings", []))
         for embedding in embeddings:
+            
+            rc = embedding.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=embedding.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=embedding.get("id", ""),
                 kind=NodeKind.ITEM_EMBEDDING,
@@ -4753,6 +6093,7 @@ def _load_recommendation(path: Path) -> list[ProjectionNode]:
                     "metadata": embedding.get("metadata", {}),
                     "tags": embedding.get("tags", []),
                     "source": "recommendation.yaml",
+                    "render_context": rc,  
                 },
             ))
 
@@ -4760,6 +6101,14 @@ def _load_recommendation(path: Path) -> list[ProjectionNode]:
     if "preferences" in data or "user_preferences" in data:
         preferences = data.get("preferences", data.get("user_preferences", []))
         for preference in preferences:
+            
+            rc = preference.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=preference.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=preference.get("id", ""),
                 kind=NodeKind.USER_PREFERENCE,
@@ -4775,6 +6124,7 @@ def _load_recommendation(path: Path) -> list[ProjectionNode]:
                     "metadata": preference.get("metadata", {}),
                     "tags": preference.get("tags", []),
                     "source": "recommendation.yaml",
+                    "render_context": rc,  
                 },
             ))
 
@@ -4801,6 +6151,14 @@ def _load_multi_region(path: Path) -> list[ProjectionNode]:
     # Region configurations
     if "regions" in data:
         for region in data["regions"]:
+            
+            rc = region.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=region.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=region.get("id", ""),
                 kind=NodeKind.REGION_CONFIG,
@@ -4815,12 +6173,21 @@ def _load_multi_region(path: Path) -> list[ProjectionNode]:
                     "replicas": region.get("replicas", 2),
                     "tags": region.get("tags", []),
                     "source": "multi_region.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Replication policies
     if "replication_policies" in data:
         for policy in data["replication_policies"]:
+            
+            rc = policy.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=policy.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=policy.get("id", ""),
                 kind=NodeKind.REPLICATION_POLICY,
@@ -4836,12 +6203,21 @@ def _load_multi_region(path: Path) -> list[ProjectionNode]:
                     "tables": policy.get("tables", []),
                     "tags": policy.get("tags", []),
                     "source": "multi_region.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Geo-routing rules
     if "geo_routing_rules" in data:
         for rule in data["geo_routing_rules"]:
+            
+            rc = rule.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=rule.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=rule.get("id", ""),
                 kind=NodeKind.GEO_ROUTING_RULE,
@@ -4855,12 +6231,21 @@ def _load_multi_region(path: Path) -> list[ProjectionNode]:
                     "health_check_path": rule.get("health_check_path", "/health"),
                     "tags": rule.get("tags", []),
                     "source": "multi_region.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Failover policies
     if "failover_policies" in data:
         for policy in data["failover_policies"]:
+            
+            rc = policy.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=policy.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=policy.get("id", ""),
                 kind=NodeKind.FAILOVER_POLICY,
@@ -4876,12 +6261,21 @@ def _load_multi_region(path: Path) -> list[ProjectionNode]:
                     "auto_failover_enabled": policy.get("auto_failover_enabled", True),
                     "tags": policy.get("tags", []),
                     "source": "multi_region.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Data residency rules
     if "data_residency_rules" in data:
         for rule in data["data_residency_rules"]:
+            
+            rc = rule.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=rule.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=rule.get("id", ""),
                 kind=NodeKind.DATA_RESIDENCY_RULE,
@@ -4896,12 +6290,21 @@ def _load_multi_region(path: Path) -> list[ProjectionNode]:
                     "enforcement": rule.get("enforcement", "strict"),
                     "tags": rule.get("tags", []),
                     "source": "multi_region.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Health checks
     if "health_checks" in data:
         for check in data["health_checks"]:
+            
+            rc = check.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=check.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=check.get("id", ""),
                 kind=NodeKind.REGION_HEALTH_CHECK,
@@ -4917,6 +6320,7 @@ def _load_multi_region(path: Path) -> list[ProjectionNode]:
                     "check_type": check.get("check_type", "http"),
                     "tags": check.get("tags", []),
                     "source": "multi_region.yaml",
+                    "render_context": rc,  
                 },
             ))
 
@@ -4942,6 +6346,14 @@ def _load_contract_testing(path: Path) -> list[ProjectionNode]:
     # Consumer specs
     if "consumer_specs" in data:
         for spec in data["consumer_specs"]:
+            
+            rc = spec.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=spec.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=spec.get("id", ""),
                 kind=NodeKind.CONSUMER_SPEC,
@@ -4953,12 +6365,21 @@ def _load_contract_testing(path: Path) -> list[ProjectionNode]:
                     "interactions": spec.get("interactions", []),
                     "tags": spec.get("tags", []),
                     "source": "contract_testing.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Provider verifiers
     if "provider_verifiers" in data:
         for verifier in data["provider_verifiers"]:
+            
+            rc = verifier.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=verifier.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=verifier.get("id", ""),
                 kind=NodeKind.PROVIDER_VERIFIER,
@@ -4969,12 +6390,21 @@ def _load_contract_testing(path: Path) -> list[ProjectionNode]:
                     "publish_verification_results": verifier.get("publish_verification_results", True),
                     "tags": verifier.get("tags", []),
                     "source": "contract_testing.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Pact broker config
     if "pact_broker_config" in data:
         broker = data["pact_broker_config"]
+        
+        rc = broker.get("render_context") or {}
+        if not isinstance(rc, dict):
+            raise EM.raise_error(
+                ErrorCode.DSL_INVALID_NODE_KIND,
+                node_id=broker.get("id", "unknown"),
+                detail="render_context phải là dict"
+            )
         nodes.append(ProjectionNode(
             id=broker.get("id", ""),
             kind=NodeKind.PACT_BROKER_CONFIG,
@@ -4985,6 +6415,7 @@ def _load_contract_testing(path: Path) -> list[ProjectionNode]:
                 "tags": broker.get("tags", []),
                 "auto_publish": broker.get("auto_publish", False),
                 "source": "contract_testing.yaml",
+                "render_context": rc,  
             },
         ))
 
@@ -5010,6 +6441,14 @@ def _load_backup_recovery(path: Path) -> list[ProjectionNode]:
     # Backup policies
     if "backup_policies" in data:
         for policy in data["backup_policies"]:
+            
+            rc = policy.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=policy.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=policy.get("id", ""),
                 kind=NodeKind.BACKUP_POLICY,
@@ -5026,12 +6465,21 @@ def _load_backup_recovery(path: Path) -> list[ProjectionNode]:
                     "encryption_enabled": policy.get("encryption_enabled", True),
                     "tags": policy.get("tags", []),
                     "source": "backup_recovery.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Recovery plans
     if "recovery_plans" in data:
         for plan in data["recovery_plans"]:
+            
+            rc = plan.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=plan.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=plan.get("id", ""),
                 kind=NodeKind.RECOVERY_PLAN,
@@ -5046,12 +6494,21 @@ def _load_backup_recovery(path: Path) -> list[ProjectionNode]:
                     "notification_channels": plan.get("notification_channels", []),
                     "tags": plan.get("tags", []),
                     "source": "backup_recovery.yaml",
+                    "render_context": rc,  
                 },
             ))
 
     # Backup monitors
     if "monitors" in data:
         for monitor in data["monitors"]:
+            
+            rc = monitor.get("render_context") or {}
+            if not isinstance(rc, dict):
+                raise EM.raise_error(
+                    ErrorCode.DSL_INVALID_NODE_KIND,
+                    node_id=monitor.get("id", "unknown"),
+                    detail="render_context phải là dict"
+                )
             nodes.append(ProjectionNode(
                 id=monitor.get("id", ""),
                 kind=NodeKind.BACKUP_MONITOR,
@@ -5064,6 +6521,7 @@ def _load_backup_recovery(path: Path) -> list[ProjectionNode]:
                     "email_recipients": monitor.get("email_recipients", []),
                     "tags": monitor.get("tags", []),
                     "source": "backup_recovery.yaml",
+                    "render_context": rc,  
                 },
             ))
 

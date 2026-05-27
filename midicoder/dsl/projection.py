@@ -1,4 +1,4 @@
-﻿"""
+"""
 DSL v1 Projection Module
 
 Module này cung cấp các lớp để biểu diễn và thao tác với cây projection DSL v1.
@@ -65,6 +65,7 @@ class EntityParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -262,6 +263,7 @@ class ExtendedValueObjectParams(TypedDict, total=False):
     tags: list[str]
     compliance: list[dict[str, Any]]
     source: str
+    render_context: dict[str, Any]  
 
 
 class AggregateParams(TypedDict, total=False):
@@ -286,6 +288,7 @@ class AggregateParams(TypedDict, total=False):
     invariants: list[dict[str, Any]]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class EnumParams(TypedDict, total=False):
@@ -310,6 +313,7 @@ class EnumParams(TypedDict, total=False):
     underlying_type: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ErrorParams(TypedDict, total=False):
@@ -342,6 +346,7 @@ class ErrorParams(TypedDict, total=False):
     fields: list[dict[str, Any]]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class EventParams(TypedDict, total=False):
@@ -372,6 +377,7 @@ class EventParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
+    render_context: dict[str, Any]  
 
 
 class CommandParams(TypedDict, total=False):
@@ -422,6 +428,7 @@ class CommandParams(TypedDict, total=False):
     tenant_scope: str
     source: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class QueryParams(TypedDict, total=False):
@@ -464,6 +471,7 @@ class QueryParams(TypedDict, total=False):
     tenant_scope: str
     source: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class WorkflowParams(TypedDict, total=False):
@@ -502,6 +510,7 @@ class WorkflowParams(TypedDict, total=False):
     compensation: list[dict[str, Any]]
     human_tasks: list[dict[str, Any]]
     timers: list[dict[str, Any]]
+    render_context: dict[str, Any]  
 
 
 class RuleParams(TypedDict, total=False):
@@ -530,6 +539,7 @@ class RuleParams(TypedDict, total=False):
     priority: int
     enabled: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class GuardParams(TypedDict, total=False):
@@ -554,6 +564,7 @@ class GuardParams(TypedDict, total=False):
     condition: dict[str, Any]
     error: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class EffectParams(TypedDict, total=False):
@@ -582,6 +593,7 @@ class EffectParams(TypedDict, total=False):
     async_: bool
     retry_policy: dict[str, Any]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -625,6 +637,7 @@ class ValueObjectParams(TypedDict, total=False):
     tags: list[str]
     compliance: list[dict[str, Any]]
     source: str
+    render_context: dict[str, Any]  
 
 
 class EventSourcedAggregateParams(TypedDict, total=False):
@@ -655,6 +668,7 @@ class EventSourcedAggregateParams(TypedDict, total=False):
     versioned: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class TemporalEntityParams(TypedDict, total=False):
@@ -685,6 +699,7 @@ class TemporalEntityParams(TypedDict, total=False):
     current_predicate: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class PolymorphicEntityParams(TypedDict, total=False):
@@ -713,6 +728,7 @@ class PolymorphicEntityParams(TypedDict, total=False):
     subtypes: list[dict[str, Any]]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class SagaParams(TypedDict, total=False):
@@ -741,6 +757,7 @@ class SagaParams(TypedDict, total=False):
     retry_policy: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class AggregationQueryParams(TypedDict, total=False):
@@ -777,6 +794,7 @@ class AggregationQueryParams(TypedDict, total=False):
     tenant_scope: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class HTTPRouteParams(TypedDict, total=False):
@@ -811,6 +829,7 @@ class HTTPRouteParams(TypedDict, total=False):
     request_schema: dict[str, Any]
     response_schema: dict[str, Any]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class GraphQLResolverParams(TypedDict, total=False):
@@ -845,6 +864,7 @@ class GraphQLResolverParams(TypedDict, total=False):
     returns: dict[str, Any]
     auth_required: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class WebhookParams(TypedDict, total=False):
@@ -875,6 +895,7 @@ class WebhookParams(TypedDict, total=False):
     verify_signature: bool
     payload_schema: dict[str, Any]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class RoleParams(TypedDict, total=False):
@@ -899,6 +920,7 @@ class RoleParams(TypedDict, total=False):
     parent_roles: list[str]
     tenant_scope: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class PermissionParams(TypedDict, total=False):
@@ -923,6 +945,7 @@ class PermissionParams(TypedDict, total=False):
     action: str
     conditions: list[dict[str, Any]]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class PolicyParams(TypedDict, total=False):
@@ -951,6 +974,7 @@ class PolicyParams(TypedDict, total=False):
     resource: dict[str, Any]
     conditions: list[dict[str, Any]]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class DataSourceParams(TypedDict, total=False):
@@ -975,6 +999,7 @@ class DataSourceParams(TypedDict, total=False):
     connection_string: str
     schema: str
     config: dict[str, Any]
+    render_context: dict[str, Any]  
 
 
 class CacheParams(TypedDict, total=False):
@@ -1023,6 +1048,7 @@ class CacheParams(TypedDict, total=False):
     warmup_enabled: bool
     config: dict[str, Any]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class QueueParams(TypedDict, total=False):
@@ -1045,6 +1071,7 @@ class QueueParams(TypedDict, total=False):
     name: str
     config: dict[str, Any]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class IntegrationParams(TypedDict, total=False):
@@ -1071,6 +1098,7 @@ class IntegrationParams(TypedDict, total=False):
     auth_type: str
     config: dict[str, Any]
     required: bool
+    render_context: dict[str, Any]  
 
 
 class AuthProviderParams(TypedDict, total=False):
@@ -1099,6 +1127,7 @@ class AuthProviderParams(TypedDict, total=False):
     token_endpoint: str
     auth_endpoint: str
     jwks_uri: str
+    render_context: dict[str, Any]  
 
 
 class TableParams(TypedDict, total=False):
@@ -1127,6 +1156,7 @@ class TableParams(TypedDict, total=False):
     columns: list[dict[str, Any]]
     indexes: list[dict[str, Any]]
     constraints: list[dict[str, Any]]
+    render_context: dict[str, Any]  
 
 
 class IndexParams(TypedDict, total=False):
@@ -1153,6 +1183,7 @@ class IndexParams(TypedDict, total=False):
     unique: bool
     type: str
     config: dict[str, Any]
+    render_context: dict[str, Any]  
 
 
 class MetricParams(TypedDict, total=False):
@@ -1181,6 +1212,7 @@ class MetricParams(TypedDict, total=False):
     labels: list[str]
     aggregation: str
     config: dict[str, Any]
+    render_context: dict[str, Any]  
 
 
 class LogParams(TypedDict, total=False):
@@ -1209,6 +1241,7 @@ class LogParams(TypedDict, total=False):
     fields: list[dict[str, Any]]
     output: str
     config: dict[str, Any]
+    render_context: dict[str, Any]  
 
 
 class AlertParams(TypedDict, total=False):
@@ -1237,6 +1270,7 @@ class AlertParams(TypedDict, total=False):
     channels: list[str]
     cooldown: str
     config: dict[str, Any]
+    render_context: dict[str, Any]  
 
 
 class TraceParams(TypedDict, total=False):
@@ -1261,6 +1295,7 @@ class TraceParams(TypedDict, total=False):
     sampling_rate: float
     exporter: str
     config: dict[str, Any]
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -1302,6 +1337,7 @@ class ReportParams(TypedDict, total=False):
     schedule: str
     recipients: list[str]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class DashboardParams(TypedDict, total=False):
@@ -1330,6 +1366,7 @@ class DashboardParams(TypedDict, total=False):
     filters: list[dict[str, Any]]
     permissions: list[str]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class ExportParams(TypedDict, total=False):
@@ -1362,6 +1399,7 @@ class ExportParams(TypedDict, total=False):
     schedule: str
     destination: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class ScheduledReportParams(TypedDict, total=False):
@@ -1392,6 +1430,7 @@ class ScheduledReportParams(TypedDict, total=False):
     format: str
     enabled: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -1423,6 +1462,7 @@ class NotificationChannelParams(TypedDict, total=False):
     config: dict[str, Any]
     enabled: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class NotificationTemplateParams(TypedDict, total=False):
@@ -1453,6 +1493,7 @@ class NotificationTemplateParams(TypedDict, total=False):
     variables: list[dict[str, Any]]
     locale: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class NotificationRuleParams(TypedDict, total=False):
@@ -1485,6 +1526,7 @@ class NotificationRuleParams(TypedDict, total=False):
     priority: str
     enabled: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class MessageQueueParams(TypedDict, total=False):
@@ -1511,6 +1553,7 @@ class MessageQueueParams(TypedDict, total=False):
     config: dict[str, Any]
     retry_policy: dict[str, Any]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -1548,6 +1591,7 @@ class ComplianceRuleParams(TypedDict, total=False):
     evidence: list[str]
     enabled: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class RegulatoryOverlayParams(TypedDict, total=False):
@@ -1578,6 +1622,7 @@ class RegulatoryOverlayParams(TypedDict, total=False):
     jurisdictions: list[str]
     effective_date: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class DataRetentionParams(TypedDict, total=False):
@@ -1608,6 +1653,7 @@ class DataRetentionParams(TypedDict, total=False):
     disposal_action: str
     legal_basis: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class PIIClassificationParams(TypedDict, total=False):
@@ -1638,6 +1684,7 @@ class PIIClassificationParams(TypedDict, total=False):
     masking_rule: str
     encryption_required: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class AuditEventParams(TypedDict, total=False):
@@ -1666,6 +1713,7 @@ class AuditEventParams(TypedDict, total=False):
     fields: list[dict[str, Any]]
     retention_period: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class CorrelationStrategyParams(TypedDict, total=False):
@@ -1692,6 +1740,7 @@ class CorrelationStrategyParams(TypedDict, total=False):
     header_name: str
     propagation: list[str]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -1731,6 +1780,7 @@ class APIContractParams(TypedDict, total=False):
     rate_limit: dict[str, Any]
     schema: dict[str, Any]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class EventSchemaParams(TypedDict, total=False):
@@ -1761,6 +1811,7 @@ class EventSchemaParams(TypedDict, total=False):
     publisher: str
     subscribers: list[str]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class DataMapperParams(TypedDict, total=False):
@@ -1789,6 +1840,7 @@ class DataMapperParams(TypedDict, total=False):
     mappings: list[dict[str, Any]]
     transformation: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -1820,6 +1872,7 @@ class WorkflowGatewayParams(TypedDict, total=False):
     conditions: list[dict[str, Any]]
     branches: list[str]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class WorkflowTimerParams(TypedDict, total=False):
@@ -1846,6 +1899,7 @@ class WorkflowTimerParams(TypedDict, total=False):
     cron: str
     action: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class WorkflowSubprocessParams(TypedDict, total=False):
@@ -1872,6 +1926,7 @@ class WorkflowSubprocessParams(TypedDict, total=False):
     input_mapping: dict[str, Any]
     output_mapping: dict[str, Any]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class WorkflowCompensationParams(TypedDict, total=False):
@@ -1898,6 +1953,7 @@ class WorkflowCompensationParams(TypedDict, total=False):
     actions: list[dict[str, Any]]
     order: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class HumanTaskParams(TypedDict, total=False):
@@ -1928,6 +1984,7 @@ class HumanTaskParams(TypedDict, total=False):
     deadline: str
     approval_required: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -1959,6 +2016,7 @@ class EventPublisherParams(TypedDict, total=False):
     trigger: str
     payload_template: dict[str, Any]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class EventSubscriberParams(TypedDict, total=False):
@@ -1987,6 +2045,7 @@ class EventSubscriberParams(TypedDict, total=False):
     filter: dict[str, Any]
     retry_policy: dict[str, Any]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class EventBusParams(TypedDict, total=False):
@@ -2013,6 +2072,7 @@ class EventBusParams(TypedDict, total=False):
     config: dict[str, Any]
     topics: list[str]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class CQRSProjectionParams(TypedDict, total=False):
@@ -2041,6 +2101,7 @@ class CQRSProjectionParams(TypedDict, total=False):
     transformation: dict[str, Any]
     materialization: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class EventSourcingStreamParams(TypedDict, total=False):
@@ -2069,6 +2130,7 @@ class EventSourcingStreamParams(TypedDict, total=False):
     versioning: str
     snapshot_interval: int
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -2102,6 +2164,7 @@ class SearchIndexParams(TypedDict, total=False):
     fields: list[dict[str, Any]]
     config: dict[str, Any]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class SearchQueryParams(TypedDict, total=False):
@@ -2130,6 +2193,7 @@ class SearchQueryParams(TypedDict, total=False):
     fields: list[str]
     filters: list[dict[str, Any]]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class FullTextFieldParams(TypedDict, total=False):
@@ -2158,6 +2222,7 @@ class FullTextFieldParams(TypedDict, total=False):
     analyzer: str
     searchable: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class VectorSearchParams(TypedDict, total=False):
@@ -2192,6 +2257,7 @@ class VectorSearchParams(TypedDict, total=False):
     top_k: int
     tenant_isolated: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class GeoSearchParams(TypedDict, total=False):
@@ -2222,6 +2288,7 @@ class GeoSearchParams(TypedDict, total=False):
     text_columns: list[str]
     tenant_isolated: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class FacetedSearchParams(TypedDict, total=False):
@@ -2248,6 +2315,7 @@ class FacetedSearchParams(TypedDict, total=False):
     facets: list[dict]
     tenant_isolated: bool
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -2281,6 +2349,7 @@ class PaginationSpecParams(TypedDict, total=False):
     cursor_enabled: bool
     sort_fields: list[str]
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class APIVersionParams(TypedDict, total=False):
@@ -2313,6 +2382,7 @@ class APIVersionParams(TypedDict, total=False):
     deprecation_date: str
     sunset_date: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 class DeprecationNoticeParams(TypedDict, total=False):
@@ -2341,6 +2411,7 @@ class DeprecationNoticeParams(TypedDict, total=False):
     migration_guide: str
     sunset_date: str
     tags: list[str]
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -2376,6 +2447,7 @@ class ShoppingCartParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
+    render_context: dict[str, Any]  
 
 
 class ProductCatalogParams(TypedDict, total=False):
@@ -2406,6 +2478,7 @@ class ProductCatalogParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
+    render_context: dict[str, Any]  
 
 
 class PaymentGatewayParams(TypedDict, total=False):
@@ -2436,6 +2509,7 @@ class PaymentGatewayParams(TypedDict, total=False):
     sandbox_mode: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class OrderFulfillmentParams(TypedDict, total=False):
@@ -2468,6 +2542,7 @@ class OrderFulfillmentParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -2503,6 +2578,7 @@ class GeneralLedgerParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
+    render_context: dict[str, Any]  
 
 
 class FinancialInstrumentParams(TypedDict, total=False):
@@ -2533,6 +2609,7 @@ class FinancialInstrumentParams(TypedDict, total=False):
     lot_size: float
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class CurrencyExchangeParams(TypedDict, total=False):
@@ -2563,6 +2640,7 @@ class CurrencyExchangeParams(TypedDict, total=False):
     source_type: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class TaxRuleParams(TypedDict, total=False):
@@ -2593,6 +2671,7 @@ class TaxRuleParams(TypedDict, total=False):
     effective_date: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -2628,6 +2707,7 @@ class PatientRecordParams(TypedDict, total=False):
     hipaa_compliant: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ClinicalWorkflowParams(TypedDict, total=False):
@@ -2656,6 +2736,7 @@ class ClinicalWorkflowParams(TypedDict, total=False):
     fhir_mappings: list[dict[str, Any]]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class MedicationParams(TypedDict, total=False):
@@ -2686,6 +2767,7 @@ class MedicationParams(TypedDict, total=False):
     interaction_checks: list[str]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -2723,6 +2805,7 @@ class CourseParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
+    render_context: dict[str, Any]  
 
 
 class GradebookParams(TypedDict, total=False):
@@ -2753,6 +2836,7 @@ class GradebookParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -2786,6 +2870,7 @@ class OrderBookParams(TypedDict, total=False):
     matching_algorithm: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class TradingSessionParams(TypedDict, total=False):
@@ -2816,6 +2901,7 @@ class TradingSessionParams(TypedDict, total=False):
     trading_calendar: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class FIXProtocolParams(TypedDict, total=False):
@@ -2842,6 +2928,7 @@ class FIXProtocolParams(TypedDict, total=False):
     session_settings: dict[str, Any]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -2877,6 +2964,7 @@ class WarehouseZoneParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
+    render_context: dict[str, Any]  
 
 
 class RouteOptimizationParams(TypedDict, total=False):
@@ -2907,6 +2995,7 @@ class RouteOptimizationParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -2942,6 +3031,7 @@ class CacheStrategyParams(TypedDict, total=False):
     invalidation_rules: list[dict[str, Any]]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class RateLimiterParams(TypedDict, total=False):
@@ -2970,6 +3060,7 @@ class RateLimiterParams(TypedDict, total=False):
     scope: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3003,6 +3094,7 @@ class TestSuiteParams(TypedDict, total=False):
     execution_order: list[str]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class QualityGateParams(TypedDict, total=False):
@@ -3031,6 +3123,7 @@ class QualityGateParams(TypedDict, total=False):
     action_on_failure: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3066,6 +3159,7 @@ class DataMigrationParams(TypedDict, total=False):
     rollback_plan: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class BatchJobParams(TypedDict, total=False):
@@ -3096,6 +3190,7 @@ class BatchJobParams(TypedDict, total=False):
     error_handling: dict[str, Any]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3129,6 +3224,7 @@ class MessageSchemaParams(TypedDict, total=False):
     validation_rules: list[dict[str, Any]]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class DeadLetterQueueParams(TypedDict, total=False):
@@ -3157,6 +3253,7 @@ class DeadLetterQueueParams(TypedDict, total=False):
     replay_policy: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3192,6 +3289,7 @@ class EncryptionKeyParams(TypedDict, total=False):
     kms_provider: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class SecurityPolicyParams(TypedDict, total=False):
@@ -3220,6 +3318,7 @@ class SecurityPolicyParams(TypedDict, total=False):
     exceptions: list[str]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3259,6 +3358,7 @@ class RuleScoringParams(TypedDict, total=False):
     ml_model_id: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class RuleMatcherParams(TypedDict, total=False):
@@ -3289,6 +3389,7 @@ class RuleMatcherParams(TypedDict, total=False):
     negation: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3328,6 +3429,7 @@ class DeviceIntegrationParams(TypedDict, total=False):
     calibration: dict[str, Any]
     tags: str
     source: str
+    render_context: dict[str, Any]  
 
 
 class HL7FHIRSchemaParams(TypedDict, total=False):
@@ -3360,6 +3462,7 @@ class HL7FHIRSchemaParams(TypedDict, total=False):
     mapping_rules: list[dict[str, Any]]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class FIXMessageTypesParams(TypedDict, total=False):
@@ -3390,6 +3493,7 @@ class FIXMessageTypesParams(TypedDict, total=False):
     validation_rules: list[dict[str, Any]]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class VideoConferencingIntegrationParams(TypedDict, total=False):
@@ -3424,6 +3528,7 @@ class VideoConferencingIntegrationParams(TypedDict, total=False):
     max_participants: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3467,6 +3572,7 @@ class ExternalServiceParams(TypedDict, total=False):
     fallback: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class LocalizationParams(TypedDict, total=False):
@@ -3497,6 +3603,7 @@ class LocalizationParams(TypedDict, total=False):
     fallback_strategy: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class CircuitBreakerParams(TypedDict, total=False):
@@ -3531,6 +3638,7 @@ class CircuitBreakerParams(TypedDict, total=False):
     fallback_action: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class CalendarScheduleParams(TypedDict, total=False):
@@ -3563,6 +3671,7 @@ class CalendarScheduleParams(TypedDict, total=False):
     timezone: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class SubledgerParams(TypedDict, total=False):
@@ -3595,6 +3704,7 @@ class SubledgerParams(TypedDict, total=False):
     posting_schedule: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3632,6 +3742,7 @@ class StateMachineParams(TypedDict, total=False):
     is_global: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class StateTransitionParams(TypedDict, total=False):
@@ -3662,6 +3773,7 @@ class StateTransitionParams(TypedDict, total=False):
     effect: Optional[str]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3701,6 +3813,7 @@ class FeatureFlagParams(TypedDict, total=False):
     targeted_users: list[str]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ABExperimentParams(TypedDict, total=False):
@@ -3731,6 +3844,7 @@ class ABExperimentParams(TypedDict, total=False):
     is_active: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class DynamicConfigParams(TypedDict, total=False):
@@ -3759,6 +3873,7 @@ class DynamicConfigParams(TypedDict, total=False):
     scope: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3797,6 +3912,7 @@ class AuthUIConfigParams(TypedDict, total=False):
     enable_self_register: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3829,6 +3945,7 @@ class ChannelSpecParams(TypedDict, total=False):
     auth_required: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class WidgetConfigParams(TypedDict, total=False):
@@ -3856,6 +3973,7 @@ class WidgetConfigParams(TypedDict, total=False):
     refresh_interval_ms: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3890,6 +4008,7 @@ class CustomCodeBlockParams(TypedDict, total=False):
     condition: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class HookParams(TypedDict, total=False):
@@ -3915,6 +4034,7 @@ class HookParams(TypedDict, total=False):
     priority: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class PatchRuleParams(TypedDict, total=False):
@@ -3942,6 +4062,7 @@ class PatchRuleParams(TypedDict, total=False):
     flags: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -3976,6 +4097,7 @@ class GeospatialSpecParams(TypedDict, total=False):
     enable_distance: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class GeofenceParams(TypedDict, total=False):
@@ -4013,6 +4135,7 @@ class GeofenceParams(TypedDict, total=False):
     notification_channel: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4047,6 +4170,7 @@ class TenantRegistrationParams(TypedDict, total=False):
     auto_provision: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class TenantSubscriptionParams(TypedDict, total=False):
@@ -4080,6 +4204,7 @@ class TenantSubscriptionParams(TypedDict, total=False):
     currency: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4118,6 +4243,7 @@ class WebhookSubscriptionParams(TypedDict, total=False):
     is_active: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class WebhookRetryPolicyParams(TypedDict, total=False):
@@ -4147,6 +4273,7 @@ class WebhookRetryPolicyParams(TypedDict, total=False):
     http_retry_codes: list[int]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4183,6 +4310,7 @@ class ConversationParams(TypedDict, total=False):
     enable_read_receipt: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ChatMessageParams(TypedDict, total=False):
@@ -4214,6 +4342,7 @@ class ChatMessageParams(TypedDict, total=False):
     enable_reactions: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4246,6 +4375,7 @@ class ApprovalRequestParams(TypedDict, total=False):
     escalation_rule_id: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ApprovalStepParams(TypedDict, total=False):
@@ -4277,6 +4407,7 @@ class ApprovalStepParams(TypedDict, total=False):
     can_delegate: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class EscalationRuleParams(TypedDict, total=False):
@@ -4306,6 +4437,7 @@ class EscalationRuleParams(TypedDict, total=False):
     max_escalations: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4342,6 +4474,7 @@ class VersionConfigParams(TypedDict, total=False):
     auto_cleanup: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class HistoryRecordParams(TypedDict, total=False):
@@ -4369,6 +4502,7 @@ class HistoryRecordParams(TypedDict, total=False):
     retention_days: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4407,6 +4541,7 @@ class BulkJobParams(TypedDict, total=False):
     dlq_enabled: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4439,6 +4574,7 @@ class MFACredentialParams(TypedDict, total=False):
     backup_codes_count: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class MFAChallengeSessionParams(TypedDict, total=False):
@@ -4466,6 +4602,7 @@ class MFAChallengeSessionParams(TypedDict, total=False):
     lockout_minutes: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4500,6 +4637,7 @@ class RetentionPolicyParams(TypedDict, total=False):
     exempt_entities: list[str]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ErasureRequestParams(TypedDict, total=False):
@@ -4531,6 +4669,7 @@ class ErasureRequestParams(TypedDict, total=False):
     deadline_days: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4567,6 +4706,7 @@ class RateLimitPolicyParams(TypedDict, total=False):
     endpoints: list[str]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class QuotaConfigParams(TypedDict, total=False):
@@ -4596,6 +4736,7 @@ class QuotaConfigParams(TypedDict, total=False):
     overage_action: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4630,6 +4771,7 @@ class ConsentRecordParams(TypedDict, total=False):
     policy_version: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ConsentPolicyParams(TypedDict, total=False):
@@ -4659,6 +4801,7 @@ class ConsentPolicyParams(TypedDict, total=False):
     data_retention_days: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class CookiePreferenceParams(TypedDict, total=False):
@@ -4688,6 +4831,7 @@ class CookiePreferenceParams(TypedDict, total=False):
     preferences: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class CommunicationPreferenceParams(TypedDict, total=False):
@@ -4719,6 +4863,7 @@ class CommunicationPreferenceParams(TypedDict, total=False):
     frequency: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4758,6 +4903,7 @@ class FrontendAppParams(TypedDict, total=False):
     router_strategy: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class FrontendRouteParams(TypedDict, total=False):
@@ -4790,6 +4936,7 @@ class FrontendRouteParams(TypedDict, total=False):
     data: dict[str, Any]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class FrontendStoreParams(TypedDict, total=False):
@@ -4818,6 +4965,7 @@ class FrontendStoreParams(TypedDict, total=False):
     persistence: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4857,6 +5005,7 @@ class UIComponentParams(TypedDict, total=False):
     size: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class UIFormBuilderParams(TypedDict, total=False):
@@ -4885,6 +5034,7 @@ class UIFormBuilderParams(TypedDict, total=False):
     validation_schema: dict[str, Any]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class UILayoutParams(TypedDict, total=False):
@@ -4911,6 +5061,7 @@ class UILayoutParams(TypedDict, total=False):
     breakpoints: dict[str, Any]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class UIThemeParams(TypedDict, total=False):
@@ -4941,6 +5092,7 @@ class UIThemeParams(TypedDict, total=False):
     dark_mode: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -4970,6 +5122,7 @@ class KongGatewayParams(TypedDict, total=False):
     tenant_scope: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class KongServiceParams(TypedDict, total=False):
@@ -5008,6 +5161,7 @@ class KongServiceParams(TypedDict, total=False):
     tenant_scope: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class KongRouteParams(TypedDict, total=False):
@@ -5040,6 +5194,7 @@ class KongRouteParams(TypedDict, total=False):
     circuit_breaker_id: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class KongUpstreamParams(TypedDict, total=False):
@@ -5068,6 +5223,7 @@ class KongUpstreamParams(TypedDict, total=False):
     tenant_scope: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class KongPluginParams(TypedDict, total=False):
@@ -5092,6 +5248,7 @@ class KongPluginParams(TypedDict, total=False):
     tenant_scope: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ConsulServiceMeshParams(TypedDict, total=False):
@@ -5118,6 +5275,7 @@ class ConsulServiceMeshParams(TypedDict, total=False):
     tenant_scope: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ConsulServiceParams(TypedDict, total=False):
@@ -5148,6 +5306,7 @@ class ConsulServiceParams(TypedDict, total=False):
     connect_enabled: bool
     tenant_scope: str
     source: str
+    render_context: dict[str, Any]  
 
 
 class ConsulConnectParams(TypedDict, total=False):
@@ -5180,6 +5339,7 @@ class ConsulConnectParams(TypedDict, total=False):
     tenant_scope: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ConsulHealthCheckParams(TypedDict, total=False):
@@ -5214,6 +5374,7 @@ class ConsulHealthCheckParams(TypedDict, total=False):
     unhealthy_threshold: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -5379,6 +5540,7 @@ class TenantConfigParams(TypedDict, total=False):
     max_tenants: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class TenantIsolationPolicyParams(TypedDict, total=False):
@@ -5390,6 +5552,7 @@ class TenantIsolationPolicyParams(TypedDict, total=False):
     cross_tenant_query_allowed: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -5406,6 +5569,7 @@ class IacResourceParams(TypedDict, total=False):
     configuration: dict[str, Any]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class IacNetworkParams(TypedDict, total=False):
@@ -5417,6 +5581,7 @@ class IacNetworkParams(TypedDict, total=False):
     security_groups: list[dict[str, Any]]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -5435,6 +5600,7 @@ class FileStorageParams(TypedDict, total=False):
     cdn_enabled: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class MediaProcessingParams(TypedDict, total=False):
@@ -5447,6 +5613,7 @@ class MediaProcessingParams(TypedDict, total=False):
     quality: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -5464,6 +5631,7 @@ class ApiClientParams(TypedDict, total=False):
     retry_count: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ApiClientEndpointParams(TypedDict, total=False):
@@ -5476,6 +5644,7 @@ class ApiClientEndpointParams(TypedDict, total=False):
     response_schema: dict[str, Any]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -5493,6 +5662,7 @@ class PerformanceTestParams(TypedDict, total=False):
     success_criteria: dict[str, Any]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class LoadProfileParams(TypedDict, total=False):
@@ -5505,6 +5675,7 @@ class LoadProfileParams(TypedDict, total=False):
     think_time_ms: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -5521,6 +5692,7 @@ class DocumentationSpecParams(TypedDict, total=False):
     output_path: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ApiDocSectionParams(TypedDict, total=False):
@@ -5532,6 +5704,7 @@ class ApiDocSectionParams(TypedDict, total=False):
     examples: list[dict[str, Any]]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================
@@ -5550,6 +5723,7 @@ class AiServiceParams(TypedDict, total=False):
     temperature: float
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class AiPromptTemplateParams(TypedDict, total=False):
@@ -5562,6 +5736,7 @@ class AiPromptTemplateParams(TypedDict, total=False):
     max_tokens: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class AiToolCallParams(TypedDict, total=False):
@@ -5574,6 +5749,7 @@ class AiToolCallParams(TypedDict, total=False):
     required: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class RegionConfigParams(TypedDict, total=False):
@@ -5588,6 +5764,7 @@ class RegionConfigParams(TypedDict, total=False):
     replicas: int
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class ReplicationPolicyParams(TypedDict, total=False):
@@ -5603,6 +5780,7 @@ class ReplicationPolicyParams(TypedDict, total=False):
     tables: list[str]
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class GeoRoutingRuleParams(TypedDict, total=False):
@@ -5616,6 +5794,7 @@ class GeoRoutingRuleParams(TypedDict, total=False):
     health_check_path: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class FailoverPolicyParams(TypedDict, total=False):
@@ -5631,6 +5810,7 @@ class FailoverPolicyParams(TypedDict, total=False):
     auto_failover_enabled: bool
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class DataResidencyRuleParams(TypedDict, total=False):
@@ -5645,6 +5825,7 @@ class DataResidencyRuleParams(TypedDict, total=False):
     enforcement: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 class RegionHealthCheckParams(TypedDict, total=False):
@@ -5660,6 +5841,7 @@ class RegionHealthCheckParams(TypedDict, total=False):
     check_type: str
     tags: list[str]
     source: str
+    render_context: dict[str, Any]  
 
 
 # ============================================================================

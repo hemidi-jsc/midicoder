@@ -666,6 +666,7 @@ def _store_entities_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> No
             "fields": entity.params.get("fields", []),
             "tenant_scope": entity.params.get("tenant_scope", "global"),
             "primary_key": entity.params.get("primary_key", "id"),
+            "render_context": entity.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["entities"] = entities
 
@@ -686,6 +687,7 @@ def _store_commands_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> No
             "input": command.params.get("input", []),
             "writes_to": command.params.get("writes_to", []),
             "category": command.params.get("category", "custom"),
+            "render_context": command.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["commands"] = commands
 
@@ -706,6 +708,7 @@ def _store_queries_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> Non
             "input": query.params.get("input", []),
             "reads_from": query.params.get("reads_from", []),
             "category": query.params.get("category", "list"),
+            "render_context": query.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["queries"] = queries
 
@@ -727,6 +730,7 @@ def _store_events_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None
             "source_entity": event.params.get("source_entity"),
             "fields": event.params.get("fields", []),
             "tenant_scope": event.params.get("tenant_scope", "global"),
+            "render_context": event.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["events"] = events
 
@@ -746,6 +750,7 @@ def _store_guards_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None
             "description": guard.params.get("description", ""),
             "type": guard.params.get("type", "validation"),
             "condition": guard.params.get("condition", {}),
+            "render_context": guard.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["guards"] = guards
 
@@ -776,6 +781,7 @@ def _store_workflows_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> N
             "timers": workflow.params.get("timers", []),
             "tenant_scope": workflow.params.get("tenant_scope", "global"),
             "tags": workflow.params.get("tags", []),
+            "render_context": workflow.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["workflows"] = workflows
 
@@ -797,6 +803,7 @@ def _store_value_objects_in_metadata(builder: MIRBuilder, tree: ProjectionTree) 
             "immutable": vo.params.get("immutable", True),
             "comparable": vo.params.get("comparable", False),
             "extends": vo.params.get("extends"),
+            "render_context": vo.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["value_objects"] = value_objects
 
@@ -816,6 +823,7 @@ def _store_roles_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> None:
             "description": role.params.get("description", ""),
             "permissions": role.params.get("permissions", []),
             "tenant_scope": role.params.get("tenant_scope", "global"),
+            "render_context": role.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["roles"] = roles
 
@@ -834,6 +842,7 @@ def _store_ui_components_in_metadata(builder: MIRBuilder, tree: ProjectionTree) 
             "entity_id": comp.params.get("entity_id"),
             "properties": comp.params.get("properties", {}),
             "description": comp.params.get("description", ""),
+            "render_context": comp.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["ui_components"] = ui_components
 
@@ -848,6 +857,7 @@ def _store_ui_layouts_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> 
             "regions": layout.params.get("regions", []),
             "properties": layout.params.get("properties", {}),
             "description": layout.params.get("description", ""),
+            "render_context": layout.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["ui_layouts"] = ui_layouts
 
@@ -862,6 +872,7 @@ def _store_ui_themes_in_metadata(builder: MIRBuilder, tree: ProjectionTree) -> N
             "tokens": theme.params.get("tokens", {}),
             "dark_mode": theme.params.get("dark_mode", False),
             "description": theme.params.get("description", ""),
+            "render_context": theme.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["ui_themes"] = ui_themes
 
@@ -877,6 +888,7 @@ def _store_ui_form_builders_in_metadata(builder: MIRBuilder, tree: ProjectionTre
             "conditional_rules": fb.params.get("conditional_rules", []),
             "properties": fb.params.get("properties", {}),
             "description": fb.params.get("description", ""),
+            "render_context": fb.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["ui_form_builders"] = ui_form_builders
 
@@ -1035,6 +1047,7 @@ def _store_search_indices_in_metadata(builder: MIRBuilder, tree: ProjectionTree)
             "fields": si.params.get("fields", []),
             "config": si.params.get("config", {}),
             "tags": si.params.get("tags", []),
+            "render_context": si.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["search_indices"] = search_indices
 
@@ -1052,6 +1065,7 @@ def _store_search_indices_in_metadata(builder: MIRBuilder, tree: ProjectionTree)
             "top_k": vs.params.get("top_k", 10),
             "tenant_isolated": vs.params.get("tenant_isolated", False),
             "tags": vs.params.get("tags", []),
+            "render_context": vs.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["vector_search_indices"] = vector_search_indices
 
@@ -1067,6 +1081,7 @@ def _store_search_indices_in_metadata(builder: MIRBuilder, tree: ProjectionTree)
             "text_columns": gs.params.get("text_columns", []),
             "tenant_isolated": gs.params.get("tenant_isolated", False),
             "tags": gs.params.get("tags", []),
+            "render_context": gs.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["geo_search_indices"] = geo_search_indices
 
@@ -1080,6 +1095,7 @@ def _store_search_indices_in_metadata(builder: MIRBuilder, tree: ProjectionTree)
             "facets": fs.params.get("facets", []),
             "tenant_isolated": fs.params.get("tenant_isolated", False),
             "tags": fs.params.get("tags", []),
+            "render_context": fs.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["faceted_search_indices"] = faceted_search_indices
 
@@ -1094,6 +1110,7 @@ def _store_search_indices_in_metadata(builder: MIRBuilder, tree: ProjectionTree)
             "fields": sq.params.get("fields", []),
             "filters": sq.params.get("filters", []),
             "tags": sq.params.get("tags", []),
+            "render_context": sq.params.get("render_context", {}),  # EU-0.1
         })
     builder.mir.metadata["search_queries"] = search_queries
 

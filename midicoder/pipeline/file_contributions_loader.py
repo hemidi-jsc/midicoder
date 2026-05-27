@@ -372,6 +372,8 @@ class FileContributionsLoader:
 
         for entry in contributions.infrastructure:
             ctx = {}
+            # EU-0.1: inject render_context (infrastructure → default {})
+            ctx["render_context"] = {}
             for key in entry.context_keys:
                 if key in meta:
                     ctx[key] = meta[key]
@@ -410,6 +412,8 @@ class FileContributionsLoader:
                 path = _expand_path_pattern(entry.path_pattern, entity)
 
                 ctx = {"entity": entity, "all_entities": entities}
+                # EU-0.1: inject render_context từ entity vào context
+                ctx["render_context"] = entity.get("render_context", {})
                 # Inject additional context keys if declared
                 for key in entry.context_keys:
                     if key in entity:
@@ -452,6 +456,8 @@ class FileContributionsLoader:
                 path = path.replace("{command_pascal}", cmd_id)
 
                 ctx = {"command": command, "all_commands": commands}
+                # EU-0.1: inject render_context từ command vào context
+                ctx["render_context"] = command.get("render_context", {})
                 for key in entry.context_keys:
                     if key in command:
                         ctx[key] = command[key]
@@ -493,6 +499,8 @@ class FileContributionsLoader:
                 path = path.replace("{query_pascal}", query_id)
 
                 ctx = {"query": query, "all_queries": queries}
+                # EU-0.1: inject render_context từ query vào context
+                ctx["render_context"] = query.get("render_context", {})
                 for key in entry.context_keys:
                     if key in query:
                         ctx[key] = query[key]
@@ -541,6 +549,8 @@ class FileContributionsLoader:
                     "all_entities": entities,
                     "components": comp_types,
                 }
+                # EU-0.1: inject render_context từ entity vào context
+                ctx["render_context"] = entity.get("render_context", {})
                 # Inject additional context keys if declared
                 for key in entry.context_keys:
                     if key in entity:
@@ -599,6 +609,8 @@ class FileContributionsLoader:
                     "widget_pascal": widget_pascal,
                     "widget_kebab": widget_kebab,
                 }
+                # EU-0.1: inject render_context (widget không có entity source → default {})
+                ctx["render_context"] = {}
                 if channels:
                     ctx["channels"] = channels
                     ctx["channel_topics"] = [ch.get("event_topic", ch.get("channel_id", "")) for ch in channels]
