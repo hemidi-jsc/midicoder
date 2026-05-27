@@ -12,9 +12,8 @@ import jinja2
 
 # midicoder/packs/cp37_feature_flags/tests/
 # parent.parent = cp37_feature_flags/
-# parent.parent.parent = core/
-# parent.parent.parent.parent = emitters/
-PACK_YML = Path(__file__).parent.parent.parent / "cp37_feature_flags" / "pack.yml"
+# parent.parent.parent = packs/
+PACK_YML = Path(__file__).parent.parent / "pack.yml"
 
 
 class TestCP37PackYaml:

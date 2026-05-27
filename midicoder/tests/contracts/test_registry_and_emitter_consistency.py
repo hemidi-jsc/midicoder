@@ -189,11 +189,11 @@ class TestCPIDToInternal:
         assert CP_ID_TO_INTERNAL["CP53"] == "cp53_domain_bridge"
 
     def test_folder_exists_for_each_internal_id(self):
-        """Mỗi internal_id phải tương ứng với folder tồn tại trong emitters/core/."""
-        core_dir = Path(__file__).resolve().parent.parent.parent / "emitters" / "core"
+        """Mỗi internal_id phải tương ứng với folder tồn tại trong packs/."""
+        packs_dir = Path(__file__).resolve().parent.parent.parent / "packs"
         missing_folders = []
         for internal_id in CP_ID_TO_INTERNAL.values():
-            pack_dir = core_dir / internal_id
+            pack_dir = packs_dir / internal_id
             if not pack_dir.is_dir():
                 missing_folders.append(internal_id)
         assert not missing_folders, (

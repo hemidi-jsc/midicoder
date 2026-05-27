@@ -21,12 +21,12 @@ from midicoder.errors import MidicoderError
 
 # Real template directory paths
 # tests/ is at: midicoder/packs/cp37_feature_flags/tests/
-# 5 parents up = midicoder/ (which contains both emitters/ and stacks/)
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
-FASTAPI_TEMPLATE_DIR = PROJECT_ROOT / "stacks" / "fastapi" / "core" / "cp37_feature_flags"
-NESTJS_TEMPLATE_DIR = PROJECT_ROOT / "stacks" / "nestjs" / "core" / "cp37_feature_flags"
-ANGULAR_TEMPLATE_DIR = PROJECT_ROOT / "stacks" / "angular" / "core" / "cp37_feature_flags"
-REACT_TEMPLATE_DIR = PROJECT_ROOT / "stacks" / "react" / "core" / "cp37_feature_flags"
+# 4 parents up = midicoder/ (which contains both packs/ and stacks/)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+FASTAPI_TEMPLATE_DIR = PROJECT_ROOT / "stacks" / "fastapi" / "cp37_feature_flags"
+NESTJS_TEMPLATE_DIR = PROJECT_ROOT / "stacks" / "nestjs" / "cp37_feature_flags"
+ANGULAR_TEMPLATE_DIR = PROJECT_ROOT / "stacks" / "angular" / "cp37_feature_flags"
+REACT_TEMPLATE_DIR = PROJECT_ROOT / "stacks" / "react" / "cp37_feature_flags"
 
 # stack_dir = parent of template_dir (e.g. stacks/fastapi/)
 FASTAPI_STACK_DIR = FASTAPI_TEMPLATE_DIR.parent

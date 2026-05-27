@@ -19,14 +19,14 @@ class TestTemplatesExist:
         """Lấy stacks directory.
 
         Path:
-        test_templates.py → tests/ → cp23_testing_framework/ → core/ → emitters/ → midicoder/
-        parents[4] = midicoder/ → stacks/
+        test_templates.py → tests/ → cp23_testing_framework/ → packs/ → midicoder/
+        parents[3] = midicoder/ → stacks/
         """
-        return Path(__file__).resolve().parents[4] / "stacks"
+        return Path(__file__).resolve().parents[3] / "stacks"
 
     def test_fastapi_templates_exist(self):
         """Kiểm tra FastAPI templates tồn tại."""
-        base = self._get_stacks_dir() / "fastapi" / "core" / "cp23_testing_framework"
+        base = self._get_stacks_dir() / "fastapi" / "cp23_testing_framework"
         expected = [
             "pytest.ini.jinja2",
             "conftest.py.jinja2",

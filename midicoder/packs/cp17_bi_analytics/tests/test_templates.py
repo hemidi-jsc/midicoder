@@ -12,12 +12,12 @@ import pytest
 import jinja2
 
 # Paths relative to this file (tests/ dir):
-# test_templates.py → tests/ → cp17_bi_analytics/ → core/ → emitters/ → midicoder/ → midicoder-ce/
+# test_templates.py → tests/ → cp17_bi_analytics/ → packs/ → midicoder/ → midicoder-ce/
 _ROOT = Path(__file__).resolve()
-# 5 up: midicoder/ (for sys.path / imports)
-_PACKAGE_ROOT = str(_ROOT.parent.parent.parent.parent.parent)
-# 6 up: midicoder-ce/ (repo root — template paths start with "midicoder/...")
-REPO_ROOT = str(_ROOT.parent.parent.parent.parent.parent.parent)
+# 4 up: midicoder/ (for sys.path / imports)
+_PACKAGE_ROOT = str(_ROOT.parent.parent.parent.parent)
+# 5 up: midicoder-ce/ (repo root — template paths start with "midicoder/...")
+REPO_ROOT = str(_ROOT.parent.parent.parent.parent.parent)
 if _PACKAGE_ROOT not in sys.path:
     sys.path.insert(0, _PACKAGE_ROOT)
 
