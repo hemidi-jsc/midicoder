@@ -708,6 +708,256 @@ class BulkConfig:
 
 
 # ===========================================================================
+# Schema Evolution Registry
+# ===========================================================================
+
+
+class SchemaFormat(str, Enum):
+    """Định dạng schema được hỗ trợ trong schema registry.
+
+    - AVRO: Apache Avro schema
+    - PROTOBUF: Google Protocol Buffers
+    - JSON_SCHEMA: JSON Schema (Draft 7+)
+    - SQL: SQL DDL (CREATE TABLE)
+    """
+    AVRO = "avro"
+    PROTOBUF = "protobuf"
+    JSON_SCHEMA = "json_schema"
+    SQL = "sql"
+
+
+class CompatibilityMode(str, Enum):
+    """Chế độ kiểm tra tương thích khi evolve schema.
+
+    - BACKWARD: Schema mới có thể đọc dữ liệu từ schema cũ
+    - FORWARD: Schema cũ có thể đọc dữ liệu từ schema mới
+    - BACKWARD_FORWARD: Cả backward và forward tương thích
+    - FULL: Full tương thích (cả hai chiều)
+    - NONE: Không kiểm tra tương thích
+    """
+    BACKWARD = "backward"
+    FORWARD = "forward"
+    BACKWARD_FORWARD = "backward_forward"
+    FULL = "full"
+    NONE = "none"
+
+
+@dataclass
+class SchemaDefinition:
+    """Schema definition với versioning.
+
+    Lưu trữ một phiên bản của schema, bao gồm nội dung raw
+    và các metadata liên quan (subject, version, format).
+
+    Attributes:
+        id: Identifier duy nhất cho schema
+        name: Tên mô tả của schema
+        format: Định dạng schema (avro/protobuf/json_schema/sql)
+        version: Phiên bản semver của schema (mặc định "1.0.0")
+        subject: Subject name trong schema registry (mặc định "")
+        schema_content: Nội dung raw của schema (JSON/AVDL/Proto/DDL)
+        properties: Các property mở rộng (mặc định {})
+    """
+    id: str
+    name: str
+    format: SchemaFormat
+    version: str = "1.0.0"
+    subject: str = ""
+    schema_content: str = ""
+    properties: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate schema definition sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            EM.raise_error(
+                ErrorCode.CP38_SCHEMA_NOT_FOUND,
+                schema_id=self.id,
+                message="Schema ID không được để trống"
+            )
+        if not self.name or not self.name.strip():
+            EM.raise_error(
+                ErrorCode.CP38_INVALID_SCHEMA_FORMAT,
+                format=self.format.value,
+                message="Schema name không được để trống"
+            )
+        if self.format not in SchemaFormat:
+            EM.raise_error(
+                ErrorCode.CP38_INVALID_SCHEMA_FORMAT,
+                format=self.format.value,
+                message=f"Schema format không hợp lệ: {self.format}"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển SchemaDefinition sang dict."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "format": self.format.value,
+            "version": self.version,
+            "subject": self.subject,
+            "schema_content": self.schema_content,
+            "properties": self.properties,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SchemaDefinition":
+        """Tạo SchemaDefinition từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            format=SchemaFormat(data.get("format", "avro")),
+            version=data.get("version", "1.0.0"),
+            subject=data.get("subject", ""),
+            schema_content=data.get("schema_content", ""),
+            properties=data.get("properties", {}),
+        )
+
+
+@dataclass
+class SchemaRegistryConfig:
+    """Cấu hình schema registry.
+
+    Chứa thông tin kết nối và cấu hình cho schema registry service,
+    bao gồm URL, auth, compatibility mode, và các tham số lookup.
+
+    Attributes:
+        id: Identifier duy nhất cho registry config
+        name: Tên mô tả của registry
+        url: URL endpoint của schema registry (mặc định "")
+        format: Định dạng schema mặc định (mặc định AVRO)
+        compatibility_mode: Chế độ kiểm tra tương thích (mặc định BACKWARD)
+        auth_enabled: Bật/tắt xác thực (mặc định False)
+        auth_basic_user: Username cho basic auth (mặc định "")
+        auth_basic_password: Password cho basic auth (mặc định "")
+        schema_lookup_max_size: Kích thước tối đa cache lookup (mặc định 1000)
+    """
+    id: str
+    name: str
+    url: str = ""
+    format: SchemaFormat = SchemaFormat.AVRO
+    compatibility_mode: CompatibilityMode = CompatibilityMode.BACKWARD
+    auth_enabled: bool = False
+    auth_basic_user: str = ""
+    auth_basic_password: str = ""
+    schema_lookup_max_size: int = 1000
+
+    def __post_init__(self) -> None:
+        """Validate schema registry config sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            EM.raise_error(
+                ErrorCode.CP38_DUPLICATE_SCHEMA_ID,
+                schema_id=self.id,
+                message="Registry ID không được để trống"
+            )
+        if not self.name or not self.name.strip():
+            EM.raise_error(
+                ErrorCode.CP38_INVALID_SCHEMA_FORMAT,
+                format=self.format.value,
+                message="Registry name không được để trống"
+            )
+        if self.schema_lookup_max_size <= 0:
+            EM.raise_error(
+                ErrorCode.CP38_INVALID_SCHEMA_FORMAT,
+                format=self.format.value,
+                message=f"Schema lookup max size phải lớn hơn 0, nhận được: {self.schema_lookup_max_size}"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển SchemaRegistryConfig sang dict."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "url": self.url,
+            "format": self.format.value,
+            "compatibility_mode": self.compatibility_mode.value,
+            "auth_enabled": self.auth_enabled,
+            "auth_basic_user": self.auth_basic_user,
+            "auth_basic_password": self.auth_basic_password,
+            "schema_lookup_max_size": self.schema_lookup_max_size,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SchemaRegistryConfig":
+        """Tạo SchemaRegistryConfig từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            url=data.get("url", ""),
+            format=SchemaFormat(data.get("format", "avro")),
+            compatibility_mode=CompatibilityMode(data.get("compatibility_mode", "backward")),
+            auth_enabled=data.get("auth_enabled", False),
+            auth_basic_user=data.get("auth_basic_user", ""),
+            auth_basic_password=data.get("auth_basic_password", ""),
+            schema_lookup_max_size=data.get("schema_lookup_max_size", 1000),
+        )
+
+
+@dataclass
+class SchemaEvolutionRule:
+    """Quy tắc evolution cho schema.
+
+    Định nghĩa các phép biến đổi được phép trên một schema cụ thể,
+    bao gồm auto-evolve, approval requirement, và notification.
+
+    Attributes:
+        id: Identifier duy nhất cho rule
+        schema_id: Schema ID mà rule áp dụng cho
+        allowed_operations: Danh sách phép biến đổi được phép (mặc định [])
+            - add_field: Thêm field mới
+            - remove_field: Xóa field
+            - change_type: Thay đổi kiểu dữ liệu
+            - add_enum_value: Thêm giá trị enum
+        auto_evolve: Tự động apply evolution (mặc định False)
+        require_approval: Yêu cầu phê duyệt trước khi evolve (mặc định True)
+        notification_channels: Các kênh thông báo khi evolve (mặc định [])
+    """
+    id: str
+    schema_id: str
+    allowed_operations: list[str] = field(default_factory=list)
+    auto_evolve: bool = False
+    require_approval: bool = True
+    notification_channels: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Validate schema evolution rule sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            EM.raise_error(
+                ErrorCode.CP38_DUPLICATE_SCHEMA_ID,
+                schema_id=self.id,
+                message="Evolution rule ID không được để trống"
+            )
+        if not self.schema_id or not self.schema_id.strip():
+            EM.raise_error(
+                ErrorCode.CP38_SCHEMA_NOT_FOUND,
+                schema_id=self.schema_id,
+                message="Schema ID không được để trống"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển SchemaEvolutionRule sang dict."""
+        return {
+            "id": self.id,
+            "schema_id": self.schema_id,
+            "allowed_operations": self.allowed_operations,
+            "auto_evolve": self.auto_evolve,
+            "require_approval": self.require_approval,
+            "notification_channels": self.notification_channels,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SchemaEvolutionRule":
+        """Tạo SchemaEvolutionRule từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            schema_id=data.get("schema_id", ""),
+            allowed_operations=data.get("allowed_operations", []),
+            auto_evolve=data.get("auto_evolve", False),
+            require_approval=data.get("require_approval", True),
+            notification_channels=data.get("notification_channels", []),
+        )
+
+
+# ===========================================================================
 # Exports
 # ===========================================================================
 
@@ -718,6 +968,8 @@ __all__ = [
     "TransformType",
     "ExtractSource",
     "LoadMode",
+    "SchemaFormat",
+    "CompatibilityMode",
     # Import/Export Jobs
     "ImportJob",
     "ExportJob",
@@ -731,4 +983,8 @@ __all__ = [
     "ETLJob",
     # Bulk
     "BulkConfig",
+    # Schema Evolution Registry
+    "SchemaDefinition",
+    "SchemaRegistryConfig",
+    "SchemaEvolutionRule",
 ]

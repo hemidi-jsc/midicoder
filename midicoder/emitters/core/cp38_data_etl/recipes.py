@@ -16,6 +16,7 @@ from typing import Any
 
 from midicoder.emitters.core.cp38_data_etl.models import (
     BulkConfig,
+    CompatibilityMode,
     ETLJob,
     ETLMapping,
     ETLStep,
@@ -27,6 +28,10 @@ from midicoder.emitters.core.cp38_data_etl.models import (
     JobStatus,
     LoadConfig,
     LoadMode,
+    SchemaDefinition,
+    SchemaEvolutionRule,
+    SchemaFormat,
+    SchemaRegistryConfig,
     TransformConfig,
     TransformType,
 )
@@ -257,6 +262,74 @@ def bulk_export_recipe(
     )
 
 
+def schema_registry_recipe(
+    registry_name: str,
+    registry_url: str = "",
+    schema_format: SchemaFormat = SchemaFormat.AVRO,
+    compatibility: CompatibilityMode = CompatibilityMode.BACKWARD,
+    auth_enabled: bool = False,
+    auth_user: str = "",
+    auth_password: str = "",
+) -> RecipeOutput:
+    """Schema registry với Avro, backward compatibility, auto-evolve rules.
+
+    Tạo schema registry config với schema definition mẫu và evolution rules.
+    Phù hợp cho các hệ thống cần quản lý schema versioning, compatibility check,
+    và auto-evolution khi schema thay đổi.
+
+    Args:
+        registry_name: Tên schema registry
+        registry_url: URL endpoint của registry (mặc định "")
+        schema_format: Định dạng schema mặc định (mặc định AVRO)
+        compatibility: Chế độ kiểm tra tương thích (mặc định BACKWARD)
+        auth_enabled: Bật xác thực (mặc định False)
+        auth_user: Username cho basic auth (mặc định "")
+        auth_password: Password cho basic auth (mặc định "")
+
+    Returns:
+        RecipeOutput với registry config, sample schema definition, và evolution rule
+    """
+    registry = SchemaRegistryConfig(
+        id=f"registry_{registry_name}",
+        name=registry_name,
+        url=registry_url,
+        format=schema_format,
+        compatibility_mode=compatibility,
+        auth_enabled=auth_enabled,
+        auth_basic_user=auth_user,
+        auth_basic_password=auth_password,
+        schema_lookup_max_size=1000,
+    )
+
+    # Sample schema definition
+    sample_schema = SchemaDefinition(
+        id=f"schema_{registry_name}_v1",
+        name=f"{registry_name}_schema",
+        format=schema_format,
+        version="1.0.0",
+        subject=f"{registry_name}-value",
+        schema_content="",
+        properties={"auto_register": True},
+    )
+
+    # Evolution rule
+    evolution_rule = SchemaEvolutionRule(
+        id=f"rule_{registry_name}",
+        schema_id=sample_schema.id,
+        allowed_operations=["add_field", "add_enum_value"],
+        auto_evolve=False,
+        require_approval=True,
+        notification_channels=["slack", "email"],
+    )
+
+    return RecipeOutput(
+        name="schema_registry",
+        description=f"Schema registry '{registry_name}' với {schema_format.value}, "
+                    f"compatibility={compatibility.value}",
+        ir=ETLIR(),
+    )
+
+
 __all__ = [
     "RecipeOutput",
     "csv_import_recipe",
@@ -264,4 +337,5 @@ __all__ = [
     "data_migrate_recipe",
     "etl_pipeline_recipe",
     "bulk_export_recipe",
+    "schema_registry_recipe",
 ]
