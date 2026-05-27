@@ -404,6 +404,7 @@ class FileContributionsLoader:
         contributions: FileContributions,
         entities: list[dict[str, Any]],
         user_config: dict | None = None,  # EU-0.2
+        ui_framework: str = "",  # EU-0.3
     ) -> list[dict[str, Any]]:
         """Expand ``per_entity`` entries into concrete file plans.
 
@@ -411,6 +412,7 @@ class FileContributionsLoader:
             contributions: Loaded ``FileContributions`` for a pack.
             entities: Raw entity dicts from ``MIR.metadata.entities``.
             user_config: Optional user config from ``midicoder.config.yml``.
+            ui_framework: UI framework for StyleResolver (EU-0.3).
 
         Returns:
             List of file plan dicts.
@@ -423,10 +425,15 @@ class FileContributionsLoader:
                 ctx = {"entity": entity, "all_entities": entities}
                 # EU-0.1: inject render_context từ entity vào context
                 # EU-0.2: merge với user config (priority: DSL > per_entity > defaults)
+                # EU-0.3: pass stack + ui_framework cho StyleResolver
                 entity_rc = entity.get("render_context", {})
+                entry_stack = entry.stacks[0] if entry.stacks else ""
                 if user_config:
                     entity_id = entity.get("id", "")
-                    ctx["render_context"] = resolve_render_context(entity_id, entity_rc, user_config)
+                    ctx["render_context"] = resolve_render_context(
+                        entity_id, entity_rc, user_config,
+                        stack=entry_stack, ui_framework=ui_framework,
+                    )
                 else:
                     ctx["render_context"] = entity_rc
                 # Inject additional context keys if declared
@@ -453,6 +460,7 @@ class FileContributionsLoader:
         contributions: FileContributions,
         commands: list[dict[str, Any]],
         user_config: dict | None = None,  # EU-0.2
+        ui_framework: str = "",  # EU-0.3
     ) -> list[dict[str, Any]]:
         """Expand ``per_command`` entries into concrete file plans.
 
@@ -460,6 +468,7 @@ class FileContributionsLoader:
             contributions: Loaded ``FileContributions`` for a pack.
             commands: Raw command dicts from ``MIR.metadata.commands``.
             user_config: Optional user config from ``midicoder.config.yml``.
+            ui_framework: UI framework for StyleResolver (EU-0.3).
 
         Returns:
             List of file plan dicts.
@@ -475,9 +484,14 @@ class FileContributionsLoader:
                 ctx = {"command": command, "all_commands": commands}
                 # EU-0.1: inject render_context từ command vào context
                 # EU-0.2: merge với user config
+                # EU-0.3: pass stack + ui_framework cho StyleResolver
                 cmd_rc = command.get("render_context", {})
+                entry_stack = entry.stacks[0] if entry.stacks else ""
                 if user_config:
-                    ctx["render_context"] = resolve_render_context(cmd_id, cmd_rc, user_config)
+                    ctx["render_context"] = resolve_render_context(
+                        cmd_id, cmd_rc, user_config,
+                        stack=entry_stack, ui_framework=ui_framework,
+                    )
                 else:
                     ctx["render_context"] = cmd_rc
                 for key in entry.context_keys:
@@ -503,6 +517,7 @@ class FileContributionsLoader:
         contributions: FileContributions,
         queries: list[dict[str, Any]],
         user_config: dict | None = None,  # EU-0.2
+        ui_framework: str = "",  # EU-0.3
     ) -> list[dict[str, Any]]:
         """Expand ``per_query`` entries into concrete file plans.
 
@@ -510,6 +525,7 @@ class FileContributionsLoader:
             contributions: Loaded ``FileContributions`` for a pack.
             queries: Raw query dicts from ``MIR.metadata.queries``.
             user_config: Optional user config from ``midicoder.config.yml``.
+            ui_framework: UI framework for StyleResolver (EU-0.3).
 
         Returns:
             List of file plan dicts.
@@ -525,9 +541,14 @@ class FileContributionsLoader:
                 ctx = {"query": query, "all_queries": queries}
                 # EU-0.1: inject render_context từ query vào context
                 # EU-0.2: merge với user config
+                # EU-0.3: pass stack + ui_framework cho StyleResolver
                 query_rc = query.get("render_context", {})
+                entry_stack = entry.stacks[0] if entry.stacks else ""
                 if user_config:
-                    ctx["render_context"] = resolve_render_context(query_id, query_rc, user_config)
+                    ctx["render_context"] = resolve_render_context(
+                        query_id, query_rc, user_config,
+                        stack=entry_stack, ui_framework=ui_framework,
+                    )
                 else:
                     ctx["render_context"] = query_rc
                 for key in entry.context_keys:
@@ -553,6 +574,7 @@ class FileContributionsLoader:
         contributions: FileContributions,
         entities: list[dict[str, Any]],
         user_config: dict | None = None,  # EU-0.2
+        ui_framework: str = "",  # EU-0.3
     ) -> list[dict[str, Any]]:
         """Expand ``per_ui_component`` entries into concrete file plans.
 
@@ -563,6 +585,7 @@ class FileContributionsLoader:
             contributions: Loaded ``FileContributions`` for a pack.
             entities: Raw entity dicts from ``MIR.metadata.entities``.
             user_config: Optional user config from ``midicoder.config.yml``.
+            ui_framework: UI framework for StyleResolver (EU-0.3).
 
         Returns:
             List of file plan dicts.
@@ -582,10 +605,15 @@ class FileContributionsLoader:
                 }
                 # EU-0.1: inject render_context từ entity vào context
                 # EU-0.2: merge với user config
+                # EU-0.3: pass stack + ui_framework cho StyleResolver
                 entity_rc = entity.get("render_context", {})
+                entry_stack = entry.stacks[0] if entry.stacks else ""
                 if user_config:
                     entity_id = entity.get("id", "")
-                    ctx["render_context"] = resolve_render_context(entity_id, entity_rc, user_config)
+                    ctx["render_context"] = resolve_render_context(
+                        entity_id, entity_rc, user_config,
+                        stack=entry_stack, ui_framework=ui_framework,
+                    )
                 else:
                     ctx["render_context"] = entity_rc
                 # Inject additional context keys if declared
@@ -705,15 +733,13 @@ class FileContributionsLoader:
         entities: list[dict[str, Any]],
         status_filter: str | None = None,
         user_config: dict | None = None,  # EU-0.2
+        ui_framework: str = "",  # EU-0.3
     ) -> list[dict[str, Any]]:
-        """Load per-entity files from ALL packs for the given stack.
-
-        Returns deduplicated list of file plan dicts.
-        """
+        """Load per-entity files from ALL packs for the given stack."""
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
         for fc in self.load_all(stack=stack, status_filter=status_filter):
-            for f in self.expand_per_entity(fc, entities, user_config=user_config):
+            for f in self.expand_per_entity(fc, entities, user_config=user_config, ui_framework=ui_framework):
                 if f["path"] not in seen:
                     seen.add(f["path"])
                     result.append(f)
@@ -725,12 +751,13 @@ class FileContributionsLoader:
         commands: list[dict[str, Any]],
         status_filter: str | None = None,
         user_config: dict | None = None,  # EU-0.2
+        ui_framework: str = "",  # EU-0.3
     ) -> list[dict[str, Any]]:
         """Load per-command files from ALL packs for the given stack."""
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
         for fc in self.load_all(stack=stack, status_filter=status_filter):
-            for f in self.expand_per_command(fc, commands, user_config=user_config):
+            for f in self.expand_per_command(fc, commands, user_config=user_config, ui_framework=ui_framework):
                 if f["path"] not in seen:
                     seen.add(f["path"])
                     result.append(f)
@@ -742,12 +769,13 @@ class FileContributionsLoader:
         queries: list[dict[str, Any]],
         status_filter: str | None = None,
         user_config: dict | None = None,  # EU-0.2
+        ui_framework: str = "",  # EU-0.3
     ) -> list[dict[str, Any]]:
         """Load per-query files from ALL packs for the given stack."""
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
         for fc in self.load_all(stack=stack, status_filter=status_filter):
-            for f in self.expand_per_query(fc, queries, user_config=user_config):
+            for f in self.expand_per_query(fc, queries, user_config=user_config, ui_framework=ui_framework):
                 if f["path"] not in seen:
                     seen.add(f["path"])
                     result.append(f)
@@ -759,6 +787,7 @@ class FileContributionsLoader:
         entities: list[dict[str, Any]],
         status_filter: str | None = None,
         user_config: dict | None = None,  # EU-0.2
+        ui_framework: str = "",  # EU-0.3
     ) -> list[dict[str, Any]]:
         """Load per-ui-component files from ALL packs for the given stack.
 
@@ -775,7 +804,7 @@ class FileContributionsLoader:
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
         for fc in self.load_all(stack=stack, status_filter=status_filter):
-            for f in self.expand_per_ui_component(fc, entities, user_config=user_config):
+            for f in self.expand_per_ui_component(fc, entities, user_config=user_config, ui_framework=ui_framework):
                 if f["path"] not in seen:
                     seen.add(f["path"])
                     result.append(f)

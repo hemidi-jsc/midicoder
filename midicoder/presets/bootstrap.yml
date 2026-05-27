@@ -1,0 +1,298 @@
+# Bootstrap preset
+
+react:
+  Sidebar:
+    width: 280px
+    width_collapsed: 60px
+    background: "#ffffff"
+    border_right: "1px solid #dee2e6"
+    display: flex
+    flex_direction: column
+    position: fixed
+
+  Navbar:
+    height: 56px
+    background: "#ffffff"
+    position: sticky
+    border_bottom: "1px solid #dee2e6"
+    z_index: 1030
+    box_shadow: "0 1px 2px rgba(0,0,0,0.05)"
+
+  Modal:
+    width_sm: 300px
+    width_md: 500px
+    width_lg: 800px
+    width_xl: 1140px
+    background: "#ffffff"
+    border_radius: 4px
+    z_index: 1050
+
+  Dialog:
+    width_sm: 416px
+    width_md: 520px
+    width_lg: 672px
+    background: "#ffffff"
+    border_radius: 4px
+    z_index: 1050
+
+  Card:
+    background: "#ffffff"
+    border_radius: 0.375rem
+    border: "1px solid rgba(0,0,0,0.125)"
+    padding: 20px
+    overflow: hidden
+
+  DataTable:
+    background_header: "#ffffff"
+    background_body: "#ffffff"
+    background_hover: rgba(0, 0, 0, 0.075)
+    border: "1px solid #dee2e6"
+    padding_cell: "0.75rem"
+    overflow_x: auto
+
+  Button:
+    padding_sm: "0.25rem 0.5rem"
+    padding_md: "0.375rem 0.75rem"
+    padding_lg: "0.5rem 1rem"
+    font_size_sm: 12px
+    font_size_md: 14px
+    font_size_lg: 16px
+    font_weight: 400
+    border_radius: 0.25rem
+
+  Input:
+    width: "100%"
+    padding: "0.375rem 0.75rem"
+    border: "1px solid #ced4da"
+    border_radius: 0.25rem
+    font_size: 1rem
+
+  Select:
+    width: "100%"
+    padding: "0.375rem 0.75rem"
+    border: "1px solid #ced4da"
+    border_radius: 0.25rem
+    font_size: 1rem
+
+  Badge:
+    border_radius: 0.25rem
+    font_size: 75%
+    padding: "0.25em 0.4em"
+
+  Avatar:
+    size_xs: 24px
+    size_sm: 32px
+    size_md: 40px
+    size_lg: 64px
+    border_radius: "50%"
+    background: "#6c757d"
+    text_color: "#ffffff"
+
+  Chip:
+    border_radius: 0.25rem
+    padding: "0.25em 0.4em"
+    font_size: 0.875rem
+
+  Toast:
+    position: fixed
+    z_index: 1090
+    min_width: 300px
+    border_radius: 0.25rem
+    box_shadow: "0 0.125rem 0.25rem rgba(0,0,0,0.075)"
+    padding: "0.75rem 0.75rem"
+
+  Spinner:
+    size: 24px
+    border_width: 0.2em
+    border_color_track: "transparent"
+    border_color_primary: "#0d6efd"
+
+  ProgressBar:
+    height: 0.5rem
+    background_track: "#e9ecef"
+    background_primary: "#0d6efd"
+    background_success: "#198754"
+    background_error: "#dc3545"
+    border_radius: 0.25rem
+
+  Pagination:
+    font_size: 1rem
+    padding_btn: "0.375rem 0.75rem"
+    border_radius: 0.25rem
+
+  Tabs:
+    padding_tab: "1rem"
+    font_size: 1rem
+    font_weight: 400
+    padding_content: 12px
+
+  Accordion:
+    border: "1px solid rgba(0,0,0,0.125)"
+    border_radius: 0.25rem
+    padding_header: "1rem 1.25rem"
+    padding_body: "1rem 1.25rem"
+
+  Alert:
+    border_radius: 0.25rem
+    padding: "1rem 1rem"
+    font_size: 1rem
+
+  Skeleton:
+    background: "#dee2e6"
+    border_radius_rect: 0.25rem
+    default_height: 16px
+
+  Breadcrumbs:
+    font_size: 1rem
+
+  Drawer:
+    width: 320px
+    background: "#ffffff"
+    z_index: 1050
+    padding_body: 16px
+
+  Dropdown:
+    width: 10rem
+    background: "#ffffff"
+    border_radius: 0.25rem
+    box_shadow: "0 0.5rem 1rem rgba(0,0,0,0.15)"
+    z_index: 1000
+    padding_item: "0.25rem 1.5rem"
+    font_size_item: 1rem
+
+  Tooltip:
+    background_dark: "#000000"
+    text_color_dark: "#ffffff"
+    border_radius: 0.25rem
+    padding: "0.25rem 0.5rem"
+    font_size: 0.875rem
+    z_index: 1080
+
+  Container:
+    max_width_xs: 540px
+    max_width_sm: 720px
+    max_width_md: 960px
+    max_width_lg: 1140px
+    max_width_xl: 1320px
+    padding: 15px
+
+  FacetedSearch:
+    sidebar_width: 240px
+    card_min_width: 280px
+
+  ProductList:
+    sidebar_width: 260px
+    container_max_width: 1200px
+
+  ProductDetail:
+    container_max_width: 1200px
+
+  ConsentBanner:
+    position: fixed
+    bottom: 0
+    z_index: 1050
+    background: "#ffffff"
+
+  ApprovalTimeline:
+    container_max_width: 1200px
+
+  BulkDashboard:
+    container_max_width: 1400px
+
+  RateLimitDashboard:
+    container_max_width: 1400px
+
+  TransactionDashboard:
+    container_max_width: 1200px
+
+  ChatWindow:
+    container_max_width: 1200px
+
+  WebhookDashboard:
+    container_max_width: 1200px
+
+  RetentionDashboard:
+    container_max_width: 1200px
+
+# Angular
+angular:
+  Sidebar:
+    width: 280px
+    width_antd: 220px
+    width_carbon: 280px
+    background: "#ffffff"
+    header_height: 56px
+
+  Navbar:
+    height_antd: 64px
+    height_carbon: 48px
+    background: "#ffffff"
+    z_index: 1030
+
+  Dialog:
+    width_antd: 416px
+    width_carbon: 672px
+    background: "#ffffff"
+    border_radius: 4px
+    z_index: 1050
+
+  Toast:
+    min_width_bootstrap: 300px
+    min_width_antd: 336px
+    min_width_carbon: 340px
+    z_index: 1090
+
+  Pagination:
+    btn_size_antd: 32px
+    btn_size_carbon: 28px
+
+  DesignTokens:
+    font_size_base: 1rem
+    font_size_sm: 0.875rem
+    control_height: 1.5rem
+    z_index_image: 1050
+    color_blue_500: "#0d6efd"
+
+  FacetedSearch:
+    sidebar_width: 240px
+
+  ComplianceDashboard:
+    container_max_width: 1200px
+
+  PaymentHistory:
+    container_max_width: 1200px
+
+  PaymentDashboard:
+    container_max_width: 1200px
+
+  RateLimitDashboard:
+    container_max_width: 1400px
+
+  QuotaStatus:
+    container_max_width: 1400px
+
+  BulkDashboard:
+    container_max_width: 1400px
+
+  BulkJobDetails:
+    container_max_width: 1200px
+    dialog_width: 600px
+
+  RetentionPolicy:
+    dialog_width: 520px
+
+  RetentionErasure:
+    dialog_width: 600px
+
+  NotificationPreference:
+    dialog_width: 600px
+
+  ConsentBanner:
+    border_radius: 0.25rem
+    padding: "0.75rem 1rem"
+
+  ProductList:
+    container_max_width: 1200px
+
+  ProductDetail:
+    container_max_width: 1200px

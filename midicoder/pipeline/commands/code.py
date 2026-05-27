@@ -614,6 +614,7 @@ def _plan_frontend_files(mir: dict, status_filter: str | None = None, user_confi
     entities = metadata.get("entities", [])
 
     frontend_stack = _get_frontend_stack()
+    ui_framework = _get_ui_framework(frontend_stack)  # EU-0.3: resolve early
     loader = FileContributionsLoader()
 
     files = []
@@ -627,23 +628,26 @@ def _plan_frontend_files(mir: dict, status_filter: str | None = None, user_confi
     _merge_files(files, infra_files)
 
     # --- Pack-declared per-entity files for this frontend stack ---
+    # EU-0.3: pass ui_framework for StyleResolver
     per_entity_files = loader.resolve_all_per_entity(
-        frontend_stack, entities, status_filter=status_filter, user_config=user_config
+        frontend_stack, entities, status_filter=status_filter,
+        user_config=user_config, ui_framework=ui_framework,
     )
     for f in per_entity_files:
         f.setdefault("metadata", {})["stack"] = frontend_stack
     _merge_files(files, per_entity_files)
 
     # --- Pack-declared per-ui-component files (entities × component_types) ---
+    # EU-0.3: pass ui_framework for StyleResolver
     per_ui_component_files = loader.resolve_all_per_ui_component(
-        frontend_stack, entities, status_filter=status_filter, user_config=user_config
+        frontend_stack, entities, status_filter=status_filter,
+        user_config=user_config, ui_framework=ui_framework,
     )
     for f in per_ui_component_files:
         f.setdefault("metadata", {})["stack"] = frontend_stack
     _merge_files(files, per_ui_component_files)
 
     # --- Pack-declared per-widget files (CP22 realtime widgets) ---
-    # Resolve widget types (presence, live_feed, live_counter, ...) — not per-entity
     per_widget_files = loader.resolve_all_per_widget(
         frontend_stack, None, status_filter=status_filter, user_config=user_config
     )
@@ -652,7 +656,6 @@ def _plan_frontend_files(mir: dict, status_filter: str | None = None, user_confi
     _merge_files(files, per_widget_files)
 
     # --- Inject ui_framework into all frontend file contexts ---
-    ui_framework = _get_ui_framework(frontend_stack)
     for f in files:
         f.setdefault("context", {})["ui_framework"] = ui_framework
         f.setdefault("metadata", {})["ui_framework"] = ui_framework

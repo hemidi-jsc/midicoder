@@ -1,0 +1,56 @@
+# Infrastructure preset — defaults cho Docker, K8s, CI/CD
+
+postgres:
+  image: "postgres:15-alpine"
+  port: 5432
+  user: "postgres"
+  password: "postgres"
+
+redis:
+  image: "redis:7-alpine"
+  port: 6379
+
+neo4j:
+  image: "neo4j:5-community"
+  port: 7687
+  heap_init: "256m"
+  heap_max: "512m"
+
+kong:
+  image: "kong:3.4"
+  port: 8000
+
+consul:
+  image: "consul:1.17"
+  port: 8500
+
+trivy:
+  image: "aquasec/trivy:latest"
+
+docker:
+  image: "docker:latest"
+
+alpine:
+  image: "alpine:latest"
+
+ci:
+  python_version: "3.12"
+  db_user: "postgres"
+  db_password: "test"
+  db_host: "db"
+  db_port: 5432
+
+deployment:
+  staging_url: "https://staging.example.com"
+  production_url: "https://prod.example.com"
+
+redis_service:
+  url: "redis://localhost:6379/0"
+
+database_service:
+  url: "postgresql+asyncpg://postgres:postgres@localhost:5432/gateway"
+  user: "postgres"
+  password: "postgres"
+  host: "localhost"
+  port: 5432
+  name: "gateway"

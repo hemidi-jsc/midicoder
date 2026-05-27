@@ -515,12 +515,17 @@ def resolve_render_context(
     entity_id: str,
     entity_rc: dict,
     user_config: dict,
+    stack: str = "",        # EU-0.3: "react", "angular", "fastapi", "nestjs"
+    ui_framework: str = "",  # EU-0.3: "material", "tailwind", "bootstrap", "antd", "carbon"
 ) -> dict:
     """
-    Resolve render_context theo 3-layer priority:
+    Resolve render_context theo 3-layer priority + StyleResolver (EU-0.3):
     1. entity.render_context (DSL-level — CAO NHẤT)
     2. midicoder.config.yml render.per_entity.{EntityName}
     3. midicoder.config.yml render.defaults (THẤP NHẤT)
+
+    EU-0.3: Nếu stack + ui_framework được cung cấp, thêm ``styles`` dict
+    vào result qua StyleResolver (4-layer: preset → defaults → per_entity → DSL).
 
     Template hardcoded default is layer 0 (thấp nhất, handled by template engine).
 
@@ -528,10 +533,14 @@ def resolve_render_context(
         entity_id: ID của entity (vd: "Product")
         entity_rc: render_context từ DSL (entity.render_context)
         user_config: Dict từ midicoder.config.yml
+        stack: Stack name ("react", "angular", "fastapi", "nestjs", "infrastructure")
+        ui_framework: UI framework ("material", "tailwind", "bootstrap", "antd", "carbon")
 
     Returns:
-        dict: Merged render_context
+        dict: Merged render_context (bao gồm ``styles`` nếu applicable)
     """
+    from midicoder.pipeline.styles_resolver import StyleResolver  # avoid circular
+
     merged: dict[str, Any] = {}
 
     # Layer 1: global defaults (thấp nhất)
@@ -543,6 +552,23 @@ def resolve_render_context(
 
     # Layer 3: DSL-level (cao nhất - deep merge)
     merged = deep_merge(merged, entity_rc)
+
+    # EU-0.3: Resolve component styles via StyleResolver
+    if stack and ui_framework and stack in ("react", "angular"):
+        resolver = StyleResolver()
+        component_styles = resolver.resolve(
+            stack=stack,
+            component=entity_id,
+            ui_framework=ui_framework,
+            entity_rc=entity_rc,
+            user_config=user_config,
+        )
+        if component_styles:
+            if "styles" not in merged:
+                merged["styles"] = {}
+            if stack not in merged["styles"]:
+                merged["styles"][stack] = {}
+            merged["styles"][stack][entity_id] = component_styles
 
     return merged
 

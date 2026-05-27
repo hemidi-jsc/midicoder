@@ -1,0 +1,316 @@
+# Tailwind CSS preset
+
+react:
+  Sidebar:
+    width: 256px            # w-64
+    width_collapsed: 60px
+    background: "#ffffff"    # bg-white
+    border_right: "1px solid #e5e7eb"  # border-r border-gray-200
+    display: flex
+    flex_direction: column
+
+  Navbar:
+    height: 64px            # h-16
+    background: "#ffffff"    # bg-white
+    position: sticky
+    border_bottom: "1px solid #e5e7eb"  # border-b border-gray-200
+    z_index: 50
+    box_shadow: "0 1px 2px rgba(0,0,0,0.05)"  # shadow-sm
+
+  Modal:
+    width_sm: 384px         # max-w-sm
+    width_md: 448px         # max-w-md
+    width_lg: 512px         # max-w-lg
+    width_xl: 896px         # max-w-4xl
+    background: "#ffffff"    # bg-white
+    border_radius: 12px     # rounded-xl
+    max_height: "90vh"
+    z_index: 50
+
+  Dialog:
+    width_sm: 416px
+    width_md: 520px
+    width_lg: 672px
+    background: "#ffffff"
+    border_radius: 12px
+    z_index: 50
+
+  Card:
+    background: "#ffffff"
+    border_radius: 8px      # rounded-lg
+    border: "1px solid #e5e7eb"  # border border-gray-200
+    box_shadow: "0 4px 6px rgba(0,0,0,0.1)"  # shadow-md
+    padding: 20px           # p-5
+    overflow: hidden
+
+  DataTable:
+    background_header: "#f9fafb"  # bg-gray-50
+    background_body: "#ffffff"
+    background_hover: "#f9fafb"   # hover:bg-gray-50
+    border: "1px solid #e5e7eb"
+    border_radius: 8px
+    padding_cell: "12px 24px"
+    font_size_header: 12px        # text-xs
+    text_transform_header: uppercase
+    overflow_x: auto
+
+  Button:
+    padding_sm: "6px 12px"
+    padding_md: "8px 16px"
+    padding_lg: "12px 24px"
+    font_size_sm: 14px
+    font_size_md: 14px
+    font_size_lg: 16px
+    font_weight: 500          # font-medium
+    border_radius: 8px        # rounded-lg
+
+  Input:
+    width: "100%"
+    padding: "8px 12px"       # px-3 py-2
+    border: "1px solid #d1d5db"  # border border-gray-300
+    border_radius: 6px        # rounded-md
+    font_size: 14px
+
+  Select:
+    width: "100%"
+    padding: "8px 12px"
+    border: "1px solid #d1d5db"
+    border_radius: 6px
+    font_size: 14px
+
+  Badge:
+    border_radius: 9999px     # rounded-full
+    font_size_sm: 12px        # text-xs
+    font_size_md: 14px        # text-sm
+    padding_sm: "2px 8px"     # px-2 py-0.5
+    padding_md: "2px 10px"    # px-2.5 py-0.5
+
+  Avatar:
+    size_xs: 24px             # h-6 w-6
+    size_sm: 32px             # h-8 w-8
+    size_md: 40px             # h-10 w-10
+    size_lg: 48px             # h-12 w-12
+    border_radius: "50%"
+    background: "#9ca3af"     # bg-gray-400
+    text_color: "#ffffff"
+
+  Chip:
+    border_radius: 9999px
+    padding: "4px 12px"       # px-3 py-1
+    font_size: 14px           # text-sm
+    font_weight: 500
+
+  Toast:
+    position: fixed
+    z_index: 50
+    min_width: 300px
+    border_radius: 8px        # rounded-lg
+    box_shadow: "0 10px 15px rgba(0,0,0,0.1)"  # shadow-lg
+    padding: "12px 16px"      # px-4 py-3
+    text_color: "#ffffff"
+
+  Spinner:
+    size: 24px
+    border_width: 2px         # border-2
+    border_color_track: "#e5e7eb"  # border-gray-200
+    border_color_primary: "#3b82f6"  # border-blue-500
+
+  ProgressBar:
+    height: 8px               # h-2
+    background_track: "#e5e7eb"   # bg-gray-200
+    background_primary: "#2563eb" # bg-blue-600
+    background_success: "#16a34a" # bg-green-600
+    background_error: "#dc2626"   # bg-red-600
+    border_radius: 9999px     # rounded-full
+
+  Pagination:
+    font_size: 14px           # text-sm
+    padding_btn: "8px 16px"
+    border_radius: 4px
+    font_weight_active: 600   # font-semibold
+
+  Tabs:
+    padding_tab: "16px 4px"   # py-4 px-1
+    font_size: 14px           # text-sm
+    font_weight: 500
+    padding_content: 16px     # p-4
+    border_bottom: "1px solid #e5e7eb"
+
+  Accordion:
+    border: "1px solid #e5e7eb"
+    border_radius: 8px
+    padding_header: "12px 16px"
+    padding_body: "12px 16px"
+    background_expanded: "#f3f4f6"  # bg-gray-100
+    background_collapsed: "#ffffff"
+
+  Alert:
+    border_radius: 8px
+    padding: "12px 16px"
+    font_size: 14px
+
+  Skeleton:
+    background: "#d1d5db"     # bg-gray-300
+    border_radius_rect: 4px   # 0.25rem
+    border_radius_rounded: 8px  # 0.5rem
+    default_height: 16px
+
+  Breadcrumbs:
+    font_size: 14px
+    font_weight_active: 500
+
+  Drawer:
+    width: 320px              # w-80
+    background: "#ffffff"
+    position: fixed
+    z_index: 50
+    box_shadow: "0 20px 25px rgba(0,0,0,0.1)"  # shadow-xl
+    padding_body: 24px
+
+  Dropdown:
+    width: 224px              # w-56
+    background: "#ffffff"
+    border_radius: 6px        # rounded-md
+    box_shadow: "0 10px 15px rgba(0,0,0,0.1)"  # shadow-lg
+    z_index: 10
+    padding_item: "8px 16px"
+    font_size_item: 14px
+
+  Tooltip:
+    background_dark: "#111827"  # bg-gray-900
+    background_light: "#ffffff"
+    text_color_dark: "#ffffff"
+    text_color_light: "#111827"
+    border_radius: 4px        # rounded
+    padding: "6px 12px"       # px-3 py-1.5
+    font_size: 14px
+    z_index: 50
+
+  Container:
+    max_width_xs: 576px       # max-w-xl
+    max_width_sm: 672px       # max-w-2xl
+    max_width_md: 896px       # max-w-4xl
+    max_width_lg: 1280px      # max-w-7xl
+    max_width_xl: 1536px      # max-w-screen-2xl
+    padding: 16px             # px-4
+
+  FacetedSearch:
+    sidebar_width: 240px
+    card_min_width: 280px
+
+  ProductList:
+    sidebar_width: 260px
+    container_max_width: 1200px
+
+  ProductDetail:
+    container_max_width: 1200px
+
+  ConsentBanner:
+    position: fixed
+    bottom: 0
+    z_index: 50
+    background: "#ffffff"
+
+  ApprovalTimeline:
+    container_max_width: 1200px
+
+  BulkDashboard:
+    container_max_width: 1400px
+
+  RateLimitDashboard:
+    container_max_width: 1400px
+
+  TransactionDashboard:
+    container_max_width: 1200px
+
+  ChatWindow:
+    container_max_width: 1200px
+
+  WebhookDashboard:
+    container_max_width: 1200px
+
+  RetentionDashboard:
+    container_max_width: 1200px
+
+# Angular
+angular:
+  Sidebar:
+    width: 256px
+    width_antd: 220px
+    width_carbon: 280px
+    background: "#ffffff"
+    header_height: 64px
+
+  Navbar:
+    height_antd: 64px
+    height_carbon: 48px
+    background: "#ffffff"
+    z_index: 50
+
+  Dialog:
+    width_antd: 416px
+    width_carbon: 672px
+    background: "#ffffff"
+    border_radius: 12px
+    z_index: 50
+
+  Toast:
+    min_width_bootstrap: 300px
+    min_width_antd: 336px
+    min_width_carbon: 340px
+    z_index: 50
+
+  Pagination:
+    btn_size_antd: 32px
+    btn_size_carbon: 28px
+
+  DesignTokens:
+    font_size_base: 1rem
+    font_size_sm: 14px
+    control_height: 32px
+    z_index_image: 1050
+    color_blue_500: "#4f46e5"
+
+  FacetedSearch:
+    sidebar_width: 240px
+
+  ComplianceDashboard:
+    container_max_width: 1200px
+
+  PaymentHistory:
+    container_max_width: 1200px
+
+  PaymentDashboard:
+    container_max_width: 1200px
+
+  RateLimitDashboard:
+    container_max_width: 1400px
+
+  QuotaStatus:
+    container_max_width: 1400px
+
+  BulkDashboard:
+    container_max_width: 1400px
+
+  BulkJobDetails:
+    container_max_width: 1200px
+    dialog_width: 600px
+
+  RetentionPolicy:
+    dialog_width: 520px
+
+  RetentionErasure:
+    dialog_width: 600px
+
+  NotificationPreference:
+    dialog_width: 600px
+
+  ConsentBanner:
+    border_radius: 8px
+    padding: "12px 16px"
+
+  ProductList:
+    container_max_width: 1200px
+
+  ProductDetail:
+    container_max_width: 1200px
