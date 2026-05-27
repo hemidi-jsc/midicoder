@@ -6,6 +6,12 @@ Module này cung cấp:
 - Load prompt templates từ domain packs hoặc default
 - Map domain names về canonical names
 
+Prompt path priority (EU-0.3+):
+1. midicoder/pipeline/prompts/{domain}/brief-{type}.md  (new — package-level)
+2. industry/{original-domain}/prompts/brief-{type}.md    (legacy — backward compat)
+3. industry/{normalized-domain}/brief-{type}.md           (legacy alternate)
+4. midicoder/pipeline/prompts/default-brief-{type}.md     (fallback)
+
 E02: Brief Processing - Domain Detection
 """
 
@@ -14,6 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from midicoder.pipeline.llm import load_llm_config, call_llm
+from midicoder.pipeline.prompts import load_prompt as _load_prompt_from_package
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -35,9 +42,8 @@ KNOWN_DOMAINS = [
     "generic",  # default khi không detect được
 ]
 
-# Default prompt paths
-DEFAULT_ANALYZE_PROMPT_PATH = Path(__file__).parent / "prompts" / "default-brief-analyze.md"
-DEFAULT_CLARIFY_PROMPT_PATH = Path(__file__).parent / "prompts" / "default-brief-clarify.md"
+# Default prompt paths (flat files in prompts/)
+DEFAULT_PROMPT_PREFIX = "default-brief"  # default-brief-analyze, default-brief-clarify
 
 # Domain detection prompt (nhỏ, nhanh)
 DOMAIN_DETECTION_PROMPT = """
@@ -117,21 +123,21 @@ def get_domain_prompt(
     - "analyze": brief-analyze.md (cho brief analyze)
     - "clarify": brief-clarify.md (cho brief clarify)
 
-    Priority:
-    1. industry/<domain>/prompts/brief-{type}.md (original domain name)
-    2. industry/<domain>/brief-{type}.md (original domain name)
-    3. industry/<normalized-domain>/prompts/brief-{type}.md (canonical name)
-    4. industry/<normalized-domain>/brief-{type}.md (canonical name)
-    5. Default prompt (midicoder/pipeline/prompts/default-brief-{type}.md)
+    Priority (EU-0.3+):
+    1. midicoder/pipeline/prompts/{normalized-domain}/brief-{type}.md  (new — package-level)
+    2. industry/{original-domain}/prompts/brief-{type}.md              (legacy — backward compat)
+    3. industry/{original-domain}/brief-{type}.md                      (legacy alternate)
+    4. industry/{normalized-domain}/brief-{type}.md                    (legacy canonical)
+    5. midicoder/pipeline/prompts/default-brief-{type}.md              (fallback)
 
     Ví dụ:
-    - Input: "ecommerce-d2c", prompt_type="analyze" → Check "industry/ecommerce-d2c/prompts/brief-analyze.md"
-    - Input: "ecommerce-d2c", prompt_type="clarify" → Check "industry/ecommerce-d2c/prompts/brief-clarify.md"
-    - Input: "e-commerce" → normalize → "ecommerce" → Check "industry/ecommerce/prompts/brief-analyze.md"
+    - Input: "ecommerce-d2c", prompt_type="analyze"
+      1. prompts/ecommerce/brief-analyze.md (normalized → ecommerce) ✅
+      2. industry/ecommerce-d2c/prompts/brief-analyze.md (legacy fallback)
 
     Args:
         domain: Domain name (original hoặc normalized)
-        industry_path: Path đến industry folder (default: ./industry)
+        industry_path: Path đến industry folder (default: ./industry) — legacy compat
         prompt_type: Loại prompt ("analyze" hoặc "clarify")
 
     Returns:
@@ -140,46 +146,61 @@ def get_domain_prompt(
     Raises:
         FileNotFoundError: Khi không tìm thấy prompt file
     """
+    prompt_filename = f"brief-{prompt_type}"
+
+    # --- Priority 1: New package-level path (normalized domain) ---
+    normalized_domain = normalize_domain(domain)
+    package_prompt = f"{normalized_domain}/{prompt_filename}"
+    try:
+        content = _load_prompt_from_package(package_prompt)
+        logger.info(f"Load domain prompt (package, {prompt_type}): {package_prompt}")
+        return content
+    except FileNotFoundError:
+        pass
+
+    # --- Priority 2-4: Legacy industry paths (backward compat) ---
     if industry_path is None:
         industry_path = Path("industry")
 
-    # Xác định prompt filename dựa theo prompt_type
-    prompt_filename = f"brief-{prompt_type}.md"
+    legacy_filename = f"{prompt_filename}.md"
 
-    # Try original domain name first (preserves exact path like "ecommerce-d2c")
-    original_prompt_path = industry_path / domain / "prompts" / prompt_filename
-    if original_prompt_path.exists():
-        logger.info(f"Load domain prompt (original, {prompt_type}): {original_prompt_path}")
-        return original_prompt_path.read_text(encoding="utf-8")
+    # Try original domain name first
+    for legacy_path in [
+        industry_path / domain / "prompts" / legacy_filename,
+        industry_path / domain / legacy_filename,
+    ]:
+        if legacy_path.exists():
+            logger.info(f"Load domain prompt (legacy original, {prompt_type}): {legacy_path}")
+            return legacy_path.read_text(encoding="utf-8")
 
-    # Try alternate path with original domain
-    alt_original_path = industry_path / domain / prompt_filename
-    if alt_original_path.exists():
-        logger.info(f"Load alternate domain prompt (original, {prompt_type}): {alt_original_path}")
-        return alt_original_path.read_text(encoding="utf-8")
-
-    # Try normalized domain name (canonical)
-    normalized_domain = normalize_domain(domain)
+    # Try normalized domain name
     if normalized_domain != domain:
-        normalized_prompt_path = industry_path / normalized_domain / "prompts" / prompt_filename
-        if normalized_prompt_path.exists():
-            logger.info(f"Load domain prompt (normalized, {prompt_type}): {normalized_prompt_path}")
-            return normalized_prompt_path.read_text(encoding="utf-8")
+        for legacy_path in [
+            industry_path / normalized_domain / "prompts" / legacy_filename,
+            industry_path / normalized_domain / legacy_filename,
+        ]:
+            if legacy_path.exists():
+                logger.info(f"Load domain prompt (legacy normalized, {prompt_type}): {legacy_path}")
+                return legacy_path.read_text(encoding="utf-8")
 
-        # Try alternate path with normalized domain
-        alt_normalized_path = industry_path / normalized_domain / prompt_filename
-        if alt_normalized_path.exists():
-            logger.info(f"Load alternate domain prompt (normalized, {prompt_type}): {alt_normalized_path}")
-            return alt_normalized_path.read_text(encoding="utf-8")
+    # --- Priority 5: Fallback to default ---
+    try:
+        default_prompt = f"{DEFAULT_PROMPT_PREFIX}-{prompt_type}"
+        content = _load_prompt_from_package(default_prompt)
+        logger.info(f"Dùng default prompt ({prompt_type}) cho domain '{domain}'")
+        return content
+    except FileNotFoundError:
+        pass
 
-    # Fallback to default
-    default_path = DEFAULT_CLARIFY_PROMPT_PATH if prompt_type == "clarify" else DEFAULT_ANALYZE_PROMPT_PATH
-    if not default_path.exists():
-        logger.error(f"Default prompt không tồn tại: {default_path}")
-        raise FileNotFoundError(f"Default prompt file not found: {default_path}")
-
-    logger.info(f"Dùng default prompt ({prompt_type}) cho domain '{domain}'")
-    return default_path.read_text(encoding="utf-8")
+    logger.error(f"Không tìm thấy prompt ({prompt_type}) cho domain '{domain}'")
+    raise FileNotFoundError(
+        f"Không tìm thấy prompt template ({prompt_type}) cho domain '{domain}'.\n"
+        f"Đã thử:\n"
+        f"  1. midicoder/pipeline/prompts/{normalized_domain}/{prompt_filename}.md\n"
+        f"  2. industry/{domain}/prompts/{legacy_filename}\n"
+        f"  3. industry/{domain}/{legacy_filename}\n"
+        f"  4. midicoder/pipeline/prompts/{DEFAULT_PROMPT_PREFIX}-{prompt_type}.md"
+    )
 
 
 def normalize_domain(domain: str) -> str:

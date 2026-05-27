@@ -67,6 +67,98 @@ _CATEGORY_PROMPT_MAP = {
 }
 
 
+# ============================================================================
+# MCP context helpers (Step 3 — Wire MCP tools vào contract gen)
+# ============================================================================
+
+def _build_mcp_context(category: str) -> str:
+    """
+    Build MCP context string từ MCP tools để inject vào LLM prompt.
+
+    Dùng MCP-B tool `get_dsl_section` để lấy schema cho category,
+    giúp LLM biết property nào hợp lệ.
+
+    Args:
+        category: Tên category (entities, commands, ...)
+
+    Returns:
+        String context để append vào system prompt, hoặc "" nếu không available
+    """
+    try:
+        from midicoder.mcp.tools.dsl_schema import get_dsl_section
+        section_schema = get_dsl_section(category)
+        if section_schema:
+            return (
+                f"\n<mcp_dsl_context category=\"{category}\">\n"
+                f"Dưới đây là DSL schema cho category \"{category}\". "
+                f"Sử dụng schema này để biết fields nào required và optional.\n\n"
+                f"{json.dumps(section_schema, indent=2, ensure_ascii=False)}\n"
+                f"</mcp_dsl_context>"
+            )
+    except Exception:
+        # MCP tool không available — không break flow
+        pass
+    return ""
+
+
+def _get_styles_schema_for_category(category: str) -> str:
+    """
+    Build render_context.styles reference string từ presets.
+
+    Dùng để LLM biết có những CSS property nào hợp lệ cho mỗi component
+    khi generate contract với render_context.styles.
+
+    Args:
+        category: Tên category — chỉ inject cho UI-related categories
+
+    Returns:
+        String styles reference, hoặc "" nếu không applicable
+    """
+    # Chỉ inject cho UI-related categories
+    ui_categories = {"ui_components", "entities", "workflows"}
+    if category not in ui_categories:
+        return ""
+
+    try:
+        from midicoder.presets import load_preset, list_presets
+
+        # Aggregate style properties từ tất cả presets
+        component_props: dict[str, list[str]] = {}
+        for preset_name in list_presets():
+            if preset_name == "infrastructure":
+                continue
+            preset = load_preset(preset_name)
+            for stack_name, stacks in preset.items():
+                if not isinstance(stacks, dict):
+                    continue
+                for comp_name, props in stacks.items():
+                    if isinstance(props, dict):
+                        if comp_name not in component_props:
+                            component_props[comp_name] = []
+                        for prop in props.keys():
+                            if prop not in component_props[comp_name]:
+                                component_props[comp_name].append(prop)
+
+        if component_props:
+            lines = [
+                "Dưới đây là các CSS property hợp lệ trong render_context.styles[{stack}][{component}].",
+                "Khi cần override styling, dùng format:",
+                "  render_context:",
+                "    styles:",
+                "      react:",
+                "        ComponentName:",
+                "          property_name: value",
+                "",
+                "Components và properties available:",
+            ]
+            for comp, props in sorted(component_props.items()):
+                lines.append(f"  {comp}: {', '.join(sorted(props))}")
+            return "\n".join(lines)
+    except Exception:
+        pass
+    return ""
+
+
 def _build_category_prompt(
     category: str,
     analysis_data: dict,
@@ -77,7 +169,8 @@ def _build_category_prompt(
     Xây dựng prompt cho LLM để generate DSL contracts cho một category.
 
     Tải system prompt từ file Markdown riêng cho từng category.
-    User prompt bao gồm: analysis data, clarifications, và brief content.
+    User prompt bao gồm: analysis data, clarifications, brief content,
+    và MCP tool context (DSL schema + render_context styles).
 
     Args:
         category: Tên category (entities, commands, queries, events, workflows, value_objects, guards)
@@ -95,6 +188,11 @@ def _build_category_prompt(
     else:
         # Fallback nếu không có prompt file
         system = f"Generate DSL contracts for the \"{category}\" category. Output valid YAML dict."
+
+    # MCP: Inject DSL schema context cho LLM biết property nào hợp lệ
+    mcp_context = _build_mcp_context(category)
+    if mcp_context:
+        system = system + "\n\n" + mcp_context
 
     # Xây dựng user prompt
     user_parts = []
@@ -114,6 +212,10 @@ def _build_category_prompt(
         )
         user_parts.append(f"## Clarifications:\n{clar_text}")
 
+    # MCP: Inject render_context styles schema (EU-0.3)
+    styles_schema = _get_styles_schema_for_category(category)
+    if styles_schema:
+        user_parts.append(f"## Render Context Styles Reference:\n{styles_schema}")
     # Category request
     user_parts.append(f"\n## Task: Generate contracts for the \"{category}\" category.")
     user_parts.append("Output ONLY the YAML dict with the category key as the top-level key.")
@@ -1280,6 +1382,8 @@ __all__ = [
     "repair_contracts",
     "_generate_contracts_with_llm",
     "_build_category_prompt",
+    "_build_mcp_context",
+    "_get_styles_schema_for_category",
     "_generate_category_with_retry",
     "_auto_fix_contracts",
     "_generate_contracts_to_sqlite",

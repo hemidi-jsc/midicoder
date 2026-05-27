@@ -269,7 +269,7 @@ class TestGenerateContractsWithLlm:
             brief_content="test brief",
         )
 
-        assert len(result) == 7
+        assert len(result) == len(REQUIRED_CATEGORIES)
         assert set(result.keys()) == set(REQUIRED_CATEGORIES)
 
     @patch("midicoder.pipeline.commands.contract.call_llm")
@@ -287,7 +287,7 @@ class TestGenerateContractsWithLlm:
             brief_content="test brief",
         )
 
-        assert mock_call.call_count == 7
+        assert mock_call.call_count == len(REQUIRED_CATEGORIES)
 
 
 # ============================================================================
@@ -367,7 +367,7 @@ class TestLlmContractGenerationIntegration:
         )
 
         # Kiem tra ket qua
-        assert len(yaml_dict) == 7
+        assert len(yaml_dict) == len(REQUIRED_CATEGORIES)
         for category in REQUIRED_CATEGORIES:
             assert category in yaml_dict
             assert isinstance(yaml_dict[category], str)
@@ -382,7 +382,7 @@ class TestLlmContractGenerationIntegration:
 
         # Kiem tra artifacts
         contracts = test_artifacts_manager.list_by_type("contract")
-        assert len(contracts) == 7
+        assert len(contracts) == len(REQUIRED_CATEGORIES)
 
 
 if __name__ == "__main__":
