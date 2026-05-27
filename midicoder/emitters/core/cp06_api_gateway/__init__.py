@@ -15,8 +15,10 @@ Exports:
     Route Models: Route, RouteCollection, RouteAuthConfig, RouteParam, QueryParam, SchemaField, HttpMethod, AuthMode
     GraphQL Models: GraphQLResolver, GraphQLArg, GraphQLField, GraphQLOperation
     Webhook Models: WebhookHandler, WebhookAuthConfig, WebhookPayloadField, WebhookAuthType
+    Circuit Breaker Models: CircuitState, CircuitBreakerPolicy, CircuitBreakerConfig
     Emitter: KongGatewayEmitter, FastAPIGatewayEmitter, NestJSGatewayEmitter, AngularGatewayEmitter, ReactGatewayEmitter
-    Parser: RouteParser
+    Parser: RouteParser, GatewayIR, parse_circuit_breakers
+    Recipe: RecipeOutput, circuit_breaker_recipe
 """
 
 # ===========================================================================
@@ -64,10 +66,23 @@ from midicoder.emitters.core.cp06_api_gateway.models import (
     WebhookAuthConfig,
     WebhookPayloadField,
     WebhookAuthType,
+    # Circuit Breaker
+    CircuitState,
+    CircuitBreakerPolicy,
+    CircuitBreakerConfig,
 )
 
 # Route Parser
 from midicoder.emitters.core.cp06_api_gateway.route_parser import RouteParser
+
+# Gateway Parser (IR)
+from midicoder.emitters.core.cp06_api_gateway.parser import GatewayIR, parse_circuit_breakers
+
+# Recipes
+from midicoder.emitters.core.cp06_api_gateway.recipes import (
+    RecipeOutput,
+    circuit_breaker_recipe,
+)
 
 # Unified Gateway Emitters (all stacks)
 from midicoder.emitters.core.cp06_api_gateway.fastapi import FastAPIGatewayEmitter
@@ -127,8 +142,17 @@ __all__ = [
     "WebhookAuthConfig",
     "WebhookPayloadField",
     "WebhookAuthType",
+    # -- Circuit Breaker --
+    "CircuitState",
+    "CircuitBreakerPolicy",
+    "CircuitBreakerConfig",
     # -- Parser --
     "RouteParser",
+    "GatewayIR",
+    "parse_circuit_breakers",
+    # -- Recipes --
+    "RecipeOutput",
+    "circuit_breaker_recipe",
     # -- Unified Gateway Emitters --
     "FastAPIGatewayEmitter",
     "NestJSGatewayEmitter",

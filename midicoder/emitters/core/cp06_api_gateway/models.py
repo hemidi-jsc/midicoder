@@ -1230,3 +1230,115 @@ class RouteCollection:
         result.resolvers = [GraphQLResolver.from_dict(r) for r in data.get("resolvers", [])]
         result.webhooks = [WebhookHandler.from_dict(w) for w in data.get("webhooks", [])]
         return result
+
+
+# ===========================================================================
+# Circuit Breaker (Application-level)
+# ===========================================================================
+
+
+class CircuitState(str, Enum):
+    """
+    Enum các trạng thái của circuit breaker.
+
+    Values:
+        CLOSED: Circuit đóng — traffic đi qua bình thường
+        OPEN: Circuit mở — traffic bị chặn, fallback được gọi
+        HALF_OPEN: Circuit nửa mở — cho phép một số thử nghiệm probe
+    """
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+
+class CircuitBreakerPolicy(str, Enum):
+    """
+    Enum các chính sách kích hoạt circuit breaker.
+
+    Values:
+        CONSECUTIVE_FAILURES: Kích hoạt khi có N lỗi liên tiếp
+        FAILURE_RATE: Kích hoạt khi tỷ lệ lỗi vượt ngưỡng
+        AVG_RESPONSE_TIME: Kích hoạt khi thời gian phản hồi trung bình vượt ngưỡng
+    """
+    CONSECUTIVE_FAILURES = "consecutive_failures"
+    FAILURE_RATE = "failure_rate"
+    AVG_RESPONSE_TIME = "avg_response_time"
+
+
+@dataclass
+class CircuitBreakerConfig:
+    """
+    Cấu hình circuit breaker (application-level).
+
+    Bảo vệ các cuộc gọi đến service backend khỏi failure cascade
+    bằng cách tạm thời chặn traffic khi service không phản hồi.
+
+    Attributes:
+        id: Định danh duy nhất của circuit breaker
+        name: Tên hiển thị
+        target_service: Tên service backend được bảo vệ
+        policy: Chính sách kích hoạt breaker
+        threshold: Ngưỡng kích hoạt (số lỗi liên tiếp, tỷ lệ %, ms)
+        timeout_seconds: Thời gian ở trạng thái OPEN trước khi chuyển HALF_OPEN
+        half_open_max_calls: Số probe calls cho phép trong HALF_OPEN
+        success_threshold: Số probe calls thành công để chuyển về CLOSED
+        fallback_function: Tên fallback function để gọi khi circuit OPEN
+        monitored_exceptions: Danh sách exception types theo dõi
+        metadata: Metadata bổ sung
+    """
+    id: str
+    name: str
+    target_service: str
+    policy: CircuitBreakerPolicy = CircuitBreakerPolicy.CONSECUTIVE_FAILURES
+    threshold: float = 5.0
+    timeout_seconds: int = 30
+    half_open_max_calls: int = 3
+    success_threshold: int = 2
+    fallback_function: str = ""
+    monitored_exceptions: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate circuit breaker config sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            raise ValueError("CircuitBreakerConfig.id không được để trống")
+        if self.threshold <= 0:
+            raise ValueError("threshold phải lớn hơn 0")
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds phải lớn hơn 0")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển circuit breaker config sang dict format."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "target_service": self.target_service,
+            "policy": self.policy.value,
+            "threshold": self.threshold,
+            "timeout_seconds": self.timeout_seconds,
+            "half_open_max_calls": self.half_open_max_calls,
+            "success_threshold": self.success_threshold,
+            "fallback_function": self.fallback_function,
+            "monitored_exceptions": self.monitored_exceptions,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CircuitBreakerConfig":
+        """Tạo CircuitBreakerConfig từ dict."""
+        policy = data.get("policy", "consecutive_failures")
+        if not isinstance(policy, CircuitBreakerPolicy):
+            policy = CircuitBreakerPolicy(policy)
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            target_service=data.get("target_service", ""),
+            policy=policy,
+            threshold=data.get("threshold", 5.0),
+            timeout_seconds=data.get("timeout_seconds", 30),
+            half_open_max_calls=data.get("half_open_max_calls", 3),
+            success_threshold=data.get("success_threshold", 2),
+            fallback_function=data.get("fallback_function", ""),
+            monitored_exceptions=data.get("monitored_exceptions", []),
+            metadata=data.get("metadata", {}),
+        )

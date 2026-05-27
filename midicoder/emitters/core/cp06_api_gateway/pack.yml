@@ -9,7 +9,7 @@ pack:
   # fully redirected to CP48. The gateway no longer emits rate limiter
   # code — all rate limiting is owned by CP48 (cp48_rate_limit).
   depends_on: ["CP01", "CP05", "CP48"]
-  definitions_count: 29
+  definitions_count: 32
   obligations_count: 8
   error_codes:
     prefix: "MDC-CP06"
@@ -101,6 +101,12 @@ pack:
       description: "Webhook endpoint model"
     - name: "RouteCollection"
       description: "Collection chứa routes, resolvers, webhooks"
+    - name: "CircuitState"
+      description: "Enum các trạng thái circuit breaker (closed/open/half_open)"
+    - name: "CircuitBreakerPolicy"
+      description: "Enum chính sách circuit breaker (consecutive_failures/failure_rate/avg_response_time)"
+    - name: "CircuitBreakerConfig"
+      description: "Cấu hình circuit breaker application-level"
   obligations:
     - name: "RouteAuthEnforced"
       description: "Routes có auth config phải enforce authentication"
