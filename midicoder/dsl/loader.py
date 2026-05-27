@@ -620,10 +620,10 @@ def load_projection_tree(dsl_path: Path) -> ProjectionTree:
     if realtime_ui_file.exists():
         add_nodes(_load_realtime_ui(realtime_ui_file))
 
-    # CP28: Load custom code injection
-    custom_code_file = dsl_path / "custom_code.yaml"
-    if custom_code_file.exists():
-        add_nodes(_load_custom_code(custom_code_file))
+    # CP28: Load multi-region & geo-replication
+    multi_region_file = dsl_path / "multi_region.yaml"
+    if multi_region_file.exists():
+        add_nodes(_load_multi_region(multi_region_file))
 
     # CP31: Load scheduler
     scheduler_file = dsl_path / "scheduler.yaml"
@@ -750,11 +750,6 @@ def load_projection_tree(dsl_path: Path) -> ProjectionTree:
     if ai_assisted_file.exists():
         add_nodes(_load_ai_assisted(ai_assisted_file))
 
-    # CP54: Load Kubernetes
-    kubernetes_file = dsl_path / "kubernetes.yaml"
-    if kubernetes_file.exists():
-        add_nodes(_load_kubernetes(kubernetes_file))
-
     # CP55: Load CI/CD Pipeline
     cicd_file = dsl_path / "cicd.yaml"
     if cicd_file.exists():
@@ -799,6 +794,16 @@ def load_projection_tree(dsl_path: Path) -> ProjectionTree:
     recommendation_file = dsl_path / "recommendation.yaml"
     if recommendation_file.exists():
         add_nodes(_load_recommendation(recommendation_file))
+
+    # CP64: Load contract testing
+    contract_testing_file = dsl_path / "contract_testing.yaml"
+    if contract_testing_file.exists():
+        add_nodes(_load_contract_testing(contract_testing_file))
+
+    # CP65: Load backup & recovery
+    backup_recovery_file = dsl_path / "backup_recovery.yaml"
+    if backup_recovery_file.exists():
+        add_nodes(_load_backup_recovery(backup_recovery_file))
 
     return tree
 
@@ -3938,6 +3943,117 @@ def _load_ai_assisted(path: Path) -> list[ProjectionNode]:
 
 
 # ============================================================================
+# CP54: Kubernetes & Cloud Native Loader
+# ============================================================================
+
+def _load_kubernetes(path: Path) -> list[ProjectionNode]:
+    """Load kubernetes.yaml vào ProjectionNodes (CP54 — Kubernetes & Cloud Native).
+
+    Args:
+        path: Đường dẫn đến kubernetes.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho deployments, services, ingresses, HPAs, helm
+    """
+    data, _ = load_yaml(path)
+    nodes: list[ProjectionNode] = []
+
+    # Deployments
+    if "deployments" in data:
+        for dep in data["deployments"]:
+            nodes.append(ProjectionNode(
+                id=dep.get("id", ""),
+                kind=NodeKind.K8S_DEPLOYMENT,
+                params={
+                    "id": dep.get("id"),
+                    "name": dep.get("name", dep.get("id", "")),
+                    "replicas": dep.get("replicas", 1),
+                    "image": dep.get("image", ""),
+                    "ports": dep.get("ports", []),
+                    "resources": dep.get("resources", {}),
+                    "strategy": dep.get("strategy", "RollingUpdate"),
+                    "labels": dep.get("labels", {}),
+                    "env": dep.get("env", []),
+                    "volume_mounts": dep.get("volume_mounts", []),
+                    "tags": dep.get("tags", []),
+                    "source": "kubernetes.yaml",
+                },
+            ))
+
+    # Services
+    if "services" in data:
+        for svc in data["services"]:
+            nodes.append(ProjectionNode(
+                id=svc.get("id", ""),
+                kind=NodeKind.K8S_SERVICE,
+                params={
+                    "id": svc.get("id"),
+                    "name": svc.get("name", svc.get("id", "")),
+                    "type": svc.get("type", "ClusterIP"),
+                    "ports": svc.get("ports", []),
+                    "selector": svc.get("selector", {}),
+                    "tags": svc.get("tags", []),
+                    "source": "kubernetes.yaml",
+                },
+            ))
+
+    # Ingresses
+    if "ingresses" in data:
+        for ing in data["ingresses"]:
+            nodes.append(ProjectionNode(
+                id=ing.get("id", ""),
+                kind=NodeKind.K8S_INGRESS,
+                params={
+                    "id": ing.get("id"),
+                    "name": ing.get("name", ing.get("id", "")),
+                    "host": ing.get("host", ""),
+                    "paths": ing.get("paths", []),
+                    "tls": ing.get("tls", {}),
+                    "annotations": ing.get("annotations", {}),
+                    "tags": ing.get("tags", []),
+                    "source": "kubernetes.yaml",
+                },
+            ))
+
+    # HPAs
+    if "hpas" in data:
+        for hpa in data["hpas"]:
+            nodes.append(ProjectionNode(
+                id=hpa.get("id", ""),
+                kind=NodeKind.K8S_HPA,
+                params={
+                    "id": hpa.get("id"),
+                    "deployment_id": hpa.get("deployment_id", ""),
+                    "min_replicas": hpa.get("min_replicas", 1),
+                    "max_replicas": hpa.get("max_replicas", 10),
+                    "target_cpu": hpa.get("target_cpu", 70),
+                    "target_memory": hpa.get("target_memory", 80),
+                    "tags": hpa.get("tags", []),
+                    "source": "kubernetes.yaml",
+                },
+            ))
+
+    # Helm charts
+    if "helm_charts" in data:
+        for chart in data["helm_charts"]:
+            nodes.append(ProjectionNode(
+                id=chart.get("id", ""),
+                kind=NodeKind.HELM_CHART,
+                params={
+                    "id": chart.get("id"),
+                    "name": chart.get("name", chart.get("id", "")),
+                    "version": chart.get("version", "1.0.0"),
+                    "app_version": chart.get("app_version", "1.0.0"),
+                    "values": chart.get("values", {}),
+                    "tags": chart.get("tags", []),
+                    "source": "kubernetes.yaml",
+                },
+            ))
+
+    return nodes
+
+
+# ============================================================================
 # CP55: CI/CD Pipeline Loader
 # ============================================================================
 
@@ -4659,6 +4775,295 @@ def _load_recommendation(path: Path) -> list[ProjectionNode]:
                     "metadata": preference.get("metadata", {}),
                     "tags": preference.get("tags", []),
                     "source": "recommendation.yaml",
+                },
+            ))
+
+    return nodes
+
+
+# ============================================================================
+# CP28: Multi-Region & Geo-Replication Loader
+# ============================================================================
+
+def _load_multi_region(path: Path) -> list[ProjectionNode]:
+    """Load multi_region.yaml vào ProjectionNodes (CP28 — Multi-Region & Geo-Replication).
+
+    Args:
+        path: Đường dẫn đến multi_region.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho regions, replication, geo-routing, failover,
+        data residency rules, và health checks
+    """
+    data, _ = load_yaml(path)
+    nodes: list[ProjectionNode] = []
+
+    # Region configurations
+    if "regions" in data:
+        for region in data["regions"]:
+            nodes.append(ProjectionNode(
+                id=region.get("id", ""),
+                kind=NodeKind.REGION_CONFIG,
+                params={
+                    "id": region.get("id"),
+                    "name": region.get("name", region.get("id", "")),
+                    "description": region.get("description", ""),
+                    "cloud_provider": region.get("cloud_provider", "aws"),
+                    "availability_zones": region.get("availability_zones", []),
+                    "primary": region.get("primary", False),
+                    "endpoint_url": region.get("endpoint_url", ""),
+                    "replicas": region.get("replicas", 2),
+                    "tags": region.get("tags", []),
+                    "source": "multi_region.yaml",
+                },
+            ))
+
+    # Replication policies
+    if "replication_policies" in data:
+        for policy in data["replication_policies"]:
+            nodes.append(ProjectionNode(
+                id=policy.get("id", ""),
+                kind=NodeKind.REPLICATION_POLICY,
+                params={
+                    "id": policy.get("id"),
+                    "name": policy.get("name", policy.get("id", "")),
+                    "description": policy.get("description", ""),
+                    "mode": policy.get("mode", "async"),
+                    "source_region": policy.get("source_region", ""),
+                    "target_regions": policy.get("target_regions", []),
+                    "lag_threshold_ms": policy.get("lag_threshold_ms", 5000),
+                    "conflict_resolution": policy.get("conflict_resolution", "source_wins"),
+                    "tables": policy.get("tables", []),
+                    "tags": policy.get("tags", []),
+                    "source": "multi_region.yaml",
+                },
+            ))
+
+    # Geo-routing rules
+    if "geo_routing_rules" in data:
+        for rule in data["geo_routing_rules"]:
+            nodes.append(ProjectionNode(
+                id=rule.get("id", ""),
+                kind=NodeKind.GEO_ROUTING_RULE,
+                params={
+                    "id": rule.get("id"),
+                    "name": rule.get("name", rule.get("id", "")),
+                    "description": rule.get("description", ""),
+                    "strategy": rule.get("strategy", "latency"),
+                    "regions": rule.get("regions", []),
+                    "fallback_region": rule.get("fallback_region", ""),
+                    "health_check_path": rule.get("health_check_path", "/health"),
+                    "tags": rule.get("tags", []),
+                    "source": "multi_region.yaml",
+                },
+            ))
+
+    # Failover policies
+    if "failover_policies" in data:
+        for policy in data["failover_policies"]:
+            nodes.append(ProjectionNode(
+                id=policy.get("id", ""),
+                kind=NodeKind.FAILOVER_POLICY,
+                params={
+                    "id": policy.get("id"),
+                    "name": policy.get("name", policy.get("id", "")),
+                    "description": policy.get("description", ""),
+                    "trigger": policy.get("trigger", "health_check"),
+                    "regions": policy.get("regions", []),
+                    "rto_minutes": policy.get("rto_minutes", 15),
+                    "rpo_minutes": policy.get("rpo_minutes", 5),
+                    "dns_ttl_seconds": policy.get("dns_ttl_seconds", 60),
+                    "auto_failover_enabled": policy.get("auto_failover_enabled", True),
+                    "tags": policy.get("tags", []),
+                    "source": "multi_region.yaml",
+                },
+            ))
+
+    # Data residency rules
+    if "data_residency_rules" in data:
+        for rule in data["data_residency_rules"]:
+            nodes.append(ProjectionNode(
+                id=rule.get("id", ""),
+                kind=NodeKind.DATA_RESIDENCY_RULE,
+                params={
+                    "id": rule.get("id"),
+                    "name": rule.get("name", rule.get("id", "")),
+                    "description": rule.get("description", ""),
+                    "region": rule.get("region", ""),
+                    "allowed_countries": rule.get("allowed_countries", []),
+                    "tenant_ids": rule.get("tenant_ids", []),
+                    "data_categories": rule.get("data_categories", []),
+                    "enforcement": rule.get("enforcement", "strict"),
+                    "tags": rule.get("tags", []),
+                    "source": "multi_region.yaml",
+                },
+            ))
+
+    # Health checks
+    if "health_checks" in data:
+        for check in data["health_checks"]:
+            nodes.append(ProjectionNode(
+                id=check.get("id", ""),
+                kind=NodeKind.REGION_HEALTH_CHECK,
+                params={
+                    "id": check.get("id"),
+                    "description": check.get("description", ""),
+                    "region": check.get("region", ""),
+                    "endpoint_url": check.get("endpoint_url", ""),
+                    "interval_seconds": check.get("interval_seconds", 30),
+                    "timeout_seconds": check.get("timeout_seconds", 5),
+                    "unhealthy_threshold": check.get("unhealthy_threshold", 3),
+                    "healthy_threshold": check.get("healthy_threshold", 2),
+                    "check_type": check.get("check_type", "http"),
+                    "tags": check.get("tags", []),
+                    "source": "multi_region.yaml",
+                },
+            ))
+
+    return nodes
+
+
+# ============================================================================
+# CP64: API Contract Testing Loader
+# ============================================================================
+
+def _load_contract_testing(path: Path) -> list[ProjectionNode]:
+    """Load contract_testing.yaml vào ProjectionNodes (CP64 — API Contract Testing).
+
+    Args:
+        path: Đường dẫn đến contract_testing.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho consumer specs, interactions, provider verifiers
+    """
+    data, _ = load_yaml(path)
+    nodes: list[ProjectionNode] = []
+
+    # Consumer specs
+    if "consumer_specs" in data:
+        for spec in data["consumer_specs"]:
+            nodes.append(ProjectionNode(
+                id=spec.get("id", ""),
+                kind=NodeKind.CONSUMER_SPEC,
+                params={
+                    "id": spec.get("id"),
+                    "consumer_name": spec.get("consumer_name", ""),
+                    "provider_name": spec.get("provider_name", ""),
+                    "pact_spec_version": spec.get("pact_spec_version", "2.0.0"),
+                    "interactions": spec.get("interactions", []),
+                    "tags": spec.get("tags", []),
+                    "source": "contract_testing.yaml",
+                },
+            ))
+
+    # Provider verifiers
+    if "provider_verifiers" in data:
+        for verifier in data["provider_verifiers"]:
+            nodes.append(ProjectionNode(
+                id=verifier.get("id", ""),
+                kind=NodeKind.PROVIDER_VERIFIER,
+                params={
+                    "id": verifier.get("id"),
+                    "provider_name": verifier.get("provider_name", ""),
+                    "pact_broker_url": verifier.get("pact_broker_url", ""),
+                    "publish_verification_results": verifier.get("publish_verification_results", True),
+                    "tags": verifier.get("tags", []),
+                    "source": "contract_testing.yaml",
+                },
+            ))
+
+    # Pact broker config
+    if "pact_broker_config" in data:
+        broker = data["pact_broker_config"]
+        nodes.append(ProjectionNode(
+            id=broker.get("id", ""),
+            kind=NodeKind.PACT_BROKER_CONFIG,
+            params={
+                "id": broker.get("id"),
+                "url": broker.get("url", ""),
+                "project": broker.get("project", ""),
+                "tags": broker.get("tags", []),
+                "auto_publish": broker.get("auto_publish", False),
+                "source": "contract_testing.yaml",
+            },
+        ))
+
+    return nodes
+
+
+# ============================================================================
+# CP65: Data Backup & Recovery Loader
+# ============================================================================
+
+def _load_backup_recovery(path: Path) -> list[ProjectionNode]:
+    """Load backup_recovery.yaml vào ProjectionNodes (CP65 — Data Backup & Recovery).
+
+    Args:
+        path: Đường dẫn đến backup_recovery.yaml
+
+    Returns:
+        Danh sách ProjectionNodes cho backup policies, recovery plans, monitors
+    """
+    data, _ = load_yaml(path)
+    nodes: list[ProjectionNode] = []
+
+    # Backup policies
+    if "backup_policies" in data:
+        for policy in data["backup_policies"]:
+            nodes.append(ProjectionNode(
+                id=policy.get("id", ""),
+                kind=NodeKind.BACKUP_POLICY,
+                params={
+                    "id": policy.get("id"),
+                    "name": policy.get("name", ""),
+                    "backup_type": policy.get("backup_type", "full"),
+                    "target": policy.get("target", ""),
+                    "storage_backend": policy.get("storage_backend", "local"),
+                    "schedule_type": policy.get("schedule_type", "cron"),
+                    "schedule_cron": policy.get("schedule_cron", ""),
+                    "retention_days": policy.get("retention_days", 30),
+                    "compression_enabled": policy.get("compression_enabled", True),
+                    "encryption_enabled": policy.get("encryption_enabled", True),
+                    "tags": policy.get("tags", []),
+                    "source": "backup_recovery.yaml",
+                },
+            ))
+
+    # Recovery plans
+    if "recovery_plans" in data:
+        for plan in data["recovery_plans"]:
+            nodes.append(ProjectionNode(
+                id=plan.get("id", ""),
+                kind=NodeKind.RECOVERY_PLAN,
+                params={
+                    "id": plan.get("id"),
+                    "name": plan.get("name", ""),
+                    "rto_minutes": plan.get("rto_minutes", 15),
+                    "rpo_minutes": plan.get("rpo_minutes", 5),
+                    "priority": plan.get("priority", 1),
+                    "steps": plan.get("steps", []),
+                    "auto_trigger": plan.get("auto_trigger", False),
+                    "notification_channels": plan.get("notification_channels", []),
+                    "tags": plan.get("tags", []),
+                    "source": "backup_recovery.yaml",
+                },
+            ))
+
+    # Backup monitors
+    if "monitors" in data:
+        for monitor in data["monitors"]:
+            nodes.append(ProjectionNode(
+                id=monitor.get("id", ""),
+                kind=NodeKind.BACKUP_MONITOR,
+                params={
+                    "id": monitor.get("id"),
+                    "policy_ids": monitor.get("policy_ids", []),
+                    "alert_on_failure": monitor.get("alert_on_failure", True),
+                    "alert_on_lag_minutes": monitor.get("alert_on_lag_minutes", 60),
+                    "slack_webhook": monitor.get("slack_webhook", ""),
+                    "email_recipients": monitor.get("email_recipients", []),
+                    "tags": monitor.get("tags", []),
+                    "source": "backup_recovery.yaml",
                 },
             ))
 

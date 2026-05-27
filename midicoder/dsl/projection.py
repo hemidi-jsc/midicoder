@@ -5576,6 +5576,92 @@ class AiToolCallParams(TypedDict, total=False):
     source: str
 
 
+class RegionConfigParams(TypedDict, total=False):
+    """Tham số cho Region Config nodes (CP28 — Multi-Region)."""
+    id: str
+    name: str
+    description: str
+    cloud_provider: str
+    availability_zones: list[str]
+    primary: bool
+    endpoint_url: str
+    replicas: int
+    tags: list[str]
+    source: str
+
+
+class ReplicationPolicyParams(TypedDict, total=False):
+    """Tham số cho Replication Policy nodes (CP28 — Multi-Region)."""
+    id: str
+    name: str
+    description: str
+    mode: str
+    source_region: str
+    target_regions: list[str]
+    lag_threshold_ms: int
+    conflict_resolution: str
+    tables: list[str]
+    tags: list[str]
+    source: str
+
+
+class GeoRoutingRuleParams(TypedDict, total=False):
+    """Tham số cho Geo Routing Rule nodes (CP28 — Multi-Region)."""
+    id: str
+    name: str
+    description: str
+    strategy: str
+    regions: list[dict[str, Any]]
+    fallback_region: str
+    health_check_path: str
+    tags: list[str]
+    source: str
+
+
+class FailoverPolicyParams(TypedDict, total=False):
+    """Tham số cho Failover Policy nodes (CP28 — Multi-Region)."""
+    id: str
+    name: str
+    description: str
+    trigger: str
+    regions: list[str]
+    rto_minutes: int
+    rpo_minutes: int
+    dns_ttl_seconds: int
+    auto_failover_enabled: bool
+    tags: list[str]
+    source: str
+
+
+class DataResidencyRuleParams(TypedDict, total=False):
+    """Tham số cho Data Residency Rule nodes (CP28 — Multi-Region)."""
+    id: str
+    name: str
+    description: str
+    region: str
+    allowed_countries: list[str]
+    tenant_ids: list[str]
+    data_categories: list[str]
+    enforcement: str
+    tags: list[str]
+    source: str
+
+
+class RegionHealthCheckParams(TypedDict, total=False):
+    """Tham số cho Region Health Check nodes (CP28 — Multi-Region)."""
+    id: str
+    description: str
+    region: str
+    endpoint_url: str
+    interval_seconds: int
+    timeout_seconds: int
+    unhealthy_threshold: int
+    healthy_threshold: int
+    check_type: str
+    tags: list[str]
+    source: str
+
+
 # ============================================================================
 # Node Kind Enum (109 Node Types Tổng cộng)
 # ============================================================================
@@ -6073,6 +6159,30 @@ class NodeKind(Enum):
     RECOMMENDATION_CONFIG = "recommendation.config"  # Cấu hình recommendation engine (algorithm, item_entity, user_entity)
     ITEM_EMBEDDING = "recommendation.item_embedding"  # Item embedding vector config (fields, similarity_metric, dimension)
     USER_PREFERENCE = "recommendation.user_preference"  # User preference config (weight, history_window, boost_categories)
+
+    # CP28 — Multi-Region & Geo-Replication (6 members)
+    REGION_CONFIG = "multi_region.region_config"  # Định nghĩa region (cloud provider, AZs, endpoint)
+    REPLICATION_POLICY = "multi_region.replication_policy"  # Cross-region replication (sync/async, conflict resolution)
+    GEO_ROUTING_RULE = "multi_region.geo_routing_rule"  # Latency-based geo-routing (strategy, regions, fallback)
+    FAILOVER_POLICY = "multi_region.failover_policy"  # Automated failover (trigger, RTO/RPO, DNS TTL)
+    DATA_RESIDENCY_RULE = "multi_region.data_residency_rule"  # Data residency per region/tenant (GDPR/CCPA)
+    REGION_HEALTH_CHECK = "multi_region.region_health_check"  # Per-region health probe (interval, threshold, check_type)
+
+    # CP64 — API Contract Testing (6 NodeKind)
+    CONTRACT_TYPE = "contract.contract_type"  # Loại contract (consumer_driven, provider_verification, bidi)
+    CONSUMER_SPEC = "contract.consumer_spec"  # Consumer spec cho pact contract
+    INTERACTION = "contract.interaction"  # Interaction giữa consumer và provider
+    PROVIDER_VERIFIER = "contract.provider_verifier"  # Provider verification config
+    PACT_BROKER_CONFIG = "contract.pact_broker"  # Pact broker configuration
+    MATCH_RULE = "contract.match_rule"  # Match rule cho request/response
+
+    # CP65 — Data Backup & Recovery (6 NodeKind)
+    BACKUP_POLICY = "backup.backup_policy"  # Chính sách backup (full/incremental, schedule)
+    RESTORE_POINT = "backup.restore_point"  # Restore point với checksum và status
+    RECOVERY_PLAN = "backup.recovery_plan"  # Recovery plan với RTO/RPO
+    RECOVERY_STEP = "backup.recovery_step"  # Recovery step (order, action, timeout)
+    BACKUP_MONITOR = "backup.backup_monitor"  # Monitoring và alerting cho backup
+    SCHEDULE_TYPE = "backup.schedule_type"  # Schedule type (cron, fixed_interval, on_demand)
 
 
 # ============================================================================
