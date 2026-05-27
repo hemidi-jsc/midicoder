@@ -15,17 +15,24 @@ Version: 1.0.0
 import pytest
 
 from midicoder.emitters.core.cp24_quality_security.models import (
+    AlertSeverity,
+    DataQualityProfile,
+    DataQualityRule,
     FormatterType,
     LinterType,
+    QualityCheck,
     QualityCollection,
     QualityGateConfig,
+    QualityThreshold,
     SecurityScanConfig,
     SecurityTool,
     SeverityLevel,
     StackType,
 )
 from midicoder.emitters.core.cp24_quality_security.recipes import (
+    RecipeOutput,
     auto_generate_quality_collection,
+    data_quality_recipe,
     generate_default_profiles,
     generate_security_config,
     generate_strict_profiles,
@@ -142,3 +149,110 @@ class TestAutoGenerateQualityCollection:
         assert len(collection.security_configs) == 0
         # Vẫn có gate config
         assert collection.gate_config is not None
+
+
+class TestDataQualityRecipe:
+    """Test cho data_quality_recipe."""
+
+    def test_returns_recipe_output(self) -> None:
+        """Kiểm tra recipe trả về RecipeOutput."""
+        result = data_quality_recipe()
+        assert isinstance(result, RecipeOutput)
+
+    def test_recipe_name_and_description(self) -> None:
+        """Kiểm tra tên và mô tả recipe."""
+        result = data_quality_recipe()
+        assert result.name == "data_quality_default"
+        assert "completeness" in result.description
+        assert "accuracy" in result.description
+        assert "freshness" in result.description
+
+    def test_contains_all_rule_types(self) -> None:
+        """Kiểm tra recipe chứa tất cả 6 loại quality rule."""
+        result = data_quality_recipe()
+        rules = {c.rule for c in result.checks}
+        assert DataQualityRule.COMPLETENESS in rules
+        assert DataQualityRule.ACCURACY in rules
+        assert DataQualityRule.FRESHNESS in rules
+        assert DataQualityRule.UNIQUENESS in rules
+        assert DataQualityRule.VALIDITY in rules
+        assert DataQualityRule.CONSISTENCY in rules
+
+    def test_check_count(self) -> None:
+        """Kiểm tra số lượng quality checks."""
+        result = data_quality_recipe()
+        assert len(result.checks) == 6
+
+    def test_threshold_count(self) -> None:
+        """Kiểm tra số lượng thresholds."""
+        result = data_quality_recipe()
+        assert len(result.thresholds) == 6
+
+    def test_threshold_linked_to_checks(self) -> None:
+        """Kiểm tra mỗi threshold liên kết với một check."""
+        result = data_quality_recipe()
+        check_ids = {c.id for c in result.checks}
+        for threshold in result.thresholds:
+            assert threshold.check_id in check_ids
+
+    def test_profile_contains_check_ids(self) -> None:
+        """Kiểm tra profile chứa đúng check IDs."""
+        result = data_quality_recipe()
+        check_ids = {c.id for c in result.checks}
+        assert set(result.profile.checks) == check_ids
+
+    def test_profile_defaults(self) -> None:
+        """Kiểm tra giá trị mặc định của profile."""
+        result = data_quality_recipe()
+        assert result.profile.schedule_cron == "0 0 * * *"
+        assert result.profile.alert_on_failure is True
+        assert result.profile.generate_report is True
+        assert result.profile.report_format == "json"
+
+    def test_severity_distribution(self) -> None:
+        """Kiểm tra có cả CRITICAL và WARNING severity."""
+        result = data_quality_recipe()
+        severities = {t.severity for t in result.thresholds}
+        assert AlertSeverity.CRITICAL in severities
+        assert AlertSeverity.WARNING in severities
+
+    def test_to_dict(self) -> None:
+        """Kiểm tra serialization RecipeOutput."""
+        result = data_quality_recipe()
+        d = result.to_dict()
+        assert d["name"] == "data_quality_default"
+        assert len(d["checks"]) == 6
+        assert len(d["thresholds"]) == 6
+        assert "profile" in d
+
+    def test_raw_data_contains_all_sections(self) -> None:
+        """Kiểm tra raw_data chứa đầy đủ sections."""
+        result = data_quality_recipe()
+        assert "checks" in result.raw_data
+        assert "thresholds" in result.raw_data
+        assert "profile" in result.raw_data
+
+    def test_completeness_check_details(self) -> None:
+        """Kiểm tra chi tiết completeness check."""
+        result = data_quality_recipe()
+        completeness_checks = [c for c in result.checks if c.rule == DataQualityRule.COMPLETENESS]
+        assert len(completeness_checks) == 1
+        check = completeness_checks[0]
+        assert "email" in check.target
+        assert check.threshold == 0.98
+
+    def test_freshness_check_details(self) -> None:
+        """Kiểm tra chi tiết freshness check."""
+        result = data_quality_recipe()
+        freshness_checks = [c for c in result.checks if c.rule == DataQualityRule.FRESHNESS]
+        assert len(freshness_checks) == 1
+        check = freshness_checks[0]
+        assert check.threshold == 24.0
+        assert "unit" in check.metadata
+
+    def test_uniqueness_threshold_is_critical(self) -> None:
+        """Kiểm tra uniqueness threshold có severity CRITICAL."""
+        result = data_quality_recipe()
+        uniq_check = [c for c in result.checks if c.rule == DataQualityRule.UNIQUENESS][0]
+        uniq_threshold = [t for t in result.thresholds if t.check_id == uniq_check.id][0]
+        assert uniq_threshold.severity == AlertSeverity.CRITICAL

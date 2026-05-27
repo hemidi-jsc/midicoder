@@ -11,12 +11,21 @@ Version: 1.0.0
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any
+
 from midicoder.emitters.core.cp24_quality_security.models import (
+    AlertSeverity,
+    DataQualityProfile,
+    DataQualityRule,
     FormatterType,
     LinterType,
+    QualityCheck,
     QualityCollection,
     QualityGateConfig,
     QualityProfile,
+    QualityResult,
+    QualityThreshold,
     SecurityScanConfig,
     SecurityTool,
     SeverityLevel,
@@ -156,8 +165,203 @@ def auto_generate_quality_collection(
 
 
 __all__ = [
-    "generate_default_profiles",
-    "generate_strict_profiles",
-    "generate_security_config",
+    "RecipeOutput",
     "auto_generate_quality_collection",
+    "data_quality_recipe",
+    "generate_default_profiles",
+    "generate_security_config",
+    "generate_strict_profiles",
 ]
+
+
+# ===========================================================================
+# RecipeOutput — dataclass kết quả recipe
+# ===========================================================================
+
+
+@dataclass
+class RecipeOutput:
+    """Kết quả từ recipe builder.
+
+    Attributes:
+        name: Tên recipe
+        description: Mô tả recipe
+        checks: Danh sách quality checks
+        thresholds: Danh sách quality thresholds
+        profile: Data quality profile
+        raw_data: Raw DSL dict
+    """
+    __test__ = False  # Prevent pytest collection
+
+    name: str
+    description: str
+    checks: list[QualityCheck]
+    thresholds: list[QualityThreshold]
+    profile: DataQualityProfile
+    raw_data: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển RecipeOutput sang dict."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "checks": [c.to_dict() for c in self.checks],
+            "thresholds": [t.to_dict() for t in self.thresholds],
+            "profile": self.profile.to_dict(),
+            "raw_data": self.raw_data,
+        }
+
+
+# ===========================================================================
+# Data Quality Recipe
+# ===========================================================================
+
+
+def data_quality_recipe() -> RecipeOutput:
+    """Data quality profile với completeness, accuracy, freshness checks.
+
+    Build sẵn các quality checks phổ biến:
+    - completeness: kiểm tra % giá trị non-null trên các trường quan trọng
+    - accuracy: kiểm tra giá trị nằm trong khoảng hợp lệ
+    - freshness: kiểm tra độ cũ của dữ liệu
+    - uniqueness: kiểm tra record trùng lặp
+    - validity: kiểm tra định dạng email, phone, ...
+
+    Returns:
+        RecipeOutput chứa checks, thresholds, và profile
+    """
+    # --- Quality Checks ---
+    checks: list[QualityCheck] = [
+        QualityCheck(
+            id="qc-users-email-completeness",
+            name="User Email Completeness",
+            target="users.email",
+            rule=DataQualityRule.COMPLETENESS,
+            threshold=0.98,
+            description="Tỷ lệ user có email không được để trống >= 98%",
+        ),
+        QualityCheck(
+            id="qc-users-age-accuracy",
+            name="User Age Accuracy",
+            target="users.age",
+            rule=DataQualityRule.ACCURACY,
+            threshold=0.95,
+            metadata={"min_value": 0, "max_value": 150},
+            description="Giá trị age nằm trong khoảng 0-150",
+        ),
+        QualityCheck(
+            id="qc-orders-freshness",
+            name="Orders Data Freshness",
+            target="orders",
+            rule=DataQualityRule.FRESHNESS,
+            threshold=24.0,
+            metadata={"unit": "hours"},
+            description="Dữ liệu orders được cập nhật trong 24 giờ",
+        ),
+        QualityCheck(
+            id="qc-users-email-uniqueness",
+            name="User Email Uniqueness",
+            target="users.email",
+            rule=DataQualityRule.UNIQUENESS,
+            threshold=1.0,
+            description="Không có email trùng lặp trong bảng users",
+        ),
+        QualityCheck(
+            id="qc-users-email-validity",
+            name="User Email Validity",
+            target="users.email",
+            rule=DataQualityRule.VALIDITY,
+            threshold=0.95,
+            metadata={"pattern": r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"},
+            description="Email phải khớp định dạng chuẩn",
+        ),
+        QualityCheck(
+            id="qc-orders-users-consistency",
+            name="Orders-Users Consistency",
+            target="orders.user_id",
+            rule=DataQualityRule.CONSISTENCY,
+            threshold=0.99,
+            metadata={"reference_table": "users.id"},
+            description="Mọi user_id trong orders phải tồn tại trong users",
+        ),
+    ]
+
+    # --- Thresholds ---
+    thresholds: list[QualityThreshold] = [
+        QualityThreshold(
+            id="qt-email-completeness",
+            check_id="qc-users-email-completeness",
+            metric_name="completeness_pct",
+            operator=">=",
+            value=0.98,
+            severity=AlertSeverity.CRITICAL,
+        ),
+        QualityThreshold(
+            id="qt-age-accuracy",
+            check_id="qc-users-age-accuracy",
+            metric_name="accuracy_pct",
+            operator=">=",
+            value=0.95,
+            severity=AlertSeverity.WARNING,
+        ),
+        QualityThreshold(
+            id="qt-orders-freshness",
+            check_id="qc-orders-freshness",
+            metric_name="age_hours",
+            operator="<=",
+            value=24.0,
+            severity=AlertSeverity.WARNING,
+        ),
+        QualityThreshold(
+            id="qt-email-uniqueness",
+            check_id="qc-users-email-uniqueness",
+            metric_name="duplicate_count",
+            operator="==",
+            value=0.0,
+            severity=AlertSeverity.CRITICAL,
+        ),
+        QualityThreshold(
+            id="qt-email-validity",
+            check_id="qc-users-email-validity",
+            metric_name="validity_pct",
+            operator=">=",
+            value=0.95,
+            severity=AlertSeverity.WARNING,
+        ),
+        QualityThreshold(
+            id="qt-orders-consistency",
+            check_id="qc-orders-users-consistency",
+            metric_name="orphan_count",
+            operator="==",
+            value=0.0,
+            severity=AlertSeverity.CRITICAL,
+        ),
+    ]
+
+    # --- Profile ---
+    profile = DataQualityProfile(
+        id="dq-profile-default",
+        name="Default Data Quality Profile",
+        checks=[c.id for c in checks],
+        schedule_cron="0 0 * * *",
+        alert_on_failure=True,
+        email_recipients=["data-team@company.com"],
+        generate_report=True,
+        report_format="json",
+    )
+
+    # --- Raw DSL ---
+    raw_data: dict[str, Any] = {
+        "checks": [c.to_dict() for c in checks],
+        "thresholds": [t.to_dict() for t in thresholds],
+        "profile": profile.to_dict(),
+    }
+
+    return RecipeOutput(
+        name="data_quality_default",
+        description="Default data quality profile với completeness, accuracy, freshness, uniqueness, validity, consistency checks",
+        checks=checks,
+        thresholds=thresholds,
+        profile=profile,
+        raw_data=raw_data,
+    )

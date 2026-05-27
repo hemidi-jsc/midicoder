@@ -440,3 +440,294 @@ class QualityCollection:
             collection.gate_config = QualityGateConfig.from_dict(gate_raw)
 
         return collection
+
+
+# ===========================================================================
+# Data Quality & Profiling — enums
+# ===========================================================================
+
+
+class DataQualityRule(str, Enum):
+    """Enum các loại quality check cho dữ liệu."""
+    COMPLETENESS = "completeness"  # % non-null values
+    ACCURACY = "accuracy"  # values within expected range/format
+    FRESHNESS = "freshness"  # max age of data
+    CONSISTENCY = "consistency"  # cross-table/entity consistency
+    UNIQUENESS = "uniqueness"  # no duplicate records
+    VALIDITY = "validity"  # matches regex/pattern
+
+    __test__ = False  # Prevent pytest collection
+
+
+class AlertSeverity(str, Enum):
+    """Enum mức độ cảnh báo cho data quality."""
+    CRITICAL = "critical"
+    WARNING = "warning"
+    INFO = "info"
+
+    __test__ = False  # Prevent pytest collection
+
+
+# ===========================================================================
+# Data Quality & Profiling — dataclasses
+# ===========================================================================
+
+
+@dataclass
+class QualityCheck:
+    """
+    Data quality check rule.
+
+    Attributes:
+        id: Định danh check (vd: "qc-users-email-completeness")
+        name: Tên hiển thị
+        target: Table/entity/column (vd: "users.email")
+        rule: Loại quality rule
+        threshold: Threshold tối thiểu (0.0-1.0, default 95%)
+        sample_size: Số mẫu (0 = full table)
+        description: Mô tả check
+        enabled: Có kích hoạt không
+        metadata: Metadata bổ sung
+    """
+    __test__ = False  # Prevent pytest collection
+
+    id: str
+    name: str
+    target: str
+    rule: DataQualityRule
+    threshold: float = 0.95
+    sample_size: int = 0
+    description: str = ""
+    enabled: bool = True
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.id or not self.id.strip():
+            from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+            EM.raise_error(
+                ErrorCode.CP24_EMPTY_QUALITY_CHECK_ID,
+                message="QualityCheck id không được để trống",
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển QualityCheck sang dict format."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "target": self.target,
+            "rule": self.rule.value,
+            "threshold": self.threshold,
+            "sample_size": self.sample_size,
+            "description": self.description,
+            "enabled": self.enabled,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "QualityCheck":
+        """Tạo QualityCheck từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            target=data.get("target", ""),
+            rule=DataQualityRule(data.get("rule", "completeness")),
+            threshold=data.get("threshold", 0.95),
+            sample_size=data.get("sample_size", 0),
+            description=data.get("description", ""),
+            enabled=data.get("enabled", True),
+            metadata=data.get("metadata", {}),
+        )
+
+
+@dataclass
+class QualityThreshold:
+    """
+    Threshold cho quality check.
+
+    Attributes:
+        id: Định danh threshold
+        check_id: ID của QualityCheck liên kết
+        metric_name: Tên metric (vd: "completeness_pct", "null_count", "age_hours")
+        operator: So sánh (>=, <=, ==, >, <)
+        value: Giá trị threshold
+        severity: Mức độ cảnh báo khi vượt threshold
+    """
+    __test__ = False  # Prevent pytest collection
+
+    id: str
+    check_id: str
+    metric_name: str
+    operator: str = ">="
+    value: float = 0.95
+    severity: AlertSeverity = AlertSeverity.WARNING
+
+    def __post_init__(self):
+        if not self.id or not self.id.strip():
+            from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+            EM.raise_error(
+                ErrorCode.CP24_EMPTY_QUALITY_CHECK_ID,
+                message="QualityThreshold id không được để trống",
+            )
+        valid_operators = (">=", "<=", "==", ">", "<")
+        if self.operator not in valid_operators:
+            from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+            EM.raise_error(
+                ErrorCode.CP24_INVALID_QUALITY_THRESHOLD,
+                operator=self.operator,
+                valid=valid_operators,
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển QualityThreshold sang dict format."""
+        return {
+            "id": self.id,
+            "check_id": self.check_id,
+            "metric_name": self.metric_name,
+            "operator": self.operator,
+            "value": self.value,
+            "severity": self.severity.value,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "QualityThreshold":
+        """Tạo QualityThreshold từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            check_id=data.get("check_id", ""),
+            metric_name=data.get("metric_name", ""),
+            operator=data.get("operator", ">="),
+            value=data.get("value", 0.95),
+            severity=AlertSeverity(data.get("severity", "warning")),
+        )
+
+
+@dataclass
+class DataQualityProfile:
+    """
+    Profile grouping nhiều quality checks.
+
+    Attributes:
+        id: Định danh profile
+        name: Tên hiển thị
+        checks: Danh sách check IDs
+        schedule_cron: Cron expression (default: daily)
+        alert_on_failure: Có alert khi fail không
+        slack_webhook: URL webhook Slack
+        email_recipients: Danh sách email nhận alert
+        generate_report: Có generate report không
+        report_format: Format report (json, csv, html)
+    """
+    __test__ = False  # Prevent pytest collection
+
+    id: str
+    name: str
+    checks: list[str] = field(default_factory=list)
+    schedule_cron: str = "0 0 * * *"
+    alert_on_failure: bool = True
+    slack_webhook: str = ""
+    email_recipients: list[str] = field(default_factory=list)
+    generate_report: bool = True
+    report_format: str = "json"
+
+    def __post_init__(self):
+        if not self.id or not self.id.strip():
+            from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+            EM.raise_error(
+                ErrorCode.CP24_EMPTY_QUALITY_CHECK_ID,
+                message="DataQualityProfile id không được để trống",
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển DataQualityProfile sang dict format."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "checks": self.checks,
+            "schedule_cron": self.schedule_cron,
+            "alert_on_failure": self.alert_on_failure,
+            "slack_webhook": self.slack_webhook,
+            "email_recipients": self.email_recipients,
+            "generate_report": self.generate_report,
+            "report_format": self.report_format,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DataQualityProfile":
+        """Tạo DataQualityProfile từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            checks=data.get("checks", []),
+            schedule_cron=data.get("schedule_cron", "0 0 * * *"),
+            alert_on_failure=data.get("alert_on_failure", True),
+            slack_webhook=data.get("slack_webhook", ""),
+            email_recipients=data.get("email_recipients", []),
+            generate_report=data.get("generate_report", True),
+            report_format=data.get("report_format", "json"),
+        )
+
+
+@dataclass
+class QualityResult:
+    """
+    Kết quả quality check.
+
+    Attributes:
+        id: Định danh result
+        check_id: ID của QualityCheck
+        profile_id: ID của DataQualityProfile (optional)
+        passed: Có pass không
+        metric_name: Tên metric được kiểm tra
+        actual_value: Giá trị thực tế
+        threshold_value: Giá trị threshold
+        details: Chi tiết kết quả
+        checked_at: Timestamp kiểm tra (ISO)
+    """
+    __test__ = False  # Prevent pytest collection
+
+    id: str
+    check_id: str
+    profile_id: str = ""
+    passed: bool = True
+    metric_name: str = ""
+    actual_value: float = 0.0
+    threshold_value: float = 0.0
+    details: str = ""
+    checked_at: str = ""
+
+    def __post_init__(self):
+        if not self.id or not self.id.strip():
+            from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+            EM.raise_error(
+                ErrorCode.CP24_EMPTY_QUALITY_CHECK_ID,
+                message="QualityResult id không được để trống",
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển QualityResult sang dict format."""
+        return {
+            "id": self.id,
+            "check_id": self.check_id,
+            "profile_id": self.profile_id,
+            "passed": self.passed,
+            "metric_name": self.metric_name,
+            "actual_value": self.actual_value,
+            "threshold_value": self.threshold_value,
+            "details": self.details,
+            "checked_at": self.checked_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "QualityResult":
+        """Tạo QualityResult từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            check_id=data.get("check_id", ""),
+            profile_id=data.get("profile_id", ""),
+            passed=data.get("passed", True),
+            metric_name=data.get("metric_name", ""),
+            actual_value=data.get("actual_value", 0.0),
+            threshold_value=data.get("threshold_value", 0.0),
+            details=data.get("details", ""),
+            checked_at=data.get("checked_at", ""),
+        )

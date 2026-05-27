@@ -14,12 +14,18 @@ Version: 1.0.0
 import pytest
 
 from midicoder.emitters.core.cp24_quality_security.models import (
+    AlertSeverity,
+    DataQualityProfile,
+    DataQualityRule,
     FormatterType,
     LinterType,
+    QualityCheck,
     QualityCollection,
     QualityGateConfig,
     QualityProfile,
     QualityReport,
+    QualityResult,
+    QualityThreshold,
     QualityViolation,
     SecurityScanConfig,
     SecurityScanRule,
@@ -435,3 +441,401 @@ class TestEnums:
         assert SecurityTool.NPM_AUDIT.value == "npm-audit"
         assert SecurityTool.ESLINT_SECURITY.value == "eslint-security"
         assert SecurityTool.LOCKFILE_LINT.value == "lockfile-lint"
+
+
+# ===========================================================================
+# Data Quality & Profiling Tests
+# ===========================================================================
+
+
+class TestDataQualityRule:
+    """Test cho DataQualityRule enum."""
+
+    def test_rule_values(self) -> None:
+        """Kiểm tra giá trị enum DataQualityRule."""
+        assert DataQualityRule.COMPLETENESS.value == "completeness"
+        assert DataQualityRule.ACCURACY.value == "accuracy"
+        assert DataQualityRule.FRESHNESS.value == "freshness"
+        assert DataQualityRule.CONSISTENCY.value == "consistency"
+        assert DataQualityRule.UNIQUENESS.value == "uniqueness"
+        assert DataQualityRule.VALIDITY.value == "validity"
+
+
+class TestAlertSeverity:
+    """Test cho AlertSeverity enum."""
+
+    def test_severity_values(self) -> None:
+        """Kiểm tra giá trị enum AlertSeverity."""
+        assert AlertSeverity.CRITICAL.value == "critical"
+        assert AlertSeverity.WARNING.value == "warning"
+        assert AlertSeverity.INFO.value == "info"
+
+
+class TestQualityCheck:
+    """Test cho QualityCheck dataclass."""
+
+    def test_create_default_check(self) -> None:
+        """Kiểm tra tạo quality check với giá trị mặc định."""
+        check = QualityCheck(
+            id="qc-test-1",
+            name="Test Check",
+            target="users.email",
+            rule=DataQualityRule.COMPLETENESS,
+        )
+        assert check.id == "qc-test-1"
+        assert check.name == "Test Check"
+        assert check.target == "users.email"
+        assert check.rule == DataQualityRule.COMPLETENESS
+        assert check.threshold == 0.95
+        assert check.sample_size == 0
+        assert check.description == ""
+        assert check.enabled is True
+        assert check.metadata == {}
+
+    def test_create_check_with_all_fields(self) -> None:
+        """Kiểm tra tạo quality check với đầy đủ fields."""
+        check = QualityCheck(
+            id="qc-test-full",
+            name="Full Check",
+            target="orders.total",
+            rule=DataQualityRule.ACCURACY,
+            threshold=0.99,
+            sample_size=1000,
+            description="Kiểm tra accuracy của orders.total",
+            enabled=False,
+            metadata={"min_value": 0, "max_value": 100000},
+        )
+        assert check.threshold == 0.99
+        assert check.sample_size == 1000
+        assert check.enabled is False
+        assert check.metadata["min_value"] == 0
+
+    def test_to_dict(self) -> None:
+        """Kiểm tra serialization sang dict."""
+        check = QualityCheck(
+            id="qc-serialize",
+            name="Serialize Test",
+            target="users",
+            rule=DataQualityRule.FRESHNESS,
+            threshold=24.0,
+        )
+        d = check.to_dict()
+        assert d["id"] == "qc-serialize"
+        assert d["rule"] == "freshness"
+        assert d["threshold"] == 24.0
+        assert d["enabled"] is True
+
+    def test_from_dict(self) -> None:
+        """Kiểm tra deserialization từ dict."""
+        data = {
+            "id": "qc-deserialize",
+            "name": "Deserialize Test",
+            "target": "products.price",
+            "rule": "uniqueness",
+            "threshold": 1.0,
+            "sample_size": 0,
+            "description": "No duplicate products",
+            "enabled": True,
+            "metadata": {},
+        }
+        check = QualityCheck.from_dict(data)
+        assert check.id == "qc-deserialize"
+        assert check.rule == DataQualityRule.UNIQUENESS
+        assert check.threshold == 1.0
+
+    def test_roundtrip(self) -> None:
+        """Kiểm tra to_dict → from_dict giữ nguyên dữ liệu."""
+        original = QualityCheck(
+            id="qc-roundtrip",
+            name="Roundtrip Test",
+            target="users.email",
+            rule=DataQualityRule.VALIDITY,
+            threshold=0.95,
+            metadata={"pattern": r".+@.+"},
+        )
+        restored = QualityCheck.from_dict(original.to_dict())
+        assert restored.id == original.id
+        assert restored.rule == original.rule
+        assert restored.metadata == original.metadata
+
+    def test_empty_id_raises_error(self) -> None:
+        """Kiểm tra lỗi khi id rỗng."""
+        with pytest.raises(Exception):
+            QualityCheck(
+                id="",
+                name="Bad Check",
+                target="users",
+                rule=DataQualityRule.COMPLETENESS,
+            )
+
+
+class TestQualityThreshold:
+    """Test cho QualityThreshold dataclass."""
+
+    def test_create_default_threshold(self) -> None:
+        """Kiểm tra tạo threshold với giá trị mặc định."""
+        threshold = QualityThreshold(
+            id="qt-test-1",
+            check_id="qc-test-1",
+            metric_name="completeness_pct",
+        )
+        assert threshold.id == "qt-test-1"
+        assert threshold.check_id == "qc-test-1"
+        assert threshold.operator == ">="
+        assert threshold.value == 0.95
+        assert threshold.severity == AlertSeverity.WARNING
+
+    def test_create_threshold_all_fields(self) -> None:
+        """Kiểm tra tạo threshold với đầy đủ fields."""
+        threshold = QualityThreshold(
+            id="qt-full",
+            check_id="qc-full",
+            metric_name="age_hours",
+            operator="<=",
+            value=24.0,
+            severity=AlertSeverity.CRITICAL,
+        )
+        assert threshold.operator == "<="
+        assert threshold.value == 24.0
+        assert threshold.severity == AlertSeverity.CRITICAL
+
+    def test_to_dict(self) -> None:
+        """Kiểm tra serialization."""
+        threshold = QualityThreshold(
+            id="qt-serialize",
+            check_id="qc-serialize",
+            metric_name="duplicate_count",
+            operator="==",
+            value=0.0,
+            severity=AlertSeverity.CRITICAL,
+        )
+        d = threshold.to_dict()
+        assert d["operator"] == "=="
+        assert d["value"] == 0.0
+        assert d["severity"] == "critical"
+
+    def test_from_dict(self) -> None:
+        """Kiểm tra deserialization."""
+        data = {
+            "id": "qt-deserialize",
+            "check_id": "qc-deserialize",
+            "metric_name": "null_count",
+            "operator": "<",
+            "value": 5.0,
+            "severity": "info",
+        }
+        threshold = QualityThreshold.from_dict(data)
+        assert threshold.operator == "<"
+        assert threshold.value == 5.0
+        assert threshold.severity == AlertSeverity.INFO
+
+    def test_roundtrip(self) -> None:
+        """Kiểm tra roundtrip giữ nguyên dữ liệu."""
+        original = QualityThreshold(
+            id="qt-roundtrip",
+            check_id="qc-roundtrip",
+            metric_name="orphan_count",
+            operator=">=",
+            value=0.0,
+            severity=AlertSeverity.WARNING,
+        )
+        restored = QualityThreshold.from_dict(original.to_dict())
+        assert restored.id == original.id
+        assert restored.operator == original.operator
+        assert restored.severity == original.severity
+
+    def test_empty_id_raises_error(self) -> None:
+        """Kiểm tra lỗi khi id rỗng."""
+        with pytest.raises(Exception):
+            QualityThreshold(
+                id="",
+                check_id="qc-test",
+                metric_name="test_metric",
+            )
+
+    def test_invalid_operator_raises_error(self) -> None:
+        """Kiểm tra lỗi khi operator không hợp lệ."""
+        with pytest.raises(Exception):
+            QualityThreshold(
+                id="qt-bad-op",
+                check_id="qc-test",
+                metric_name="test",
+                operator="invalid",
+            )
+
+
+class TestDataQualityProfile:
+    """Test cho DataQualityProfile dataclass."""
+
+    def test_create_default_profile(self) -> None:
+        """Kiểm tra tạo profile với giá trị mặc định."""
+        profile = DataQualityProfile(
+            id="dq-test",
+            name="Test Profile",
+        )
+        assert profile.id == "dq-test"
+        assert profile.checks == []
+        assert profile.schedule_cron == "0 0 * * *"
+        assert profile.alert_on_failure is True
+        assert profile.slack_webhook == ""
+        assert profile.email_recipients == []
+        assert profile.generate_report is True
+        assert profile.report_format == "json"
+
+    def test_create_full_profile(self) -> None:
+        """Kiểm tra tạo profile với đầy đủ fields."""
+        profile = DataQualityProfile(
+            id="dq-full",
+            name="Full Profile",
+            checks=["qc-1", "qc-2"],
+            schedule_cron="0 */6 * * *",
+            alert_on_failure=True,
+            slack_webhook="https://hooks.slack.com/test",
+            email_recipients=["team@company.com"],
+            generate_report=True,
+            report_format="csv",
+        )
+        assert len(profile.checks) == 2
+        assert profile.schedule_cron == "0 */6 * * *"
+        assert profile.report_format == "csv"
+
+    def test_to_dict(self) -> None:
+        """Kiểm tra serialization."""
+        profile = DataQualityProfile(
+            id="dq-serialize",
+            name="Serialize Profile",
+            checks=["qc-a", "qc-b"],
+            report_format="html",
+        )
+        d = profile.to_dict()
+        assert d["checks"] == ["qc-a", "qc-b"]
+        assert d["report_format"] == "html"
+
+    def test_from_dict(self) -> None:
+        """Kiểm tra deserialization."""
+        data = {
+            "id": "dq-deserialize",
+            "name": "Deserialize Profile",
+            "checks": ["qc-x"],
+            "schedule_cron": "0 0 * * 0",
+            "alert_on_failure": False,
+            "slack_webhook": "",
+            "email_recipients": ["admin@company.com"],
+            "generate_report": False,
+            "report_format": "json",
+        }
+        profile = DataQualityProfile.from_dict(data)
+        assert profile.id == "dq-deserialize"
+        assert len(profile.checks) == 1
+        assert profile.alert_on_failure is False
+        assert profile.generate_report is False
+
+    def test_roundtrip(self) -> None:
+        """Kiểm tra roundtrip giữ nguyên dữ liệu."""
+        original = DataQualityProfile(
+            id="dq-roundtrip",
+            name="Roundtrip Profile",
+            checks=["qc-1", "qc-2", "qc-3"],
+            email_recipients=["a@b.com", "c@d.com"],
+        )
+        restored = DataQualityProfile.from_dict(original.to_dict())
+        assert restored.id == original.id
+        assert restored.checks == original.checks
+        assert restored.email_recipients == original.email_recipients
+
+    def test_empty_id_raises_error(self) -> None:
+        """Kiểm tra lỗi khi id rỗng."""
+        with pytest.raises(Exception):
+            DataQualityProfile(id="", name="Bad Profile")
+
+
+class TestQualityResult:
+    """Test cho QualityResult dataclass."""
+
+    def test_create_default_result(self) -> None:
+        """Kiểm tra tạo result với giá trị mặc định."""
+        result = QualityResult(
+            id="qr-test-1",
+            check_id="qc-test-1",
+        )
+        assert result.id == "qr-test-1"
+        assert result.check_id == "qc-test-1"
+        assert result.profile_id == ""
+        assert result.passed is True
+        assert result.actual_value == 0.0
+        assert result.checked_at == ""
+
+    def test_create_full_result(self) -> None:
+        """Kiểm tra tạo result với đầy đủ fields."""
+        result = QualityResult(
+            id="qr-full",
+            check_id="qc-full",
+            profile_id="dq-profile",
+            passed=False,
+            metric_name="completeness_pct",
+            actual_value=0.85,
+            threshold_value=0.95,
+            details="85% completeness, below 95% threshold",
+            checked_at="2026-05-27T10:00:00Z",
+        )
+        assert result.passed is False
+        assert result.actual_value == 0.85
+        assert result.threshold_value == 0.95
+
+    def test_to_dict(self) -> None:
+        """Kiểm tra serialization."""
+        result = QualityResult(
+            id="qr-serialize",
+            check_id="qc-serialize",
+            passed=True,
+            metric_name="validity_pct",
+            actual_value=0.99,
+            threshold_value=0.95,
+            checked_at="2026-05-27T12:00:00Z",
+        )
+        d = result.to_dict()
+        assert d["passed"] is True
+        assert d["actual_value"] == 0.99
+        assert d["checked_at"] == "2026-05-27T12:00:00Z"
+
+    def test_from_dict(self) -> None:
+        """Kiểm tra deserialization."""
+        data = {
+            "id": "qr-deserialize",
+            "check_id": "qc-deserialize",
+            "profile_id": "dq-deserialize",
+            "passed": False,
+            "metric_name": "age_hours",
+            "actual_value": 48.0,
+            "threshold_value": 24.0,
+            "details": "Data is 48 hours old",
+            "checked_at": "2026-05-27T08:00:00Z",
+        }
+        result = QualityResult.from_dict(data)
+        assert result.passed is False
+        assert result.metric_name == "age_hours"
+        assert result.details == "Data is 48 hours old"
+
+    def test_roundtrip(self) -> None:
+        """Kiểm tra roundtrip giữ nguyên dữ liệu."""
+        original = QualityResult(
+            id="qr-roundtrip",
+            check_id="qc-roundtrip",
+            profile_id="dq-roundtrip",
+            passed=True,
+            metric_name="completeness_pct",
+            actual_value=0.98,
+            threshold_value=0.95,
+            details="OK",
+            checked_at="2026-05-27T00:00:00Z",
+        )
+        restored = QualityResult.from_dict(original.to_dict())
+        assert restored.id == original.id
+        assert restored.passed == original.passed
+        assert restored.actual_value == original.actual_value
+        assert restored.checked_at == original.checked_at
+
+    def test_empty_id_raises_error(self) -> None:
+        """Kiểm tra lỗi khi id rỗng."""
+        with pytest.raises(Exception):
+            QualityResult(id="", check_id="qc-test")
