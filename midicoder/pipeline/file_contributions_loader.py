@@ -50,6 +50,7 @@ from midicoder.contracts.registry import (
     FRONTEND_STACKS,
     INFRA_STACK,
 )
+from midicoder.pipeline.config import resolve_render_context
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +357,7 @@ class FileContributionsLoader:
     def expand_infrastructure(
         contributions: FileContributions,
         mir_metadata: dict | None = None,
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Expand infrastructure entries into concrete file plans.
 
@@ -363,6 +365,7 @@ class FileContributionsLoader:
             contributions: Loaded ``FileContributions`` for a pack.
             mir_metadata: Optional MIR metadata dict for ``context_keys``
                           resolution.
+            user_config: Optional user config from ``midicoder.config.yml``.
 
         Returns:
             List of file plan dicts.
@@ -373,7 +376,11 @@ class FileContributionsLoader:
         for entry in contributions.infrastructure:
             ctx = {}
             # EU-0.1: inject render_context (infrastructure → default {})
-            ctx["render_context"] = {}
+            # EU-0.2: merge với user config infrastructure overrides
+            if user_config:
+                ctx["render_context"] = user_config.get("render", {}).get("infrastructure", {})
+            else:
+                ctx["render_context"] = {}
             for key in entry.context_keys:
                 if key in meta:
                     ctx[key] = meta[key]
@@ -396,12 +403,14 @@ class FileContributionsLoader:
     def expand_per_entity(
         contributions: FileContributions,
         entities: list[dict[str, Any]],
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Expand ``per_entity`` entries into concrete file plans.
 
         Args:
             contributions: Loaded ``FileContributions`` for a pack.
             entities: Raw entity dicts from ``MIR.metadata.entities``.
+            user_config: Optional user config from ``midicoder.config.yml``.
 
         Returns:
             List of file plan dicts.
@@ -413,7 +422,13 @@ class FileContributionsLoader:
 
                 ctx = {"entity": entity, "all_entities": entities}
                 # EU-0.1: inject render_context từ entity vào context
-                ctx["render_context"] = entity.get("render_context", {})
+                # EU-0.2: merge với user config (priority: DSL > per_entity > defaults)
+                entity_rc = entity.get("render_context", {})
+                if user_config:
+                    entity_id = entity.get("id", "")
+                    ctx["render_context"] = resolve_render_context(entity_id, entity_rc, user_config)
+                else:
+                    ctx["render_context"] = entity_rc
                 # Inject additional context keys if declared
                 for key in entry.context_keys:
                     if key in entity:
@@ -437,12 +452,14 @@ class FileContributionsLoader:
     def expand_per_command(
         contributions: FileContributions,
         commands: list[dict[str, Any]],
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Expand ``per_command`` entries into concrete file plans.
 
         Args:
             contributions: Loaded ``FileContributions`` for a pack.
             commands: Raw command dicts from ``MIR.metadata.commands``.
+            user_config: Optional user config from ``midicoder.config.yml``.
 
         Returns:
             List of file plan dicts.
@@ -457,7 +474,12 @@ class FileContributionsLoader:
 
                 ctx = {"command": command, "all_commands": commands}
                 # EU-0.1: inject render_context từ command vào context
-                ctx["render_context"] = command.get("render_context", {})
+                # EU-0.2: merge với user config
+                cmd_rc = command.get("render_context", {})
+                if user_config:
+                    ctx["render_context"] = resolve_render_context(cmd_id, cmd_rc, user_config)
+                else:
+                    ctx["render_context"] = cmd_rc
                 for key in entry.context_keys:
                     if key in command:
                         ctx[key] = command[key]
@@ -480,12 +502,14 @@ class FileContributionsLoader:
     def expand_per_query(
         contributions: FileContributions,
         queries: list[dict[str, Any]],
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Expand ``per_query`` entries into concrete file plans.
 
         Args:
             contributions: Loaded ``FileContributions`` for a pack.
             queries: Raw query dicts from ``MIR.metadata.queries``.
+            user_config: Optional user config from ``midicoder.config.yml``.
 
         Returns:
             List of file plan dicts.
@@ -500,7 +524,12 @@ class FileContributionsLoader:
 
                 ctx = {"query": query, "all_queries": queries}
                 # EU-0.1: inject render_context từ query vào context
-                ctx["render_context"] = query.get("render_context", {})
+                # EU-0.2: merge với user config
+                query_rc = query.get("render_context", {})
+                if user_config:
+                    ctx["render_context"] = resolve_render_context(query_id, query_rc, user_config)
+                else:
+                    ctx["render_context"] = query_rc
                 for key in entry.context_keys:
                     if key in query:
                         ctx[key] = query[key]
@@ -523,6 +552,7 @@ class FileContributionsLoader:
     def expand_per_ui_component(
         contributions: FileContributions,
         entities: list[dict[str, Any]],
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Expand ``per_ui_component`` entries into concrete file plans.
 
@@ -532,6 +562,7 @@ class FileContributionsLoader:
         Args:
             contributions: Loaded ``FileContributions`` for a pack.
             entities: Raw entity dicts from ``MIR.metadata.entities``.
+            user_config: Optional user config from ``midicoder.config.yml``.
 
         Returns:
             List of file plan dicts.
@@ -550,7 +581,13 @@ class FileContributionsLoader:
                     "components": comp_types,
                 }
                 # EU-0.1: inject render_context từ entity vào context
-                ctx["render_context"] = entity.get("render_context", {})
+                # EU-0.2: merge với user config
+                entity_rc = entity.get("render_context", {})
+                if user_config:
+                    entity_id = entity.get("id", "")
+                    ctx["render_context"] = resolve_render_context(entity_id, entity_rc, user_config)
+                else:
+                    ctx["render_context"] = entity_rc
                 # Inject additional context keys if declared
                 for key in entry.context_keys:
                     if key in entity:
@@ -574,6 +611,7 @@ class FileContributionsLoader:
     def expand_per_widget(
         contributions: FileContributions,
         channels: list[dict[str, Any]] | None = None,
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Expand ``per_widget`` entries into concrete file plans.
 
@@ -585,6 +623,7 @@ class FileContributionsLoader:
         Args:
             contributions: Loaded ``FileContributions`` for a pack.
             channels: Optional channel specs from CP22 parser output.
+            user_config: Optional user config from ``midicoder.config.yml``.
 
         Returns:
             List of file plan dicts.
@@ -610,7 +649,11 @@ class FileContributionsLoader:
                     "widget_kebab": widget_kebab,
                 }
                 # EU-0.1: inject render_context (widget không có entity source → default {})
-                ctx["render_context"] = {}
+                # EU-0.2: widget dùng infrastructure overrides nếu có
+                if user_config:
+                    ctx["render_context"] = user_config.get("render", {}).get("infrastructure", {})
+                else:
+                    ctx["render_context"] = {}
                 if channels:
                     ctx["channels"] = channels
                     ctx["channel_topics"] = [ch.get("event_topic", ch.get("channel_id", "")) for ch in channels]
@@ -641,6 +684,7 @@ class FileContributionsLoader:
         stack: str,
         mir_metadata: dict | None = None,
         status_filter: str | None = None,
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Load infrastructure files from ALL packs for the given stack.
 
@@ -649,7 +693,7 @@ class FileContributionsLoader:
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
         for fc in self.load_all(stack=stack, status_filter=status_filter):
-            for f in self.expand_infrastructure(fc, mir_metadata):
+            for f in self.expand_infrastructure(fc, mir_metadata, user_config=user_config):
                 if f["path"] not in seen:
                     seen.add(f["path"])
                     result.append(f)
@@ -660,6 +704,7 @@ class FileContributionsLoader:
         stack: str,
         entities: list[dict[str, Any]],
         status_filter: str | None = None,
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Load per-entity files from ALL packs for the given stack.
 
@@ -668,7 +713,7 @@ class FileContributionsLoader:
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
         for fc in self.load_all(stack=stack, status_filter=status_filter):
-            for f in self.expand_per_entity(fc, entities):
+            for f in self.expand_per_entity(fc, entities, user_config=user_config):
                 if f["path"] not in seen:
                     seen.add(f["path"])
                     result.append(f)
@@ -679,12 +724,13 @@ class FileContributionsLoader:
         stack: str,
         commands: list[dict[str, Any]],
         status_filter: str | None = None,
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Load per-command files from ALL packs for the given stack."""
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
         for fc in self.load_all(stack=stack, status_filter=status_filter):
-            for f in self.expand_per_command(fc, commands):
+            for f in self.expand_per_command(fc, commands, user_config=user_config):
                 if f["path"] not in seen:
                     seen.add(f["path"])
                     result.append(f)
@@ -695,12 +741,13 @@ class FileContributionsLoader:
         stack: str,
         queries: list[dict[str, Any]],
         status_filter: str | None = None,
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Load per-query files from ALL packs for the given stack."""
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
         for fc in self.load_all(stack=stack, status_filter=status_filter):
-            for f in self.expand_per_query(fc, queries):
+            for f in self.expand_per_query(fc, queries, user_config=user_config):
                 if f["path"] not in seen:
                     seen.add(f["path"])
                     result.append(f)
@@ -711,6 +758,7 @@ class FileContributionsLoader:
         stack: str,
         entities: list[dict[str, Any]],
         status_filter: str | None = None,
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Load per-ui-component files from ALL packs for the given stack.
 
@@ -727,7 +775,7 @@ class FileContributionsLoader:
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
         for fc in self.load_all(stack=stack, status_filter=status_filter):
-            for f in self.expand_per_ui_component(fc, entities):
+            for f in self.expand_per_ui_component(fc, entities, user_config=user_config):
                 if f["path"] not in seen:
                     seen.add(f["path"])
                     result.append(f)
@@ -738,6 +786,7 @@ class FileContributionsLoader:
         stack: str,
         channels: list[dict[str, Any]] | None = None,
         status_filter: str | None = None,
+        user_config: dict | None = None,  # EU-0.2
     ) -> list[dict[str, Any]]:
         """Load per-widget files from ALL packs for the given stack.
 
@@ -754,7 +803,7 @@ class FileContributionsLoader:
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
         for fc in self.load_all(stack=stack, status_filter=status_filter):
-            for f in self.expand_per_widget(fc, channels):
+            for f in self.expand_per_widget(fc, channels, user_config=user_config):
                 if f["path"] not in seen:
                     seen.add(f["path"])
                     result.append(f)

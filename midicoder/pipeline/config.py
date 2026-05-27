@@ -450,6 +450,103 @@ class ConfigManager:
         return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+# EU-0.2 constants
+USER_CONFIG_FILE = "midicoder.config.yml"
+
+
+def deep_merge(base: dict, override: dict) -> dict:
+    """
+    Merge override vào base recursively (deep merge).
+
+    - Dict + Dict: merge recursive
+    - Non-dict override: ghi đè base
+    - Key chỉ có trong base: giữ nguyên
+    - Key chỉ có trong override: thêm vào result
+    - Không mutate base hoặc override
+
+    Returns:
+        dict: Kết quả merge (dict mới)
+    """
+    result = base.copy()
+    for k, v in override.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            result[k] = deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
+
+
+def load_user_config(project_root: Path) -> dict:
+    """
+    Đọc midicoder.config.yml từ project root.
+
+    EU-0.2: Project-level render overrides file, khác với internal
+    .midicoder/config/midicoder.yml.
+
+    Args:
+        project_root: Đường dẫn đến root của project
+
+    Returns:
+        dict: Config dict, hoặc {} nếu file không tồn tại
+
+    Raises:
+        MidicoderError: Nếu YAML invalid (MDC-CONFIG-003)
+    """
+    config_path = project_root / USER_CONFIG_FILE
+
+    if not config_path.exists():
+        return {}
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        EM.raise_error(
+            ErrorCode.CONFIG_FORMAT_INVALID,
+            file_path=str(config_path),
+            error_type="YAMLError",
+            original_error=str(e),
+        )
+
+    return data
+
+
+def resolve_render_context(
+    entity_id: str,
+    entity_rc: dict,
+    user_config: dict,
+) -> dict:
+    """
+    Resolve render_context theo 3-layer priority:
+    1. entity.render_context (DSL-level — CAO NHẤT)
+    2. midicoder.config.yml render.per_entity.{EntityName}
+    3. midicoder.config.yml render.defaults (THẤP NHẤT)
+
+    Template hardcoded default is layer 0 (thấp nhất, handled by template engine).
+
+    Args:
+        entity_id: ID của entity (vd: "Product")
+        entity_rc: render_context từ DSL (entity.render_context)
+        user_config: Dict từ midicoder.config.yml
+
+    Returns:
+        dict: Merged render_context
+    """
+    merged: dict[str, Any] = {}
+
+    # Layer 1: global defaults (thấp nhất)
+    merged.update(user_config.get("render", {}).get("defaults", {}))
+
+    # Layer 2: per-entity override (deep merge)
+    per_entity = user_config.get("render", {}).get("per_entity", {}).get(entity_id, {})
+    merged = deep_merge(merged, per_entity)
+
+    # Layer 3: DSL-level (cao nhất - deep merge)
+    merged = deep_merge(merged, entity_rc)
+
+    return merged
+
+
 # Global config manager instance (singleton pattern)
 _config_manager: Optional[ConfigManager] = None
 

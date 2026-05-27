@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from midicoder.storage.sqlite import ArtifactsManager, ProvenanceManager
-from midicoder.pipeline.config import get_config
+from midicoder.pipeline.config import get_config, load_user_config
 from midicoder.pipeline.plan import ImplementationPlan, ModuleSpec, FileSpec
 from midicoder.pipeline.file_contributions_loader import (
     FileContributionsLoader,
@@ -253,8 +253,11 @@ def _execute_plan(
     config = get_config()
     active_version = config.get("active_version", "v1.0.0")
 
+    # EU-0.2: Load user config từ project root
+    user_config = load_user_config(Path("."))
+
     # Bước 3: Tạo plan
-    plan = _create_implementation_plan(mir_data, target, status_filter=status_filter)
+    plan = _create_implementation_plan(mir_data, target, status_filter=status_filter, user_config=user_config)
     
     # Bước 4: Lưu plan vào artifacts
     artifacts_manager = ArtifactsManager()
@@ -354,14 +357,16 @@ def _create_implementation_plan(
     mir: dict,
     target: str,
     status_filter: str | None = None,
+    user_config: dict | None = None,  # EU-0.2
 ) -> ImplementationPlan:
     """
     Tạo implementation plan từ MIR.
-    
+
     Args:
         mir: MIR dictionary
         target: Target để generate
-    
+        user_config: Optional user config từ midicoder.config.yml
+
     Returns:
         ImplementationPlan typed instance
     """
@@ -372,10 +377,10 @@ def _create_implementation_plan(
             "target": target,
         }
     )
-    
+
     # Tạo backend modules
     if target in ["backend", "all"]:
-        backend_files = _plan_backend_files(mir, status_filter=status_filter)
+        backend_files = _plan_backend_files(mir, status_filter=status_filter, user_config=user_config)
 
         # BUG FIX: read entities from MIR.metadata (same fix as in _plan_backend_files)
         metadata_dict = mir.get("metadata", {})
@@ -465,7 +470,7 @@ def _create_implementation_plan(
 
     # Tạo frontend modules
     if target in ["frontend", "all"]:
-        frontend_files = _plan_frontend_files(mir, status_filter=status_filter)
+        frontend_files = _plan_frontend_files(mir, status_filter=status_filter, user_config=user_config)
 
         frontend_specs = [FileSpec(
             path=f["path"],
@@ -475,16 +480,16 @@ def _create_implementation_plan(
             dependencies=[],
             metadata=f.get("metadata", {})
         ) for f in frontend_files]
-        
+
         plan.add_module(ModuleSpec(
             name="frontend",
             module_type="frontend",
             files=frontend_specs,
             dependencies=[]
         ))
-    
+
     # Infrastructure module
-    infra_files = _plan_infra_files(status_filter=status_filter)
+    infra_files = _plan_infra_files(status_filter=status_filter, user_config=user_config)
     infra_specs = [FileSpec(
         path=f["path"],
         file_type=f["type"],
@@ -504,7 +509,7 @@ def _create_implementation_plan(
     return plan
 
 
-def _plan_backend_files(mir: dict, status_filter: str | None = None) -> List[dict]:
+def _plan_backend_files(mir: dict, status_filter: str | None = None, user_config: dict | None = None) -> List[dict]:
     """
     Plan backend files from MIR.
 
@@ -516,6 +521,7 @@ def _plan_backend_files(mir: dict, status_filter: str | None = None) -> List[dic
     Args:
         mir: MIR dictionary (as produced by MIR.to_dict())
         status_filter: If set, only include packs with matching status.
+        user_config: Optional user config from midicoder.config.yml (EU-0.2).
 
     Returns:
         Danh sách backend file plans
@@ -548,25 +554,25 @@ def _plan_backend_files(mir: dict, status_filter: str | None = None) -> List[dic
 
     # --- Pack-declared infrastructure files for this backend stack ---
     infra_files = loader.resolve_all_infrastructure(
-        backend_stack, metadata, status_filter=status_filter
+        backend_stack, metadata, status_filter=status_filter, user_config=user_config
     )
     _merge_files(files, infra_files)
 
     # --- Pack-declared per-entity files for this backend stack ---
     per_entity_files = loader.resolve_all_per_entity(
-        backend_stack, entities, status_filter=status_filter
+        backend_stack, entities, status_filter=status_filter, user_config=user_config
     )
     _merge_files(files, per_entity_files)
 
     # --- Pack-declared per-command files for this backend stack ---
     per_command_files = loader.resolve_all_per_command(
-        backend_stack, commands, status_filter=status_filter
+        backend_stack, commands, status_filter=status_filter, user_config=user_config
     )
     _merge_files(files, per_command_files)
 
     # --- Pack-declared per-query files for this backend stack ---
     per_query_files = loader.resolve_all_per_query(
-        backend_stack, queries, status_filter=status_filter
+        backend_stack, queries, status_filter=status_filter, user_config=user_config
     )
     _merge_files(files, per_query_files)
 
@@ -589,7 +595,7 @@ def _merge_files(target: List[dict], source: List[dict]) -> None:
             target.append(f)
 
 
-def _plan_frontend_files(mir: dict, status_filter: str | None = None) -> List[dict]:
+def _plan_frontend_files(mir: dict, status_filter: str | None = None, user_config: dict | None = None) -> List[dict]:
     """
     Plan frontend files from MIR.
 
@@ -599,6 +605,7 @@ def _plan_frontend_files(mir: dict, status_filter: str | None = None) -> List[di
     Args:
         mir: MIR dictionary
         status_filter: If set, only include packs with matching status.
+        user_config: Optional user config from midicoder.config.yml (EU-0.2).
 
     Returns:
         Danh sách frontend file plans
@@ -613,7 +620,7 @@ def _plan_frontend_files(mir: dict, status_filter: str | None = None) -> List[di
 
     # --- Pack-declared infrastructure files for this frontend stack ---
     infra_files = loader.resolve_all_infrastructure(
-        frontend_stack, metadata, status_filter=status_filter
+        frontend_stack, metadata, status_filter=status_filter, user_config=user_config
     )
     for f in infra_files:
         f.setdefault("metadata", {})["stack"] = frontend_stack
@@ -621,7 +628,7 @@ def _plan_frontend_files(mir: dict, status_filter: str | None = None) -> List[di
 
     # --- Pack-declared per-entity files for this frontend stack ---
     per_entity_files = loader.resolve_all_per_entity(
-        frontend_stack, entities, status_filter=status_filter
+        frontend_stack, entities, status_filter=status_filter, user_config=user_config
     )
     for f in per_entity_files:
         f.setdefault("metadata", {})["stack"] = frontend_stack
@@ -629,7 +636,7 @@ def _plan_frontend_files(mir: dict, status_filter: str | None = None) -> List[di
 
     # --- Pack-declared per-ui-component files (entities × component_types) ---
     per_ui_component_files = loader.resolve_all_per_ui_component(
-        frontend_stack, entities, status_filter=status_filter
+        frontend_stack, entities, status_filter=status_filter, user_config=user_config
     )
     for f in per_ui_component_files:
         f.setdefault("metadata", {})["stack"] = frontend_stack
@@ -638,7 +645,7 @@ def _plan_frontend_files(mir: dict, status_filter: str | None = None) -> List[di
     # --- Pack-declared per-widget files (CP22 realtime widgets) ---
     # Resolve widget types (presence, live_feed, live_counter, ...) — not per-entity
     per_widget_files = loader.resolve_all_per_widget(
-        frontend_stack, None, status_filter=status_filter
+        frontend_stack, None, status_filter=status_filter, user_config=user_config
     )
     for f in per_widget_files:
         f.setdefault("metadata", {})["stack"] = frontend_stack
@@ -682,7 +689,7 @@ def _get_ui_framework(frontend_stack: str) -> str:
     return "material" if frontend_stack == "angular" else "antd"
 
 
-def _plan_infra_files(status_filter: str | None = None) -> List[dict]:
+def _plan_infra_files(status_filter: str | None = None, user_config: dict | None = None) -> List[dict]:
     """
     Plan infrastructure files.
 
@@ -692,6 +699,7 @@ def _plan_infra_files(status_filter: str | None = None) -> List[dict]:
 
     Args:
         status_filter: If set, only include packs with matching status.
+        user_config: Optional user config from midicoder.config.yml (EU-0.2).
 
     Returns:
         Danh sách infra file plans
@@ -701,7 +709,7 @@ def _plan_infra_files(status_filter: str | None = None) -> List[dict]:
     # CP07 (IaC) contributes docker-compose, Dockerfile for fastapi/nestjs
     # Since infra is stack-agnostic, try "fastapi" first (where CP07 lives)
     infra_files = loader.resolve_all_infrastructure(
-        "fastapi", status_filter=status_filter
+        "fastapi", status_filter=status_filter, user_config=user_config
     )
 
     # Filter to only infrastructure-type files
@@ -712,19 +720,23 @@ def _plan_infra_files(status_filter: str | None = None) -> List[dict]:
         return infra_only
 
     # Fallback: minimal infra files if loader returns nothing
+    # EU-0.2: inject infrastructure render overrides từ user config
+    infra_rc = {}
+    if user_config:
+        infra_rc = user_config.get("render", {}).get("infrastructure", {})
     return [
         {
             "path": "docker-compose.yml",
             "type": "docker_compose",
             "template": "cp07_iac/docker-compose.yml.jinja2",
-            "context": {},
+            "context": {"render_context": infra_rc},
             "metadata": {},
         },
         {
             "path": "Dockerfile",
             "type": "dockerfile",
             "template": "cp07_iac/Dockerfile.api.jinja2",
-            "context": {},
+            "context": {"render_context": infra_rc},
             "metadata": {},
         },
     ]
