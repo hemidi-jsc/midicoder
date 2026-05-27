@@ -101,6 +101,8 @@ class ErrorCode(str, Enum):
     VALIDATION_FAILED = "MDC-VALID-001"
     CONSTRAINT_VIOLATION = "MDC-VALID-002"
     CROSS_NODE_VALIDATION_FAILED = "MDC-VALID-003"
+    INVALID_ID = "MDC-VALID-004"
+    INVALID_INPUT = "MDC-VALID-005"
 
     # =========================================================================
     # Dependency/Cycle Errors
@@ -647,6 +649,8 @@ class ErrorCode(str, Enum):
     CP24_EMPTY_PROFILE_NAME = "MDC-CP24-008"
     CP24_INVALID_STACK = "MDC-CP24-009"
     CP24_REPORT_WRITE_FAILED = "MDC-CP24-010"
+    CP24_EMPTY_QUALITY_CHECK_ID = "MDC-CP24-011"
+    CP24_INVALID_QUALITY_THRESHOLD = "MDC-CP24-012"
 
     # =========================================================================
     # CP25: Performance Testing Generator Errors
@@ -903,6 +907,11 @@ class ErrorCode(str, Enum):
     CP38_JSON_PARSE_FAILED = "MDC-CP38-016"
     CP38_TEMPLATE_NOT_FOUND = "MDC-CP38-017"
     CP38_RENDER_FAILED = "MDC-CP38-018"
+    CP38_SCHEMA_NOT_FOUND = "MDC-CP38-019"
+    CP38_DUPLICATE_SCHEMA_ID = "MDC-CP38-020"
+    CP38_INVALID_SCHEMA_FORMAT = "MDC-CP38-021"
+    CP38_INCOMPATIBLE_SCHEMA = "MDC-CP38-022"
+    CP38_SCHEMA_REGISTRY_UNAVAILABLE = "MDC-CP38-023"
 
     # =========================================================================
     # CP39: i18n/L10n Runtime Errors
@@ -1126,6 +1135,20 @@ class ErrorCode(str, Enum):
     CP59_SUBSCRIPTION_NOT_FOUND = "MDC-CP59-009"
     CP59_BILLING_GATEWAY_TIMEOUT = "MDC-CP59-010"
 
+    # =========================================================================
+    # CP64: API Contract Testing (Pact) Errors
+    # =========================================================================
+    CP64_CONSUMER_SPEC_NOT_FOUND = "MDC-CP64-001"
+    CP64_INTERACTION_NOT_FOUND = "MDC-CP64-002"
+    CP64_INVALID_CONTRACT_TYPE = "MDC-CP64-003"
+    CP64_INVALID_MATCH_RULE = "MDC-CP64-004"
+    CP64_PACT_BROKER_CONFIG_INVALID = "MDC-CP64-005"
+    CP64_PROVIDER_VERIFIER_INVALID = "MDC-CP64-006"
+    CP64_CONTRACT_PARSE_FAILED = "MDC-CP64-007"
+    CP64_TEMPLATE_NOT_FOUND = "MDC-CP64-008"
+    CP64_CONTRACT_EMIT_FAILED = "MDC-CP64-009"
+
+    # =========================================================================
 
 class ExitCode(Enum):
     """
@@ -1331,6 +1354,8 @@ class MidicoderErrorManager:
         ErrorCode.VALIDATION_FAILED: "Validation thất bại với errors và warnings.",
         ErrorCode.CONSTRAINT_VIOLATION: "Constraint violation trong node.",
         ErrorCode.CROSS_NODE_VALIDATION_FAILED: "Cross-node validation thất bại.",
+        ErrorCode.INVALID_ID: "ID không hợp lệ hoặc thiếu: {reason}.",
+        ErrorCode.INVALID_INPUT: "Input không hợp lệ: {reason}.",
 
         # Dependency Errors
         ErrorCode.DEPENDENCY_CYCLE_DETECTED: "Phát hiện cycle trong dependency graph.",
@@ -1598,6 +1623,11 @@ class MidicoderErrorManager:
         ErrorCode.CP38_JSON_PARSE_FAILED: "JSON parse thất bại: {reason}",
         ErrorCode.CP38_TEMPLATE_NOT_FOUND: "Jinja2 template không tìm thấy: {template}",
         ErrorCode.CP38_RENDER_FAILED: "Render template thất bại {template}: {reason}",
+        ErrorCode.CP38_SCHEMA_NOT_FOUND: "Schema không tìm thấy: {schema_id}",
+        ErrorCode.CP38_DUPLICATE_SCHEMA_ID: "Schema ID đã tồn tại: {schema_id}",
+        ErrorCode.CP38_INVALID_SCHEMA_FORMAT: "Schema format không hợp lệ: {format}",
+        ErrorCode.CP38_INCOMPATIBLE_SCHEMA: "Schema không tương thích: {schema_id} (mode: {compatibility_mode})",
+        ErrorCode.CP38_SCHEMA_REGISTRY_UNAVAILABLE: "Schema registry không khả dụng: {url}",
 
         # CP39: i18n/L10n Runtime Error Templates
         ErrorCode.CP39_EMPTY_LOCALE_CODE: "Locale code không được để trống.",
