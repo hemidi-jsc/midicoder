@@ -5,7 +5,10 @@ from __future__ import annotations
 from midicoder.emitters.core.cp05_event_driven.models import (
     DeliveryGuarantee,
     DLQConfig,
+    DLQDashboardConfig,
+    DLQManagementConfig,
     DLQPolicy,
+    DLQStatus,
     EventStoreBackend,
     EventStoreConfig,
     IdempotencyStrategy,
@@ -16,6 +19,7 @@ from midicoder.emitters.core.cp05_event_driven.models import (
     TransportType,
 )
 from midicoder.emitters.core.cp05_event_driven.recipes import (
+    dlq_management_recipe,
     dlq_recipe,
     event_sourcing_recipe,
     idempotent_consumer_recipe,
@@ -184,3 +188,69 @@ class TestRetryPolicyRecipe:
         policy = retry_policy_recipe(strategy=RetryStrategy.FIXED, max_attempts=10)
         assert policy.strategy == RetryStrategy.FIXED
         assert policy.max_attempts == 10
+
+
+# ============================================================================
+# DLQ Management Recipe Tests
+# ============================================================================
+
+
+class TestDLQManagementRecipe:
+    def test_defaults(self):
+        result = dlq_management_recipe()
+        assert isinstance(result, dict)
+        assert "dlq_config" in result
+        assert "dashboard_config" in result
+        assert "status" in result
+
+    def test_dlq_config_defaults(self):
+        result = dlq_management_recipe()
+        dlq = result["dlq_config"]
+        assert isinstance(dlq, DLQManagementConfig)
+        assert dlq.id == "dlq.central"
+        assert dlq.name == "Central DLQ"
+        assert dlq.source_topic == "events.failed"
+        assert dlq.retry_strategy == RetryStrategy.EXPONENTIAL_BACKOFF
+        assert dlq.max_retries == 3
+        assert dlq.auto_purge is False
+
+    def test_dashboard_config_defaults(self):
+        result = dlq_management_recipe()
+        dash = result["dashboard_config"]
+        assert isinstance(dash, DLQDashboardConfig)
+        assert dash.id == "dlq.dashboard"
+        assert dash.name == "DLQ Management Dashboard"
+        assert dash.enabled is True
+        assert dash.auto_retry is False
+        assert dash.notification_on_new_message is True
+
+    def test_status_is_active(self):
+        result = dlq_management_recipe()
+        assert result["status"] == DLQStatus.ACTIVE.value
+
+    def test_custom_params(self):
+        result = dlq_management_recipe(
+            dlq_id="custom.dlq",
+            dlq_name="Custom DLQ",
+            source_topic="payments.failed",
+            max_retries=5,
+            retry_strategy=RetryStrategy.ADAPTIVE,
+            auto_purge=True,
+            alert_on_threshold=50,
+            dashboard_id="custom.dash",
+            dashboard_name="Custom Dashboard",
+            auto_retry=True,
+            retry_batch_size=25,
+            slack_webhook="https://hooks.slack.com/test",
+            email_recipients=["ops@test.com"],
+        )
+        dlq = result["dlq_config"]
+        assert dlq.id == "custom.dlq"
+        assert dlq.retry_strategy == RetryStrategy.ADAPTIVE
+        assert dlq.auto_purge is True
+        dash = result["dashboard_config"]
+        assert dash.id == "custom.dash"
+        assert dash.auto_retry is True
+        assert dash.retry_batch_size == 25
+        assert dash.slack_webhook == "https://hooks.slack.com/test"
+        assert dash.email_recipients == ["ops@test.com"]

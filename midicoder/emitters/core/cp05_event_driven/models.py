@@ -484,6 +484,10 @@ class RetryStrategy(str, Enum):
     EXPONENTIAL = "exponential"
     EXPONENTIAL_WITH_JITTER = "exponential_with_jitter"
     FIBONACCI = "fibonacci"
+    FIXED_DELAY = "fixed_delay"
+    EXPONENTIAL_BACKOFF = "exponential_backoff"
+    LINEAR_BACKOFF = "linear_backoff"
+    ADAPTIVE = "adaptive"
 
 
 @dataclass
@@ -825,6 +829,267 @@ class CQRSProjection:
 
 
 # ============================================================================
+# Centralized DLQ Management
+# ============================================================================
+
+
+class DLQStatus(str, Enum):
+    """
+    Trạng thái của Dead Letter Queue.
+
+    - active: DLQ đang hoạt động, thu thập messages
+    - archived: DLQ đã được lưu trữ (historical)
+    - retrying: DLQ đang trong quá trình retry batch messages
+    - purged: DLQ đã được purge (messages đã bị xóa)
+    """
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    RETRYING = "retrying"
+    PURGED = "purged"
+
+
+@dataclass
+class DLQManagementConfig:
+    """
+    Cấu hình Dead Letter Queue cho centralized management.
+
+    Mở rộng DLQConfig truyền thống với các tính năng management:
+    exponential backoff, auto-purge, và dashboard integration.
+
+    Attributes:
+        id: Unique ID cho DLQ management config
+        name: Tên hiển thị của DLQ
+        source_topic: Topic/source mà DLQ nhận messages
+        max_retries: Số lần retry tối đa trước khi message vào DLQ vĩnh viễn
+        retry_strategy: Chiến lược retry (fixed_delay, exponential_backoff, linear_backoff, adaptive)
+        initial_delay_seconds: Delay ban đầu giữa retries (giây)
+        max_delay_seconds: Delay tối đa giữa retries (giây)
+        visibility_timeout_seconds: Thời gian message bị ẩn trong queue khi đang processing
+        retention_days: Số ngày giữ messages trong DLQ trước khi auto-purge
+        auto_purge: Có tự động purge messages sau retention_days không
+        alert_on_threshold: Alert khi DLQ vượt quá số messages này
+        description: Mô tả DLQ config
+    """
+    id: str
+    name: str
+    source_topic: str
+    max_retries: int = 3
+    retry_strategy: RetryStrategy = RetryStrategy.EXPONENTIAL_BACKOFF
+    initial_delay_seconds: int = 10
+    max_delay_seconds: int = 3600
+    visibility_timeout_seconds: int = 300
+    retention_days: int = 7
+    auto_purge: bool = False
+    alert_on_threshold: int = 100
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate DLQ management config sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            raise ValueError("DLQ id không được để trống")
+        if not self.name or not self.name.strip():
+            raise ValueError("DLQ name không được để trống")
+        if not self.source_topic or not self.source_topic.strip():
+            raise ValueError("DLQ source_topic không được để trống")
+        if self.max_retries < 0:
+            self.max_retries = 3
+        if self.initial_delay_seconds < 1:
+            self.initial_delay_seconds = 10
+        if self.max_delay_seconds < self.initial_delay_seconds:
+            self.max_delay_seconds = self.initial_delay_seconds * 2
+        if self.visibility_timeout_seconds < 1:
+            self.visibility_timeout_seconds = 300
+        if self.retention_days < 1:
+            self.retention_days = 7
+        if self.alert_on_threshold < 1:
+            self.alert_on_threshold = 100
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển DLQ management config sang dict format."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "source_topic": self.source_topic,
+            "max_retries": self.max_retries,
+            "retry_strategy": self.retry_strategy.value,
+            "initial_delay_seconds": self.initial_delay_seconds,
+            "max_delay_seconds": self.max_delay_seconds,
+            "visibility_timeout_seconds": self.visibility_timeout_seconds,
+            "retention_days": self.retention_days,
+            "auto_purge": self.auto_purge,
+            "alert_on_threshold": self.alert_on_threshold,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DLQManagementConfig":
+        """Tạo DLQManagementConfig từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            source_topic=data.get("source_topic", ""),
+            max_retries=data.get("max_retries", 3),
+            retry_strategy=RetryStrategy(data.get("retry_strategy", "exponential_backoff")),
+            initial_delay_seconds=data.get("initial_delay_seconds", 10),
+            max_delay_seconds=data.get("max_delay_seconds", 3600),
+            visibility_timeout_seconds=data.get("visibility_timeout_seconds", 300),
+            retention_days=data.get("retention_days", 7),
+            auto_purge=data.get("auto_purge", False),
+            alert_on_threshold=data.get("alert_on_threshold", 100),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class DLQMessage:
+    """
+    Message trong Dead Letter Queue.
+
+    Đại diện cho một message không thể process được — được lưu trong DLQ
+    để debug, retry manual, hoặc alert team.
+
+    Attributes:
+        id: Unique ID của message
+        original_message: Raw message body gốc
+        error_reason: Lý do message bị fail
+        retry_count: Số lần đã retry (bắt đầu từ 0)
+        max_retries: Số lần retry tối đa
+        first_failure_at: Thời điểm fail đầu tiên (ISO timestamp)
+        last_retry_at: Thời điểm retry cuối cùng (ISO timestamp)
+        source_topic: Topic gốc của message
+        headers: Headers/raw metadata của message
+    """
+    id: str
+    original_message: Any
+    error_reason: str
+    retry_count: int = 0
+    max_retries: int = 3
+    first_failure_at: str = ""
+    last_retry_at: str = ""
+    source_topic: str = ""
+    headers: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate DLQ message sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            raise ValueError("DLQ message id không được để trống")
+        if not self.error_reason or not self.error_reason.strip():
+            raise ValueError("DLQ message error_reason không được để trống")
+        if self.retry_count < 0:
+            self.retry_count = 0
+        if self.max_retries < 0:
+            self.max_retries = 3
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển DLQ message sang dict format."""
+        result: dict[str, Any] = {
+            "id": self.id,
+            "original_message": self.original_message,
+            "error_reason": self.error_reason,
+            "retry_count": self.retry_count,
+            "max_retries": self.max_retries,
+        }
+        if self.first_failure_at:
+            result["first_failure_at"] = self.first_failure_at
+        if self.last_retry_at:
+            result["last_retry_at"] = self.last_retry_at
+        if self.source_topic:
+            result["source_topic"] = self.source_topic
+        if self.headers:
+            result["headers"] = self.headers
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DLQMessage":
+        """Tạo DLQMessage từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            original_message=data.get("original_message"),
+            error_reason=data.get("error_reason", ""),
+            retry_count=data.get("retry_count", 0),
+            max_retries=data.get("max_retries", 3),
+            first_failure_at=data.get("first_failure_at", ""),
+            last_retry_at=data.get("last_retry_at", ""),
+            source_topic=data.get("source_topic", ""),
+            headers=data.get("headers", {}),
+        )
+
+
+@dataclass
+class DLQDashboardConfig:
+    """
+    Cấu hình DLQ management dashboard — UI centralized.
+
+    Dashboard cho phép quan sát, retry manual, và purge messages từ DLQ.
+    Integration với Slack/email cho notification khi có messages mới.
+
+    Attributes:
+        id: Unique ID cho dashboard config
+        name: Tên hiển thị của dashboard
+        enabled: Có enable dashboard không
+        auto_retry: Có tự động retry messages trong DLQ không
+        retry_batch_size: Số messages retry cùng lúc (khi auto_retry enabled)
+        purge_after_days: Tự động purge messages sau bao nhiêu ngày
+        notification_on_new_message: Có notify khi có message mới vào DLQ không
+        slack_webhook: Webhook URL cho Slack notification
+        email_recipients: Danh sách email để nhận notification
+        description: Mô tả dashboard config
+    """
+    id: str
+    name: str
+    enabled: bool = True
+    auto_retry: bool = False
+    retry_batch_size: int = 10
+    purge_after_days: int = 7
+    notification_on_new_message: bool = True
+    slack_webhook: str = ""
+    email_recipients: list[str] = field(default_factory=list)
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        """Validate DLQ dashboard config sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            raise ValueError("DLQ dashboard id không được để trống")
+        if not self.name or not self.name.strip():
+            raise ValueError("DLQ dashboard name không được để trống")
+        if self.retry_batch_size < 1:
+            self.retry_batch_size = 10
+        if self.purge_after_days < 1:
+            self.purge_after_days = 7
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển DLQ dashboard config sang dict format."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "enabled": self.enabled,
+            "auto_retry": self.auto_retry,
+            "retry_batch_size": self.retry_batch_size,
+            "purge_after_days": self.purge_after_days,
+            "notification_on_new_message": self.notification_on_new_message,
+            "slack_webhook": self.slack_webhook,
+            "email_recipients": self.email_recipients,
+            "description": self.description,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DLQDashboardConfig":
+        """Tạo DLQDashboardConfig từ dict."""
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            enabled=data.get("enabled", True),
+            auto_retry=data.get("auto_retry", False),
+            retry_batch_size=data.get("retry_batch_size", 10),
+            purge_after_days=data.get("purge_after_days", 7),
+            notification_on_new_message=data.get("notification_on_new_message", True),
+            slack_webhook=data.get("slack_webhook", ""),
+            email_recipients=data.get("email_recipients", []),
+            description=data.get("description", ""),
+        )
+
+
+# ============================================================================
 # Exports
 # ============================================================================
 
@@ -857,4 +1122,9 @@ __all__ = [
     # CQRS Projection
     "MaterializationStrategy",
     "CQRSProjection",
+    # Centralized DLQ Management
+    "DLQStatus",
+    "DLQManagementConfig",
+    "DLQMessage",
+    "DLQDashboardConfig",
 ]

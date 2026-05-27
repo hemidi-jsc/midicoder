@@ -14,6 +14,7 @@ Recipes:
     - EventSourcingRecipe: Event store + snapshot + optimistic locking
     - OutboxRecipe: Transactional outbox pattern
     - DLQRecipe: Dead letter queue with alerting
+    - DLQManagementRecipe: Centralized DLQ management with dashboard
     - IdempotentConsumerRecipe: Dedup + checkpoint
 
 Author: Midicoder Team
@@ -25,7 +26,10 @@ from __future__ import annotations
 from .models import (
     DeliveryGuarantee,
     DLQConfig,
+    DLQDashboardConfig,
+    DLQManagementConfig,
     DLQPolicy,
+    DLQStatus,
     EventStoreBackend,
     EventStoreConfig,
     IdempotencyStrategy,
@@ -407,6 +411,88 @@ def retry_policy_recipe(
 
 
 # ============================================================================
+# DLQ Management Recipe (Centralized)
+# ============================================================================
+
+
+def dlq_management_recipe(
+    dlq_id: str = "dlq.central",
+    dlq_name: str = "Central DLQ",
+    source_topic: str = "events.failed",
+    max_retries: int = 3,
+    retry_strategy: RetryStrategy = RetryStrategy.EXPONENTIAL_BACKOFF,
+    initial_delay_seconds: int = 10,
+    max_delay_seconds: int = 3600,
+    retention_days: int = 7,
+    auto_purge: bool = False,
+    alert_on_threshold: int = 100,
+    dashboard_id: str = "dlq.dashboard",
+    dashboard_name: str = "DLQ Management Dashboard",
+    auto_retry: bool = False,
+    retry_batch_size: int = 10,
+    slack_webhook: str = "",
+    email_recipients: list[str] | None = None,
+) -> dict:
+    """
+    Centralized DLQ management recipe với exponential backoff, auto-purge, dashboard.
+
+    Recipe này cung cấp cấu hình DLQ centralized — thu thập tất cả messages
+    không thể process từ nhiều topics, với retry tự động, dashboard quản lý,
+    và notification qua Slack/email.
+
+    Args:
+        dlq_id: Unique ID cho DLQ management config
+        dlq_name: Tên hiển thị của DLQ
+        source_topic: Topic/source mà DLQ nhận messages
+        max_retries: Số lần retry tối đa
+        retry_strategy: Chiến lược retry
+        initial_delay_seconds: Delay ban đầu giữa retries (giây)
+        max_delay_seconds: Delay tối đa giữa retries (giây)
+        retention_days: Số ngày giữ messages trong DLQ
+        auto_purge: Có tự động purge messages sau retention_days không
+        alert_on_threshold: Alert khi DLQ vượt quá số messages này
+        dashboard_id: Unique ID cho dashboard config
+        dashboard_name: Tên hiển thị của dashboard
+        auto_retry: Có tự động retry messages trong DLQ không
+        retry_batch_size: Số messages retry cùng lúc
+        slack_webhook: Webhook URL cho Slack notification
+        email_recipients: Danh sách email để nhận notification
+
+    Returns:
+        Dict với DLQ management config, dashboard config, và metadata
+    """
+    return {
+        "dlq_config": DLQManagementConfig(
+            id=dlq_id,
+            name=dlq_name,
+            source_topic=source_topic,
+            max_retries=max_retries,
+            retry_strategy=retry_strategy,
+            initial_delay_seconds=initial_delay_seconds,
+            max_delay_seconds=max_delay_seconds,
+            retention_days=retention_days,
+            auto_purge=auto_purge,
+            alert_on_threshold=alert_on_threshold,
+            description="Centralized DLQ with exponential backoff and auto-purge",
+        ),
+        "dashboard_config": DLQDashboardConfig(
+            id=dashboard_id,
+            name=dashboard_name,
+            enabled=True,
+            auto_retry=auto_retry,
+            retry_batch_size=retry_batch_size,
+            purge_after_days=retention_days,
+            notification_on_new_message=True,
+            slack_webhook=slack_webhook,
+            email_recipients=email_recipients or [],
+            description="Centralized DLQ management dashboard with Slack/email notification",
+        ),
+        "status": DLQStatus.ACTIVE.value,
+        "description": "Centralized DLQ management with exponential backoff, auto-purge, and dashboard",
+    }
+
+
+# ============================================================================
 # Exports
 # ============================================================================
 
@@ -424,6 +510,7 @@ __all__ = [
     "outbox_recipe",
     # DLQ
     "dlq_recipe",
+    "dlq_management_recipe",
     # Idempotent consumer
     "idempotent_consumer_recipe",
     # Retry policy

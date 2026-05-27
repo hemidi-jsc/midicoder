@@ -22,7 +22,11 @@ from midicoder.emitters.core.cp05_event_driven.models import (
     CQRSProjection,
     DeliveryGuarantee,
     DLQConfig,
+    DLQDashboardConfig,
+    DLQManagementConfig,
+    DLQMessage,
     DLQPolicy,
+    DLQStatus,
     EventDefinition,
     EventSchemaVersion,
     EventStoreBackend,
@@ -482,6 +486,281 @@ class TestCQRSProjection:
 
 
 # ============================================================================
+# DLQStatus Enum Tests
+# ============================================================================
+
+
+class TestDLQStatus:
+    def test_status_values(self):
+        assert DLQStatus.ACTIVE.value == "active"
+        assert DLQStatus.ARCHIVED.value == "archived"
+        assert DLQStatus.RETRYING.value == "retrying"
+        assert DLQStatus.PURGED.value == "purged"
+
+
+# ============================================================================
+# DLQManagementConfig Tests
+# ============================================================================
+
+
+class TestDLQManagementConfig:
+    def test_creation_minimal(self):
+        config = DLQManagementConfig(
+            id="dlq.1",
+            name="Test DLQ",
+            source_topic="orders.failed",
+        )
+        assert config.id == "dlq.1"
+        assert config.name == "Test DLQ"
+        assert config.source_topic == "orders.failed"
+        assert config.max_retries == 3
+        assert config.retry_strategy == RetryStrategy.EXPONENTIAL_BACKOFF
+        assert config.initial_delay_seconds == 10
+        assert config.max_delay_seconds == 3600
+        assert config.visibility_timeout_seconds == 300
+        assert config.retention_days == 7
+        assert config.auto_purge is False
+        assert config.alert_on_threshold == 100
+
+    def test_creation_full(self):
+        config = DLQManagementConfig(
+            id="dlq.2",
+            name="Full DLQ",
+            source_topic="events.failed",
+            max_retries=5,
+            retry_strategy=RetryStrategy.ADAPTIVE,
+            initial_delay_seconds=5,
+            max_delay_seconds=7200,
+            retention_days=30,
+            auto_purge=True,
+            alert_on_threshold=50,
+        )
+        assert config.max_retries == 5
+        assert config.retry_strategy == RetryStrategy.ADAPTIVE
+        assert config.auto_purge is True
+        assert config.alert_on_threshold == 50
+
+    def test_empty_id_raises(self):
+        with pytest.raises(ValueError, match="DLQ id không được để trống"):
+            DLQManagementConfig(id="", name="x", source_topic="y")
+
+    def test_empty_name_raises(self):
+        with pytest.raises(ValueError, match="DLQ name không được để trống"):
+            DLQManagementConfig(id="x", name="", source_topic="y")
+
+    def test_empty_source_topic_raises(self):
+        with pytest.raises(ValueError, match="source_topic không được để trống"):
+            DLQManagementConfig(id="x", name="y", source_topic="")
+
+    def test_negative_retries_fixed(self):
+        config = DLQManagementConfig(id="x", name="y", source_topic="z", max_retries=-1)
+        assert config.max_retries == 3
+
+    def test_zero_delay_fixed(self):
+        config = DLQManagementConfig(id="x", name="y", source_topic="z", initial_delay_seconds=0)
+        assert config.initial_delay_seconds == 10
+
+    def test_max_delay_less_than_initial_fixed(self):
+        config = DLQManagementConfig(id="x", name="y", source_topic="z", initial_delay_seconds=50, max_delay_seconds=10)
+        assert config.max_delay_seconds == 100
+
+    def test_zero_retention_fixed(self):
+        config = DLQManagementConfig(id="x", name="y", source_topic="z", retention_days=0)
+        assert config.retention_days == 7
+
+    def test_zero_alert_threshold_fixed(self):
+        config = DLQManagementConfig(id="x", name="y", source_topic="z", alert_on_threshold=0)
+        assert config.alert_on_threshold == 100
+
+    def test_to_dict(self):
+        config = DLQManagementConfig(
+            id="dlq.1",
+            name="Test",
+            source_topic="topic",
+            max_retries=5,
+            auto_purge=True,
+        )
+        result = config.to_dict()
+        assert result["id"] == "dlq.1"
+        assert result["retry_strategy"] == "exponential_backoff"
+        assert result["auto_purge"] is True
+
+    def test_from_dict(self):
+        data = {
+            "id": "dlq.from",
+            "name": "From Dict",
+            "source_topic": "from.topic",
+            "retry_strategy": "adaptive",
+            "auto_purge": True,
+        }
+        config = DLQManagementConfig.from_dict(data)
+        assert config.id == "dlq.from"
+        assert config.retry_strategy == RetryStrategy.ADAPTIVE
+        assert config.auto_purge is True
+
+
+# ============================================================================
+# DLQMessage Tests
+# ============================================================================
+
+
+class TestDLQMessage:
+    def test_creation_minimal(self):
+        msg = DLQMessage(
+            id="msg.1",
+            original_message={"order_id": "123"},
+            error_reason="Schema validation failed",
+        )
+        assert msg.id == "msg.1"
+        assert msg.retry_count == 0
+        assert msg.max_retries == 3
+        assert msg.headers == {}
+
+    def test_creation_full(self):
+        msg = DLQMessage(
+            id="msg.2",
+            original_message={"data": "test"},
+            error_reason="Timeout",
+            retry_count=2,
+            max_retries=5,
+            first_failure_at="2024-01-01T00:00:00Z",
+            last_retry_at="2024-01-01T01:00:00Z",
+            source_topic="orders",
+            headers={"content-type": "application/json"},
+        )
+        assert msg.retry_count == 2
+        assert msg.first_failure_at == "2024-01-01T00:00:00Z"
+        assert msg.source_topic == "orders"
+
+    def test_empty_id_raises(self):
+        with pytest.raises(ValueError, match="DLQ message id không được để trống"):
+            DLQMessage(id="", original_message="x", error_reason="y")
+
+    def test_empty_error_reason_raises(self):
+        with pytest.raises(ValueError, match="error_reason không được để trống"):
+            DLQMessage(id="x", original_message="x", error_reason="")
+
+    def test_negative_retry_count_fixed(self):
+        msg = DLQMessage(id="x", original_message="x", error_reason="y", retry_count=-5)
+        assert msg.retry_count == 0
+
+    def test_to_dict_minimal(self):
+        msg = DLQMessage(id="m1", original_message="body", error_reason="err")
+        result = msg.to_dict()
+        assert result["id"] == "m1"
+        assert "first_failure_at" not in result
+        assert "headers" not in result
+
+    def test_to_dict_full(self):
+        msg = DLQMessage(
+            id="m1",
+            original_message="body",
+            error_reason="err",
+            first_failure_at="2024-01-01",
+            last_retry_at="2024-01-02",
+            source_topic="t1",
+            headers={"k": "v"},
+        )
+        result = msg.to_dict()
+        assert result["first_failure_at"] == "2024-01-01"
+        assert result["headers"] == {"k": "v"}
+
+    def test_from_dict(self):
+        data = {
+            "id": "m.from",
+            "original_message": {"payload": "data"},
+            "error_reason": "parse error",
+            "retry_count": 2,
+            "headers": {"x-correlation-id": "abc"},
+        }
+        msg = DLQMessage.from_dict(data)
+        assert msg.id == "m.from"
+        assert msg.retry_count == 2
+        assert msg.headers == {"x-correlation-id": "abc"}
+
+
+# ============================================================================
+# DLQDashboardConfig Tests
+# ============================================================================
+
+
+class TestDLQDashboardConfig:
+    def test_creation_minimal(self):
+        config = DLQDashboardConfig(
+            id="dash.1",
+            name="DLQ Dashboard",
+        )
+        assert config.enabled is True
+        assert config.auto_retry is False
+        assert config.retry_batch_size == 10
+        assert config.purge_after_days == 7
+        assert config.notification_on_new_message is True
+        assert config.slack_webhook == ""
+        assert config.email_recipients == []
+
+    def test_creation_full(self):
+        config = DLQDashboardConfig(
+            id="dash.2",
+            name="Full Dashboard",
+            enabled=False,
+            auto_retry=True,
+            retry_batch_size=50,
+            purge_after_days=14,
+            notification_on_new_message=False,
+            slack_webhook="https://hooks.slack.com/test",
+            email_recipients=["ops@example.com"],
+        )
+        assert config.enabled is False
+        assert config.auto_retry is True
+        assert config.retry_batch_size == 50
+        assert config.email_recipients == ["ops@example.com"]
+
+    def test_empty_id_raises(self):
+        with pytest.raises(ValueError, match="DLQ dashboard id không được để trống"):
+            DLQDashboardConfig(id="", name="x")
+
+    def test_empty_name_raises(self):
+        with pytest.raises(ValueError, match="DLQ dashboard name không được để trống"):
+            DLQDashboardConfig(id="x", name="")
+
+    def test_zero_batch_size_fixed(self):
+        config = DLQDashboardConfig(id="x", name="y", retry_batch_size=0)
+        assert config.retry_batch_size == 10
+
+    def test_zero_purge_days_fixed(self):
+        config = DLQDashboardConfig(id="x", name="y", purge_after_days=0)
+        assert config.purge_after_days == 7
+
+    def test_to_dict(self):
+        config = DLQDashboardConfig(
+            id="d1",
+            name="Test",
+            auto_retry=True,
+            slack_webhook="https://hooks.slack.com/test",
+            email_recipients=["a@b.com"],
+        )
+        result = config.to_dict()
+        assert result["id"] == "d1"
+        assert result["auto_retry"] is True
+        assert result["slack_webhook"] == "https://hooks.slack.com/test"
+        assert result["email_recipients"] == ["a@b.com"]
+
+    def test_from_dict(self):
+        data = {
+            "id": "d.from",
+            "name": "From Dict",
+            "enabled": False,
+            "auto_retry": True,
+            "retry_batch_size": 20,
+            "email_recipients": ["ops@test.com"],
+        }
+        config = DLQDashboardConfig.from_dict(data)
+        assert config.id == "d.from"
+        assert config.enabled is False
+        assert config.retry_batch_size == 20
+
+
+# ============================================================================
 # Enum Coverage Tests
 # ============================================================================
 
@@ -522,6 +801,10 @@ class TestEnumValues:
         assert RetryStrategy.EXPONENTIAL.value == "exponential"
         assert RetryStrategy.EXPONENTIAL_WITH_JITTER.value == "exponential_with_jitter"
         assert RetryStrategy.FIBONACCI.value == "fibonacci"
+        assert RetryStrategy.FIXED_DELAY.value == "fixed_delay"
+        assert RetryStrategy.EXPONENTIAL_BACKOFF.value == "exponential_backoff"
+        assert RetryStrategy.LINEAR_BACKOFF.value == "linear_backoff"
+        assert RetryStrategy.ADAPTIVE.value == "adaptive"
 
     def test_idempotency_strategy_values(self):
         assert IdempotencyStrategy.DEDUP_BY_EVENT_ID.value == "dedup_by_event_id"
