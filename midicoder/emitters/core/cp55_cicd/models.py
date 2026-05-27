@@ -456,3 +456,189 @@ class Jenkinsfile:
                 },
             ),
         )
+
+
+# ===========================================================================
+# Deployment Strategy (Blue-green, Canary, Progressive Delivery)
+# ===========================================================================
+
+
+class DeploymentStrategy(str, Enum):
+    """Chiến lược deployment.
+
+    - BLUE_GREEN: Blue-green deployment với instant rollback
+    - CANARY: Canary deployment với traffic percentage
+    - ROLLING: Rolling update (mặc định)
+    - RECIPROCING: Reciprocating deployment
+    - RECREATE: Recreate (stop old, start new)
+    """
+    BLUE_GREEN = "blue_green"
+    CANARY = "canary"
+    ROLLING = "rolling"
+    RECIPROCING = "reciprocating"
+    RECREATE = "recreate"
+
+
+class CanaryAnalysis(str, Enum):
+    """Loại phân tích canary.
+
+    - MANUAL: Manual approval
+    - AUTOMATIC_METRICS: Tự động dựa trên metrics
+    - AUTOMATIC_LATENCY: Tự động dựa trên latency
+    - HYBRID: Kết hợp metrics + latency
+    """
+    MANUAL = "manual"
+    AUTOMATIC_METRICS = "automatic_metrics"
+    AUTOMATIC_LATENCY = "automatic_latency"
+    HYBRID = "hybrid"
+
+
+@dataclass
+class DeploymentConfig:
+    """Cấu hình deployment strategy cho progressive delivery.
+
+    Attributes:
+        id: ID duy nhất
+        name: Tên hiển thị
+        strategy: Chiến lược deployment
+        canary_percentage: Traffic % ban đầu cho canary
+        canary_increment: Tăng % mỗi bước
+        max_canary_percentage: Max % canary trước khi promote
+        analysis: Loại phân tích canary
+        analysis_interval_seconds: Interval giữa các lần phân tích
+        success_metrics: Danh sách metrics để đánh giá thành công
+        rollback_on_failure: Tự động rollback khi fail
+        health_check_path: Path cho health check
+        pre_deploy_hooks: Hooks chạy trước deploy
+        post_deploy_hooks: Hooks chạy sau deploy
+        metadata: Dữ liệu bổ sung
+    """
+    id: str
+    name: str
+    strategy: DeploymentStrategy = DeploymentStrategy.ROLLING
+    canary_percentage: int = 10
+    canary_increment: int = 10
+    max_canary_percentage: int = 50
+    analysis: CanaryAnalysis = CanaryAnalysis.MANUAL
+    analysis_interval_seconds: int = 60
+    success_metrics: list[str] = field(default_factory=list)
+    rollback_on_failure: bool = True
+    health_check_path: str = "/health"
+    pre_deploy_hooks: list[str] = field(default_factory=list)
+    post_deploy_hooks: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate config sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            raise EM.raise_error(
+                ErrorCode.DSL_LOAD_FAILED,
+                reason="DeploymentConfig.id bắt buộc và không được để trống",
+            )
+        if not self.name or not self.name.strip():
+            self.name = self.id
+        if not 0 < self.canary_percentage <= 100:
+            raise EM.raise_error(
+                ErrorCode.INVALID_INPUT,
+                reason=f"canary_percentage phải trong khoảng 1-100, nhận được: {self.canary_percentage}",
+            )
+        if self.strategy == DeploymentStrategy.CANARY and self.canary_increment < 1:
+            raise EM.raise_error(
+                ErrorCode.INVALID_INPUT,
+                reason="canary_increment phải >= 1 cho chiến lược canary",
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển DeploymentConfig sang dict."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "strategy": self.strategy.value,
+            "canary_percentage": self.canary_percentage,
+            "canary_increment": self.canary_increment,
+            "max_canary_percentage": self.max_canary_percentage,
+            "analysis": self.analysis.value,
+            "analysis_interval_seconds": self.analysis_interval_seconds,
+            "success_metrics": self.success_metrics,
+            "rollback_on_failure": self.rollback_on_failure,
+            "health_check_path": self.health_check_path,
+            "pre_deploy_hooks": self.pre_deploy_hooks,
+            "post_deploy_hooks": self.post_deploy_hooks,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DeploymentConfig":
+        """Tạo DeploymentConfig từ dict."""
+        return cls(
+            id=data["id"],
+            name=data.get("name", data["id"]),
+            strategy=DeploymentStrategy(data.get("strategy", "rolling")),
+            canary_percentage=data.get("canary_percentage", 10),
+            canary_increment=data.get("canary_increment", 10),
+            max_canary_percentage=data.get("max_canary_percentage", 50),
+            analysis=CanaryAnalysis(data.get("analysis", "manual")),
+            analysis_interval_seconds=data.get("analysis_interval_seconds", 60),
+            success_metrics=data.get("success_metrics", []),
+            rollback_on_failure=data.get("rollback_on_failure", True),
+            health_check_path=data.get("health_check_path", "/health"),
+            pre_deploy_hooks=data.get("pre_deploy_hooks", []),
+            post_deploy_hooks=data.get("post_deploy_hooks", []),
+            metadata=data.get("metadata", {}),
+        )
+
+
+@dataclass
+class RollbackPlan:
+    """Kế hoạch rollback tự động cho deployment thất bại.
+
+    Attributes:
+        id: ID duy nhất
+        deployment_id: ID của deployment config liên quan
+        trigger_conditions: Điều kiện kích hoạt rollback
+        rollback_strategy: Chiến lược rollback (full, canary, step)
+        notification_channels: Kênh thông báo khi rollback
+        auto_rollback: Có tự động rollback không
+    """
+    id: str
+    deployment_id: str
+    trigger_conditions: list[str] = field(default_factory=list)
+    rollback_strategy: str = "full"
+    notification_channels: list[str] = field(default_factory=list)
+    auto_rollback: bool = True
+
+    def __post_init__(self) -> None:
+        """Validate rollback plan sau khi khởi tạo."""
+        if not self.id or not self.id.strip():
+            raise EM.raise_error(
+                ErrorCode.DSL_LOAD_FAILED,
+                reason="RollbackPlan.id bắt buộc và không được để trống",
+            )
+        if not self.deployment_id or not self.deployment_id.strip():
+            raise EM.raise_error(
+                ErrorCode.INVALID_INPUT,
+                reason="RollbackPlan.deployment_id bắt buộc",
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Chuyển RollbackPlan sang dict."""
+        return {
+            "id": self.id,
+            "deployment_id": self.deployment_id,
+            "trigger_conditions": self.trigger_conditions,
+            "rollback_strategy": self.rollback_strategy,
+            "notification_channels": self.notification_channels,
+            "auto_rollback": self.auto_rollback,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RollbackPlan":
+        """Tạo RollbackPlan từ dict."""
+        return cls(
+            id=data["id"],
+            deployment_id=data["deployment_id"],
+            trigger_conditions=data.get("trigger_conditions", []),
+            rollback_strategy=data.get("rollback_strategy", "full"),
+            notification_channels=data.get("notification_channels", []),
+            auto_rollback=data.get("auto_rollback", True),
+        )
