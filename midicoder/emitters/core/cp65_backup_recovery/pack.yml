@@ -1,0 +1,148 @@
+# ===========================================================================
+# CP65 — Data Backup & Recovery
+# ===========================================================================
+# File contributions declaration cho 3 stacks: FastAPI, NestJS, Infrastructure
+#
+# Capabilities:
+# - automated_backup: Tự động backup theo lịch trình với full/incremental
+# - point_in_time_recovery: Point-in-time recovery cho database
+# - disaster_recovery: Disaster recovery với RTO/RPO SLA
+# - backup_monitoring: Giám sát backup với cảnh báo Slack/email
+# - compliance_retention: Retention chính sách cho SOX/HIPAA/GDPR
+# - cross_region_replication: Replication backup cross-region
+#
+# Storage: S3, GCS, Azure Blob, Local, K8s Volume
+# ===========================================================================
+
+pack:
+  id: "CP65"
+  name: "Data Backup & Recovery"
+  internal_id: "cp65_backup_recovery"
+  version: "1.0.0"
+  status: "stable"
+  category: "compliance"
+  depends_on: ["CP01", "CP08", "CP14", "CP47", "CP54"]
+  definitions_count: 6
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-CP65"
+    range: "MDC-CP65-001 to MDC-CP65-010"
+  capabilities_provided:
+    - automated_backup
+    - point_in_time_recovery
+    - disaster_recovery
+    - backup_monitoring
+    - compliance_retention
+    - cross_region_replication
+  capabilities:
+    - id: "automated_backup"
+      emitter: "fastapi, nestjs, infrastructure"
+    - id: "point_in_time_recovery"
+      emitter: "fastapi, nestjs"
+    - id: "disaster_recovery"
+      emitter: "fastapi, nestjs, infrastructure"
+    - id: "backup_monitoring"
+      emitter: "fastapi, nestjs"
+    - id: "compliance_retention"
+      emitter: "fastapi, nestjs, infrastructure"
+    - id: "cross_region_replication"
+      emitter: "infrastructure"
+  definitions:
+    - name: "BackupPolicy"
+      description: "Chính sách backup với loại, storage backend, lịch trình, và retention"
+    - name: "RestorePoint"
+      description: "Điểm khôi phục từ backup với checksum và trạng thái"
+    - name: "RecoveryPlan"
+      description: "Kế hoạch disaster recovery với RTO/RPO và recovery steps"
+    - name: "RecoveryStep"
+      description: "Bước trong recovery plan với action, target, dependencies"
+    - name: "BackupMonitor"
+      description: "Giám sát backup với cảnh báo Slack/email"
+    - name: "BackupType"
+      description: "Enum loại backup: FULL, INCREMENTAL, DIFFERENTIAL, POINT_IN_TIME"
+  obligations:
+    - name: "BackupVerification"
+      description: "Tự động verify checksum sau mỗi backup và alert khi thất bại"
+    - name: "RecoveryTesting"
+      description: "Tự động chạy recovery drill định kỳ để đảm bảo RTO/RPO"
+  file_contributions:
+    infrastructure:
+      # ------------------------------------------------------------------
+      # FastAPI — Backend
+      # ------------------------------------------------------------------
+      - path: "app/services/backup_service.py"
+        file_type: "backup_service"
+        template: "cp65_backup_recovery/backup_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["backup_policies", "restore_points", "enable_encryption"]
+      - path: "app/services/restore_service.py"
+        file_type: "restore_service"
+        template: "cp65_backup_recovery/restore_service.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["recovery_plans", "restore_points"]
+      - path: "app/api/backup_router.py"
+        file_type: "backup_router"
+        template: "cp65_backup_recovery/backup_router.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["backup_policies", "monitors"]
+      - path: "app/services/backup_scheduler.py"
+        file_type: "backup_scheduler"
+        template: "cp65_backup_recovery/backup_scheduler.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+        context_keys: ["backup_policies"]
+      # ------------------------------------------------------------------
+      # NestJS — Backend
+      # ------------------------------------------------------------------
+      - path: "src/backup/backup.module.ts"
+        file_type: "backup_module"
+        template: "cp65_backup_recovery/backup.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["backup_policies"]
+      - path: "src/backup/backup.service.ts"
+        file_type: "backup_service"
+        template: "cp65_backup_recovery/backup.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["backup_policies", "enable_encryption"]
+      - path: "src/backup/restore.service.ts"
+        file_type: "restore_service"
+        template: "cp65_backup_recovery/restore.service.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["recovery_plans", "restore_points"]
+      - path: "src/backup/backup.controller.ts"
+        file_type: "backup_controller"
+        template: "cp65_backup_recovery/backup.controller.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+        context_keys: ["backup_policies", "monitors"]
+      # ------------------------------------------------------------------
+      # Infrastructure — Kubernetes
+      # ------------------------------------------------------------------
+      - path: "k8s/backup-cronjob.yaml"
+        file_type: "backup_cronjob"
+        template: "cp65_backup_recovery/k8s/backup-cronjob.yaml.jinja2"
+        stacks: ["infrastructure"]
+        pack_emitter: null
+        context_keys: ["backup_policies"]
+      - path: "k8s/volume-snapshot.yaml"
+        file_type: "volume_snapshot"
+        template: "cp65_backup_recovery/k8s/volume-snapshot.yaml.jinja2"
+        stacks: ["infrastructure"]
+        pack_emitter: null
+        context_keys: ["backup_policies"]
+      - path: "k8s/backup-s3-lifecycle.yaml"
+        file_type: "s3_lifecycle"
+        template: "cp65_backup_recovery/k8s/backup-s3-lifecycle.yaml.jinja2"
+        stacks: ["infrastructure"]
+        pack_emitter: null
+        context_keys: ["backup_policies", "default_retention_days"]
+  recipes:
+    - database_backup_recipe
+    - disaster_recovery_recipe
+    - compliance_backup_recipe
