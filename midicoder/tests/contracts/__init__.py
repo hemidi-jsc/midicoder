@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Module Contracts - Midicoder v1.0.0.
 
 Module này chứa các tests cho contract artifacts:

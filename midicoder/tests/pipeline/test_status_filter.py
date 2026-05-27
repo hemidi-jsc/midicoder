@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho status filter trong pipeline.
 
 Tests này validate:
@@ -26,8 +26,6 @@ from midicoder.pipeline.commands.code import (
     _plan_backend_files,
     _plan_frontend_files,
     _plan_infra_files,
-    _load_domain_pack_files,
-    _load_regulatory_pack_files,
 )
 from midicoder.pipeline.file_contributions_loader import (
     FileContributionsLoader,
@@ -531,39 +529,6 @@ class TestPlanFunctionsStatusFilter:
 
         # deprecated filter should return same or fewer
         assert len(files_dep) <= len(files_all)
-
-
-# ============================================================================
-# Domain and Regulatory pack loading tests
-# ============================================================================
-
-class TestPackLoadingStatusFilter:
-    """Tests cho _load_domain_pack_files và _load_regulatory_pack_files."""
-
-    def test_load_domain_pack_files_with_status_filter(self):
-        """Test _load_domain_pack_files với status_filter."""
-        files_all = _load_domain_pack_files("backend")
-        files_stable = _load_domain_pack_files("backend", status_filter="stable")
-
-        # stable filter should return same or fewer
-        assert len(files_stable) <= len(files_all)
-
-    def test_load_regulatory_pack_files_with_status_filter(self):
-        """Test _load_regulatory_pack_files với status_filter."""
-        files_all = _load_regulatory_pack_files("backend")
-        files_stable = _load_regulatory_pack_files("backend", status_filter="stable")
-
-        assert len(files_stable) <= len(files_all)
-
-    def test_load_domain_pack_files_frontend_returns_empty(self):
-        """Test _load_domain_pack_files với target='frontend' nên empty."""
-        files = _load_domain_pack_files("frontend")
-        assert len(files) == 0
-
-    def test_load_regulatory_pack_files_frontend_returns_empty(self):
-        """Test _load_regulatory_pack_files với target='frontend' nên empty."""
-        files = _load_regulatory_pack_files("frontend")
-        assert len(files) == 0
 
 
 # ============================================================================

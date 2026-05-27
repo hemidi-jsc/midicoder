@@ -1,4 +1,4 @@
-"""
+﻿"""
 Mô-đun Query - Context query API cho brief analysis và clarification.
 
 Cung cấp:

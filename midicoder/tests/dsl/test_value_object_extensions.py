@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Extended Value Object DSL (REBUILD).
 
 Test cases cho Phase 1 - DSL Extensions:

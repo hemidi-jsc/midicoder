@@ -1,4 +1,4 @@
-"""
+﻿"""
 DSL v1 Module - Kernel cho Midicoder CE
 
 Module này cung cấp DSL (Domain Specific Language) kernel production-level

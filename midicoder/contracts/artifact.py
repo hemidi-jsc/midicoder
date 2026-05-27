@@ -1,4 +1,4 @@
-"""
+﻿"""
 Artifact Base Types cho Midicoder v1.0.0
 
 Module này cung cấp các base types và utility functions cho tất cả artifacts.

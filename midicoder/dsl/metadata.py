@@ -1,4 +1,4 @@
-"""
+﻿"""
 DSL v1 Metadata Module
 
 Metadata classes for documentation, provenance, and introspection.

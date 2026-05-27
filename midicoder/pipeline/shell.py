@@ -1,4 +1,4 @@
-"""
+﻿"""
 Interactive Shell cho Midicoder CLI sử dụng Rich.
 
 Module này cung cấp:

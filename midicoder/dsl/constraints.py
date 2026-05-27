@@ -1,4 +1,4 @@
-"""
+﻿"""
 DSL v1 Constraints Module
 
 Production-level validation constraints for all DSL components.

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Contracts Registry và Pack Emitter Router consistency.
 
 Kiểm tra:
@@ -290,7 +290,7 @@ class TestEmitterRegistry:
         used_internal_ids = set()
         for key, (module_path, _, _) in self.emitter_registry.items():
             # Extract internal_id from module path
-            # "midicoder.emitters.core.cp01_domain_model.entity_fastapi"
+            # "midicoder.packs.cp01_domain_model.entity_fastapi"
             parts = module_path.split(".")
             for i, p in enumerate(parts):
                 if p in CP_ID_TO_INTERNAL.values():
@@ -322,7 +322,7 @@ class TestCrossConsistency:
     def test_emitter_module_paths_use_internal_ids_from_registry(self):
         """Module path trong EMITTER_REGISTRY phải dùng internal_id từ CP_ID_TO_INTERNAL.
 
-        Ví dụ: "midicoder.emitters.core.cp01_domain_model.entity_fastapi"
+        Ví dụ: "midicoder.packs.cp01_domain_model.entity_fastapi"
         → "cp01_domain_model" phải là value trong CP_ID_TO_INTERNAL.
         """
         internal_values = set(CP_ID_TO_INTERNAL.values())
@@ -356,7 +356,7 @@ class TestCrossConsistency:
 
     def test_cp51_resolver_imports_from_registry(self):
         """cp51_blueprint/resolver phải import CP_ID_TO_INTERNAL từ contracts.registry."""
-        import midicoder.emitters.core.cp51_blueprint.resolver as resolver_mod
+        import midicoder.packs.cp51_blueprint.resolver as resolver_mod
 
         # Source-level check: resolver.py should import from contracts.registry
         resolver_file = Path(resolver_mod.__file__).resolve()

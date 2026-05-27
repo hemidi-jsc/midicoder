@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Brief Commands (LLM Integration).
 
 Tests này validate:

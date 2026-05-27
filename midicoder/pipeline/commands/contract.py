@@ -1,4 +1,4 @@
-"""
+﻿"""
 Contract Commands Implementation (SQLite-Only Architecture).
 
 Tất cả contract artifacts được lưu vào SQLite (ArtifactsManager).

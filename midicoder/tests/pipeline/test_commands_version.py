@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Version Management Commands.
 
 Test coverage:

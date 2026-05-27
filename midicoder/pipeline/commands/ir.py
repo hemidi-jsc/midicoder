@@ -1,4 +1,4 @@
-"""
+﻿"""
 IR Build Command Implementation.
 
 Lệnh build MIR (Midicoder Intermediate Representation) từ Contract Artifacts:
@@ -900,7 +900,7 @@ def _store_custom_code_in_metadata(builder: MIRBuilder, tree: ProjectionTree) ->
 
     try:
         # CP28 recipes merged into CP27 — use CP27's auto_generate_plugins_from_mir
-        from midicoder.emitters.core.cp27_plugin_system.recipes import (
+        from midicoder.packs.cp27_plugin_system.recipes import (
             auto_generate_plugins_from_mir,
         )
         collection = auto_generate_plugins_from_mir({

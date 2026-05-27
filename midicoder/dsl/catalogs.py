@@ -1,4 +1,4 @@
-"""
+﻿"""
 DSL v1 Catalogs Module
 
 Centralized catalogs for all enum-like values used across DSL.

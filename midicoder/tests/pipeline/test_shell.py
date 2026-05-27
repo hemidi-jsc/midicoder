@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Interactive Shell (Rich-based).
 
 Tests này validate:

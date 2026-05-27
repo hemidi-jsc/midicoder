@@ -1,4 +1,4 @@
-"""Conftest for pipeline tests — prevent real LLM calls.
+﻿"""Conftest for pipeline tests — prevent real LLM calls.
 
 Autouse fixture patches load_llm_config to raise, forcing
 _generate_contracts_to_sqlite() into its placeholder fallback path.

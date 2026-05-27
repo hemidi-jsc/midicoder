@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Contract Commands (SQLite-Only Architecture).
 
 Test cases cho:

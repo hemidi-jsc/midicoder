@@ -1,4 +1,4 @@
-"""
+﻿"""
 DSL v1 Benchmarks - Module benchmark và profiling.
 
 Module này cung cấp các công cụ để đo lường performance của DSL kernel

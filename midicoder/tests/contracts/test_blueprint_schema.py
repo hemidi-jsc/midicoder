@@ -1,13 +1,13 @@
-"""
+﻿"""
 Tests cho Blueprint YAML Schema Validation.
 
 Tuân thủ TDD, kiểm tra:
 - Schema file tồn tại và hợp lệ
-- Schema có đủ các sections (metadata, industry, core_packs, domain_packs, regulatory_overlays)
+- Schema có đủ các sections (metadata, industry, core_packs)
 - Schema validates valid blueprints đúng
 - Schema rejects invalid blueprints đúng
 - Required fields được enforce đúng
-- Pattern validation cho CP/DP/RX IDs
+- Pattern validation cho CP IDs
 
 Author: Midicoder Team
 Version: 1.0.0
@@ -71,15 +71,6 @@ def valid_blueprint_data() -> dict:
             "excluded": [],
             "experimental": []
         },
-        "domain_packs": [
-            {"id": "DP01", "required": True, "config": {}},
-            {"id": "DP02"}
-        ],
-        "regulatory_overlays": [
-            {"id": "RX01", "strict_mode": True},
-            {"id": "RX06"},
-            {"id": "RX11", "strict_mode": True, "config": {"retention_days": 2555}}
-        ],
         "target_profiles": ["local", "aws"],
         "invariants": {
             "business": [
@@ -87,7 +78,6 @@ def valid_blueprint_data() -> dict:
                 "INV002"
             ],
             "compliance": [
-                {"id": "COMP001", "overlay": "RX01", "description": "PII encryption required", "controls": ["encryption_at_rest"]},
                 "COMP002"
             ],
             "failure_modes": [
@@ -142,12 +132,10 @@ class TestSchemaFileStructure:
         # - metadata (blueprint metadata)
         # - industry (industry info)
         # - core_packs (CP configuration)
-        # - regulatory_overlays (RX configuration - universal: RX01, RX11)
         assert "$schema" in required, "Schema version phải required"
         assert "metadata" in required, "Metadata phải required"
         assert "industry" in required, "Industry info phải required"
         assert "core_packs" in required, "Core packs phải required"
-        assert "regulatory_overlays" in required, "Regulatory overlays phải required"
 
     def test_schema_has_all_sections(self, schema: dict) -> None:
         """Kiểm tra schema có tất cả sections theo requirement.md."""
@@ -267,76 +255,6 @@ class TestCorePacksSection:
         # Non-P4 phải invalid
         assert not re.match(pattern, "CP01"), "CP01 phải invalid trong experimental"
         assert not re.match(pattern, "CP15"), "CP15 phải invalid trong experimental"
-
-
-# ============================================================================
-# Test Domain Packs Section
-# ============================================================================
-
-
-class TestDomainPacksSection:
-    """Tests cho domain_packs section."""
-
-    def test_domain_packs_is_array(self, schema: dict) -> None:
-        """Kiểm tra domain_packs là array."""
-        dp_schema = schema["properties"]["domain_packs"]
-        assert dp_schema["type"] == "array"
-
-    def test_domain_packs_id_pattern(self, schema: dict) -> None:
-        """Kiểm tra DP ID pattern (DP01-DP26)."""
-        items_schema = schema["properties"]["domain_packs"]["items"]
-        # oneOf với 2 forms
-        one_of = items_schema["oneOf"]
-        # Check simple form
-        simple_form = one_of[0]["properties"]["id"]
-        pattern = simple_form["pattern"]
-        import re
-        assert re.match(pattern, "DP01"), "DP01 phải valid"
-        assert re.match(pattern, "DP16"), "DP16 phải valid"
-        assert re.match(pattern, "DP26"), "DP26 phải valid"
-        assert not re.match(pattern, "DP00"), "DP00 phải invalid"
-        assert not re.match(pattern, "DP27"), "DP27 phải invalid"
-
-    def test_domain_packs_full_form(self, schema: dict) -> None:
-        """Kiểm tra domain_packs full form có required và config."""
-        items_schema = schema["properties"]["domain_packs"]["items"]
-        full_form = items_schema["oneOf"][1]["properties"]
-        assert "id" in full_form
-        assert "required" in full_form
-        assert "config" in full_form
-
-
-# ============================================================================
-# Test Regulatory Overlays Section
-# ============================================================================
-
-
-class TestRegulatoryOverlaysSection:
-    """Tests cho regulatory_overlays section."""
-
-    def test_regulatory_overlays_is_array(self, schema: dict) -> None:
-        """Kiểm tra regulatory_overlays là array."""
-        rx_schema = schema["properties"]["regulatory_overlays"]
-        assert rx_schema["type"] == "array"
-
-    def test_regulatory_overlays_id_pattern(self, schema: dict) -> None:
-        """Kiểm tra RX ID pattern (RX01-RX12)."""
-        items_schema = schema["properties"]["regulatory_overlays"]["items"]
-        simple_form = items_schema["oneOf"][0]["properties"]["id"]
-        pattern = simple_form["pattern"]
-        import re
-        assert re.match(pattern, "RX01"), "RX01 phải valid"
-        assert re.match(pattern, "RX06"), "RX06 phải valid"
-        assert re.match(pattern, "RX11"), "RX11 phải valid"
-        assert re.match(pattern, "RX12"), "RX12 phải valid"
-        assert not re.match(pattern, "RX00"), "RX00 phải invalid"
-        assert not re.match(pattern, "RX13"), "RX13 phải invalid"
-
-    def test_regulatory_overlays_strict_mode(self, schema: dict) -> None:
-        """Kiểm tra strict_mode field default True."""
-        items_schema = schema["properties"]["regulatory_overlays"]["items"]
-        full_form = items_schema["oneOf"][1]["properties"]["strict_mode"]
-        assert full_form["default"] is True, "strict_mode default phải là True"
 
 
 # ============================================================================

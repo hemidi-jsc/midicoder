@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho MIR (Midicoder Intermediate Representation) Module.
 
 Tests này validate:

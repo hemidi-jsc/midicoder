@@ -1,4 +1,4 @@
-"""
+﻿"""
 Commands Module cho Midicoder Pipeline.
 
 Module này chứa implementation của các CLI commands:

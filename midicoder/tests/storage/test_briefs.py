@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho BriefsManager.
 
 E09: SQLite Persistence - Briefs table

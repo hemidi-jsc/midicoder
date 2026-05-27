@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Configuration Management module.
 
 Test coverage:

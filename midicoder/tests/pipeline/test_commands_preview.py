@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Preview Commands.
 
 Test cases:

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit Tests cho MIR (Midicoder Intermediate Representation) Contracts.
 
 Kiểm tra behavior của:

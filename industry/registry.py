@@ -1,4 +1,4 @@
-"""
+﻿"""
 Taxonomy Registry — Programmatic access to industry/taxonomy.yml.
 
 Cung cấp:

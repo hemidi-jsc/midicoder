@@ -1,4 +1,4 @@
-"""
+﻿"""
 Pack File Contributions Loader — stack-aware.
 
 Reads ``file_contributions`` from pack.yml and turns them into
@@ -237,24 +237,12 @@ class FileContributionsLoader:
     frontend, or infra stack.
     """
 
-    def __init__(self, emitters_core_dir: Path | None = None, emitters_domain_dir: Path | None = None, emitters_regulatory_dir: Path | None = None):
-        if emitters_core_dir is None:
-            # midicoder/pipeline/ → midicoder/ → emitters/core/
-            self._base_dir = Path(__file__).resolve().parent.parent / "emitters" / "core"
+    def __init__(self, packs_dir: Path | None = None):
+        if packs_dir is None:
+            # midicoder/pipeline/ → midicoder/ → packs/
+            self._base_dir = Path(__file__).resolve().parent.parent / "packs"
         else:
-            self._base_dir = emitters_core_dir
-
-        # Domain Packs (DP) — industry-specific capabilities
-        if emitters_domain_dir is None:
-            self._domain_dir = Path(__file__).resolve().parent.parent / "emitters" / "domain"
-        else:
-            self._domain_dir = emitters_domain_dir
-
-        # Regulatory Overlays (RX) — compliance guards
-        if emitters_regulatory_dir is None:
-            self._regulatory_dir = Path(__file__).resolve().parent.parent / "emitters" / "regulatory"
-        else:
-            self._regulatory_dir = emitters_regulatory_dir
+            self._base_dir = packs_dir
 
     # ------------------------------------------------------------------
     # Public API
@@ -359,99 +347,6 @@ class FileContributionsLoader:
             if not fc.is_empty:
                 contributions.append(fc)
         return contributions
-
-    # ------------------------------------------------------------------
-    # Domain Packs (DP) loading
-    # ------------------------------------------------------------------
-
-    def _load_from_dir(
-        self,
-        search_dir: Path,
-        stack: str | None = None,
-        status_filter: str | None = None,
-    ) -> list[FileContributions]:
-        """Load contributions from any pack directory (domain or regulatory).
-
-        Scans subdirectories for ``pack.yml`` and loads each.
-
-        Args:
-            search_dir: Parent directory containing pack folders.
-            stack: Optional stack filter.
-            status_filter: If set, skip packs whose ``status`` does not match.
-
-        Returns:
-            List of non-empty ``FileContributions``.
-        """
-        if not search_dir.exists():
-            return []
-
-        contributions: list[FileContributions] = []
-        for sub in search_dir.iterdir():
-            if not sub.is_dir() or sub.name.startswith("_"):
-                continue
-            pack_yml = sub / "pack.yml"
-            if not pack_yml.exists():
-                continue
-
-            data = _load_yaml(pack_yml)
-
-            # Filter by status if requested
-            pack_status = data.get("status", "stable")
-            if status_filter and pack_status != status_filter:
-                continue
-
-            raw = data.get("file_contributions", {})
-            if not raw:
-                continue
-
-            pack_id = data.get("id", sub.name)
-            internal_id = data.get("internal_id", sub.name)
-
-            infra = [_parse_infrastructure(f) for f in raw.get("infrastructure", [])]
-            per_entity = [_parse_per_entity(f) for f in raw.get("per_entity", [])]
-            per_command = [_parse_per_command(f) for f in raw.get("per_command", [])]
-            per_query = [_parse_per_query(f) for f in raw.get("per_query", [])]
-            per_ui_component = [_parse_per_ui_component(f) for f in raw.get("per_ui_component", [])]
-            per_widget = [_parse_per_widget(f) for f in raw.get("per_widget", [])]
-
-            if stack:
-                infra = [e for e in infra if stack in e.stacks]
-                per_entity = [e for e in per_entity if stack in e.stacks]
-                per_command = [e for e in per_command if stack in e.stacks]
-                per_query = [e for e in per_query if stack in e.stacks]
-                per_ui_component = [e for e in per_ui_component if stack in e.stacks]
-                per_widget = [e for e in per_widget if stack in e.stacks]
-
-            fc = FileContributions(
-                pack_id=pack_id,
-                pack_internal_id=internal_id,
-                infrastructure=infra,
-                per_entity=per_entity,
-                per_command=per_command,
-                per_query=per_query,
-                per_ui_component=per_ui_component,
-                per_widget=per_widget,
-                status=pack_status,
-            )
-            if not fc.is_empty:
-                contributions.append(fc)
-        return contributions
-
-    def load_all_domain(
-        self,
-        stack: str | None = None,
-        status_filter: str | None = None,
-    ) -> list[FileContributions]:
-        """Load contributions from all Domain Packs (DP)."""
-        return self._load_from_dir(self._domain_dir, stack, status_filter)
-
-    def load_all_regulatory(
-        self,
-        stack: str | None = None,
-        status_filter: str | None = None,
-    ) -> list[FileContributions]:
-        """Load contributions from all Regulatory Overlays (RX)."""
-        return self._load_from_dir(self._regulatory_dir, stack, status_filter)
 
     # ------------------------------------------------------------------
     # Expansion helpers — produce file plan dicts for code.py

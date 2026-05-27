@@ -1,4 +1,4 @@
-"""
+﻿"""
 Pack Registry — Single source of truth cho CP_ID → internal_id mapping.
 
 Module này là single source để resolve pack ID (vd: "CP02") thành

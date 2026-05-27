@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Code Commands.
 
 Tests này validate:

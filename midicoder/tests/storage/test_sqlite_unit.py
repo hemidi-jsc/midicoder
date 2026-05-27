@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests cho SQLite storage layer với temp files.
 
 Q21=C: Unit tests với temp files vì in-memory DB không share schema giữa connections.

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Storage Module cho Midicoder.
 
 Module này cung cấp persistence layer cho:

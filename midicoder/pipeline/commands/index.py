@@ -1,4 +1,4 @@
-"""
+﻿"""
 Mô-đun Index Command - CLI command cho việc build và manage codebase index.
 
 Cung cấp commands:

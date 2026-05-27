@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho DSLParser - String parsing (thay thế parse_directory).
 
 Tests này validate:

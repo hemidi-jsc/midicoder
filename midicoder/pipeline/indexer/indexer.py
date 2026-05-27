@@ -1,4 +1,4 @@
-"""
+﻿"""
 Mô-đun Indexer - Core logic cho việc build và manage codebase index.
 
 Quản lý:

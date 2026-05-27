@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho helpers và init_all_databases.
 
 E09: SQLite Persistence - Helper functions

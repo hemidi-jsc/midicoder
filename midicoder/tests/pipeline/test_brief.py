@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Brief Commands.
 
 Tests này validate:

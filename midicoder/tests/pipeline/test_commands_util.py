@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Utility Commands (status, feedback, config).
 
 Tests này validate:

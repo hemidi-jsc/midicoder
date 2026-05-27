@@ -1,4 +1,4 @@
-# Midicoder CE — KPI Check Functions
+﻿# Midicoder CE — KPI Check Functions
 #
 # Module: industry.kpi_checks
 # Used by: pytest (midicoder/tests/industry/test_kpi_checks.py)

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit Tests cho CapabilityGraph export qua contracts public API.
 
 Kiểm tra:
@@ -24,7 +24,7 @@ class TestCapabilityGraphExport:
     def test_capability_graph_is_same_as_cp51_model(self):
         """Kiểm tra CapabilityGraph từ contracts là cùng class với cp51_blueprint.models."""
         from midicoder.contracts import CapabilityGraph
-        from midicoder.emitters.core.cp51_blueprint.models import (
+        from midicoder.packs.cp51_blueprint.models import (
             CapabilityGraph as SourceCapabilityGraph,
         )
 

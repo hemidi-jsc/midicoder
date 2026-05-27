@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Init Command (E00, E01).
 
 Test cases:

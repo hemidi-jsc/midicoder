@@ -1,4 +1,4 @@
-"""
+﻿"""
 Implementation Plan Module.
 
 Module chứa typed data structures cho Implementation Plan trong Midicoder pipeline.

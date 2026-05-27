@@ -1,4 +1,4 @@
-"""
+﻿"""
 Version Management Commands Implementation.
 
 Lệnh `midicoder version` quản lý versions cho Midicoder project theo SoT E01.

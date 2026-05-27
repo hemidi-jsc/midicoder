@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Brief Template Validator for Midicoder CE
 Validates brief.md files against universal-fully brief schema depth gate.

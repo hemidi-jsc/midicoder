@@ -1,4 +1,4 @@
-"""
+﻿"""
 Utility Commands cho Midicoder Pipeline.
 
 Module này chứa implementation của các utility commands:

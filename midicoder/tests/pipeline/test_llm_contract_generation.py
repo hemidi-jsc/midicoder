@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho LLM Contract Generation (P0-4).
 
 Test cases cho:

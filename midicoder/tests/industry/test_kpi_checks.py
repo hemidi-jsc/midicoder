@@ -1,4 +1,4 @@
-# Midicoder CE — KPI Check Tests
+﻿# Midicoder CE — KPI Check Tests
 #
 # Auto-runs all 38 KPI checks via pytest.
 # Each KPI = 1 test function. Summary test at end.

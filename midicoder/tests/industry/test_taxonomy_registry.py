@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests for TaxonomyRegistry.
 
 Kiểm tra:
@@ -30,7 +30,7 @@ class TestTaxonomyRegistryLoad:
     def test_load_taxonomy(self):
         registry = TaxonomyRegistry.load(TAXONOMY_PATH)
         assert registry is not None
-        assert len(registry) > 100  # 53 CPs + 36 DPs + 12 RXs = 101
+        assert len(registry) > 50  # 53 CPs minimum
 
     def test_load_missing_file(self):
         with pytest.raises(FileNotFoundError):
@@ -39,11 +39,7 @@ class TestTaxonomyRegistryLoad:
     def test_pack_count(self):
         registry = TaxonomyRegistry.load(TAXONOMY_PATH)
         cps = registry.find_packs(pack_type="core_pack")
-        dps = registry.find_packs(pack_type="domain_pack")
-        rxs = registry.find_packs(pack_type="regulatory_overlay")
         assert len(cps) == 53
-        assert len(dps) == 36
-        assert len(rxs) == 12
 
     def test_all_pack_ids_unique(self):
         registry = TaxonomyRegistry.load(TAXONOMY_PATH)
@@ -66,26 +62,6 @@ class TestTaxonomyRegistryQuery:
         p0 = self.registry.find_packs(pack_type="core_pack", phase="P0")
         assert len(p0) == 8  # CP01, CP02, CP03, CP04, CP07, CP51, CP52, CP53
 
-    def test_find_planned_domain_packs(self):
-        planned = self.registry.find_packs(pack_type="domain_pack", status="planned")
-        assert len(planned) == 32
-
-    def test_find_developing_domain_packs(self):
-        developing = self.registry.find_packs(pack_type="domain_pack", status="developing")
-        assert len(developing) == 4  # DP05, DP11, DP12, DP14
-
-    def test_find_planned_regulatory_overlays(self):
-        planned = self.registry.find_packs(pack_type="regulatory_overlay", status="planned")
-        assert len(planned) == 12
-
-    def test_no_stable_regulatory_overlays(self):
-        stable = self.registry.find_packs(pack_type="regulatory_overlay", status="stable")
-        assert len(stable) == 0
-
-    def test_no_stable_domain_packs(self):
-        stable = self.registry.find_packs(pack_type="domain_pack", status="stable")
-        assert len(stable) == 0
-
     def test_get_existing_pack(self):
         pack = self.registry.get_pack("CP01")
         assert pack is not None
@@ -99,8 +75,6 @@ class TestTaxonomyRegistryQuery:
 
     def test_contains_operator(self):
         assert "CP01" in self.registry
-        assert "DP01" in self.registry
-        assert "RX01" in self.registry
         assert "CP999" not in self.registry
 
     def test_find_by_category(self):
@@ -115,14 +89,14 @@ class TestTaxonomyRegistryDependencies:
         self.registry = TaxonomyRegistry.load(TAXONOMY_PATH)
 
     def test_find_dependents_cp01(self):
-        """CP01 is depended on by ALL DPs and all RXs."""
+        """CP01 is depended on by many other packs."""
         dependents = self.registry.find_dependents("CP01")
-        assert len(dependents) >= 36  # All 36 DPs + 12 RXs
+        assert len(dependents) >= 1
 
     def test_find_dependents_cp03(self):
-        """CP03 is depended on by most DPs."""
+        """CP03 is depended on by multiple packs."""
         dependents = self.registry.find_dependents("CP03")
-        assert len(dependents) >= 30
+        assert len(dependents) >= 1
 
     def test_find_dependents_nonexistent(self):
         with pytest.raises(KeyError):
@@ -191,46 +165,29 @@ class TestTaxonomyRegistryBlueprint:
         self.registry = TaxonomyRegistry.load(TAXONOMY_PATH)
 
     def test_minimal_valid_blueprint(self):
-        """Minimal blueprint with all P0 CPs and universal RXs."""
+        """Minimal blueprint with all P0 CPs."""
         p0_packs = self.registry.find_packs(pack_type="core_pack", phase="P0")
         blueprint = {
             "core_packs": [{"id": p.id} for p in p0_packs],
-            "domain_packs": [{"id": "DP01"}],
-            "regulatory_overlays": [{"id": "RX01"}, {"id": "RX11"}],
         }
         issues = self.registry.validate_pack_combination(blueprint)
-        # Should not have missing P0 or missing universal RX errors
+        # Should not have missing P0 errors
         error_rules = [i.rule for i in issues if i.severity == "error"]
         assert "blueprint_must_include_p0_core_packs" not in error_rules
-        assert "universal_regulatory_overlays_included" not in error_rules
 
     def test_missing_p0_packs(self):
         blueprint = {
             "core_packs": [{"id": "CP01"}],  # Missing other P0 packs
-            "domain_packs": [{"id": "DP01"}],
-            "regulatory_overlays": [{"id": "RX01"}, {"id": "RX11"}],
         }
         issues = self.registry.validate_pack_combination(blueprint)
         error_rules = [i.rule for i in issues if i.severity == "error"]
         assert "blueprint_must_include_p0_core_packs" in error_rules
-
-    def test_missing_universal_rx(self):
-        p0_packs = self.registry.find_packs(pack_type="core_pack", phase="P0")
-        blueprint = {
-            "core_packs": [{"id": p.id} for p in p0_packs],
-            "domain_packs": [{"id": "DP01"}],
-            "regulatory_overlays": [{"id": "RX01"}],  # Missing RX11
-        }
-        issues = self.registry.validate_pack_combination(blueprint)
-        error_rules = [i.rule for i in issues if i.severity == "error"]
-        assert "universal_regulatory_overlays_included" in error_rules
 
     def test_nonexistent_pack_in_blueprint(self):
         p0_packs = self.registry.find_packs(pack_type="core_pack", phase="P0")
         blueprint = {
             "core_packs": [{"id": p.id} for p in p0_packs],
             "domain_packs": [{"id": "DP999"}],  # Does not exist
-            "regulatory_overlays": [{"id": "RX01"}, {"id": "RX11"}],
         }
         issues = self.registry.validate_pack_combination(blueprint)
         error_rules = [i.rule for i in issues if i.severity == "error"]
@@ -312,20 +269,10 @@ class TestTaxonomyRegistryStatistics:
     def test_statistics_not_empty(self):
         stats = self.registry.get_statistics()
         assert "core_packs" in stats
-        assert "domain_packs" in stats
-        assert "regulatory_overlays" in stats
 
     def test_statistics_core_pack_count(self):
         stats = self.registry.get_statistics()
         assert stats["core_packs"]["total"] == 53
-
-    def test_statistics_domain_pack_count(self):
-        stats = self.registry.get_statistics()
-        assert stats["domain_packs"]["total"] == 36
-
-    def test_statistics_rx_count(self):
-        stats = self.registry.get_statistics()
-        assert stats["regulatory_overlays"]["total"] == 12
 
     def test_repr(self):
         registry = TaxonomyRegistry.load(TAXONOMY_PATH)

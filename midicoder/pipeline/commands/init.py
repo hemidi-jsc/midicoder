@@ -1,4 +1,4 @@
-"""
+﻿"""
 Init Command Implementation.
 
 Lệnh `midicoder init` khởi tạo workspace Midicoder theo SoT E00-E01.

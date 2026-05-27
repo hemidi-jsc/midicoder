@@ -1,4 +1,4 @@
-"""
+﻿"""
 Pydantic models cho data validation trong storage module.
 
 Cung cấp type validation cho:

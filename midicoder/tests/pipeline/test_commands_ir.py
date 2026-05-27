@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho IR Build Command.
 
 Tests này validate:

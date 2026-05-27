@@ -1,4 +1,4 @@
-"""
+﻿"""
 Mô-đun parse source code để extract symbols và relationships.
 
 Hỗ trợ nhiều ngôn ngữ:

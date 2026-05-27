@@ -1,4 +1,4 @@
-# coding: utf-8
+﻿# coding: utf-8
 """
 End-to-End Integration Test cho Midicoder Pipeline.
 

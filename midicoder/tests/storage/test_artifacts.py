@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho ArtifactsManager và ActivityLogger.
 
 E09: SQLite Persistence - Artifacts + Activity Log

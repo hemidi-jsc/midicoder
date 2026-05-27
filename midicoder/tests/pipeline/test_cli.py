@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho CLI Commands.
 
 Tests này validate:

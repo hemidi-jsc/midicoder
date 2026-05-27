@@ -1,4 +1,4 @@
-# coding: utf-8
+﻿# coding: utf-8
 """
 Public API Surface cho Midicoder CE pipeline.
 
@@ -13,7 +13,7 @@ Nguồn re-export:
 - MIR types ← `pipeline/mir.py` (source of truth)
 - Plan types ← `pipeline/plan.py` (source of truth)
 - Artifact types ← `contracts/artifact.py` (own code)
-- CP51 Composition ← `emitters/core/cp51_blueprint/` (own code)
+- CP51 Composition ← `packs/cp51_blueprint/` (own code)
 - Registry ← `contracts/registry.py` (single source mapping)
 
 Author: Midicoder Team
@@ -66,10 +66,10 @@ from .artifact import (
 )
 
 # ============================================================================
-# CP51 Composition (source: emitters/core/cp51_blueprint/)
+# CP51 Composition (source: packs/cp51_blueprint/)
 # ============================================================================
 
-from midicoder.emitters.core.cp51_blueprint.models import (
+from midicoder.packs.cp51_blueprint.models import (
     CapabilityGraph,
     CompositionNode,
     CompositionPlan,
@@ -77,8 +77,8 @@ from midicoder.emitters.core.cp51_blueprint.models import (
     StackBinding,
     TemplateBinding,
 )
-from midicoder.emitters.core.cp51_blueprint.resolver import PackResolver
-from midicoder.emitters.core.cp51_blueprint.engine import CompositionEngine
+from midicoder.packs.cp51_blueprint.resolver import PackResolver
+from midicoder.packs.cp51_blueprint.engine import CompositionEngine
 
 # ============================================================================
 # Registry (source: contracts/registry.py — single source mapping)

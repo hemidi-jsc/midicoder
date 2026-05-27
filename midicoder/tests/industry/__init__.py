@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Industry Setup & Configuration.
 
 Module này chứa tests cho:

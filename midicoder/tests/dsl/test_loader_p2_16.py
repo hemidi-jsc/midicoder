@@ -1,4 +1,4 @@
-# coding: utf-8
+﻿# coding: utf-8
 """
 Test DSL loader functions P2-16a → P2-16i.
 

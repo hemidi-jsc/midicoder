@@ -1,4 +1,4 @@
-"""
+﻿"""
 Code Generation Commands Implementation.
 
 Lệnh quản lý code generation theo SoT E07, E20:
@@ -501,99 +501,7 @@ def _create_implementation_plan(
         dependencies=[]
     ))
 
-    # DP packs: Domain Packs (emit after CPs — can override/extend core)
-    if target in ["backend", "all"]:
-        dp_files = _load_domain_pack_files(target, status_filter=status_filter)
-        if dp_files:
-            dp_specs = [FileSpec(
-                path=f["path"],
-                file_type=f["type"],
-                template=f["template"],
-                context=f.get("context", {}),
-                dependencies=["core"],
-                metadata=f.get("metadata", {})
-            ) for f in dp_files]
-            plan.add_module(ModuleSpec(
-                name="domain",
-                module_type="backend",
-                files=dp_specs,
-                dependencies=["core"]
-            ))
-
-    # RX packs: Regulatory Overlays (emit last — inject compliance)
-    if target in ["backend", "all"]:
-        rx_files = _load_regulatory_pack_files(target, status_filter=status_filter)
-        if rx_files:
-            rx_specs = [FileSpec(
-                path=f["path"],
-                file_type=f["type"],
-                template=f["template"],
-                context=f.get("context", {}),
-                dependencies=["core"],
-                metadata=f.get("metadata", {})
-            ) for f in rx_files]
-            plan.add_module(ModuleSpec(
-                name="regulatory",
-                module_type="backend",
-                files=rx_specs,
-                dependencies=["core", "domain"]
-            ))
-
     return plan
-
-
-def _load_domain_pack_files(target: str, status_filter: str | None = None) -> List[dict]:
-    """Load infrastructure files from Domain Packs (DP).
-
-    Args:
-        target: Target to generate (backend|frontend|all)
-        status_filter: If set, only include packs with matching status.
-
-    Returns:
-        List of file plan dicts from domain packs.
-    """
-    if target not in ("backend", "all"):
-        return []
-
-    backend_stack = _get_backend_stack()
-    loader = FileContributionsLoader()
-    domain_contributions = loader.load_all_domain(stack=backend_stack, status_filter=status_filter)
-
-    files: List[dict] = []
-    seen: set[str] = set()
-    for fc in domain_contributions:
-        for f in loader.expand_infrastructure(fc):
-            if f["path"] not in seen:
-                seen.add(f["path"])
-                files.append(f)
-    return files
-
-
-def _load_regulatory_pack_files(target: str, status_filter: str | None = None) -> List[dict]:
-    """Load infrastructure files from Regulatory Overlays (RX).
-
-    Args:
-        target: Target to generate (backend|frontend|all)
-        status_filter: If set, only include packs with matching status.
-
-    Returns:
-        List of file plan dicts from regulatory packs.
-    """
-    if target not in ("backend", "all"):
-        return []
-
-    backend_stack = _get_backend_stack()
-    loader = FileContributionsLoader()
-    regulatory_contributions = loader.load_all_regulatory(stack=backend_stack, status_filter=status_filter)
-
-    files: List[dict] = []
-    seen: set[str] = set()
-    for fc in regulatory_contributions:
-        for f in loader.expand_infrastructure(fc):
-            if f["path"] not in seen:
-                seen.add(f["path"])
-                files.append(f)
-    return files
 
 
 def _plan_backend_files(mir: dict, status_filter: str | None = None) -> List[dict]:
@@ -1068,7 +976,7 @@ def _generate_iac_file(
         full_path.parent.mkdir(parents=True, exist_ok=True)
 
         if pack_emitter == "cp07.docker":
-            from midicoder.emitters.core.cp07_iac.docker import DockerComposeGenerator as DCG
+            from midicoder.packs.cp07_iac.docker import DockerComposeGenerator as DCG
             generator = DCG()
             infra_config = generator.generate(mir, full_path)
             content = full_path.read_text(encoding="utf-8")
@@ -1081,7 +989,7 @@ def _generate_iac_file(
             )
 
         elif pack_emitter == "cp07.terraform":
-            from midicoder.emitters.core.cp07_iac.terraform import TerraformGenerator
+            from midicoder.packs.cp07_iac.terraform import TerraformGenerator
             generator = TerraformGenerator()
             generator.generate(mir, full_path.parent)
             # Terraform may generate multiple files; return the main one

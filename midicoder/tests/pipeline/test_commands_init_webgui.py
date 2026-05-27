@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho WebGUI start functionality trong init command.
 
 Mục tiêu: Test các functions liên quan đến việc khởi động WebGUI (Backend FastAPI + Frontend Angular)

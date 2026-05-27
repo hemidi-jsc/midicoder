@@ -1,4 +1,4 @@
-"""
+﻿"""
 Brief Commands Implementation.
 
 Lệnh quản lý briefs theo SoT E02, E20:

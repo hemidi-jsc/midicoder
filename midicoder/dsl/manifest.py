@@ -1,4 +1,4 @@
-"""
+﻿"""
 DSL v1 Manifest Module
 
 Central manifest for defining a Midicoder project's composition.

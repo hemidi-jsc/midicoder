@@ -1,4 +1,4 @@
-"""
+﻿"""
 DSL v1 Dependencies Module
 
 Dependency graph builder and cycle detector for projection trees.

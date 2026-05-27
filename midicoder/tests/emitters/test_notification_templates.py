@@ -1,4 +1,4 @@
-"""
+﻿"""
 Test suite cho Notification & Communication templates (CP12).
 
 Test coverage cho:
@@ -18,7 +18,7 @@ class TestFastApiEmailService(TestCase):
     """Test FastAPI email service template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/fastapi/core/cp12_notification/email_service.py.jinja2")
+        self.template_path = Path("midicoder/stacks/fastapi/cp12_notification/email_service.py.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "Email service không tồn tại")
@@ -40,7 +40,7 @@ class TestFastApiNotificationService(TestCase):
     """Test FastAPI notification service template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/fastapi/core/cp12_notification/notification_service.py.jinja2")
+        self.template_path = Path("midicoder/stacks/fastapi/cp12_notification/notification_service.py.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "Notification service không tồn tại")
@@ -62,7 +62,7 @@ class TestNestJsNotificationModule(TestCase):
     """Test NestJS notification module template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/nestjs/core/cp12_notification/notification.module.ts.jinja2")
+        self.template_path = Path("midicoder/stacks/nestjs/cp12_notification/notification.module.ts.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "Notification module không tồn tại")
@@ -80,7 +80,7 @@ class TestNestJsEmailService(TestCase):
     """Test NestJS email service template."""
 
     def setUp(self):
-        self.template_path = Path("midicoder/stacks/nestjs/core/cp12_notification/email.service.ts.jinja2")
+        self.template_path = Path("midicoder/stacks/nestjs/cp12_notification/email.service.ts.jinja2")
 
     def test_template_file_exists(self):
         self.assertTrue(self.template_path.exists(), "Email service không tồn tại")

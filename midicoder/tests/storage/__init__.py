@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho storage module.
 
 Bao gồm:

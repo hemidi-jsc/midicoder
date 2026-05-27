@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho parser module.
 
 Test cases:

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Common Utilities & Shared Components.
 
 Module này chứa tests cho:

@@ -1,4 +1,4 @@
-"""
+﻿"""
 MIR (Midicoder Intermediate Representation) Module.
 
 MIR là typed IR đại diện cho implementation truth trong Midicoder pipeline.

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Configuration Management cho Midicoder Pipeline.
 
 Module này quản lý cấu hình global và project:

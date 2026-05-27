@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho E00-T07: Setup error management.
 
 Viết theo TDD, bám sát SoT:

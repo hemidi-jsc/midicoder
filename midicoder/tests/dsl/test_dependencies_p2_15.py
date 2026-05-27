@@ -1,4 +1,4 @@
-# coding: utf-8
+﻿# coding: utf-8
 """
 Test dependency extraction rules P2-15a → P2-15j.
 

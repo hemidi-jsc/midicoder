@@ -1,4 +1,4 @@
-"""
+﻿"""
 Mô-đun Indexer cho Midicoder.
 
 Cung cấp khả năng:

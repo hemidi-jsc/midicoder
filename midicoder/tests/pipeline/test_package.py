@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Midicoder Pipeline Package Structure.
 
 Module này chứa các tests để verify cấu trúc package:

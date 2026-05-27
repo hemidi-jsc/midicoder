@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Midicoder Pipeline Module.
 
 Module này chứa các tests cho:

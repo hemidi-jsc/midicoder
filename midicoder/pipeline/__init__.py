@@ -1,4 +1,4 @@
-"""
+﻿"""
 Midicoder Pipeline Module - Core CLI Pipeline.
 
 Module này chứa các lệnh CLI chính cho pipeline biên dịch midicoder v1:

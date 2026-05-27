@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Contract Storage Bridge — SQLite-Only Architecture.
 
 Verify pipeline: contract gen → save artifacts → ir build

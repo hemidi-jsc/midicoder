@@ -1,8 +1,8 @@
-# coding: utf-8
+﻿# coding: utf-8
 """
 Tests cho models của API Client & Integration Generator (CP20).
 
-Module: midicoder/emitters/core/api_client/models.py
+Module: midicoder/packs/api_client/models.py
 Features: ApiSpec, ClientBinding, RealtimeBridgeSpec + enums
 
 Author: Midicoder Team
@@ -18,13 +18,13 @@ class TestTransportType:
 
     def test_transport_type_values(self):
         """Test giá trị của TransportType."""
-        from midicoder.emitters.core.cp20_api_client.models import TransportType
+        from midicoder.packs.cp20_api_client.models import TransportType
         assert TransportType.WEBSOCKET.value == "websocket"
         assert TransportType.SSE.value == "sse"
 
     def test_transport_type_from_string(self):
         """Test tạo TransportType từ string."""
-        from midicoder.emitters.core.cp20_api_client.models import TransportType
+        from midicoder.packs.cp20_api_client.models import TransportType
         assert TransportType("websocket") == TransportType.WEBSOCKET
         assert TransportType("sse") == TransportType.SSE
 
@@ -34,14 +34,14 @@ class TestAuthMode:
 
     def test_auth_mode_values(self):
         """Test giá trị của AuthMode."""
-        from midicoder.emitters.core.cp20_api_client.models import AuthMode
+        from midicoder.packs.cp20_api_client.models import AuthMode
         assert AuthMode.BEARER.value == "bearer"
         assert AuthMode.COOKIE.value == "cookie"
         assert AuthMode.NONE.value == "none"
 
     def test_auth_mode_from_string(self):
         """Test tạo AuthMode từ string."""
-        from midicoder.emitters.core.cp20_api_client.models import AuthMode
+        from midicoder.packs.cp20_api_client.models import AuthMode
         assert AuthMode("bearer") == AuthMode.BEARER
         assert AuthMode("none") == AuthMode.NONE
 
@@ -51,7 +51,7 @@ class TestHttpMethod:
 
     def test_http_method_values(self):
         """Test giá trị của HttpMethod."""
-        from midicoder.emitters.core.cp20_api_client.models import HttpMethod
+        from midicoder.packs.cp20_api_client.models import HttpMethod
         assert HttpMethod.GET.value == "GET"
         assert HttpMethod.POST.value == "POST"
         assert HttpMethod.PUT.value == "PUT"
@@ -64,7 +64,7 @@ class TestClientBinding:
 
     def test_client_binding_creation(self):
         """Test tạo ClientBinding hợp lệ."""
-        from midicoder.emitters.core.cp20_api_client.models import ClientBinding, HttpMethod
+        from midicoder.packs.cp20_api_client.models import ClientBinding, HttpMethod
         binding = ClientBinding(
             client_method="getUsers",
             http_method=HttpMethod.GET,
@@ -76,7 +76,7 @@ class TestClientBinding:
 
     def test_client_binding_with_types(self):
         """Test ClientBinding có request/response type."""
-        from midicoder.emitters.core.cp20_api_client.models import ClientBinding, HttpMethod
+        from midicoder.packs.cp20_api_client.models import ClientBinding, HttpMethod
         binding = ClientBinding(
             client_method="createOrder",
             http_method=HttpMethod.POST,
@@ -89,7 +89,7 @@ class TestClientBinding:
 
     def test_client_binding_to_dict(self):
         """Test serialise ClientBinding ra dict."""
-        from midicoder.emitters.core.cp20_api_client.models import ClientBinding, HttpMethod
+        from midicoder.packs.cp20_api_client.models import ClientBinding, HttpMethod
         binding = ClientBinding(
             client_method="getUser",
             http_method=HttpMethod.GET,
@@ -103,7 +103,7 @@ class TestClientBinding:
 
     def test_client_binding_from_dict(self):
         """Test deserialise ClientBinding từ dict."""
-        from midicoder.emitters.core.cp20_api_client.models import ClientBinding
+        from midicoder.packs.cp20_api_client.models import ClientBinding
         data = {
             "client_method": "deleteUser",
             "http_method": "DELETE",
@@ -114,7 +114,7 @@ class TestClientBinding:
 
     def test_client_binding_empty_method_raises(self):
         """Test ClientBinding method rỗng thì raise."""
-        from midicoder.emitters.core.cp20_api_client.models import ClientBinding, HttpMethod
+        from midicoder.packs.cp20_api_client.models import ClientBinding, HttpMethod
         with pytest.raises(MidicoderError) as exc_info:
             ClientBinding(
                 client_method="",
@@ -125,7 +125,7 @@ class TestClientBinding:
 
     def test_client_binding_empty_route_raises(self):
         """Test ClientBinding route rỗng thì raise."""
-        from midicoder.emitters.core.cp20_api_client.models import ClientBinding, HttpMethod
+        from midicoder.packs.cp20_api_client.models import ClientBinding, HttpMethod
         with pytest.raises(MidicoderError) as exc_info:
             ClientBinding(
                 client_method="test",
@@ -140,7 +140,7 @@ class TestRealtimeBridgeSpec:
 
     def test_realtime_bridge_spec_websocket(self):
         """Test tạo RealtimeBridgeSpec cho WebSocket."""
-        from midicoder.emitters.core.cp20_api_client.models import RealtimeBridgeSpec, TransportType
+        from midicoder.packs.cp20_api_client.models import RealtimeBridgeSpec, TransportType
         spec = RealtimeBridgeSpec(
             name="OrderUpdates",
             transport=TransportType.WEBSOCKET,
@@ -153,7 +153,7 @@ class TestRealtimeBridgeSpec:
 
     def test_realtime_bridge_spec_sse(self):
         """Test tạo RealtimeBridgeSpec cho SSE."""
-        from midicoder.emitters.core.cp20_api_client.models import RealtimeBridgeSpec, TransportType
+        from midicoder.packs.cp20_api_client.models import RealtimeBridgeSpec, TransportType
         spec = RealtimeBridgeSpec(
             name="Notifications",
             transport=TransportType.SSE,
@@ -164,7 +164,7 @@ class TestRealtimeBridgeSpec:
 
     def test_realtime_bridge_spec_empty_name_raises(self):
         """Test RealtimeBridgeSpec name rỗng thì raise."""
-        from midicoder.emitters.core.cp20_api_client.models import RealtimeBridgeSpec, TransportType
+        from midicoder.packs.cp20_api_client.models import RealtimeBridgeSpec, TransportType
         with pytest.raises(MidicoderError) as exc_info:
             RealtimeBridgeSpec(
                 name="",
@@ -175,7 +175,7 @@ class TestRealtimeBridgeSpec:
 
     def test_realtime_bridge_spec_empty_url_raises(self):
         """Test RealtimeBridgeSpec URL rỗng thì raise."""
-        from midicoder.emitters.core.cp20_api_client.models import RealtimeBridgeSpec, TransportType
+        from midicoder.packs.cp20_api_client.models import RealtimeBridgeSpec, TransportType
         with pytest.raises(MidicoderError) as exc_info:
             RealtimeBridgeSpec(
                 name="Test",
@@ -186,7 +186,7 @@ class TestRealtimeBridgeSpec:
 
     def test_realtime_bridge_spec_websocket_url_format(self):
         """Test WebSocket URL phải bắt đầu bằng ws:// hoặc wss://."""
-        from midicoder.emitters.core.cp20_api_client.models import RealtimeBridgeSpec, TransportType
+        from midicoder.packs.cp20_api_client.models import RealtimeBridgeSpec, TransportType
         with pytest.raises(MidicoderError):
             RealtimeBridgeSpec(
                 name="BadWs",
@@ -196,7 +196,7 @@ class TestRealtimeBridgeSpec:
 
     def test_realtime_bridge_spec_sse_url_format(self):
         """Test SSE URL phải bắt đầu bằng http:// hoặc https://."""
-        from midicoder.emitters.core.cp20_api_client.models import RealtimeBridgeSpec, TransportType
+        from midicoder.packs.cp20_api_client.models import RealtimeBridgeSpec, TransportType
         with pytest.raises(MidicoderError):
             RealtimeBridgeSpec(
                 name="BadSse",
@@ -206,7 +206,7 @@ class TestRealtimeBridgeSpec:
 
     def test_realtime_bridge_spec_default_values(self):
         """Test giá trị mặc định của RealtimeBridgeSpec."""
-        from midicoder.emitters.core.cp20_api_client.models import RealtimeBridgeSpec, TransportType
+        from midicoder.packs.cp20_api_client.models import RealtimeBridgeSpec, TransportType
         spec = RealtimeBridgeSpec(
             name="Test",
             transport=TransportType.WEBSOCKET,
@@ -218,7 +218,7 @@ class TestRealtimeBridgeSpec:
 
     def test_realtime_bridge_spec_to_dict(self):
         """Test serialise RealtimeBridgeSpec ra dict."""
-        from midicoder.emitters.core.cp20_api_client.models import RealtimeBridgeSpec, TransportType
+        from midicoder.packs.cp20_api_client.models import RealtimeBridgeSpec, TransportType
         spec = RealtimeBridgeSpec(
             name="Orders",
             transport=TransportType.WEBSOCKET,
@@ -233,7 +233,7 @@ class TestRealtimeBridgeSpec:
 
     def test_realtime_bridge_spec_from_dict(self):
         """Test deserialise RealtimeBridgeSpec từ dict."""
-        from midicoder.emitters.core.cp20_api_client.models import RealtimeBridgeSpec
+        from midicoder.packs.cp20_api_client.models import RealtimeBridgeSpec
         data = {
             "name": "Products",
             "transport": "sse",
@@ -250,7 +250,7 @@ class TestApiSpec:
 
     def test_api_spec_creation(self):
         """Test tạo ApiSpec hợp lệ."""
-        from midicoder.emitters.core.cp20_api_client.models import ApiSpec, AuthMode
+        from midicoder.packs.cp20_api_client.models import ApiSpec, AuthMode
         spec = ApiSpec(
             name="CommerceAPI",
             base_url="http://localhost:8000/api",
@@ -262,7 +262,7 @@ class TestApiSpec:
 
     def test_api_spec_with_bindings(self):
         """Test ApiSpec có ClientBindings."""
-        from midicoder.emitters.core.cp20_api_client.models import (
+        from midicoder.packs.cp20_api_client.models import (
             ApiSpec, AuthMode, ClientBinding, HttpMethod,
         )
         spec = ApiSpec(
@@ -282,7 +282,7 @@ class TestApiSpec:
 
     def test_api_spec_with_bridge(self):
         """Test ApiSpec có RealtimeBridge."""
-        from midicoder.emitters.core.cp20_api_client.models import (
+        from midicoder.packs.cp20_api_client.models import (
             ApiSpec, AuthMode, RealtimeBridgeSpec, TransportType,
         )
         spec = ApiSpec(
@@ -300,21 +300,21 @@ class TestApiSpec:
 
     def test_api_spec_empty_name_raises(self):
         """Test ApiSpec name rỗng thì raise."""
-        from midicoder.emitters.core.cp20_api_client.models import ApiSpec, AuthMode
+        from midicoder.packs.cp20_api_client.models import ApiSpec, AuthMode
         with pytest.raises(MidicoderError) as exc_info:
             ApiSpec(name="", base_url="http://localhost", auth_mode=AuthMode.NONE)
         assert exc_info.value.code == ErrorCode.CP20_OPENAPI_PARSE_ERROR
 
     def test_api_spec_empty_base_url_raises(self):
         """Test ApiSpec base_url rỗng thì raise."""
-        from midicoder.emitters.core.cp20_api_client.models import ApiSpec, AuthMode
+        from midicoder.packs.cp20_api_client.models import ApiSpec, AuthMode
         with pytest.raises(MidicoderError) as exc_info:
             ApiSpec(name="Test", base_url="", auth_mode=AuthMode.NONE)
         assert exc_info.value.code == ErrorCode.CP20_OPENAPI_PARSE_ERROR
 
     def test_api_spec_duplicate_endpoint_raises(self):
         """Test ApiSpec có duplicate endpoint thì raise."""
-        from midicoder.emitters.core.cp20_api_client.models import (
+        from midicoder.packs.cp20_api_client.models import (
             ApiSpec, AuthMode, ClientBinding, HttpMethod,
         )
         with pytest.raises(MidicoderError) as exc_info:
@@ -331,7 +331,7 @@ class TestApiSpec:
 
     def test_api_spec_auth_injection_obligation(self):
         """Test Obligation 3: auth_mode != NONE cần token config (validate tại emit)."""
-        from midicoder.emitters.core.cp20_api_client.models import ApiSpec, AuthMode
+        from midicoder.packs.cp20_api_client.models import ApiSpec, AuthMode
         spec = ApiSpec(
             name="SecureAPI",
             base_url="http://localhost/api",
@@ -344,7 +344,7 @@ class TestApiSpec:
 
     def test_api_spec_default_values(self):
         """Test giá trị mặc định của ApiSpec."""
-        from midicoder.emitters.core.cp20_api_client.models import ApiSpec, AuthMode
+        from midicoder.packs.cp20_api_client.models import ApiSpec, AuthMode
         spec = ApiSpec(
             name="Test",
             base_url="http://localhost",
@@ -355,7 +355,7 @@ class TestApiSpec:
 
     def test_api_spec_to_dict(self):
         """Test serialise ApiSpec ra dict."""
-        from midicoder.emitters.core.cp20_api_client.models import ApiSpec, AuthMode
+        from midicoder.packs.cp20_api_client.models import ApiSpec, AuthMode
         spec = ApiSpec(
             name="API",
             base_url="http://localhost/api",
@@ -369,7 +369,7 @@ class TestApiSpec:
 
     def test_api_spec_from_dict(self):
         """Test deserialise ApiSpec từ dict."""
-        from midicoder.emitters.core.cp20_api_client.models import ApiSpec
+        from midicoder.packs.cp20_api_client.models import ApiSpec
         data = {
             "name": "TestAPI",
             "base_url": "http://localhost/v1",
@@ -388,7 +388,7 @@ class TestApiSpec:
 
     def test_api_spec_generate_from_openapi(self):
         """Test generate ApiSpec từ OpenAPI spec dict."""
-        from midicoder.emitters.core.cp20_api_client.models import ApiSpec
+        from midicoder.packs.cp20_api_client.models import ApiSpec
         openapi_spec = {
             "info": {"title": "Store API", "version": "1.0.0"},
             "servers": [{"url": "http://localhost:8000/api"}],
@@ -414,7 +414,7 @@ class TestObligationTypeSafety:
 
     def test_binding_type_consistency(self):
         """Test ClientBinding types consistent với spec."""
-        from midicoder.emitters.core.cp20_api_client.models import ClientBinding, HttpMethod
+        from midicoder.packs.cp20_api_client.models import ClientBinding, HttpMethod
         binding = ClientBinding(
             client_method="createUser",
             http_method=HttpMethod.POST,
@@ -433,7 +433,7 @@ class TestObligationErrorMapping:
         """Test error mapping được enforce trong template (kiểm tra tại emit level)."""
         # Đây là obligation runtime - enforced bởi template interceptor
         # Test verify rằng model không chặn việc emit error interceptor
-        from midicoder.emitters.core.cp20_api_client.models import ApiSpec, AuthMode
+        from midicoder.packs.cp20_api_client.models import ApiSpec, AuthMode
         spec = ApiSpec(name="Test", base_url="http://localhost", auth_mode=AuthMode.NONE)
         assert spec is not None
 

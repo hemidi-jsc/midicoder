@@ -1,4 +1,4 @@
-"""DSL v1 Models - Re-exports from projection.py.
+﻿"""DSL v1 Models - Re-exports from projection.py.
 
 This module provides v1-compatible model exports from the projection module.
 All models now use ProjectionNode with NodeKind enum for type safety.

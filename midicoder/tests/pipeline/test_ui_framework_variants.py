@@ -1,4 +1,4 @@
-# coding: utf-8
+﻿# coding: utf-8
 """
 Test UI framework variant rendering cho frontend packs.
 
@@ -28,12 +28,12 @@ from typing import Any
 
 import pytest
 
-from midicoder.emitters.core.cp21_auth_ui.angular import AngularAuthUIEmitter
-from midicoder.emitters.core.cp21_auth_ui.models import (
+from midicoder.packs.cp21_auth_ui.angular import AngularAuthUIEmitter
+from midicoder.packs.cp21_auth_ui.models import (
     AuthPageType,
     AuthUIConfig,
 )
-from midicoder.emitters.core.cp21_auth_ui.react import ReactAuthUIEmitter
+from midicoder.packs.cp21_auth_ui.react import ReactAuthUIEmitter
 from midicoder.pipeline.emitter import Emitter
 
 

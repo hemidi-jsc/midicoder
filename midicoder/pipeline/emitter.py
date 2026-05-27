@@ -1,4 +1,4 @@
-"""
+﻿"""
 Emitter Module — Jinja2 Template Rendering Engine.
 
 Mô-đun này cung cấp Emitter class, thành phần chịu trách nhiệm render templates
@@ -73,7 +73,7 @@ class Emitter:
     - Write generated files ra output directory
     
     Theo CORE_PACK_SPECIFICATION.md Section 1.5.4:
-    - Template directory: midicoder/stacks/{stack}/core/
+    - Template directory: midicoder/stacks/{stack}/
     - Context = MIR metadata (entities, commands, queries, events)
     - Emitter đọc template path từ FileSpec.template
     
@@ -92,7 +92,7 @@ class Emitter:
         """
         Khởi tạo Emitter với Jinja2 Environment.
         
-        Load templates từ directory: midicoder/stacks/{stack}/core/
+        Load templates từ directory: midicoder/stacks/{stack}/
         Nếu directory không tồn tại, tạo empty environment.
         
         Args:
@@ -116,7 +116,7 @@ class Emitter:
         Load Jinja2 Environment từ template directory.
         
         Template directory structure theo CORE_PACK_SPECIFICATION.md:
-        stacks/{stack}/core/<cp-name>/
+        stacks/{stack}/<cp-name>/
             service.py.jinja2
             <support>.py.jinja2
         
@@ -124,20 +124,20 @@ class Emitter:
         tạo empty environment để avoid crashes.
         """
         # Xác định đường dẫn template directory
-        # Ưu tiên: stacks/{stack}/core/ (new structure)
+        # stacks/{stack}/ — pack templates nằm trực tiếp trong stack directory
         stacks_dir = self._get_stacks_directory()
-        core_dir = stacks_dir / self.stack / "core"
-        
-        # Fallback: stacks/{stack}/templates/ (old structure)
+        pack_dir = stacks_dir / self.stack
+
+        # Fallback: stacks/{stack}/templates/ (legacy structure)
         templates_dir = stacks_dir / self.stack / "templates"
-        
-        if core_dir.exists():
-            self._template_dir = core_dir
+
+        if pack_dir.exists():
+            self._template_dir = pack_dir
         elif templates_dir.exists():
             self._template_dir = templates_dir
         else:
-            # Template directory không tồn tại — dùng core_dir nhưng KHÔNG tạo thư mục
-            self._template_dir = core_dir
+            # Template directory không tồn tại — dùng pack_dir nhưng KHÔNG tạo thư mục
+            self._template_dir = pack_dir
     
     @property
     def _template_dir(self) -> Optional[Path]:

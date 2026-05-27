@@ -1,4 +1,4 @@
-"""
+﻿"""
 SQLite Persistence Layer cho Midicoder.
 
 Module này cung cấp:

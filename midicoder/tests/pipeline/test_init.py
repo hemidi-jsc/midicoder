@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests cho Init Command.
 
 Test coverage cho:

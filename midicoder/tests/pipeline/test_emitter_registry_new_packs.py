@@ -1,4 +1,4 @@
-# coding: utf-8
+﻿# coding: utf-8
 """
 Test EMITTER_REGISTRY entries cho 9 pack mới (CP33, CP36, CP37, CP44, CP45, CP46, CP48, CP49, CP50)
 và parser functions tương ứng.
@@ -90,10 +90,10 @@ class TestEmitterRegistryEntries:
             )
 
     def test_module_paths_start_with_prefix(self) -> None:
-        """Module path phải bắt đầu bằng 'midicoder.emitters.core.'."""
+        """Module path phải bắt đầu bằng 'midicoder.packs.'."""
         for key, _cls, _parser in self.expected_packs:
             module_path = EMITTER_REGISTRY[key][0]
-            assert module_path.startswith("midicoder.emitters.core."), (
+            assert module_path.startswith("midicoder.packs."), (
                 f"{key}: module_path '{module_path}' doesn't start with expected prefix"
             )
 
@@ -158,7 +158,7 @@ class TestCP36OnboardingParser:
         assert result is not None
 
     def test_parse_with_plan(self) -> None:
-        from midicoder.emitters.core.cp36_tenant_onboarding.models import OnboardingIR
+        from midicoder.packs.cp36_tenant_onboarding.models import OnboardingIR
         from midicoder.pipeline.pack_emitter_router import _parse_onboarding_dict
         raw = {
             "plans": [

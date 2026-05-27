@@ -1,4 +1,4 @@
-"""
+﻿"""
 Test cho Emitter class — Jinja2 Template Rendering Engine.
 
 Mô-đun này test toàn bộ lifecycle của Emitter:
@@ -249,7 +249,7 @@ class TestEmitterIntegration:
     """Test integration với real templates từ codebase."""
 
     def test_emitter_loads_real_fastapi_templates(self):
-        """Test Emitter load real FastAPI templates từ stacks/fastapi/core/."""
+        """Test Emitter load real FastAPI templates từ stacks/fastapi/."""
         from midicoder.pipeline.emitter import Emitter
 
         emitter = Emitter(stack="fastapi")

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Domain Detection & Prompt Loading Helper.
 
 Module này cung cấp:

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Mô-đun Context Feed - Tích hợp codebase context vào brief commands.
 
 Cung cấp các hàm để:
