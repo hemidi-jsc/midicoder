@@ -515,7 +515,34 @@ core_packs:
     category: extensibility
     status: stable
     version: 1.0.0
-  # CP28 removed — merged into CP27 (cp27_plugin_system)
+  - id: CP28
+    name: "Multi-Region & Geo-Replication"
+    internal_id: cp28_multi_region
+    phase: P1
+    description: >
+      Multi-region deployment với cross-region data replication (sync/async),
+      latency-based geo-routing, automated failover/DR, và data residency
+      enforcement per regulation (GDPR, CCPA, local laws).
+    definitions_count: 6
+    obligations_count: 2
+    depends_on:
+      - CP02
+      - CP06
+      - CP08
+      - CP14
+      - CP15
+      - CP54
+      - CP56
+    capabilities_provided:
+      - multi_region_deploy
+      - cross_region_replication
+      - latency_based_routing
+      - failover_management
+      - data_residency_enforce
+      - geo_health_check
+    category: infrastructure
+    status: stable
+    version: 1.0.0
   - id: CP29
     name: Multi-Language Support Generator
     internal_id: cp29_multi_language
@@ -1238,6 +1265,55 @@ core_packs:
       - popularity_fallback
       - recommendation_ab_test
     category: performance
+    status: stable
+    version: 1.0.0
+  - id: CP64
+    name: "API Contract Testing (Pact)"
+    internal_id: cp64_contract_testing
+    phase: P1
+    description:
+      "Consumer-driven contract testing với Pact, provider verification,
+      pact broker integration, contract CI pipeline, interaction mocking"
+    definitions_count: 6
+    obligations_count: 2
+    depends_on:
+      - CP01
+      - CP06
+      - CP23
+      - CP55
+    capabilities_provided:
+      - consumer_driven_contract
+      - provider_verification
+      - pact_broker_integration
+      - contract_ci_pipeline
+      - contract_compliance_gate
+      - interaction_mocking
+    category: quality
+    status: stable
+    version: 1.0.0
+  - id: CP65
+    name: "Data Backup & Recovery"
+    internal_id: cp65_backup_recovery
+    phase: P1
+    description:
+      "Automated backup scheduling, point-in-time recovery, disaster recovery,
+      backup monitoring, compliance retention, cross-region replication"
+    definitions_count: 6
+    obligations_count: 2
+    depends_on:
+      - CP01
+      - CP08
+      - CP14
+      - CP47
+      - CP54
+    capabilities_provided:
+      - automated_backup
+      - point_in_time_recovery
+      - disaster_recovery
+      - backup_monitoring
+      - compliance_retention
+      - cross_region_replication
+    category: compliance
     status: stable
     version: 1.0.0
 domain_packs:
@@ -2230,17 +2306,17 @@ regulatory_overlays:
     phase: P1
 statistics:
   core_packs:
-    total: 53
+    total: 55
     by_phase:
       P0: 8
-      P1: 22
+      P1: 24
       P2: 17
       P3: 3
       P4: 4
     by_status:
-      stable: 7
+      stable: 9
       developing: 11
-      planned: 35
+      planned: 34
       experimental: 2
   domain_packs:
     total: 36

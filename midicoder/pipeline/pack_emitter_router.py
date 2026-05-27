@@ -868,6 +868,54 @@ EMITTER_REGISTRY: dict[str, tuple[str, str, str | None]] = {
         "NestJSRecommendationEmitter",
         "cp63_recommendation",
     ),
+    # CP28 — Multi-Region (FastAPI)
+    "cp28.multi_region.fastapi": (
+        "midicoder.emitters.core.cp28_multi_region.fastapi",
+        "FastAPIMultiRegionEmitter",
+        "cp28_multi_region",
+    ),
+    # CP28 — Multi-Region (NestJS)
+    "cp28.multi_region.nestjs": (
+        "midicoder.emitters.core.cp28_multi_region.nestjs",
+        "NestJSMultiRegionEmitter",
+        "cp28_multi_region",
+    ),
+    # CP28 — Multi-Region (Infrastructure)
+    "cp28.multi_region.infrastructure": (
+        "midicoder.emitters.core.cp28_multi_region.infrastructure",
+        "MultiRegionInfrastructureEmitter",
+        "cp28_multi_region",
+    ),
+    # CP64 — API Contract Testing (FastAPI)
+    "cp64.contract.fastapi": (
+        "midicoder.emitters.core.cp64_contract_testing.fastapi",
+        "FastAPIContractEmitter",
+        "cp64_contract_testing",
+    ),
+    # CP64 — API Contract Testing (NestJS)
+    "cp64.contract.nestjs": (
+        "midicoder.emitters.core.cp64_contract_testing.nestjs",
+        "NestJSContractEmitter",
+        "cp64_contract_testing",
+    ),
+    # CP65 — Data Backup & Recovery (FastAPI)
+    "cp65.backup.fastapi": (
+        "midicoder.emitters.core.cp65_backup_recovery.fastapi",
+        "FastAPIBackupEmitter",
+        "cp65_backup_recovery",
+    ),
+    # CP65 — Data Backup & Recovery (NestJS)
+    "cp65.backup.nestjs": (
+        "midicoder.emitters.core.cp65_backup_recovery.nestjs",
+        "NestJSBackupEmitter",
+        "cp65_backup_recovery",
+    ),
+    # CP65 — Data Backup & Recovery (Infrastructure)
+    "cp65.backup.infrastructure": (
+        "midicoder.emitters.core.cp65_backup_recovery.infrastructure",
+        "BackupInfrastructureEmitter",
+        "cp65_backup_recovery",
+    ),
 }
 
 
@@ -1183,6 +1231,24 @@ def _parse_recommendation_dict(raw: dict[str, Any]) -> Any:
     return RecommendationIR.from_dict(raw) if isinstance(raw, dict) else []
 
 
+def _parse_multi_region_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw multi-region dict from DSL/MIR into CP28 MultiRegionIR."""
+    from midicoder.emitters.core.cp28_multi_region.parser import MultiRegionIR
+    return MultiRegionIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_contract_testing_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw contract testing dict from DSL/MIR into CP64 ContractIR."""
+    from midicoder.emitters.core.cp64_contract_testing.parser import ContractIR
+    return ContractIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
+def _parse_backup_recovery_dict(raw: dict[str, Any]) -> Any:
+    """Parse raw backup recovery dict from DSL/MIR into CP65 BackupIR."""
+    from midicoder.emitters.core.cp65_backup_recovery.parser import BackupIR
+    return BackupIR.from_dict(raw) if isinstance(raw, dict) else []
+
+
 PARSER_REGISTRY: dict[str, Any] = {
     "cp01_entity": _parse_entity_dict,
     "cp08_database": _parse_database_dict,
@@ -1221,6 +1287,9 @@ PARSER_REGISTRY: dict[str, Any] = {
     "cp57_graphql_federation": _parse_graphql_federation_dict,
     "cp60_service_discovery": _parse_service_discovery_dict,
     "cp63_recommendation": _parse_recommendation_dict,
+    "cp28_multi_region": _parse_multi_region_dict,
+    "cp64_contract_testing": _parse_contract_testing_dict,
+    "cp65_backup_recovery": _parse_backup_recovery_dict,
 }
 
 
