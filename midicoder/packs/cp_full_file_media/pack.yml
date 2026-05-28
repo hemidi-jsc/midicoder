@@ -1,0 +1,182 @@
+pack:
+  id: F04
+  name: File Storage & Media Processing Generator
+  internal_id: cp_full_file_media
+  version: 2.0.0
+  status: developing
+  category: storage
+  depends_on:
+  - I01
+  - F07
+  definitions_count: 5
+  obligations_count: 1
+  error_codes:
+    prefix: MDC-F04
+    range: MDC-CP11-001 to MDC-CP11-013
+  capabilities_provided:
+  - file_upload
+  - file_download
+  - file_storage
+  - media_transform
+  - cdn_integration
+  - presigned_url
+  capabilities:
+  - id: s3_storage
+    emitter: fastapi, nestjs
+  - id: local_storage
+    emitter: fastapi, nestjs
+  - id: upload_policy
+    emitter: fastapi, nestjs
+  - id: media_transform
+    emitter: fastapi, nestjs
+  - id: cdn_integration
+    emitter: fastapi, nestjs
+  - id: presigned_url
+    emitter: fastapi, nestjs, angular, react
+  definitions:
+  - name: StorageProfile
+    description: Storage backend configuration (S3, local)
+  - name: UploadPolicy
+    description: File size, type, and rate limits
+  - name: MediaTransform
+    description: Image/video transformation pipeline
+  - name: CDNIntegration
+    description: AWS CloudFront CDN configuration
+  - name: PresignedURLPolicy
+    description: Presigned URL expiration and operation policy
+  obligations:
+  - name: UploadValidation
+    description: All uploads must validate type, size, and malware
+  file_contributions:
+    infrastructure:
+    - path: app/storage/s3.py
+      file_type: s3_client
+      template: cp_full_file_media/s3.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: app/storage/file_upload.py
+      file_type: file_upload
+      template: cp_full_file_media/file_upload.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: app/storage/media_transform.py
+      file_type: media_transform
+      template: cp_full_file_media/media_transform.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: app/storage/storage_router.py
+      file_type: storage_router
+      template: cp_full_file_media/storage_router.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: app/storage/cdn_config.py
+      file_type: cdn_config
+      template: cp_full_file_media/cdn_config.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: src/storage/s3.module.ts
+      file_type: s3_module
+      template: cp_full_file_media/s3.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/storage/file-upload.service.ts
+      file_type: file_upload_service
+      template: cp_full_file_media/file-upload.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/storage/file-upload.controller.ts
+      file_type: file_upload_controller
+      template: cp_full_file_media/file-upload.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/storage/media-transform.service.ts
+      file_type: media_transform_service
+      template: cp_full_file_media/media-transform.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/storage/cdn.service.ts
+      file_type: cdn_service
+      template: cp_full_file_media/cdn.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: app/storage/file_versioning.py
+      file_type: file_versioning
+      template: cp11_storage/file_versioning.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: src/storage/file-versioning.service.ts
+      file_type: file_versioning_service
+      template: cp11_storage/file-versioning.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/storage/file-storage.module.ts
+      file_type: storage_module
+      template: cp_full_file_media/file-storage.module.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/app/core/storage/file-storage.service.ts
+      file_type: storage_service
+      template: cp_full_file_media/file-storage.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/app/core/storage/file-storage.models.ts
+      file_type: storage_models
+      template: cp_full_file_media/file-storage.models.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/app/shared/components/file-upload/file-upload.component.ts
+      file_type: file_upload_component
+      template: cp_full_file_media/file-upload.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/storage/fileStorage.ts
+      file_type: storage_client
+      template: cp_full_file_media/fileStorage.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+    - path: src/storage/fileStorage.types.ts
+      file_type: storage_types
+      template: cp_full_file_media/fileStorage.types.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+    - path: src/storage/useFileStorage.ts
+      file_type: storage_hook
+      template: cp_full_file_media/useFileStorage.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+    - path: src/components/FileUpload.tsx
+      file_type: file_upload_component
+      template: cp_full_file_media/FileUpload.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+  frontend_integration:
+    angular:
+    - FileStorageService
+    - FileUploadComponent
+    react:
+    - useFileStorage
+    - FileUpload
+  type: full
+  render_context_support: true

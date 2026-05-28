@@ -1,0 +1,241 @@
+pack:
+  id: F22
+  name: Search & Indexing Generator
+  internal_id: cp_full_search
+  version: 2.0.0
+  status: developing
+  category: performance
+  depends_on:
+  - BE01
+  - F07
+  definitions_count: 14
+  obligations_count: 5
+  error_codes:
+    prefix: MDC-F22
+    range: MDC-CP10-001 to MDC-CP10-005
+  capabilities_provided:
+  - search_index
+  - search_query
+  - fulltext_search
+  - vector_search
+  - geo_search
+  - faceted_aggregation
+  - collaborative_filtering
+  - content_based_recommender
+  - hybrid_recommendation
+  - popularity_fallback
+  - recommendation_ab_test
+  capabilities:
+  - id: elasticsearch
+    emitter: fastapi, nestjs
+  - id: meilisearch
+    emitter: fastapi, nestjs
+  - id: tenant_aware
+    emitter: fastapi, nestjs
+  - id: fulltext
+    emitter: fastapi, nestjs
+  - id: vector_similarity
+    emitter: fastapi, nestjs
+  - id: geospatial_search
+    emitter: fastapi, nestjs
+  - id: faceted_aggregation
+    emitter: fastapi, nestjs
+  - id: collaborative_filtering
+    emitter: fastapi, nestjs
+  - id: content_based_recommender
+    emitter: fastapi, nestjs
+  - id: hybrid_recommendation
+    emitter: fastapi, nestjs
+  - id: popularity_fallback
+    emitter: fastapi, nestjs
+  - id: recommendation_ab_test
+    emitter: fastapi, nestjs
+  definitions:
+  - name: SearchIndex
+    description: Search index with field mappings and analyzers
+  - name: SearchQuery
+    description: Query binding to search backend
+  - name: SyncStrategy
+    description: Index synchronization with source data
+  - name: VectorSearchIndex
+    description: Vector similarity search index (HNSW, IVF, cosine/euclidean/dot_product)
+  - name: VectorIndexColumn
+    description: Column containing embedding vectors with similarity metric
+  - name: GeoSearchIndex
+    description: Geospatial search index (circle, bounding_box, polygon, distance)
+  - name: FacetedSearchIndex
+    description: Search index with faceted aggregation for explore/filter
+  - name: Facet
+    description: Aggregation facet (term, range, histogram, date_histogram, geo_distance)
+  - name: GeoSearchColumn
+    description: Geospatial data column (point, polygon, line) with CRS
+  - name: RecommendationConfig
+    description: Cau hinh recommendation engine voi algorithm va tham so
+  - name: ItemEmbedding
+    description: Embedding vector cho items de tinh toan do tuong dong
+  - name: UserPreference
+    description: So thich nguoi dung voi weight va history window
+  - name: RecommendationCache
+    description: Cache ket qua recommendation de giam do tre
+  - name: ABTestConfig
+    description: Cau hinh A/B test cho multiple recommendation strategies
+  obligations:
+  - name: IndexSync
+    description: Search index must stay in sync with source data
+  - name: TenantAware
+    description: Search results must respect tenant boundaries
+  - name: VectorDimensionMatch
+    description: Query vector dimensions must match index vector dimensions
+  - name: CacheInvalidation
+    description: Tu dong invalidate cache khi item/user data thay doi
+  - name: ColdStartFallback
+    description: Fallback sang popularity/random khi khong du training data
+  file_contributions:
+    infrastructure:
+    - path: app/search/elasticsearch.py
+      file_type: elasticsearch_client
+      template: cp_full_search/elasticsearch.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: cp10.search.fastapi
+    - path: app/search/index_manager.py
+      file_type: index_manager
+      template: cp_full_search/index_manager.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: cp10.search.fastapi
+    - path: app/search/search_service.py
+      file_type: search_service
+      template: cp_full_search/search_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: cp10.search.fastapi
+    - path: app/search/faceted_search.py
+      file_type: faceted_search
+      template: cp_full_search/faceted_search.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: cp10.search.fastapi
+    - path: app/search/geo_search.py
+      file_type: geo_search
+      template: cp_full_search/geo_search.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: cp10.search.fastapi
+    - path: app/search/vector_search.py
+      file_type: vector_search
+      template: cp_full_search/vector_search.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: cp10.search.fastapi
+    - path: src/search/search.module.ts
+      file_type: search_module
+      template: cp_full_search/search.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: cp10.search.nestjs
+    - path: src/search/search.service.ts
+      file_type: search_service
+      template: cp_full_search/search.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: cp10.search.nestjs
+    - path: src/search/search.decorators.ts
+      file_type: search_decorator
+      template: cp_full_search/search.decorators.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: cp10.search.nestjs
+    - path: src/search/geo-search.service.ts
+      file_type: geo_search
+      template: cp_full_search/geo-search.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: cp10.search.nestjs
+    - path: src/search/vector-search.service.ts
+      file_type: vector_search
+      template: cp_full_search/vector-search.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: cp10.search.nestjs
+    - path: src/app/core/search/search.module.ts
+      file_type: search_module
+      template: cp_full_search/search.module.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: cp10.search.angular
+    - path: src/app/core/search/search.service.ts
+      file_type: search_service
+      template: cp_full_search/search.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: cp10.search.angular
+    - path: src/app/core/search/geo-search.service.ts
+      file_type: geo_search
+      template: cp_full_search/geo-search.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: cp10.search.angular
+    - path: src/app/core/search/vector-search.service.ts
+      file_type: vector_search
+      template: cp_full_search/vector-search.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: cp10.search.angular
+    - path: src/search/SearchProvider.tsx
+      file_type: search_provider
+      template: cp_full_search/SearchProvider.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: cp10.search.react
+    - path: src/search/useSearch.ts
+      file_type: search_hook
+      template: cp_full_search/useSearch.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: cp10.search.react
+    - path: src/search/useGeoSearch.ts
+      file_type: geo_search_hook
+      template: cp_full_search/useGeoSearch.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: cp10.search.react
+    - path: src/search/useVectorSearch.ts
+      file_type: vector_search_hook
+      template: cp_full_search/useVectorSearch.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: cp10.search.react
+    - path: src/app/search/components/faceted-search.component.ts
+      file_type: component
+      template: cp_full_search/faceted-search.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - facets
+    - path: src/search/FacetedSearch.tsx
+      file_type: component
+      template: cp_full_search/FacetedSearch.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - facets
+  frontend_integration:
+    angular:
+    - SearchService
+    - SearchComponent
+    - FacetedSearchComponent
+    react:
+    - useSearch
+    - SearchProvider
+    - FacetedSearch
+  recipes:
+  - collaborative_filtering_recipe
+  - content_based_recipe
+  - hybrid_recommendation_recipe
+  - popularity_fallback_recipe
+  - recommendation_ab_test_recipe
+  type: full
+  render_context_support: true

@@ -1,0 +1,112 @@
+"""
+Scheduler Router — sinh tự động bởi Midicoder CP31.
+
+Module này cung cấp REST API endpoints cho scheduler:
+- GET /schedules — Lấy danh sách schedules
+- GET /schedules/{id} — Lấy chi tiết schedule
+- POST /schedules/{id}/execute — Execute schedule thủ công
+- GET /schedules/due — Lấy schedules cần thực thi
+
+CP31: Scheduler & Cron Engine
+KPI-029: Tenant Isolation
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
+
+router = APIRouter(prefix="/api/scheduler", tags=["scheduler"])
+
+# Lazy import để tránh circular
+_scheduler_service: Any = None
+
+
+def get_scheduler():
+    """Lazy load SchedulerService."""
+    global _scheduler_service
+    if _scheduler_service is None:
+        from .scheduler_service import SchedulerService
+        _scheduler_service = SchedulerService()
+    return _scheduler_service
+
+
+@router.get("/schedules")
+def list_schedules() -> list[dict[str, Any]]:
+    """Lấy danh sách tất cả schedules.
+
+    Returns:
+        Danh sách schedule dicts.
+    """
+    scheduler = get_scheduler()
+    return scheduler.list_schedules()
+
+
+@router.get("/schedules/due")
+def list_due_schedules() -> list[dict[str, Any]]:
+    """Lấy danh sách schedules cần thực thi.
+
+    Returns:
+        Danh sách schedules whose next_run <= now.
+    """
+    scheduler = get_scheduler()
+    return scheduler.get_due_schedules()
+
+
+@router.get("/schedules/{schedule_id}")
+def get_schedule(schedule_id: str) -> dict[str, Any]:
+    """Lấy chi tiết một schedule.
+
+    Args:
+        schedule_id: ID của schedule.
+
+    Returns:
+        Schedule dict.
+
+    Raises:
+        HTTPException: Nếu schedule không tồn tại.
+    """
+    scheduler = get_scheduler()
+    schedule = scheduler.get_schedule(schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail=f"Schedule {schedule_id} không tồn tại")
+    return schedule
+
+
+@router.post("/schedules/{schedule_id}/execute")
+def execute_schedule(schedule_id: str) -> dict[str, Any]:
+    """Execute một schedule thủ công.
+
+    Args:
+        schedule_id: ID của schedule.
+
+    Returns:
+        Execution result.
+    """
+    scheduler = get_scheduler()
+    schedule = scheduler.get_schedule(schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail=f"Schedule {schedule_id} không tồn tại")
+
+    def default_handler(sched):
+        """Default handler — no-op."""
+        return {"executed": True}
+
+    return scheduler.execute_schedule(schedule_id, default_handler)
+
+
+@router.post("/start")
+def start_scheduler() -> dict[str, str]:
+    """Bắt đầu scheduler loop."""
+    scheduler = get_scheduler()
+    scheduler.start()
+    return {"status": "running"}
+
+
+@router.post("/stop")
+def stop_scheduler() -> dict[str, str]:
+    """Dừng scheduler loop."""
+    scheduler = get_scheduler()
+    scheduler.stop()
+    return {"status": "stopped"}

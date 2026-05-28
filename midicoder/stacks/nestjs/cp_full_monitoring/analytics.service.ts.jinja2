@@ -1,0 +1,457 @@
+/**
+ * Dịch vụ analytics — thu thập sự kiện, tính toán KPI, và tạo báo cáo phân tích.
+ *
+ * {% if project_name %}
+ * Dự án: {{ project_name }}
+ * {% endif %}
+ * Cung cấp giao diện thống nhất để ghi nhận hành vi người dùng,
+ * tính toán chỉ số hiệu suất, và tạo báo cáo trong ứng dụng NestJS.
+ */
+import { Injectable } from '@nestjs/common';
+
+/**
+ * Các loại sự kiện analytics.
+ */
+export enum EventType {
+  PAGE_VIEW = 'PAGE_VIEW',
+  CLICK = 'CLICK',
+  CONVERSION = 'CONVERSION',
+  REVENUE = 'REVENUE',
+  ERROR = 'ERROR',
+  CUSTOM = 'CUSTOM',
+}
+
+/**
+ * Các loại tổng hợp metric.
+ */
+export enum AggregationType {
+  SUM = 'SUM',
+  AVG = 'AVG',
+  COUNT = 'COUNT',
+  MIN = 'MIN',
+  MAX = 'MAX',
+  PERCENTILE = 'PERCENTILE',
+}
+
+/**
+ * Đơn vị thời gian cho báo cáo.
+ */
+export enum TimeGrain {
+  MINUTE = 'MINUTE',
+  HOUR = 'HOUR',
+  DAY = 'DAY',
+  WEEK = 'WEEK',
+  MONTH = 'MONTH',
+}
+
+/**
+ * Một sự kiện analytics — đại diện cho hành động của người dùng hoặc hệ thống.
+ */
+export interface AnalyticsEvent {
+  /** ID duy nhất của sự kiện. */
+  id: string;
+  /** Loại sự kiện. */
+  eventType: EventType;
+  /** ID của thực thể (user_id, session_id, hoặc order_id). */
+  entityId: string;
+  /** Các thuộc tính đi kèm sự kiện. */
+  properties: Record<string, any>;
+  /** Thời gian xảy ra sự kiện (ms epoch). */
+  timestamp: number;
+  /** ID của phiên người dùng. */
+  sessionId?: string;
+  /** ID của người dùng. */
+  userId?: string;
+  /** Metadata bổ sung. */
+  metadata: Record<string, string>;
+}
+
+/**
+ * Định nghĩa chỉ số KPI — tên, công thức tính toán, và ngưỡng.
+ */
+export interface KPIDefinition {
+  /** Tên duy nhất của KPI. */
+  name: string;
+  /** Tên metric cần tính toán. */
+  metric: string;
+  /** Loại tổng hợp. */
+  aggregation: AggregationType;
+  /** Bộ lọc thuộc tính cho sự kiện. */
+  filterProperties: Record<string, any>;
+  /** Ngưỡng mục tiêu của KPI. */
+  target?: number;
+  /** Đơn vị đo lường. */
+  unit: string;
+  /** Mô tả KPI. */
+  description: string;
+}
+
+/**
+ * Kết quả tính toán KPI.
+ */
+export interface KPIResult {
+  /** Tên của KPI. */
+  name: string;
+  /** Giá trị hiện tại. */
+  currentValue: number;
+  /** Ngưỡng mục tiêu. */
+  target?: number;
+  /** Đơn vị đo lường. */
+  unit: string;
+  /** Có đạt mục tiêu hay không. */
+  healthy: boolean;
+  /** Phần trăm thay đổi so với chu kỳ trước. */
+  changePercent: number;
+  /** Số lượng mẫu dữ liệu. */
+  samples: number;
+  /** Thời điểm tính toán (ms epoch). */
+  computedAt: number;
+}
+
+/**
+ * Một hàng dữ liệu trong báo cáo.
+ */
+export interface ReportRow {
+  /** Nhãn của hàng (giá trị nhóm). */
+  label: string;
+  /** Bản đồ giá trị theo cột. */
+  values: Record<string, number>;
+  /** Thời gian của hàng (nếu có). */
+  timestamp?: number;
+}
+
+/**
+ * Báo cáo phân tích — chứa tiêu đề, metadata, và hàng dữ liệu.
+ */
+export interface Report {
+  /** ID duy nhất của báo cáo. */
+  id: string;
+  /** Tên của báo cáo. */
+  name: string;
+  /** Mô tả báo cáo. */
+  description: string;
+  /** Danh sách hàng dữ liệu. */
+  rows: ReportRow[];
+  /** Danh sách tên cột. */
+  columns: string[];
+  /** Đơn vị thời gian. */
+  timeGrain: TimeGrain;
+  /** Thời gian bắt đầu (ms epoch). */
+  startTime?: number;
+  /** Thời gian kết thúc (ms epoch). */
+  endTime?: number;
+  /** Thời điểm tạo báo cáo (ms epoch). */
+  createdAt: number;
+}
+
+/**
+ * Giao diện bộ tham số truy vấn sự kiện.
+ */
+export interface EventQueryOptions {
+  /** Lọc theo loại sự kiện. */
+  eventType?: EventType;
+  /** Lọc theo ID người dùng. */
+  userId?: string;
+  /** Lọc theo ID phiên. */
+  sessionId?: string;
+  /** Thời gian bắt đầu (ms epoch). */
+  startTime?: number;
+  /** Thời gian kết thúc (ms epoch). */
+  endTime?: number;
+  /** Số lượng sự kiện tối đa. */
+  limit?: number;
+}
+
+/**
+ * Dịch vụ chính cho analytics.
+ *
+ * Quản lý việc ghi nhận sự kiện, tính toán KPI,
+ * và tạo báo cáo phân tích từ dữ liệu sự kiện.
+ */
+@Injectable()
+export class AnalyticsService {
+  /** Danh sách sự kiện đã thu thập. */
+  private readonly events: AnalyticsEvent[] = [];
+  /** Giới hạn số lượng sự kiện tối đa. */
+  private readonly maxEvents: number;
+  /** Danh sách định nghĩa KPI. */
+  private readonly kpiDefinitions: Map<string, KPIDefinition> = new Map();
+  /** Lịch sử giá trị KPI để tính phần trăm thay đổi. */
+  private readonly kpiHistory: Map<string, number[]> = new Map();
+  /** Danh sách báo cáo đã tạo. */
+  private readonly reports: Map<string, Report> = new Map();
+
+  constructor(maxEvents: number = 10000) {
+    this.maxEvents = maxEvents;
+  }
+
+  /**
+   * Ghi nhận một sự kiện analytics mới.
+   *
+   * @param eventType - Loại sự kiện.
+   * @param entityId - ID của thực thể.
+   * @param properties - Các thuộc tính đi kèm.
+   * @param sessionId - ID phiên người dùng.
+   * @param userId - ID người dùng.
+   * @param metadata - Metadata bổ sung.
+   * @returns Sự kiện đã ghi nhận.
+   */
+  trackEvent(
+    eventType: EventType,
+    entityId: string,
+    properties: Record<string, any> = {},
+    sessionId?: string,
+    userId?: string,
+    metadata: Record<string, string> = {},
+  ): AnalyticsEvent {
+    const event: AnalyticsEvent = {
+      id: this._uuid(),
+      eventType,
+      entityId,
+      properties,
+      timestamp: Date.now(),
+      sessionId,
+      userId,
+      metadata,
+    };
+    this._addEvent(event);
+    return event;
+  }
+
+  /**
+   * Lấy danh sách sự kiện với bộ lọc.
+   *
+   * @param options - Các tham số truy vấn.
+   * @returns Mảng sự kiện đã lọc.
+   */
+  getEvents(options: EventQueryOptions = {}): AnalyticsEvent[] {
+    const { eventType, userId, sessionId, startTime, endTime, limit = 100 } = options;
+
+    let results = this.events;
+
+    if (eventType) {
+      results = results.filter((e) => e.eventType === eventType);
+    }
+    if (userId) {
+      results = results.filter((e) => e.userId === userId);
+    }
+    if (sessionId) {
+      results = results.filter((e) => e.sessionId === sessionId);
+    }
+    if (startTime) {
+      results = results.filter((e) => e.timestamp >= startTime);
+    }
+    if (endTime) {
+      results = results.filter((e) => e.timestamp <= endTime);
+    }
+
+    return results.slice(0, limit);
+  }
+
+  /**
+   * Thêm định nghĩa KPI mới.
+   *
+   * @param kpi - Định nghĩa KPI cần thêm.
+   */
+  addKPIDefinition(kpi: KPIDefinition): void {
+    this.kpiDefinitions.set(kpi.name, kpi);
+    this.kpiHistory.set(kpi.name, []);
+  }
+
+  /**
+   * Tính toán tất cả KPI đã định nghĩa.
+   *
+   * @param startTime - Thời gian bắt đầu (ms epoch).
+   * @param endTime - Thời gian kết thúc (ms epoch).
+   * @returns Mảng kết quả KPI.
+   */
+  computeKPIs(startTime?: number, endTime?: number): KPIResult[] {
+    const results: KPIResult[] = [];
+    const now = Date.now();
+
+    for (const [name, kpi] of this.kpiDefinitions) {
+      // Lọc sự kiện theo thời gian
+      let filtered = this.events;
+      if (startTime) {
+        filtered = filtered.filter((e) => e.timestamp >= startTime);
+      }
+      if (endTime) {
+        filtered = filtered.filter((e) => e.timestamp <= endTime);
+      }
+
+      // Trích xuất giá trị số từ properties
+      const values: number[] = [];
+      for (const event of filtered) {
+        const value = event.properties['value'];
+        if (value !== undefined && typeof value === 'number') {
+          // Áp dụng filterProperties
+          const match = Object.entries(kpi.filterProperties).every(
+            ([k, v]) => event.properties[k] === v,
+          );
+          if (match) {
+            values.push(value);
+          }
+        }
+      }
+
+      // Tính tổng hợp
+      const current = this._aggregate(values, kpi.aggregation);
+      const history = this.kpiHistory.get(name) || [];
+      const previous = history.length >= 2 ? history[history.length - 1] : current;
+
+      history.push(current);
+      this.kpiHistory.set(name, history);
+
+      const changePercent = previous !== 0 ? ((current - previous) / previous) * 100 : 0;
+      const healthy = kpi.target !== undefined ? current >= kpi.target : true;
+
+      results.push({
+        name,
+        currentValue: current,
+        target: kpi.target,
+        unit: kpi.unit,
+        healthy,
+        changePercent: Math.round(changePercent * 100) / 100,
+        samples: values.length,
+        computedAt: now,
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Lấy tất cả định nghĩa KPI.
+   *
+   * @returns Mảng định nghĩa KPI.
+   */
+  getKPIDefinitions(): KPIDefinition[] {
+    return Array.from(this.kpiDefinitions.values());
+  }
+
+  /**
+   * Xây dựng báo cáo phân tích từ sự kiện đã thu thập.
+   *
+   * @param name - Tên duy nhất của báo cáo.
+   * @param eventType - Loại sự kiện cần báo cáo.
+   * @param groupBy - Thuộc tính để nhóm dữ liệu.
+   * @param timeGrain - Đơn vị thời gian.
+   * @param startTime - Thời gian bắt đầu (ms epoch).
+   * @param endTime - Thời gian kết thúc (ms epoch).
+   * @param description - Mô tả báo cáo.
+   * @returns Báo cáo đã xây dựng.
+   */
+  buildReport(
+    name: string,
+    eventType: EventType,
+    groupBy: string,
+    timeGrain: TimeGrain = TimeGrain.DAY,
+    startTime?: number,
+    endTime?: number,
+    description: string = '',
+  ): Report {
+    // Lọc sự kiện
+    let filtered = this.events.filter((e) => e.eventType === eventType);
+    if (startTime) {
+      filtered = filtered.filter((e) => e.timestamp >= startTime);
+    }
+    if (endTime) {
+      filtered = filtered.filter((e) => e.timestamp <= endTime);
+    }
+
+    // Nhóm theo thuộc tính groupBy
+    const groups = new Map<string, AnalyticsEvent[]>();
+    for (const event of filtered) {
+      const key = String(event.properties[groupBy] ?? 'unknown');
+      const existing = groups.get(key) || [];
+      existing.push(event);
+      groups.set(key, existing);
+    }
+
+    // Tạo hàng dữ liệu
+    const rows: ReportRow[] = [];
+    const columns = ['count', 'total_value'];
+    const sortedKeys = Array.from(groups.keys()).sort();
+    for (const label of sortedKeys) {
+      const groupEvents = groups.get(label)!;
+      const totalValue = groupEvents.reduce((sum, e) => {
+        const v = e.properties['value'];
+        return sum + (typeof v === 'number' ? v : 0);
+      }, 0);
+      rows.push({
+        label,
+        values: { count: groupEvents.length, total_value: totalValue },
+      });
+    }
+
+    const report: Report = {
+      id: this._uuid(),
+      name,
+      description: description || `Báo cáo ${eventType} theo ${groupBy}`,
+      rows,
+      columns,
+      timeGrain,
+      startTime,
+      endTime,
+      createdAt: Date.now(),
+    };
+
+    this.reports.set(name, report);
+    return report;
+  }
+
+  /**
+   * Lấy báo cáo theo tên.
+   *
+   * @param name - Tên của báo cáo.
+   * @returns Báo cáo nếu tìm thấy, ngược lại undefined.
+   */
+  getReport(name: string): Report | undefined {
+    return this.reports.get(name);
+  }
+
+  /**
+   * Lấy tất cả báo cáo.
+   *
+   * @returns Mảng tất cả báo cáo.
+   */
+  listReports(): Report[] {
+    return Array.from(this.reports.values());
+  }
+
+  /** Thêm sự kiện vào danh sách, loại bỏ cũ nếu đạt giới hạn. */
+  private _addEvent(event: AnalyticsEvent): void {
+    if (this.events.length >= this.maxEvents) {
+      const removeCount = Math.max(1, Math.floor(this.maxEvents / 10));
+      this.events.splice(0, removeCount);
+    }
+    this.events.push(event);
+  }
+
+  /** Tính toán giá trị tổng hợp. */
+  private _aggregate(values: number[], aggType: AggregationType): number {
+    if (!values.length) return 0;
+    switch (aggType) {
+      case AggregationType.SUM: return values.reduce((a, b) => a + b, 0);
+      case AggregationType.AVG: return values.reduce((a, b) => a + b, 0) / values.length;
+      case AggregationType.COUNT: return values.length;
+      case AggregationType.MIN: return Math.min(...values);
+      case AggregationType.MAX: return Math.max(...values);
+      case AggregationType.PERCENTILE: {
+        const sorted = [...values].sort((a, b) => a - b);
+        const idx = Math.floor(sorted.length * 0.95);
+        return sorted[Math.min(idx, sorted.length - 1)];
+      }
+      default: return 0;
+    }
+  }
+
+  /** Tạo UUID v4 đơn giản. */
+  private _uuid(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+}

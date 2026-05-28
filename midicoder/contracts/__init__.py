@@ -1,6 +1,6 @@
 ﻿# coding: utf-8
 """
-Public API Surface cho Midicoder CE pipeline.
+Public API Surface cho Midicoder CE pipeline (taxonomy-v2).
 
 Module này là điểm import ổn định cho internal consumers (emitters, templates,
 pipeline). Không chứa implementation logic — chỉ re-export types từ source
@@ -13,11 +13,10 @@ Nguồn re-export:
 - MIR types ← `pipeline/mir.py` (source of truth)
 - Plan types ← `pipeline/plan.py` (source of truth)
 - Artifact types ← `contracts/artifact.py` (own code)
-- CP51 Composition ← `packs/cp51_blueprint/` (own code)
 - Registry ← `contracts/registry.py` (single source mapping)
 
 Author: Midicoder Team
-Version: 2.0.0
+Version: 3.0.0 (taxonomy-v2)
 """
 
 from __future__ import annotations
@@ -65,32 +64,24 @@ from .artifact import (
     write_artifact,
 )
 
-# ============================================================================
-# CP51 Composition (source: packs/cp51_blueprint/)
-# ============================================================================
-
-from midicoder.packs.cp51_blueprint.models import (
-    CapabilityGraph,
-    CompositionNode,
-    CompositionPlan,
-    PackResolution,
-    StackBinding,
-    TemplateBinding,
-)
-from midicoder.packs.cp51_blueprint.resolver import PackResolver
-from midicoder.packs.cp51_blueprint.engine import CompositionEngine
+# (CP51 Blueprint đã bị REMOVE — compiler internal, relocate khỏi core packs)
 
 # ============================================================================
 # Registry (source: contracts/registry.py — single source mapping)
 # ============================================================================
 
 from .registry import (
+    ALL_PACK_IDS,
     ALL_STACKS,
     BACKEND_STACKS,
-    CP_ID_TO_INTERNAL,
+    ID_TO_INTERNAL,
+    INTERNAL_TO_ID,
     FRONTEND_STACKS,
     INFRA_STACK,
 )
+
+# Backward-compat alias (giữ tên cũ cho existing import không bị break)
+CP_ID_TO_INTERNAL = ID_TO_INTERNAL
 
 __all__ = [
     # MIR

@@ -1,0 +1,275 @@
+pack:
+  id: F26
+  name: Approval Workflow Engine
+  internal_id: cp_full_approval
+  version: 2.0.0
+  status: stable
+  category: runtime
+  depends_on:
+  - B01
+  - F02
+  - C02
+  - F08
+  - F20
+  - F07
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: MDC-F26
+    range: MDC-CP42-001 to MDC-CP42-010
+  capabilities_provided:
+  - approval_chain
+  - approval_matrix
+  - delegation
+  - escalation
+  capabilities:
+  - id: approval_chain
+    emitter: fastapi, nestjs, angular, react
+  - id: approval_matrix
+    emitter: fastapi, nestjs, angular, react
+  - id: delegation
+    emitter: fastapi, nestjs, angular, react
+  - id: escalation
+    emitter: fastapi, nestjs, angular, react
+  definitions:
+  - name: ApprovalRequest
+    description: Yêu cầu phê duyệt với multi-level chain
+  - name: ApprovalStep
+    description: Bước phê duyệt với approver và deadline
+  - name: EscalationRule
+    description: Quy tắc tự động nâng cấp khi timeout
+  - name: DelegationRecord
+    description: Ghi chép giao quyền phê duyệt
+  obligations:
+  - name: RBACValidation
+    description: Kiểm tra role trước khi quyết định phê duyệt
+  - name: AuditTrail
+    description: Ghi log mọi quyết định phê duyệt
+  file_contributions:
+    infrastructure:
+    - path: app/approval/models.py
+      file_type: approval_models
+      template: cp_full_approval/approval_models.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+      - approval_types
+    - path: app/approval/schemas.py
+      file_type: approval_schemas
+      template: cp_full_approval/approval_schemas.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+    - path: app/approval/services/approval_service.py
+      file_type: approval_service
+      template: cp_full_approval/approval_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+      - approval_types
+    - path: app/approval/routers/approval_router.py
+      file_type: approval_router
+      template: cp_full_approval/approval_router.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/approval/events/approval_event_handler.py
+      file_type: approval_event_handler
+      template: cp_full_approval/approval_event_handler.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/approval/workers/approval_escalation_worker.py
+      file_type: approval_escalation_worker
+      template: cp_full_approval/approval_escalation_worker.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+    - path: app/approval/services/approval_delegation_service.py
+      file_type: approval_delegation_service
+      template: cp_full_approval/approval_delegation_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+    - path: src/approval/entities/approval.entity.ts
+      file_type: approval_entity
+      template: cp_full_approval/approval.entity.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+    - path: src/approval/dtos/approval.dto.ts
+      file_type: approval_dto
+      template: cp_full_approval/approval.dto.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+    - path: src/approval/services/approval.service.ts
+      file_type: approval_service
+      template: cp_full_approval/approval.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+    - path: src/approval/controllers/approval.controller.ts
+      file_type: approval_controller
+      template: cp_full_approval/approval.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/approval/approval.module.ts
+      file_type: approval_module
+      template: cp_full_approval/approval.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/approval/schedulers/approval.scheduler.ts
+      file_type: approval_scheduler
+      template: cp_full_approval/approval.scheduler.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+    - path: src/approval/gateways/approval.gateway.ts
+      file_type: approval_gateway
+      template: cp_full_approval/approval.gateway.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+    - path: src/app/approval/components/approval-dashboard.component.ts
+      file_type: approval_dashboard
+      template: cp_full_approval/approval-dashboard.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+    - path: src/app/approval/components/approval-details.component.ts
+      file_type: approval_details
+      template: cp_full_approval/approval-details.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/approval/components/approval-history.component.ts
+      file_type: approval_history
+      template: cp_full_approval/approval-history.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/approval/components/approval-timeline.component.ts
+      file_type: approval_timeline
+      template: cp_full_approval/approval-timeline.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/approval/approval.service.ts
+      file_type: approval_service
+      template: cp_full_approval/approval.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/approval/approval.store.ts
+      file_type: approval_store
+      template: cp_full_approval/approval.store.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/approval/approval-types.ts
+      file_type: approval_types
+      template: cp_full_approval/approval-types.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/approval/components/ApprovalDashboard.tsx
+      file_type: approval_dashboard
+      template: cp_full_approval/ApprovalDashboard.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - approval_requests
+    - path: src/approval/components/ApprovalDetails.tsx
+      file_type: approval_details
+      template: cp_full_approval/ApprovalDetails.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/approval/components/ApprovalHistory.tsx
+      file_type: approval_history
+      template: cp_full_approval/ApprovalHistory.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/approval/components/ApprovalTimeline.tsx
+      file_type: approval_timeline
+      template: cp_full_approval/approval-timeline.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/approval/components/NotificationBadge.tsx
+      file_type: notification_badge
+      template: cp_full_approval/NotificationBadge.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/approval/components/DelegationSettings.tsx
+      file_type: delegation_settings
+      template: cp_full_approval/DelegationSettings.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/approval/hooks/useApprovals.ts
+      file_type: approvals_hook
+      template: cp_full_approval/useApprovals.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+  frontend_integration:
+    react:
+    - ApprovalDashboard
+    - ApprovalDetails
+    - ApprovalHistory
+    - NotificationBadge
+    - DelegationSettings
+    angular:
+    - ApprovalDashboardComponent
+    - ApprovalDetailsComponent
+    - ApprovalHistoryComponent
+  recipes:
+  - basic_approval_recipe
+  - full_workflow_recipe
+  type: full
+  render_context_support: true

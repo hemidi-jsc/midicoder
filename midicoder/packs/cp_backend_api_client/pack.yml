@@ -1,0 +1,111 @@
+pack:
+  id: BE03
+  name: API Client & Integration
+  internal_id: cp_backend_api_client
+  version: 2.0.0
+  status: stable
+  category: backend
+  type: backend
+  depends_on:
+  - F03
+  - F05
+  render_context_support: true
+  definitions_count: 3
+  obligations_count: 3
+  error_codes:
+    prefix: MDC-BE03
+    range: MDC-CP20-001 to MDC-CP20-005
+  capabilities_provided:
+  - api_client_generate
+  - realtime_bridge
+  - openapi_bind
+  capabilities:
+  - id: typed_client
+    emitter: angular, react
+  - id: websocket_bridge
+    emitter: angular, react
+  - id: sse_bridge
+    emitter: angular, react
+  - id: openapi_binding
+    emitter: angular, react, fastapi, nestjs
+  definitions:
+  - name: ApiSpec
+    description: API specification with endpoints and types
+  - name: ClientBinding
+    description: Binding between backend routes and frontend client methods
+  - name: RealtimeBridgeSpec
+    description: WebSocket/SSE bridge configuration
+  obligations:
+  - name: TypeSafety
+    description: Client types must match backend route types exactly
+  - name: ErrorMapping
+    description: Backend errors must be mapped to client-side error types
+  - name: AuthInjection
+    description: Each request must automatically attach auth token
+  file_contributions:
+    infrastructure:
+    - path: app/api_client/openapi_endpoint.py
+      file_type: openapi_endpoint
+      template: cp_backend_api_client/openapi_endpoint.py.jinja2
+      stacks:
+      - fastapi
+      - nestjs
+      pack_emitter: null
+    - path: app/api_client/websocket_gateway.py
+      file_type: websocket_gateway
+      template: cp_backend_api_client/websocket_gateway.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: src/api-client/openapi.module.ts
+      file_type: openapi_module
+      template: cp_backend_api_client/openapi.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/api-client/websocket.gateway.ts
+      file_type: websocket_gateway
+      template: cp_backend_api_client/websocket.gateway.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/app/core/api/api-client.service.ts
+      file_type: api_client_service
+      template: cp_backend_api_client/api-client.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/app/core/api/realtime-bridge.service.ts
+      file_type: realtime_bridge
+      template: cp_backend_api_client/realtime-bridge.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/app/core/api/openapi-bind.ts
+      file_type: openapi_binding
+      template: cp_backend_api_client/openapi-bind.ts.jinja2
+      stacks:
+      - angular
+      - react
+      pack_emitter: null
+    - path: src/api/api-client.ts
+      file_type: api_client
+      template: cp_backend_api_client/api-client.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+    - path: src/api/realtime-hooks.ts
+      file_type: realtime_hooks
+      template: cp_backend_api_client/realtime-hooks.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+  frontend_integration:
+    angular:
+    - ApiClientService
+    - RealtimeBridgeService
+    - OpenApiBindModule
+    react:
+    - useApiClient
+    - useRealtime
+    - ApiTypes

@@ -731,14 +731,14 @@ def _plan_infra_files(status_filter: str | None = None, user_config: dict | None
         {
             "path": "docker-compose.yml",
             "type": "docker_compose",
-            "template": "cp07_iac/docker-compose.yml.jinja2",
+            "template": "cp_infra_iac/docker-compose.yml.jinja2",
             "context": {"render_context": infra_rc},
             "metadata": {},
         },
         {
             "path": "Dockerfile",
             "type": "dockerfile",
-            "template": "cp07_iac/Dockerfile.api.jinja2",
+            "template": "cp_infra_iac/Dockerfile.api.jinja2",
             "context": {"render_context": infra_rc},
             "metadata": {},
         },
@@ -991,7 +991,7 @@ def _generate_iac_file(
         full_path.parent.mkdir(parents=True, exist_ok=True)
 
         if pack_emitter == "cp07.docker":
-            from midicoder.packs.cp07_iac.docker import DockerComposeGenerator as DCG
+            from midicoder.packs.cp_infra_iac.docker import DockerComposeGenerator as DCG
             generator = DCG()
             infra_config = generator.generate(mir, full_path)
             content = full_path.read_text(encoding="utf-8")
@@ -1004,7 +1004,7 @@ def _generate_iac_file(
             )
 
         elif pack_emitter == "cp07.terraform":
-            from midicoder.packs.cp07_iac.terraform import TerraformGenerator
+            from midicoder.packs.cp_infra_iac.terraform import TerraformGenerator
             generator = TerraformGenerator()
             generator.generate(mir, full_path.parent)
             # Terraform may generate multiple files; return the main one

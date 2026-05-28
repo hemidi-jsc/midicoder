@@ -14,7 +14,7 @@ Version: 1.0.0
 
 import pytest
 
-from midicoder.packs.cp20_api_client.models import (
+from midicoder.packs.cp_backend_api_client.models import (
     ApiSpec,
     AuthMode,
     ClientBinding,
@@ -81,7 +81,7 @@ class TestAngularApiEmitter:
 
     def test_emit_basic_spec(self, tmp_path):
         """Test emit Angular client từ spec cơ bản."""
-        from midicoder.packs.cp20_api_client.angular import AngularApiEmitter
+        from midicoder.packs.cp_backend_api_client.angular import AngularApiEmitter
 
         emitter = AngularApiEmitter()
         spec = _make_sample_spec()
@@ -95,7 +95,7 @@ class TestAngularApiEmitter:
 
     def test_emit_no_bridge(self, tmp_path):
         """Test emit Angular client không có bridge."""
-        from midicoder.packs.cp20_api_client.angular import AngularApiEmitter
+        from midicoder.packs.cp_backend_api_client.angular import AngularApiEmitter
 
         emitter = AngularApiEmitter()
         spec = _make_spec_no_bridge()
@@ -110,7 +110,7 @@ class TestAngularApiEmitter:
 
     def test_emit_content_has_auth_mode(self, tmp_path):
         """Test content có chứa auth mode đúng."""
-        from midicoder.packs.cp20_api_client.angular import AngularApiEmitter
+        from midicoder.packs.cp_backend_api_client.angular import AngularApiEmitter
 
         emitter = AngularApiEmitter()
         spec = _make_sample_spec()
@@ -121,7 +121,7 @@ class TestAngularApiEmitter:
 
     def test_emit_openapi_bind_has_endpoints(self, tmp_path):
         """Test openapi-bind.ts có chứa endpoint mappings."""
-        from midicoder.packs.cp20_api_client.angular import AngularApiEmitter
+        from midicoder.packs.cp_backend_api_client.angular import AngularApiEmitter
 
         emitter = AngularApiEmitter()
         spec = _make_sample_spec()
@@ -133,7 +133,7 @@ class TestAngularApiEmitter:
 
     def test_emit_files_written_to_disk(self, tmp_path):
         """Test files được write ra disk."""
-        from midicoder.packs.cp20_api_client.angular import AngularApiEmitter
+        from midicoder.packs.cp_backend_api_client.angular import AngularApiEmitter
 
         emitter = AngularApiEmitter()
         spec = _make_sample_spec()
@@ -148,7 +148,7 @@ class TestReactApiEmitter:
 
     def test_emit_basic_spec(self, tmp_path):
         """Test emit React client từ spec cơ bản."""
-        from midicoder.packs.cp20_api_client.react import ReactApiEmitter
+        from midicoder.packs.cp_backend_api_client.react import ReactApiEmitter
 
         emitter = ReactApiEmitter()
         spec = _make_sample_spec()
@@ -162,7 +162,7 @@ class TestReactApiEmitter:
 
     def test_emit_no_bridge(self, tmp_path):
         """Test emit React client không có bridge."""
-        from midicoder.packs.cp20_api_client.react import ReactApiEmitter
+        from midicoder.packs.cp_backend_api_client.react import ReactApiEmitter
 
         emitter = ReactApiEmitter()
         spec = _make_spec_no_bridge()
@@ -175,7 +175,7 @@ class TestReactApiEmitter:
 
     def test_emit_content_has_axios(self, tmp_path):
         """Test content có chứa axios import."""
-        from midicoder.packs.cp20_api_client.react import ReactApiEmitter
+        from midicoder.packs.cp_backend_api_client.react import ReactApiEmitter
 
         emitter = ReactApiEmitter()
         spec = _make_sample_spec()
@@ -186,7 +186,7 @@ class TestReactApiEmitter:
 
     def test_emit_hooks_has_websocket(self, tmp_path):
         """Test realtime-hooks.ts có chứa WebSocket hook."""
-        from midicoder.packs.cp20_api_client.react import ReactApiEmitter
+        from midicoder.packs.cp_backend_api_client.react import ReactApiEmitter
 
         emitter = ReactApiEmitter()
         spec = _make_sample_spec()
@@ -197,7 +197,7 @@ class TestReactApiEmitter:
 
     def test_emit_files_written_to_disk(self, tmp_path):
         """Test files được write ra disk."""
-        from midicoder.packs.cp20_api_client.react import ReactApiEmitter
+        from midicoder.packs.cp_backend_api_client.react import ReactApiEmitter
 
         emitter = ReactApiEmitter()
         spec = _make_sample_spec()
@@ -212,7 +212,7 @@ class TestFastAPIApiEmitter:
 
     def test_emit_basic_spec(self):
         """Test emit FastAPI files từ spec cơ bản."""
-        from midicoder.packs.cp20_api_client.fastapi import FastAPIApiEmitter
+        from midicoder.packs.cp_backend_api_client.fastapi import FastAPIApiEmitter
 
         emitter = FastAPIApiEmitter()
         spec = _make_sample_spec()
@@ -223,7 +223,7 @@ class TestFastAPIApiEmitter:
 
     def test_emit_openapi_has_base_url(self):
         """Test openapi_endpoint.py có chứa base_url."""
-        from midicoder.packs.cp20_api_client.fastapi import FastAPIApiEmitter
+        from midicoder.packs.cp_backend_api_client.fastapi import FastAPIApiEmitter
 
         emitter = FastAPIApiEmitter()
         spec = _make_sample_spec()
@@ -234,7 +234,7 @@ class TestFastAPIApiEmitter:
 
     def test_emit_websocket_has_manager(self):
         """Test websocket_gateway.py có chứa ConnectionManager."""
-        from midicoder.packs.cp20_api_client.fastapi import FastAPIApiEmitter
+        from midicoder.packs.cp_backend_api_client.fastapi import FastAPIApiEmitter
 
         emitter = FastAPIApiEmitter()
         spec = _make_sample_spec()
@@ -246,7 +246,7 @@ class TestFastAPIApiEmitter:
 
     def test_emit_empty_spec(self):
         """Test emit với spec tối thiểu."""
-        from midicoder.packs.cp20_api_client.fastapi import FastAPIApiEmitter
+        from midicoder.packs.cp_backend_api_client.fastapi import FastAPIApiEmitter
 
         emitter = FastAPIApiEmitter()
         spec = ApiSpec(
@@ -267,7 +267,7 @@ class TestNestJSApiEmitter:
 
     def test_emit_basic_spec(self):
         """Test emit NestJS files từ spec cơ bản."""
-        from midicoder.packs.cp20_api_client.nestjs import NestJSApiEmitter
+        from midicoder.packs.cp_backend_api_client.nestjs import NestJSApiEmitter
 
         emitter = NestJSApiEmitter()
         spec = _make_sample_spec()
@@ -278,7 +278,7 @@ class TestNestJSApiEmitter:
 
     def test_emit_openapi_has_module(self):
         """Test openapi.module.ts có chứa NestJS module."""
-        from midicoder.packs.cp20_api_client.nestjs import NestJSApiEmitter
+        from midicoder.packs.cp_backend_api_client.nestjs import NestJSApiEmitter
 
         emitter = NestJSApiEmitter()
         spec = _make_sample_spec()
@@ -290,7 +290,7 @@ class TestNestJSApiEmitter:
 
     def test_emit_websocket_has_gateway(self):
         """Test websocket.gateway.ts có chứa WebSocketGateway."""
-        from midicoder.packs.cp20_api_client.nestjs import NestJSApiEmitter
+        from midicoder.packs.cp_backend_api_client.nestjs import NestJSApiEmitter
 
         emitter = NestJSApiEmitter()
         spec = _make_sample_spec()
@@ -302,7 +302,7 @@ class TestNestJSApiEmitter:
 
     def test_emit_empty_spec(self):
         """Test emit với spec tối thiểu."""
-        from midicoder.packs.cp20_api_client.nestjs import NestJSApiEmitter
+        from midicoder.packs.cp_backend_api_client.nestjs import NestJSApiEmitter
 
         emitter = NestJSApiEmitter()
         spec = ApiSpec(

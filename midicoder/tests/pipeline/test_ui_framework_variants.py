@@ -28,12 +28,12 @@ from typing import Any
 
 import pytest
 
-from midicoder.packs.cp21_auth_ui.angular import AngularAuthUIEmitter
-from midicoder.packs.cp21_auth_ui.models import (
+from midicoder.packs.cp_frontend_auth_ui.angular import AngularAuthUIEmitter
+from midicoder.packs.cp_frontend_auth_ui.models import (
     AuthPageType,
     AuthUIConfig,
 )
-from midicoder.packs.cp21_auth_ui.react import ReactAuthUIEmitter
+from midicoder.packs.cp_frontend_auth_ui.react import ReactAuthUIEmitter
 from midicoder.pipeline.emitter import Emitter
 
 
@@ -278,7 +278,7 @@ class TestCP36ReactUIFrameworkVariants:
     @pytest.fixture
     def emitter(self) -> Emitter:
         """Tạo Emitter cho CP36 React templates."""
-        template_dir = _get_stacks_dir() / "react" / "core" / "cp36_tenant_onboarding"
+        template_dir = _get_stacks_dir() / "react" / "core" / "cp_full_tenant_onboarding"
         return Emitter(stack="react", template_dir=template_dir)
 
     @pytest.mark.parametrize("ui_framework", UI_FRAMEWORKS)
@@ -339,7 +339,7 @@ class TestCP45ReactUIFrameworkVariants:
     @pytest.fixture
     def emitter(self) -> Emitter:
         """Tạo Emitter cho CP45 React templates."""
-        template_dir = _get_stacks_dir() / "react" / "core" / "cp45_payment"
+        template_dir = _get_stacks_dir() / "react" / "core" / "cp_full_payment"
         return Emitter(stack="react", template_dir=template_dir)
 
     @pytest.mark.parametrize("ui_framework", UI_FRAMEWORKS)

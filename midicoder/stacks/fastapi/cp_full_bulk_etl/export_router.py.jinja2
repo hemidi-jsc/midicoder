@@ -1,0 +1,512 @@
+# coding: utf-8
+"""
+Export Router cho FastAPI - Data Import/Export/ETL.
+
+Cung cấp các endpoint:
+- POST   /data/export                  — Tạo export job
+- GET    /data/export                  — Danh sách export jobs
+- GET    /data/export/{job_key}        — Trạng thái job
+- GET    /data/export/{job_key}/download — Tải file
+- GET    /data/export/{job_key}/preview  — Xem trước N hàng
+
+Số lượng export jobs hiện có: {{ export_job_count }}
+Các trạng thái job: {{ ', '.join(job_statuses) }}
+Định dạng hỗ trợ: {{ ', '.join(import_formats) }}
+
+CP38: Data Import/Export/ETL
+"""
+
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Query, HTTPException, Depends
+from fastapi.responses import Response
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .export_service import ExportService, ExportServiceError
+from .import_schemas import (
+    ExportJobCreate,
+    ExportJobRead,
+    JobStatusResponse,
+    ExportResult,
+    ExportPreviewResponse,
+    FileFormatEnum,
+)
+
+# Khởi tạo router với prefix và tags
+router = APIRouter(prefix="/data/export", tags=["data-export"])
+
+
+# ============================================================================
+# Dependency: Lấy ExportService
+# ============================================================================
+
+def get_export_service(db: AsyncSession) -> ExportService:
+    """
+    Dependency factory cho ExportService.
+
+    Args:
+        db: AsyncSession từ FastAPI dependency injection
+
+    Returns:
+        ExportService instance
+    """
+    return ExportService(db)
+
+
+# ============================================================================
+# Export Job Endpoints
+# ============================================================================
+
+@router.post("/", summary="Tạo export job", response_model=ExportJobRead)
+async def create_export_job(
+    body: ExportJobCreate,
+    source_table: str = Query(..., description="Tên bảng nguồn để xuất dữ liệu"),
+    service: ExportService = Depends(get_export_service),
+) -> ExportJobRead:
+    """
+    Tạo export job mới.
+
+    Tạo job ở trạng thái pending, chưa thực thi export ngay.
+    Sau khi tạo, cần gọi thực thi (hoặc auto-execute tùy config).
+
+    **Request Body:**
+    - output_filename: Tên file đầu ra (phải có đuôi .csv hoặc .json)
+    - file_format: Định dạng file (csv hoặc json)
+    - query_filter: Bộ lọc query (optional)
+    - columns: Danh sách cột cần xuất (optional)
+    - page_size: Số hàng mỗi trang (default 1000)
+
+    **Query Parameters:**
+    - source_table: Tên bảng nguồn (bắt buộc)
+
+    **Response:**
+    - 200: ExportJobRead với thông tin job mới
+    - 400: Lỗi validate
+    - 422: Lỗi validate request body
+
+    Args:
+        body: ExportJobCreate với thông tin export
+        source_table: Tên bảng nguồn
+
+    Returns:
+        ExportJobRead với thông tin job
+
+    Raises:
+        HTTPException 400: Nếu tham số không hợp lệ
+        HTTPException 422: Nếu validate request thất bại
+    """
+    try:
+        job = await service.create_export_job(
+            output_filename=body.output_filename,
+            file_format=body.file_format.value,
+            source_table=source_table,
+            query_filter=body.query_filter,
+            columns=body.columns,
+            page_size=body.page_size,
+            created_by=body.created_by,
+        )
+        return job
+
+    except ExportServiceError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=e.message,
+        )
+
+
+@router.get("/", summary="Danh sách export jobs")
+async def list_export_jobs(
+    status: Optional[str] = Query(
+        None,
+        description="Filter theo trạng thái",
+        choices=["pending", "running", "completed", "failed", "cancelled"],
+    ),
+    page: int = Query(1, ge=1, description="Số trang (bắt đầu từ 1)"),
+    page_size: int = Query(20, ge=1, le=100, description="Số jobs mỗi trang"),
+    service: ExportService = Depends(get_export_service),
+) -> dict:
+    """
+    Lấy danh sách export jobs với filter và pagination.
+
+    **Query Parameters:**
+    - status: Filter theo trạng thái (optional)
+    - page: Số trang (default: 1)
+    - page_size: Số jobs mỗi trang (default: 20, max: 100)
+
+    **Response:**
+    - 200: Dictionary với items, total, page, page_size, total_pages
+
+    Args:
+        status: Trạng thái filter (optional)
+        page: Số trang
+        page_size: Số items mỗi trang
+
+    Returns:
+        Dictionary với danh sách jobs và pagination info
+    """
+    return await service.list_export_jobs(
+        status=status,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/{job_key}", summary="Trạng thái export job", response_model=JobStatusResponse)
+async def get_export_job_status(
+    job_key: str,
+    service: ExportService = Depends(get_export_service),
+) -> JobStatusResponse:
+    """
+    Lấy trạng thái chi tiết của export job.
+
+    Bao gồm tiến trình, số hàng đã xuất, kích thước file, và trạng thái download.
+
+    **Response:**
+    - 200: JobStatusResponse với thông tin job
+    - 404: Job không tìm thấy
+
+    Args:
+        job_key: Khóa duy nhất của export job
+
+    Returns:
+        JobStatusResponse
+
+    Raises:
+        HTTPException 404: Nếu job không tìm thấy
+    """
+    try:
+        status_info = await service.get_export_status(job_key)
+        return JobStatusResponse(**status_info)
+
+    except ExportServiceError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=e.message,
+        )
+
+
+# ============================================================================
+# Download & Preview Endpoints
+# ============================================================================
+
+@router.get("/{job_key}/download", summary="Tải file export")
+async def download_export_file(
+    job_key: str,
+    service: ExportService = Depends(get_export_service),
+) -> Response:
+    """
+    Tải file đã xuất.
+
+    Chỉ có thể tải khi job đã ở trạng thái completed.
+    Trả về file với Content-Type phù hợp theo định dạng.
+
+    **Response:**
+    - 200: File content (CSV hoặc JSON)
+    - 404: Job không tìm thấy
+    - 409: File chưa sẵn sàng (job chưa completed)
+
+    **Headers:**
+    - Content-Type: text/csv hoặc application/json
+    - Content-Disposition: attachment; filename=<output_filename>
+    - Content-Length: kích thước file
+
+    Args:
+        job_key: Khóa duy nhất của export job
+
+    Returns:
+        Response với file content
+
+    Raises:
+        HTTPException 404: Nếu job không tìm thấy
+        HTTPException 409: Nếu file chưa sẵn sàng
+    """
+    try:
+        # Lấy thông tin job để biết filename và format
+        status_info = await service.get_export_status(job_key)
+        content = await service.download_export(job_key)
+
+        # Xác định Content-Type
+        file_format = status_info.get("file_format", "csv")
+        if file_format == "json":
+            content_type = "application/json"
+        else:
+            content_type = "text/csv"
+
+        filename = status_info.get("output_filename", "export.csv")
+
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Length": str(len(content)),
+            },
+        )
+
+    except ExportServiceError as e:
+        if e.error_code == "JOB_NOT_FOUND":
+            raise HTTPException(status_code=404, detail=e.message)
+        elif e.error_code == "FILE_NOT_READY":
+            raise HTTPException(status_code=409, detail=e.message)
+        else:
+            raise HTTPException(status_code=400, detail=e.message)
+
+
+@router.get("/{job_key}/preview", summary="Xem trước dữ liệu export")
+async def preview_export(
+    job_key: str,
+    count: int = Query(10, ge=1, le=100, description="Số hàng xem trước"),
+    service: ExportService = Depends(get_export_service),
+) -> ExportPreviewResponse:
+    """
+    Xem trước N hàng đầu tiên của dữ liệu export.
+
+    Dùng để kiểm tra dữ liệu trước khi thực thi export full.
+    Query source table với cùng filter như job config.
+
+    **Query Parameters:**
+    - count: Số hàng xem trước (default: 10, max: 100)
+
+    **Response:**
+    - 200: ExportPreviewResponse với preview_rows, columns, total_available
+    - 404: Job không tìm thấy
+
+    Args:
+        job_key: Khóa duy nhất của export job
+        count: Số hàng xem trước (1-100)
+
+    Returns:
+        ExportPreviewResponse
+
+    Raises:
+        HTTPException 404: Nếu job không tìm thấy
+    """
+    try:
+        preview_data = await service.preview_export(
+            job_key=job_key,
+            preview_count=count,
+        )
+        return ExportPreviewResponse(**preview_data)
+
+    except ExportServiceError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=e.message,
+        )
+
+
+# ============================================================================
+# Execute & Cancel Endpoints
+# ============================================================================
+
+@router.post("/{job_key}/execute", summary="Thực thi export job", response_model=ExportResult)
+async def execute_export_job(
+    job_key: str,
+    service: ExportService = Depends(get_export_service),
+) -> ExportResult:
+    """
+    Thực thi export job.
+
+    Bắt đầu quá trình export: query database, ghi ra file CSV/JSON.
+    Job phải ở trạng thái pending.
+
+    **Response:**
+    - 200: ExportResult với kết quả export
+    - 404: Job không tìm thấy
+    - 409: Job đang chạy hoặc đã hoàn thành
+
+    Args:
+        job_key: Khóa duy nhất của export job
+
+    Returns:
+        ExportResult với thông tin kết quả
+
+    Raises:
+        HTTPException 404: Nếu job không tìm thấy
+        HTTPException 409: Nếu job đang chạy hoặc đã hoàn thành
+    """
+    try:
+        job = await service.execute_export(job_key)
+
+        return ExportResult(
+            job_key=job.job_key,
+            status=job.status,
+            output_filename=job.output_filename,
+            file_format=job.file_format,
+            total_rows=job.exported_rows,
+            file_size_bytes=job.file_size_bytes,
+            download_url=f"/data/export/{job.job_key}/download" if job.status == "completed" else None,
+        )
+
+    except ExportServiceError as e:
+        status_code = 404 if e.error_code == "JOB_NOT_FOUND" else 409
+        raise HTTPException(
+            status_code=status_code,
+            detail=e.message,
+        )
+
+
+@router.post("/{job_key}/cancel", summary="Hủy export job")
+async def cancel_export_job(
+    job_key: str,
+    service: ExportService = Depends(get_export_service),
+) -> dict:
+    """
+    Hủy export job đang chạy hoặc pending.
+
+    **Response:**
+    - 200: Thông báo hủy thành công
+    - 404: Job không tìm thấy
+    - 409: Job đã ở trạng thái cuối
+
+    Args:
+        job_key: Khóa duy nhất của export job
+
+    Returns:
+        Dictionary với thông tin job đã cancel
+
+    Raises:
+        HTTPException 404: Nếu job không tìm thấy
+        HTTPException 409: Nếu không thể cancel
+    """
+    try:
+        job = await service.cancel_export(job_key)
+        return {
+            "job_key": job.job_key,
+            "status": job.status,
+            "message": "Export job đã được hủy thành công",
+        }
+
+    except ExportServiceError as e:
+        status_code = 404 if e.error_code == "JOB_NOT_FOUND" else 409
+        raise HTTPException(
+            status_code=status_code,
+            detail=e.message,
+        )
+
+
+# ============================================================================
+# Quick Export Endpoint (one-shot)
+# ============================================================================
+
+@router.post("/quick", summary="Export nhanh (one-shot)")
+async def quick_export(
+    source_table: str = Query(..., description="Tên bảng nguồn"),
+    file_format: FileFormatEnum = Query(FileFormatEnum.csv, description="Định dạng file"),
+    columns: Optional[str] = Query(None, description="Danh sách cột, phân tách bằng dấu phẩy"),
+    filter_json: Optional[str] = Query(None, description="Bộ lọc query (JSON string)"),
+    limit: int = Query(10000, ge=1, le=100000, description="Giới hạn số hàng"),
+    service: ExportService = Depends(get_export_service),
+) -> Response:
+    """
+    Export nhanh — tạo và thực thi export trong một lần gọi.
+
+    Không tạo job — trực tiếp query dữ liệu và trả về file.
+    Phù hợp cho export dữ liệu nhỏ (< 100K hàng).
+
+    **Query Parameters:**
+    - source_table: Tên bảng nguồn (bắt buộc)
+    - file_format: Định dạng (csv hoặc json, default: csv)
+    - columns: Danh sách cột, phân tách bằng dấu phẩy (optional)
+    - filter_json: Bộ lọc query, JSON string (optional)
+    - limit: Giới hạn số hàng (default: 10000, max: 100000)
+
+    **Response:**
+    - 200: File content (CSV hoặc JSON)
+    - 400: Lỗi validate hoặc query
+
+    Args:
+        source_table: Tên bảng nguồn
+        file_format: Định dạng file
+        columns: Cột cần xuất (comma-separated)
+        filter_json: Filter dưới dạng JSON string
+        limit: Giới hạn số hàng
+
+    Returns:
+        Response với file content
+
+    Raises:
+        HTTPException 400: Nếu lỗi validate hoặc query
+    """
+    import csv as csv_module
+    import json as json_module
+    import io
+
+    from sqlalchemy import text
+
+    try:
+        # Parse columns
+        column_list = [c.strip() for c in columns.split(",")] if columns else ["*"]
+        columns_str = ", ".join(column_list) if column_list[0] != "*" else "*"
+
+        # Parse filter
+        where_clause = ""
+        params: Dict[str, Any] = {}
+        if filter_json:
+            try:
+                filters = json_module.loads(filter_json)
+                where_parts = []
+                for i, (col, val) in enumerate(filters.items()):
+                    param_key = f"p{i}"
+                    where_parts.append(f"{col} = :{param_key}")
+                    params[param_key] = val
+                where_clause = f" WHERE {' AND '.join(where_parts)}"
+            except json_module.JSONDecodeError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="filter_json không phải JSON hợp lệ",
+                )
+
+        # Query data
+        sql = text(
+            f"SELECT {columns_str} FROM {source_table}{where_clause} LIMIT :limit"
+        )
+        params["limit"] = limit
+
+        result = await service.db.execute(sql, params)
+        rows = result.fetchall()
+        column_names = list(result.keys())
+
+        # Generate output
+        if file_format == FileFormatEnum.json:
+            # JSON output
+            records = []
+            for row in rows:
+                record = dict(row._mapping) if hasattr(row, "_mapping") else dict(zip(column_names, row))
+                records.append(record)
+
+            content = json_module.dumps(records, ensure_ascii=False, indent=2, default=str).encode("utf-8")
+            content_type = "application/json"
+            filename = f"{source_table}_export.json"
+
+        else:
+            # CSV output
+            output = io.StringIO()
+            writer = csv_module.DictWriter(output, fieldnames=column_names)
+            writer.writeheader()
+
+            for row in rows:
+                row_dict = dict(row._mapping) if hasattr(row, "_mapping") else dict(zip(column_names, row))
+                writer.writerow(row_dict)
+
+            content = output.getvalue().encode("utf-8-sig")
+            content_type = "text/csv"
+            filename = f"{source_table}_export.csv"
+            output.close()
+
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Length": str(len(content)),
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Lỗi khi export: {str(e)}",
+        )

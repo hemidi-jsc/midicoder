@@ -1,0 +1,132 @@
+# ===========================================================================
+# I02 — Kubernetes & Cloud Native Deployment
+# ===========================================================================
+# File contributions declaration cho infrastructure stack
+#
+# Capabilities:
+# - k8s_deploy: Deployment resource với replica management
+# - k8s_service: Service resource (ClusterIP, NodePort, LoadBalancer)
+# - k8s_ingress: Ingress resource cho external HTTP/HTTPS routing
+# - k8s_hpa: Horizontal Pod Autoscaler cho auto-scaling
+# - k8s_configmap: ConfigMap cho non-sensitive configuration
+# - k8s_secret: Secret cho sensitive data (base64-encoded)
+# - helm_chart: Helm Chart.yaml cho package management
+#
+# Storage: Kubernetes API Server (etcd)
+# ===========================================================================
+
+pack:
+  id: "I02"
+  name: "Kubernetes & Cloud Native Deployment"
+  internal_id: "cp_infra_kubernetes"
+  version: "2.0.0"
+  status: "stable"
+  category: "infrastructure"
+  type: "infra"
+  depends_on: ["B01", "I01", "BE01"]
+  render_context_support: true
+  definitions_count: 7
+  obligations_count: 2
+  error_codes:
+    prefix: "MDC-I02"
+    range: "MDC-I02-001 to MDC-I02-010"
+  capabilities_provided:
+    - k8s_deploy
+    - k8s_service
+    - k8s_ingress
+    - k8s_hpa
+    - k8s_configmap
+    - k8s_secret
+    - helm_chart
+  capabilities:
+    - id: "k8s_deploy"
+      emitter: "infrastructure, fastapi, nestjs"
+    - id: "k8s_service"
+      emitter: "infrastructure, fastapi, nestjs"
+    - id: "k8s_ingress"
+      emitter: "infrastructure"
+    - id: "k8s_hpa"
+      emitter: "infrastructure"
+    - id: "k8s_configmap"
+      emitter: "infrastructure"
+    - id: "k8s_secret"
+      emitter: "infrastructure"
+    - id: "helm_chart"
+      emitter: "infrastructure"
+  definitions:
+    - name: "K8sDeployment"
+      description: "Deployment resource — quản lý pod replicas và rolling update"
+    - name: "K8sService"
+      description: "Service resource — service discovery và load balancing (ClusterIP, NodePort, LoadBalancer)"
+    - name: "K8sIngress"
+      description: "Ingress resource — external HTTP/HTTPS routing vào cluster"
+    - name: "K8sHPA"
+      description: "Horizontal Pod Autoscaler — tự động scale dựa trên CPU/memory metrics"
+    - name: "K8sConfigMap"
+      description: "ConfigMap — lưu non-sensitive configuration data"
+    - name: "K8sSecret"
+      description: "Secret — lưu sensitive data (passwords, tokens, certificates)"
+    - name: "K8sPersistentVolume"
+      description: "PersistentVolumeClaim — yêu cầu persistent storage"
+  obligations:
+    - name: "ResourceQuotaRequired"
+      description: "Mọi deployment phải có resource limits/requests để đảm bảo cluster stability"
+    - name: "HealthCheckRequired"
+      description: "Mọi deployment phải có liveness và readiness probe"
+  file_contributions:
+    infrastructure:
+      # ------------------------------------------------------------------
+      # Infrastructure — Kubernetes Manifests
+      # ------------------------------------------------------------------
+      - path: "k8s/deployment.yaml"
+        file_type: "k8s_deployment"
+        template: "cp_infra_kubernetes/k8s/deployment.yaml.jinja2"
+        stacks: ["infrastructure"]
+        pack_emitter: "cp_infra_kubernetes.infrastructure"
+        context_keys: ["deployments"]
+      - path: "k8s/service.yaml"
+        file_type: "k8s_service"
+        template: "cp_infra_kubernetes/k8s/service.yaml.jinja2"
+        stacks: ["infrastructure"]
+        pack_emitter: "cp_infra_kubernetes.infrastructure"
+        context_keys: ["services"]
+      - path: "k8s/ingress.yaml"
+        file_type: "k8s_ingress"
+        template: "cp_infra_kubernetes/k8s/ingress.yaml.jinja2"
+        stacks: ["infrastructure"]
+        pack_emitter: "cp_infra_kubernetes.infrastructure"
+        context_keys: ["ingresses"]
+      - path: "k8s/hpa.yaml"
+        file_type: "k8s_hpa"
+        template: "cp_infra_kubernetes/k8s/hpa.yaml.jinja2"
+        stacks: ["infrastructure"]
+        pack_emitter: "cp_infra_kubernetes.infrastructure"
+        context_keys: ["hpas"]
+      - path: "k8s/configmap.yaml"
+        file_type: "k8s_configmap"
+        template: "cp_infra_kubernetes/k8s/configmap.yaml.jinja2"
+        stacks: ["infrastructure"]
+        pack_emitter: "cp_infra_kubernetes.infrastructure"
+        context_keys: ["configmaps"]
+      - path: "k8s/secret.yaml"
+        file_type: "k8s_secret"
+        template: "cp_infra_kubernetes/k8s/secret.yaml.jinja2"
+        stacks: ["infrastructure"]
+        pack_emitter: "cp_infra_kubernetes.infrastructure"
+        context_keys: ["secrets"]
+      - path: "k8s/pvc.yaml"
+        file_type: "k8s_pvc"
+        template: "cp_infra_kubernetes/k8s/pvc.yaml.jinja2"
+        stacks: ["infrastructure"]
+        pack_emitter: "cp_infra_kubernetes.infrastructure"
+        context_keys: ["pvcs"]
+      - path: "helm/Chart.yaml"
+        file_type: "helm_chart"
+        template: "cp_infra_kubernetes/helm/Chart.yaml.jinja2"
+        stacks: ["infrastructure"]
+        pack_emitter: "cp_infra_kubernetes.infrastructure"
+        context_keys: []
+  recipes:
+    - basic_deployment_recipe
+    - full_stack_recipe
+    - helm_chart_recipe

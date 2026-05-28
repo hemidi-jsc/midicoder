@@ -1,0 +1,127 @@
+/**
+ * Calendar Engine Service — sinh tự động bởi Midicoder CP31.
+ *
+ * Module này cung cấp CalendarEngineService để xử lý
+ * holiday, business day, và calendar exceptions.
+ *
+ * CP31: Scheduler & Cron Engine
+ */
+
+import { Injectable } from '@nestjs/common';
+
+export class BusinessDayCalculator {
+  /**
+   * Kiểm tra xem một ngày có phải business day không.
+   *
+   * @param d - Ngày cần kiểm tra.
+   * @param holidays - Tập ngày holiday (nếu có).
+   * @returns True nếu là business day.
+   */
+  static isBusinessDay(d: Date, holidays?: Set<string>): boolean {
+    const day = d.getDay(); // Sun=0, Sat=6
+    if (day === 0 || day === 6) {
+      return false;
+    }
+    const dateStr = d.toISOString().split('T')[0];
+    if (holidays && holidays.has(dateStr)) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Tìm business day tiếp theo.
+   *
+   * @param d - Ngày bắt đầu.
+   * @param holidays - Tập ngày holiday.
+   * @returns Business day tiếp theo.
+   */
+  static nextBusinessDay(d: Date, holidays?: Set<string>): Date {
+    const candidate = new Date(d);
+    candidate.setDate(candidate.getDate() + 1);
+    for (let i = 0; i < 366 * 2; i++) {
+      if (BusinessDayCalculator.isBusinessDay(candidate, holidays)) {
+        return candidate;
+      }
+      candidate.setDate(candidate.getDate() + 1);
+    }
+    throw new Error('Không tìm được business day');
+  }
+
+  /**
+   * Tìm business day trước đó.
+   */
+  static prevBusinessDay(d: Date, holidays?: Set<string>): Date {
+    const candidate = new Date(d);
+    candidate.setDate(candidate.getDate() - 1);
+    for (let i = 0; i < 366 * 2; i++) {
+      if (BusinessDayCalculator.isBusinessDay(candidate, holidays)) {
+        return candidate;
+      }
+      candidate.setDate(candidate.getDate() - 1);
+    }
+    throw new Error('Không tìm được business day trước đó');
+  }
+}
+
+@Injectable()
+export class CalendarEngineService {
+  private holidays: Set<string>;
+
+  constructor(holidays?: string[]) {
+    this.holidays = new Set(holidays || []);
+  }
+
+  /**
+   * Kiểm tra xem một ngày có nên skip không.
+   */
+  shouldSkip(d: Date): boolean {
+    const dateStr = d.toISOString().split('T')[0];
+    return this.holidays.has(dateStr);
+  }
+
+  /**
+   * Điều chỉnh ngày sang business day nếu là holiday.
+   */
+  adjustDate(d: Date): Date {
+    if (!this.shouldSkip(d)) {
+      return d;
+    }
+    return BusinessDayCalculator.nextBusinessDay(d, this.holidays);
+  }
+
+  /**
+   * Skip holidays cho scheduled time.
+   */
+  skipHolidays(scheduledTime: Date): Date {
+    const adjusted = this.adjustDate(scheduledTime);
+    return new Date(
+      adjusted.getFullYear(),
+      adjusted.getMonth(),
+      adjusted.getDate(),
+      scheduledTime.getHours(),
+      scheduledTime.getMinutes(),
+      scheduledTime.getSeconds(),
+    );
+  }
+
+  /**
+   * Thêm holiday vào set.
+   */
+  addHoliday(dateStr: string): void {
+    this.holidays.add(dateStr);
+  }
+}
+
+{% if calendar_sets %}
+// Holiday sets từ CalendarSet
+export const HOLIDAY_SETS: Record<string, string[]> = {
+{% for cs in calendar_sets %}
+  '{{ cs.get("calendar_set_id", "unknown") }}': [
+{% for exc in cs.get("exceptions", []) %}
+    '{{ exc.get("date", "") }}',
+{% endfor %}
+  ],
+{% endfor %}
+};
+{% endif %}

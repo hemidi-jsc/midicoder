@@ -1,0 +1,124 @@
+pack:
+  id: I04
+  name: Environment & Secret Management
+  internal_id: cp_infra_env_secrets
+  version: 2.0.0
+  status: stable
+  category: infrastructure
+  type: infra
+  depends_on:
+  - B01
+  - I01
+  - F14
+  render_context_support: true
+  definitions_count: 5
+  obligations_count: 2
+  error_codes:
+    prefix: MDC-I05
+    range: MDC-CP56-001 to MDC-CP56-010
+  capabilities_provided:
+  - env_config
+  - secret_management
+  - vault_integration
+  - kms_integration
+  - configmap_ref
+  capabilities:
+  - id: env_config
+    emitter: fastapi, nestjs, infrastructure
+  - id: secret_management
+    emitter: fastapi, nestjs, infrastructure
+  - id: vault_integration
+    emitter: infrastructure
+  - id: kms_integration
+    emitter: infrastructure
+  - id: configmap_ref
+    emitter: infrastructure
+  definitions:
+  - name: EnvConfig
+    description: Cấu hình biến môi trường theo môi trường triển khai
+  - name: SecretConfig
+    description: Cấu hình quản lý secret (Vault, KMS, local)
+  - name: VaultConfig
+    description: Cấu hình HashiCorp Vault với KV v2 engine
+  - name: KMSConfig
+    description: Cấu hình Key Management Service (AWS/GCP/Azure)
+  - name: ConfigMapRef
+    description: Tham chiếu Kubernetes ConfigMap
+  obligations:
+  - name: SecretEncryption
+    description: Mọi secret phải được mã hóa khi lưu trữ (at-rest)
+  - name: EnvIsolation
+    description: Biến môi trường phải được cách ly theo môi trường (dev/staging/prod)
+  file_contributions:
+    infrastructure:
+    - path: src/app/config.py
+      file_type: env_config
+      template: cp_infra_env_secrets/config.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - env_configs
+      - secret_configs
+    - path: .env.example
+      file_type: dotenv_template
+      template: cp_infra_env_secrets/dotenv_template.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - env_configs
+    - path: src/config/config.module.ts
+      file_type: config_module
+      template: cp_infra_env_secrets/config.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - env_configs
+    - path: src/config/env.dto.ts
+      file_type: env_dto
+      template: cp_infra_env_secrets/env.dto.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - env_configs
+    - path: infra/vault-policy.hcl
+      file_type: vault_policy
+      template: cp_infra_env_secrets/vault-policy.hcl.jinja2
+      stacks:
+      - infrastructure
+      pack_emitter: null
+      context_keys:
+      - vault_configs
+      - secret_configs
+    - path: infra/vault-setup.sh
+      file_type: vault_setup
+      template: cp_infra_env_secrets/vault-setup.sh.jinja2
+      stacks:
+      - infrastructure
+      pack_emitter: null
+      context_keys:
+      - vault_configs
+    - path: k8s/app-secret.yaml
+      file_type: k8s_secret
+      template: cp_infra_env_secrets/k8s-secret.yaml.jinja2
+      stacks:
+      - infrastructure
+      pack_emitter: null
+      context_keys:
+      - secret_configs
+    - path: .env.template
+      file_type: env_template
+      template: cp_infra_env_secrets/env-template.jinja2
+      stacks:
+      - infrastructure
+      pack_emitter: null
+      context_keys:
+      - env_configs
+  recipes:
+  - dev_env_recipe
+  - prod_env_recipe
+  - vault_recipe
+  - aws_kms_recipe

@@ -1,0 +1,191 @@
+/**
+ * Scheduler Service — sinh tự động bởi Midicoder CP31.
+ *
+ * Module này cung cấp SchedulerService để quản lý và thực thi
+ * các scheduled jobs với cron/calendar support.
+ *
+ * Tích hợp với:
+ * - CP05: Publish events (job.scheduled, job.completed, job.failed)
+ * - CP13: Job execution (JobDefinition, JobInstance)
+ * - CP14: Audit trail logging
+ *
+ * CP31: Scheduler & Cron Engine
+ * KPI-029: Tenant Isolation
+ */
+
+import { Injectable, Injectable as Inject } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
+import { CronParserService, ParsedCron } from './cron-parser.service';
+
+export interface ScheduleDefinition {
+  scheduleId: string;
+  type: string;
+  cronExpression?: string;
+  frequency?: string;
+  timezone?: string;
+  enabled: boolean;
+  nextRun?: Date;
+  lastRun?: Date;
+  status: string;
+  parsed?: ParsedCron;
+}
+
+{% if schedules %}
+// Định nghĩa schedules từ DSL
+export const SCHEDULE_DEFINITIONS: ScheduleDefinition[] = [
+{% for schedule in schedules %}
+  {
+    scheduleId: '{{ schedule.get("schedule_id", "unknown") }}',
+    type: '{{ schedule.get("type", "cron") }}',
+{% if schedule.get("cron_expression") %}
+    cronExpression: '{{ schedule.get("cron_expression") }}',
+{% endif %}
+{% if schedule.get("frequency") %}
+    frequency: '{{ schedule.get("frequency") }}',
+{% endif %}
+    timezone: '{{ schedule.get("timezone", "UTC") }}',
+    enabled: {{ "true" if schedule.get("enabled", true) else "false" }},
+    status: 'registered',
+  },
+{% endfor %}
+];
+{% else %}
+// Không có schedule định nghĩa
+export const SCHEDULE_DEFINITIONS: ScheduleDefinition[] = [];
+{% endif %}
+
+// Event bus & audit logger — inject bởi user
+type EventBus = { publish: (event: string, payload: Record<string, unknown>) => void };
+type AuditLogger = { log: (action: string, actorType: string, entity: string, metadata: Record<string, unknown>) => void };
+
+@Injectable()
+export class SchedulerService {
+  private schedules: Map<string, ScheduleDefinition> = new Map();
+  private isRunning = false;
+
+  constructor(
+    private cronParser: CronParserService,
+    private eventBus?: EventBus,
+    private auditLogger?: AuditLogger,
+  ) {
+    // Register schedule definitions
+    for (const def of SCHEDULE_DEFINITIONS) {
+      this._registerSchedule(def);
+    }
+  }
+
+  private _registerSchedule(def: ScheduleDefinition): void {
+    const schedule = { ...def, status: 'registered' as const };
+
+    if (def.cronExpression) {
+      const parsed = this.cronParser.parse(def.cronExpression);
+      schedule.parsed = parsed;
+      schedule.nextRun = this.cronParser.nextRunTime(parsed);
+    }
+
+    this.schedules.set(def.scheduleId, schedule);
+  }
+
+  /** Bắt đầu scheduler loop. */
+  start(): void {
+    this.isRunning = true;
+    this._publishEvent('scheduler.started', { status: 'running' });
+    this._audit('scheduler_started', { status: 'running' });
+  }
+
+  /** Dừng scheduler loop. */
+  stop(): void {
+    this.isRunning = false;
+    this._publishEvent('scheduler.stopped', { status: 'stopped' });
+  }
+
+  /** Trạng thái scheduler. */
+  get running(): boolean {
+    return this.isRunning;
+  }
+
+  /** Lấy thông tin một schedule. */
+  getSchedule(scheduleId: string): ScheduleDefinition | undefined {
+    return this.schedules.get(scheduleId);
+  }
+
+  /** Lấy danh sách tất cả schedules. */
+  listSchedules(): ScheduleDefinition[] {
+    return Array.from(this.schedules.values());
+  }
+
+  /** Lấy danh sách schedules cần thực thi. */
+  getDueSchedules(): ScheduleDefinition[] {
+    const now = new Date();
+    return this.listSchedules().filter(
+      (s) => s.enabled && s.nextRun && s.nextRun <= now,
+    );
+  }
+
+  /** Thực thi một scheduled job. */
+  async executeSchedule(
+    scheduleId: string,
+    handler: (schedule: ScheduleDefinition) => Promise<unknown>,
+  ): Promise<Record<string, unknown>> {
+    const schedule = this.schedules.get(scheduleId);
+    if (!schedule) {
+      return { error: `Schedule ${scheduleId} không tồn tại` };
+    }
+
+    const jobId = uuidv4();
+    this._publishEvent('job.scheduled', {
+      job_id: jobId,
+      schedule_id: scheduleId,
+      scheduled_time: schedule.nextRun?.toISOString(),
+    });
+
+    try {
+      const result = await handler(schedule);
+      schedule.lastRun = new Date();
+      schedule.status = 'completed';
+
+      if (schedule.parsed) {
+        schedule.nextRun = this.cronParser.nextRunTime(schedule.parsed, new Date());
+      }
+
+      this._publishEvent('job.completed', {
+        job_id: jobId,
+        schedule_id: scheduleId,
+        status: 'completed',
+      });
+      this._audit('job_completed', { job_id: jobId, schedule_id: scheduleId });
+
+      return { job_id: jobId, status: 'completed', result };
+    } catch (error: any) {
+      schedule.status = 'failed';
+      this._publishEvent('job.failed', {
+        job_id: jobId,
+        schedule_id: scheduleId,
+        error: error.message,
+      });
+      this._audit('job_failed', { job_id: jobId, schedule_id: scheduleId, error: error.message });
+
+      return { job_id: jobId, status: 'failed', error: error.message };
+    }
+  }
+
+  private _publishEvent(eventName: string, payload: Record<string, unknown>): void {
+    if (this.eventBus) {
+      try {
+        this.eventBus.publish(eventName, payload);
+      } catch (e) {
+        console.warn(`Không thể publish event ${eventName}:`, e);
+      }
+    }
+  }
+
+  private _audit(action: string, metadata: Record<string, unknown>): void {
+    if (this.auditLogger) {
+      try {
+        this.auditLogger.log(action, 'scheduler', 'scheduler', metadata);
+      } catch (e) {
+        console.warn(`Không thể ghi audit log ${action}:`, e);
+      }
+    }
+  }
+}

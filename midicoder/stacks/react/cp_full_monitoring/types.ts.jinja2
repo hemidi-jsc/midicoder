@@ -1,0 +1,227 @@
+/**
+ * Định nghĩa TypeScript cho hệ thống analytics phía client cho {{ service_name|default('analytics') }}.
+ *
+ * {% if project_name %}
+ * Dự án: {{ project_name }}
+ * {% endif %}
+ * Bao gồm giao diện cho sự kiện, KPI, báo cáo,
+ * và trạng thái component để sử dụng trong React.
+ */
+
+/**
+ * Các loại sự kiện analytics.
+ */
+export type EventType =
+  | 'PAGE_VIEW'
+  | 'CLICK'
+  | 'CONVERSION'
+  | 'REVENUE'
+  | 'ERROR'
+  | 'CUSTOM';
+
+/**
+ * Đơn vị thời gian cho báo cáo.
+ */
+export type TimeGrain = 'MINUTE' | 'HOUR' | 'DAY' | 'WEEK' | 'MONTH';
+
+/**
+ * Màu sắc tương ứng với loại sự kiện.
+ */
+export const EVENT_COLORS: Record<EventType, string> = {
+  PAGE_VIEW: '#2196f3',
+  CLICK: '#4caf50',
+  CONVERSION: '#ff9800',
+  REVENUE: '#9c27b0',
+  ERROR: '#f44336',
+  CUSTOM: '#607d8b',
+};
+
+/**
+ * Màu sắc tương ứng với trạng thái KPI.
+ */
+export const KPI_STATUS_COLORS: Record<'healthy' | 'unhealthy', string> = {
+  healthy: '#4caf50',
+  unhealthy: '#f44336',
+};
+
+/**
+ * Một sự kiện analytics từ API backend.
+ */
+export interface AnalyticsEvent {
+  /** ID duy nhất của sự kiện. */
+  id: string;
+  /** Loại sự kiện. */
+  event_type: EventType;
+  /** ID của thực thể (user_id, session_id, hoặc order_id). */
+  entity_id: string;
+  /** Các thuộc tính đi kèm sự kiện. */
+  properties: Record<string, any>;
+  /** Thời gian xảy ra (ms epoch). */
+  timestamp: number;
+  /** ID phiên người dùng. */
+  session_id?: string;
+  /** ID người dùng. */
+  user_id?: string;
+  /** Metadata bổ sung. */
+  metadata?: Record<string, string>;
+}
+
+/**
+ * Kết quả tính toán KPI từ API backend.
+ */
+export interface KPIResult {
+  /** Tên của KPI. */
+  name: string;
+  /** Giá trị hiện tại. */
+  current_value: number;
+  /** Ngưỡng mục tiêu. */
+  target: number | null;
+  /** Đơn vị đo lường. */
+  unit: string;
+  /** Có đạt mục tiêu hay không. */
+  healthy: boolean;
+  /** Phần trăm thay đổi so với chu kỳ trước. */
+  change_percent: number;
+  /** Số lượng mẫu dữ liệu. */
+  samples: number;
+  /** Thời điểm tính toán (ms epoch). */
+  computed_at: number;
+}
+
+/**
+ * Định nghĩa KPI từ API backend.
+ */
+export interface KPIDefinition {
+  /** Tên duy nhất của KPI. */
+  name: string;
+  /** Tên metric cần tính toán. */
+  metric: string;
+  /** Loại tổng hợp. */
+  aggregation: string;
+  /** Bộ lọc thuộc tính cho sự kiện. */
+  filter_properties: Record<string, any>;
+  /** Ngưỡng mục tiêu. */
+  target: number | null;
+  /** Đơn vị đo lường. */
+  unit: string;
+  /** Mô tả KPI. */
+  description: string;
+}
+
+/**
+ * Một hàng dữ liệu trong báo cáo.
+ */
+export interface ReportRow {
+  /** Nhãn của hàng (giá trị nhóm). */
+  label: string;
+  /** Bản đồ giá trị theo cột. */
+  values: Record<string, number>;
+  /** Thời gian của hàng (nếu có). */
+  timestamp?: number;
+}
+
+/**
+ * Báo cáo phân tích từ API backend.
+ */
+export interface Report {
+  /** ID duy nhất của báo cáo. */
+  id: string;
+  /** Tên của báo cáo. */
+  name: string;
+  /** Mô tả báo cáo. */
+  description: string;
+  /** Danh sách hàng dữ liệu. */
+  rows: ReportRow[];
+  /** Danh sách tên cột. */
+  columns: string[];
+  /** Đơn vị thời gian. */
+  time_grain: TimeGrain;
+  /** Thời gian bắt đầu (ms epoch). */
+  start_time?: number;
+  /** Thời gian kết thúc (ms epoch). */
+  end_time?: number;
+  /** Thời điểm tạo (ms epoch). */
+  created_at: number;
+  /** Số lượng hàng. */
+  row_count?: number;
+}
+
+/**
+ * Trạng thái của AnalyticsChart component.
+ */
+export interface AnalyticsChartState {
+  /** Danh sách KPI để hiển thị. */
+  kpis: KPIResult[];
+  /** Đang tải dữ liệu hay không. */
+  loading: boolean;
+  /** Lỗi nếu có. */
+  error: Error | null;
+  /** Loại biểu đồ hiện tại. */
+  chartType: 'bar' | 'line' | 'area';
+}
+
+/**
+ * Trạng thái của ReportTable component.
+ */
+export interface ReportTableState {
+  /** Báo cáo hiện tại. */
+  report: Report | null;
+  /** Danh sách báo cáo khả dụng. */
+  reports: Report[];
+  /** Báo cáo đang chọn. */
+  selectedReportName: string | null;
+  /** Các hàng đã lọc và sắp xếp. */
+  filteredRows: ReportRow[];
+  /** Cột đang sắp xếp. */
+  sortColumn: string | null;
+  /** Hướng sắp xếp. */
+  sortDirection: 'asc' | 'desc' | null;
+  /** Bộ lọc theo nhãn. */
+  filterText: string;
+  /** Đang tải dữ liệu hay không. */
+  loading: boolean;
+  /** Lỗi nếu có. */
+  error: Error | null;
+}
+
+/**
+ * Param truy vấn sự kiện.
+ */
+export interface EventQueryParams {
+  /** Lọc theo loại sự kiện. */
+  event_type?: EventType;
+  /** Lọc theo ID người dùng. */
+  user_id?: string;
+  /** Lọc theo ID phiên. */
+  session_id?: string;
+  /** Thời gian bắt đầu (ms epoch). */
+  start_time?: number;
+  /** Thời gian kết thúc (ms epoch). */
+  end_time?: number;
+  /** Số lượng tối đa. */
+  limit?: number;
+}
+
+/**
+ * Dữ liệu điểm cho biểu đồ.
+ */
+export interface ChartDataPoint {
+  /** Nhãn của điểm. */
+  label: string;
+  /** Giá trị của điểm. */
+  value: number;
+  /** Màu sắc (tùy chọn). */
+  color?: string;
+}
+
+/**
+ * Dữ liệu series cho biểu đồ.
+ */
+export interface ChartSeries {
+  /** Tên của series. */
+  name: string;
+  /** Dữ liệu điểm. */
+  data: ChartDataPoint[];
+  /** Màu sắc (tùy chọn). */
+  color?: string;
+}

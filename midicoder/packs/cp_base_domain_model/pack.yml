@@ -1,0 +1,346 @@
+pack:
+  id: "B01"
+  name: "Domain Model DSL & IR Builder"
+  internal_id: "cp_base_domain_model"
+  version: "2.0.0"
+  status: "stable"
+  category: "domain-modeling"
+  type: base
+  depends_on: []
+  render_context_support: true
+  definitions_count: 14
+  obligations_count: 4
+  recipes_count: 11
+  error_codes:
+    prefix: "MDC-B01"
+    range: "MDC-B01-001 to MDC-B01-099"
+  capabilities_provided:
+    - dsl_parsing
+    - projection_tree_build
+    - ir_build
+    - domain_model_recipes
+  capabilities:
+    - id: "entity_modeling"
+      emitter: "fastapi, nestjs"
+    - id: "command_query_separation"
+      emitter: "fastapi, nestjs"
+    - id: "value_object"
+      emitter: "fastapi, nestjs"
+    - id: "aggregate_root"
+      emitter: "fastapi, nestjs"
+    - id: "domain_events"
+      emitter: "fastapi, nestjs"
+    - id: "cqrs_projection"
+      emitter: "fastapi, nestjs"
+    - id: "event_sourcing"
+      emitter: "fastapi, nestjs"
+    - id: "temporal_entity"
+      emitter: "fastapi, nestjs"
+    - id: "polymorphic_entity"
+      emitter: "fastapi, nestjs"
+    - id: "saga"
+      emitter: "fastapi, nestjs"
+    - id: "recipes"
+      emitter: "fastapi, nestjs"
+    - id: "global_error_handler"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "Entity"
+      description: "Core domain entity with identity and lifecycle"
+    - name: "Command"
+      description: "Intent-carrying operation with validation and guards"
+    - name: "Query"
+      description: "Read-side operation with pagination and projection"
+    - name: "ValueObject"
+      description: "Immutable, equality-by-value domain primitive"
+    - name: "AggregateRoot"
+      description: "Consistency boundary for entity clusters"
+    - name: "DomainEvent"
+      description: "Immutable record of something that happened"
+    - name: "Projection"
+      description: "CQRS read model derived from domain events"
+    - name: "EventSourcedAggregate"
+      description: "Aggregate that reconstructs state from event log"
+    - name: "TemporalEntity"
+      description: "Entity with valid-from/valid-to time-bounded state"
+    - name: "PolymorphicEntity"
+      description: "Entity with subtype inheritance (STI/CTI/JTI)"
+    - name: "Saga"
+      description: "Long-running transaction across multiple aggregates"
+    - name: "SagaStep"
+      description: "Individual step with compensating action in saga"
+    - name: "AggregationQuery"
+      description: "Query with group-by, having, and aggregate functions"
+    - name: "FilterGroup"
+      description: "Nested filter expressions with AND/OR logic"
+  recipes:
+    - name: "SimpleEntityRecipe"
+      description: "CRUD entity with UUID, tenant_id, timestamps, lifecycle hooks"
+    - name: "AggregateRootRecipe"
+      description: "Consistency boundary with strict eventual relaxed options"
+    - name: "TemporalEntityRecipe"
+      description: "SCD Type 2 with valid_from/valid_to, range query index"
+    - name: "CQRSCommandRecipe"
+      description: "Write operation with auth + tenant guards + transaction"
+    - name: "CQRSQueryRecipe"
+      description: "Read operation with auth + tenant guards + pagination + sort"
+    - name: "EventSourcedAggregateRecipe"
+      description: "Event-sourced aggregate with snapshot strategy + versioned OCC"
+    - name: "SagaRecipe"
+      description: "Long-running transaction with compensating steps (orchestration)"
+    - name: "PolymorphicEntityRecipe"
+      description: "Subtype inheritance with discriminator column (STI/CTI/JTI)"
+    - name: "ProjectionRecipe"
+      description: "CQRS read model subscribing to domain events"
+    - name: "ValueObjectRecipe"
+      description: "Immutable, equality-by-value domain primitive"
+    - name: "GlobalErrorHandlerRecipe"
+      description: "Global error handler with exception mapping, logging, and notification"
+  obligations:
+    - name: "EntityIdentity"
+      description: "Every entity must have unique, non-null identifier"
+    - name: "CommandValidation"
+      description: "All commands must be validated before execution"
+    - name: "AggregateBoundary"
+      description: "Only aggregate root may be accessed directly from outside"
+    - name: "EventImmutability"
+      description: "Domain events must be immutable once emitted"
+  file_contributions:
+    infrastructure:
+      - path: "app/models/__init__.py"
+        file_type: "init"
+        template: "cp_base_domain_model/__init__.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/domain/index.ts"
+        file_type: "init"
+        template: "cp_base_domain_model/index.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/domain/commands/command.module.ts"
+        file_type: "command_module"
+        template: "cp_base_domain_model/command.module.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      # B3: Standardized Error Response
+      - path: "app/middleware/error_handler.py"
+        file_type: "error_handler"
+        template: "cp_base_domain_model/error_handler.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/models/problem_details.py"
+        file_type: "problem_details"
+        template: "cp_base_domain_model/problem_details.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/common/filters/exception.filter.ts"
+        file_type: "error_handler"
+        template: "cp_base_domain_model/exception.filter.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/common/dto/problem-details.dto.ts"
+        file_type: "problem_details"
+        template: "cp_base_domain_model/problem-details.dto.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/interceptors/error-interceptor.service.ts"
+        file_type: "error_handler"
+        template: "cp_base_domain_model/error-interceptor.service.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/components/error-boundary.tsx"
+        file_type: "error_handler"
+        template: "cp_base_domain_model/error-boundary.tsx.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+      # B6: Input Validation & Sanitization
+      - path: "app/utils/validation_decorator.py"
+        file_type: "validation_decorator"
+        template: "cp_base_domain_model/validation_decorator.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "app/utils/input_sanitizer.py"
+        file_type: "input_sanitizer"
+        template: "cp_base_domain_model/input_sanitizer.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path: "src/common/pipes/validation.pipe.ts"
+        file_type: "validation_pipe"
+        template: "cp_base_domain_model/validation.pipe.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/common/utils/sanitization.utils.ts"
+        file_type: "sanitization_utils"
+        template: "cp_base_domain_model/sanitization.utils.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path: "src/app/utils/validation.module.ts"
+        file_type: "validation_module"
+        template: "cp_base_domain_model/validation.module.ts.jinja2"
+        stacks: ["angular"]
+        pack_emitter: null
+      - path: "src/hooks/use-validation.ts"
+        file_type: "validation_hook"
+        template: "cp_base_domain_model/use-validation.ts.jinja2"
+        stacks: ["react"]
+        pack_emitter: null
+    per_entity:
+      - path_pattern: "app/models/{entity_snake}.py"
+        file_type: "entity"
+        template: "cp_base_domain_model/entity.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "src/entities/{entity_snake}.entity.ts"
+        file_type: "entity"
+        template: "cp_base_domain_model/entity.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+    per_command:
+      # FastAPI commands
+      - path_pattern: "app/commands/{command_snake}.py"
+        file_type: "command"
+        template: "cp_base_domain_model/command.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/commands/{command_snake}_handler.py"
+        file_type: "command_handler"
+        template: "cp_base_domain_model/command_handler.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/commands/{command_snake}_validator.py"
+        file_type: "command_validator"
+        template: "cp_base_domain_model/command_validator.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/commands/{command_snake}_guards.py"
+        file_type: "command_guards"
+        template: "cp_base_domain_model/command_guards.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/commands/{command_snake}_effects.py"
+        file_type: "command_effects"
+        template: "cp_base_domain_model/command_effects.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/commands/{command_snake}_errors.py"
+        file_type: "command_errors"
+        template: "cp_base_domain_model/command_errors.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      # NestJS commands
+      - path_pattern: "src/commands/{command_snake}.command.ts"
+        file_type: "command"
+        template: "cp_base_domain_model/command.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/commands/{command_snake}.handler.ts"
+        file_type: "command_handler"
+        template: "cp_base_domain_model/command.handler.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/commands/{command_snake}.validator.ts"
+        file_type: "command_validator"
+        template: "cp_base_domain_model/command.validator.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/commands/{command_snake}.guards.ts"
+        file_type: "command_guards"
+        template: "cp_base_domain_model/command.guards.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/commands/{command_snake}.effects.ts"
+        file_type: "command_effects"
+        template: "cp_base_domain_model/command.effects.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/commands/{command_snake}.errors.ts"
+        file_type: "command_errors"
+        template: "cp_base_domain_model/command.errors.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+    per_query:
+      # FastAPI queries
+      - path_pattern: "app/queries/{query_snake}.py"
+        file_type: "query"
+        template: "cp_base_domain_model/query.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_handler.py"
+        file_type: "query_handler"
+        template: "cp_base_domain_model/query_handler.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_validator.py"
+        file_type: "query_validator"
+        template: "cp_base_domain_model/query_validator.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_guards.py"
+        file_type: "query_guards"
+        template: "cp_base_domain_model/query_guards.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_effects.py"
+        file_type: "query_effects"
+        template: "cp_base_domain_model/query_effects.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_output.py"
+        file_type: "query_output"
+        template: "cp_base_domain_model/query_output.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      - path_pattern: "app/queries/{query_snake}_aggregation.py"
+        file_type: "query_aggregation"
+        template: "cp_base_domain_model/query_aggregation.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      # NestJS queries
+      - path_pattern: "src/queries/{query_snake}.query.ts"
+        file_type: "query"
+        template: "cp_base_domain_model/query.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.handler.ts"
+        file_type: "query_handler"
+        template: "cp_base_domain_model/query.handler.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.validator.ts"
+        file_type: "query_validator"
+        template: "cp_base_domain_model/query.validator.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.guards.ts"
+        file_type: "query_guards"
+        template: "cp_base_domain_model/query.guards.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.effects.ts"
+        file_type: "query_effects"
+        template: "cp_base_domain_model/query.effects.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.output.ts"
+        file_type: "query_output"
+        template: "cp_base_domain_model/query.output.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+      - path_pattern: "src/queries/{query_snake}.aggregation.ts"
+        file_type: "query_aggregation"
+        template: "cp_base_domain_model/query.aggregation.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null
+    per_vo:
+      # FastAPI value objects
+      - path_pattern: "app/value_objects/{vo_snake}.py"
+        file_type: "value_object"
+        template: "cp_base_domain_model/value_object.py.jinja2"
+        stacks: ["fastapi"]
+        pack_emitter: null
+      # NestJS value objects
+      - path_pattern: "src/value-objects/{vo_snake}.value-object.ts"
+        file_type: "value_object"
+        template: "cp_base_domain_model/value-object.ts.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: null

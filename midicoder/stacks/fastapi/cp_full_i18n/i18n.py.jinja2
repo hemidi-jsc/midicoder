@@ -1,0 +1,126 @@
+"""
+Mô-đun i18n cho ứng dụng — loader và locale middleware.
+
+Tạo tự động bởi CP29 — không sửa thủ công.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import locale
+import os
+from pathlib import Path
+
+# Cấu hình locales hỗ trợ
+SUPPORTED_LOCALES: list[str] = [
+{% for loc in language_profile.locales %}
+    "{{ loc }}",
+{% endfor %}
+]
+DEFAULT_LOCALE: str = "{{ language_profile.default_locale }}"
+
+# Đường dẫn đến thư mục locale
+_LOCALE_DIR: Path = Path(__file__).parent / "i18n" / "locales"
+
+# Gettext translation domains
+_translations: dict[str, Any] = {}
+
+
+def init_i18n() -> None:
+    """Khởi tạo i18n — load translation domains cho tất cả locales."""
+    global _translations
+    for loc in SUPPORTED_LOCALES:
+        po_path = _LOCALE_DIR / loc / "LC_MESSAGES" / "messages.po"
+        if po_path.exists():
+            _translations[loc] = _load_po_file(str(po_path))
+
+
+def _load_po_file(path: str) -> dict[str, str]:
+    """Load .po file thành dict mapping msgid → msgstr.
+
+    Args:
+        path: Đường dẫn đến file .po.
+
+    Returns:
+        Dict mapping key → translation.
+    """
+    translations: dict[str, str] = {}
+    if not os.path.exists(path):
+        return translations
+
+    with open(path, encoding="utf-8") as f:
+        current_msgid: str | None = None
+        for line in f:
+            line = line.strip()
+            if line.startswith("msgid "):
+                current_msgid = line[6:].strip('"')
+            elif line.startswith("msgstr "):
+                msgstr = line[7:].strip('"')
+                if current_msgid:
+                    translations[current_msgid] = msgstr
+                current_msgid = None
+    return translations
+
+
+def get_translation(key: str, locale_code: str | None = None, **kwargs: Any) -> str:
+    """Lấy translation cho 1 key.
+
+    Args:
+        key: Dotted i18n key (vd: "entity.customer.field.name").
+        locale_code: Locale code, nếu None dùng default.
+        **kwargs: Variables để interpolate vào string.
+
+    Returns:
+        Translation string, hoặc key nếu không tìm thấy.
+    """
+    target_locale = locale_code or DEFAULT_LOCALE
+
+    # Fallback chain
+    fallbacks = [target_locale]
+    if target_locale != DEFAULT_LOCALE:
+        fallbacks.append(DEFAULT_LOCALE)
+
+    for loc in fallbacks:
+        if loc in _translations and key in _translations[loc]:
+            result = _translations[loc][key]
+            if kwargs:
+                result = result.format(**kwargs)
+            return result
+
+    # Không tìm thấy — trả về key
+    return key
+
+
+def get_available_locales() -> list[str]:
+    """Trả về danh sách locales hỗ trợ.
+
+    Returns:
+        List locale codes.
+    """
+    return list(SUPPORTED_LOCALES)
+
+
+def get_current_locale_from_request(headers: dict[str, str] | None = None) -> str:
+    """Phân giải locale từ Accept-Language header.
+
+    Args:
+        headers: HTTP headers dict.
+
+    Returns:
+        Locale code phù hợp nhất, hoặc default locale.
+    """
+    if headers is None:
+        return DEFAULT_LOCALE
+
+    accept_lang = headers.get("Accept-Language", "")
+    if not accept_lang:
+        return DEFAULT_LOCALE
+
+    # Parse Accept-Language (giản lược)
+    for part in accept_lang.split(","):
+        loc = part.strip().split(";")[0].strip()[:2].lower()
+        if loc in SUPPORTED_LOCALES:
+            return loc
+
+    return DEFAULT_LOCALE

@@ -1,0 +1,53 @@
+pack:
+  id: "I01"
+  name: "Infrastructure as Code"
+  internal_id: "cp_infra_iac"
+  version: "2.0.0"
+  status: "stable"
+  category: "infrastructure"
+  type: "infra"
+  depends_on: []
+  render_context_support: true
+  definitions_count: 2
+  obligations_count: 1
+  error_codes:
+    prefix: "MDC-I01"
+    range: "MDC-I01-001 to MDC-I01-005"
+  capabilities_provided:
+    - emit_iac_docker
+    - emit_iac_aws
+  capabilities:
+    - id: "docker_compose"
+      emitter: "fastapi, nestjs"
+    - id: "terraform_aws"
+      emitter: "fastapi, nestjs"
+  definitions:
+    - name: "IacProfile"
+      description: "Infrastructure profile (local/docker, aws)"
+    - name: "ServiceConfig"
+      description: "Service-specific infrastructure configuration"
+  obligations:
+    - name: "EnvParity"
+      description: "Local and production infrastructure must maintain parity"
+  file_contributions:
+    infrastructure:
+      - path: "docker-compose.yml"
+        file_type: "docker_compose"
+        template: "cp_infra_iac/docker-compose.yml.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: "cp_infra_iac.docker"
+      - path: "Dockerfile.api"
+        file_type: "dockerfile"
+        template: "cp_infra_iac/Dockerfile.api.jinja2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: null
+      - path: "docker-compose.nestjs.yml"
+        file_type: "docker_compose"
+        template: "cp_infra_iac/docker-compose.yml.jinja2"
+        stacks: ["nestjs"]
+        pack_emitter: "cp_infra_iac.docker"
+      - path: "terraform/main.tf"
+        file_type: "terraform"
+        template: "infrastructure/terraform/main.tf.j2"
+        stacks: ["fastapi", "nestjs"]
+        pack_emitter: "cp_infra_iac.terraform"

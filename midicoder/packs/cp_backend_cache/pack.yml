@@ -1,0 +1,25 @@
+﻿pack:
+  id: "BE02"
+  name: "Caching & Performance Layer Generator"
+  internal_id: "cp_backend_cache"
+  version: "2.0.0"
+  status: "stable"
+  category: "performance"
+  type: backend
+  depends_on:
+    - BE01
+  render_context_support: true
+  definitions_count: 14
+  obligations_count: 5
+  error_codes:
+    prefix: "MDC-BE02"
+    range: "MDC-BE02-001 to MDC-BE02-005"
+  old_ids:
+    - CP09
+  capabilities_provided:
+    - cache_get
+    - cache_set
+    - cache_invalidate
+    - cache_bulk_ops
+    - cache_policy
+    - cache_stats

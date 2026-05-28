@@ -1,0 +1,372 @@
+"""Router analytics cho FastAPI — endpoint REST cho sự kiện, KPI, và báo cáo.
+
+{% if project_name %}
+Dự án: {{ project_name }}
+{% endif %}
+Cung cấp API cho phía client để ghi nhận sự kiện, truy vấn KPI,
+và tải báo cáo phân tích.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Query
+
+# Import AnalyticsService từ mô-đun service
+# Trong thực tế, service sẽ được inject qua dependency injection của FastAPI
+_analytics_service: Optional["AnalyticsService"] = None
+
+
+def set_analytics_service(service: "AnalyticsService") -> None:
+    """Đặt instance AnalyticsService toàn cục cho router.
+
+    Args:
+        service: Instance của AnalyticsService.
+    """
+    global _analytics_service
+    _analytics_service = service
+
+
+# Tạo router cho các endpoint analytics
+router = APIRouter(prefix="/analytics", tags=["analytics"])
+
+
+@router.post("/events")
+def track_event(
+    event_type: str,
+    entity_id: str,
+    properties: Optional[Dict[str, Any]] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    metadata: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """Ghi nhận một sự kiện analytics mới.
+
+    Args:
+        event_type: Loại sự kiện (PAGE_VIEW, CLICK, CONVERSION, REVENUE, ERROR, CUSTOM).
+        entity_id: ID của thực thể (user_id, session_id, hoặc order_id).
+        properties: Các thuộc tính đi kèm sự kiện.
+        session_id: ID của phiên người dùng.
+        user_id: ID của người dùng.
+        metadata: Metadata bổ sung.
+
+    Returns:
+        Thông tin sự kiện đã được ghi nhận.
+    """
+    service = _analytics_service
+    if not service:
+        return {"error": "Analytics service không được cấu hình"}
+
+    from analytics.analytics_service import EventType
+
+    event = service.track_event(
+        event_type=EventType(event_type),
+        entity_id=entity_id,
+        properties=properties or {},
+        session_id=session_id,
+        user_id=user_id,
+        metadata=metadata or {},
+    )
+
+    return {
+        "id": event.id,
+        "event_type": event.event_type.value,
+        "entity_id": event.entity_id,
+        "properties": event.properties,
+        "timestamp": event.timestamp,
+        "session_id": event.session_id,
+        "user_id": event.user_id,
+    }
+
+
+@router.get("/events")
+def get_events(
+    event_type: Optional[str] = Query(None, description="Lọc theo loại sự kiện"),
+    user_id: Optional[str] = Query(None, description="Lọc theo ID người dùng"),
+    session_id: Optional[str] = Query(None, description="Lọc theo ID phiên"),
+    start_time: Optional[float] = Query(None, description="Thời gian bắt đầu (epoch)"),
+    end_time: Optional[float] = Query(None, description="Thời gian kết thúc (epoch)"),
+    limit: int = Query(100, description="Số lượng sự kiện tối đa"),
+) -> List[Dict[str, Any]]:
+    """Lấy danh sách sự kiện với bộ lọc.
+
+    Args:
+        event_type: Loại sự kiện.
+        user_id: ID người dùng.
+        session_id: ID phiên.
+        start_time: Thời gian bắt đầu.
+        end_time: Thời gian kết thúc.
+        limit: Số lượng tối đa.
+
+    Returns:
+        Danh sách sự kiện dưới dạng dict.
+    """
+    service = _analytics_service
+    if not service:
+        return []
+
+    from analytics.analytics_service import EventType
+
+    event_type_enum = EventType(event_type) if event_type else None
+    events = service.get_events(
+        event_type=event_type_enum,
+        user_id=user_id,
+        session_id=session_id,
+        start_time=start_time,
+        end_time=end_time,
+        limit=limit,
+    )
+
+    return [
+        {
+            "id": e.id,
+            "event_type": e.event_type.value,
+            "entity_id": e.entity_id,
+            "properties": e.properties,
+            "timestamp": e.timestamp,
+            "session_id": e.session_id,
+            "user_id": e.user_id,
+            "metadata": e.metadata,
+        }
+        for e in events
+    ]
+
+
+@router.get("/kpis")
+def get_kpis(
+    start_time: Optional[float] = Query(None, description="Thời gian bắt đầu (epoch)"),
+    end_time: Optional[float] = Query(None, description="Thời gian kết thúc (epoch)"),
+) -> List[Dict[str, Any]]:
+    """Tính toán và trả về tất cả KPI đã định nghĩa.
+
+    Args:
+        start_time: Thời gian bắt đầu (epoch).
+        end_time: Thời gian kết thúc (epoch).
+
+    Returns:
+        Danh sách kết quả KPI dưới dạng dict.
+    """
+    service = _analytics_service
+    if not service:
+        return []
+
+    results = service.compute_kpis(start_time=start_time, end_time=end_time)
+    return [
+        {
+            "name": r.name,
+            "current_value": r.current_value,
+            "target": r.target,
+            "unit": r.unit,
+            "healthy": r.healthy,
+            "change_percent": r.change_percent,
+            "samples": r.samples,
+            "computed_at": r.computed_at,
+        }
+        for r in results
+    ]
+
+
+@router.post("/kpis/definitions")
+def add_kpi_definition(
+    name: str,
+    metric: str,
+    aggregation: str,
+    filter_properties: Optional[Dict[str, Any]] = None,
+    target: Optional[float] = None,
+    unit: str = "",
+    description: str = "",
+) -> Dict[str, Any]:
+    """Thêm định nghĩa KPI mới.
+
+    Args:
+        name: Tên duy nhất của KPI.
+        metric: Tên metric cần tính toán.
+        aggregation: Loại tổng hợp (SUM, AVG, COUNT, MIN, MAX, PERCENTILE).
+        filter_properties: Bộ lọc thuộc tính cho sự kiện.
+        target: Ngưỡng mục tiêu của KPI.
+        unit: Đơn vị đo lường.
+        description: Mô tả KPI.
+
+    Returns:
+        Thông tin định nghĩa KPI đã thêm.
+    """
+    service = _analytics_service
+    if not service:
+        return {"error": "Analytics service không được cấu hình"}
+
+    from analytics.analytics_service import KPIDefinition, AggregationType
+
+    kpi = KPIDefinition(
+        name=name,
+        metric=metric,
+        aggregation=AggregationType(aggregation),
+        filter_properties=filter_properties or {},
+        target=target,
+        unit=unit,
+        description=description,
+    )
+    service.add_kpi(kpi)
+
+    return {
+        "name": kpi.name,
+        "metric": kpi.metric,
+        "aggregation": kpi.aggregation.value,
+        "filter_properties": kpi.filter_properties,
+        "target": kpi.target,
+        "unit": kpi.unit,
+        "description": kpi.description,
+    }
+
+
+@router.get("/kpis/definitions")
+def list_kpi_definitions() -> List[Dict[str, Any]]:
+    """Lấy tất cả định nghĩa KPI.
+
+    Returns:
+        Danh sách định nghĩa KPI dưới dạng dict.
+    """
+    service = _analytics_service
+    if not service:
+        return []
+
+    definitions = service.kpi_engine.get_definitions()
+    return [
+        {
+            "name": d.name,
+            "metric": d.metric,
+            "aggregation": d.aggregation.value,
+            "filter_properties": d.filter_properties,
+            "target": d.target,
+            "unit": d.unit,
+            "description": d.description,
+        }
+        for d in definitions
+    ]
+
+
+@router.get("/reports")
+def list_reports() -> List[Dict[str, Any]]:
+    """Liệt kê tất cả báo cáo đã tạo.
+
+    Returns:
+        Danh sách báo cáo dưới dạng dict.
+    """
+    service = _analytics_service
+    if not service:
+        return []
+
+    reports = service.list_reports()
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "description": r.description,
+            "columns": r.columns,
+            "time_grain": r.time_grain.value,
+            "start_time": r.start_time,
+            "end_time": r.end_time,
+            "created_at": r.created_at,
+            "row_count": len(r.rows),
+        }
+        for r in reports
+    ]
+
+
+@router.get("/reports/{name}")
+def get_report(name: str) -> Optional[Dict[str, Any]]:
+    """Lấy thông tin chi tiết của một báo cáo.
+
+    Args:
+        name: Tên của báo cáo.
+
+    Returns:
+        Thông tin báo cáo dưới dạng dict, hoặc None nếu không tìm thấy.
+    """
+    service = _analytics_service
+    if not service:
+        return None
+
+    report = service.get_report(name)
+    if not report:
+        return None
+
+    return {
+        "id": report.id,
+        "name": report.name,
+        "description": report.description,
+        "columns": report.columns,
+        "time_grain": report.time_grain.value,
+        "start_time": report.start_time,
+        "end_time": report.end_time,
+        "created_at": report.created_at,
+        "rows": [
+            {
+                "label": row.label,
+                "values": row.values,
+                "timestamp": row.timestamp,
+            }
+            for row in report.rows
+        ],
+    }
+
+
+@router.post("/reports")
+def build_report(
+    name: str,
+    event_type: str,
+    group_by: str,
+    time_grain: str = "DAY",
+    start_time: Optional[float] = None,
+    end_time: Optional[float] = None,
+    description: str = "",
+) -> Dict[str, Any]:
+    """Xây dựng báo cáo phân tích mới.
+
+    Args:
+        name: Tên duy nhất của báo cáo.
+        event_type: Loại sự kiện cần báo cáo.
+        group_by: Thuộc tính để nhóm dữ liệu.
+        time_grain: Đơn vị thời gian (MINUTE, HOUR, DAY, WEEK, MONTH).
+        start_time: Thời gian bắt đầu (epoch).
+        end_time: Thời gian kết thúc (epoch).
+        description: Mô tả báo cáo.
+
+    Returns:
+        Thông tin báo cáo đã xây dựng.
+    """
+    service = _analytics_service
+    if not service:
+        return {"error": "Analytics service không được cấu hình"}
+
+    from analytics.analytics_service import EventType, TimeGrain
+
+    report = service.build_report(
+        name=name,
+        event_type=EventType(event_type),
+        group_by=group_by,
+        time_grain=TimeGrain(time_grain),
+        start_time=start_time,
+        end_time=end_time,
+        description=description,
+    )
+
+    return {
+        "id": report.id,
+        "name": report.name,
+        "description": report.description,
+        "columns": report.columns,
+        "time_grain": report.time_grain.value,
+        "start_time": report.start_time,
+        "end_time": report.end_time,
+        "created_at": report.created_at,
+        "row_count": len(report.rows),
+        "rows": [
+            {
+                "label": row.label,
+                "values": row.values,
+                "timestamp": row.timestamp,
+            }
+            for row in report.rows
+        ],
+    }

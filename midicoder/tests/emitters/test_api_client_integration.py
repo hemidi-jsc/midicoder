@@ -14,7 +14,7 @@ Version: 1.0.0
 import json
 import pytest
 
-from midicoder.packs.cp20_api_client.models import (
+from midicoder.packs.cp_backend_api_client.models import (
     ApiSpec,
     AuthMode,
     ClientBinding,
@@ -69,7 +69,7 @@ class TestOpenApiToClientPipeline:
 
     def test_openapi_to_angular_client(self, tmp_path):
         """Test: Parse OpenAPI → Angular typed client."""
-        from midicoder.packs.cp20_api_client.angular import AngularApiEmitter
+        from midicoder.packs.cp_backend_api_client.angular import AngularApiEmitter
 
         spec = _make_full_spec()
         emitter = AngularApiEmitter()
@@ -89,7 +89,7 @@ class TestOpenApiToClientPipeline:
 
     def test_openapi_to_react_client(self, tmp_path):
         """Test: Parse OpenAPI → React typed client."""
-        from midicoder.packs.cp20_api_client.react import ReactApiEmitter
+        from midicoder.packs.cp_backend_api_client.react import ReactApiEmitter
 
         spec = _make_full_spec()
         emitter = ReactApiEmitter()
@@ -103,7 +103,7 @@ class TestOpenApiToClientPipeline:
 
     def test_openapi_to_fastapi_backend(self):
         """Test: Parse OpenAPI → FastAPI OpenAPI endpoint."""
-        from midicoder.packs.cp20_api_client.fastapi import FastAPIApiEmitter
+        from midicoder.packs.cp_backend_api_client.fastapi import FastAPIApiEmitter
 
         spec = _make_full_spec()
         emitter = FastAPIApiEmitter()
@@ -117,7 +117,7 @@ class TestOpenApiToClientPipeline:
 
     def test_openapi_to_nestjs_backend(self):
         """Test: Parse OpenAPI → NestJS OpenAPI module."""
-        from midicoder.packs.cp20_api_client.nestjs import NestJSApiEmitter
+        from midicoder.packs.cp_backend_api_client.nestjs import NestJSApiEmitter
 
         spec = _make_full_spec()
         emitter = NestJSApiEmitter()
@@ -132,7 +132,7 @@ class TestRealtimeBridgeE2E:
 
     def test_angular_bridge_has_websocket(self, tmp_path):
         """Test: Angular bridge emit với WebSocket transport."""
-        from midicoder.packs.cp20_api_client.angular import AngularApiEmitter
+        from midicoder.packs.cp_backend_api_client.angular import AngularApiEmitter
 
         spec = _make_full_spec()
         emitter = AngularApiEmitter()
@@ -144,7 +144,7 @@ class TestRealtimeBridgeE2E:
 
     def test_react_bridge_has_hooks(self, tmp_path):
         """Test: React bridge emit với custom hooks."""
-        from midicoder.packs.cp20_api_client.react import ReactApiEmitter
+        from midicoder.packs.cp_backend_api_client.react import ReactApiEmitter
 
         spec = _make_full_spec()
         emitter = ReactApiEmitter()
@@ -155,7 +155,7 @@ class TestRealtimeBridgeE2E:
 
     def test_sse_transport_generation(self, tmp_path):
         """Test: Bridge emit với SSE transport."""
-        from midicoder.packs.cp20_api_client.angular import AngularApiEmitter
+        from midicoder.packs.cp_backend_api_client.angular import AngularApiEmitter
 
         spec = ApiSpec(
             name="sse-api",
@@ -181,7 +181,7 @@ class TestObligations:
 
     def test_obligation_1_type_safety_angular(self, tmp_path):
         """Obligation 1: Client types match backend routes (Angular)."""
-        from midicoder.packs.cp20_api_client.angular import AngularApiEmitter
+        from midicoder.packs.cp_backend_api_client.angular import AngularApiEmitter
 
         spec = _make_full_spec()
         emitter = AngularApiEmitter()
@@ -194,7 +194,7 @@ class TestObligations:
 
     def test_obligation_1_type_safety_react(self, tmp_path):
         """Obligation 1: Client types match backend routes (React)."""
-        from midicoder.packs.cp20_api_client.react import ReactApiEmitter
+        from midicoder.packs.cp_backend_api_client.react import ReactApiEmitter
 
         spec = _make_full_spec()
         emitter = ReactApiEmitter()
@@ -206,7 +206,7 @@ class TestObligations:
 
     def test_obligation_2_error_mapping_angular(self, tmp_path):
         """Obligation 2: Error mapping via interceptor (Angular)."""
-        from midicoder.packs.cp20_api_client.angular import AngularApiEmitter
+        from midicoder.packs.cp_backend_api_client.angular import AngularApiEmitter
 
         spec = _make_full_spec()
         emitter = AngularApiEmitter()
@@ -217,7 +217,7 @@ class TestObligations:
 
     def test_obligation_2_error_mapping_react(self, tmp_path):
         """Obligation 2: Error mapping via interceptor (React)."""
-        from midicoder.packs.cp20_api_client.react import ReactApiEmitter
+        from midicoder.packs.cp_backend_api_client.react import ReactApiEmitter
 
         spec = _make_full_spec()
         emitter = ReactApiEmitter()
@@ -228,7 +228,7 @@ class TestObligations:
 
     def test_obligation_3_auth_injection_angular(self, tmp_path):
         """Obligation 3: Auth injection per request (Angular)."""
-        from midicoder.packs.cp20_api_client.angular import AngularApiEmitter
+        from midicoder.packs.cp_backend_api_client.angular import AngularApiEmitter
 
         spec = _make_full_spec()
         emitter = AngularApiEmitter()
@@ -239,7 +239,7 @@ class TestObligations:
 
     def test_obligation_3_auth_injection_react(self, tmp_path):
         """Obligation 3: Auth injection per request (React)."""
-        from midicoder.packs.cp20_api_client.react import ReactApiEmitter
+        from midicoder.packs.cp_backend_api_client.react import ReactApiEmitter
 
         spec = _make_full_spec()
         emitter = ReactApiEmitter()

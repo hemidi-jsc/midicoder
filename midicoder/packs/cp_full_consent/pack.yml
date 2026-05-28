@@ -1,0 +1,291 @@
+pack:
+  id: F33
+  name: Consent & Preference Management
+  internal_id: cp_full_consent
+  version: 2.0.0
+  status: stable
+  category: privacy
+  depends_on:
+  - B01
+  - C01
+  - F01
+  - F02
+  - F14
+  - F31
+  - F07
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: MDC-F33
+    range: MDC-CP49-001 to MDC-CP49-008
+  capabilities_provided:
+  - cookie_consent
+  - data_consent
+  - comm_preference
+  - privacy_center
+  - preference_center
+  - marketing_opt_out
+  capabilities:
+  - id: cookie_consent
+    emitter: fastapi, nestjs, angular, react
+  - id: data_consent
+    emitter: fastapi, nestjs, angular, react
+  - id: comm_preference
+    emitter: fastapi, nestjs, angular, react
+  - id: privacy_center
+    emitter: angular, react
+  - id: preference_center
+    emitter: angular, react
+  - id: marketing_opt_out
+    emitter: fastapi, nestjs, angular, react
+  definitions:
+  - name: ConsentRecord
+    description: Bản ghi consent của user
+  - name: ConsentPolicy
+    description: Chính sách consent của tenant
+  - name: CookiePreference
+    description: Sở thích cookie của user
+  - name: CommunicationPreference
+    description: Sở thích truyền thông của user
+  obligations:
+  - name: AuditTrail
+    description: Ghi audit log cho mọi consent action (CP14)
+  - name: TenantIsolation
+    description: Tất cả consent records enforce tenant scope
+  file_contributions:
+    infrastructure:
+    - path: app/consent/models.py
+      file_type: consent_models
+      template: cp_full_consent/consent_models.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+      - consent_records
+    - path: app/consent/schemas.py
+      file_type: consent_schemas
+      template: cp_full_consent/consent_schemas.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+    - path: app/consent/services/consent_service.py
+      file_type: consent_service
+      template: cp_full_consent/consent_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+      - consent_records
+    - path: app/consent/routers/consent_router.py
+      file_type: consent_router
+      template: cp_full_consent/consent_router.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/consent/services/cookie_banner_service.py
+      file_type: cookie_banner_service
+      template: cp_full_consent/cookie_banner_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - cookie_categories
+    - path: app/consent/middleware/consent_middleware.py
+      file_type: consent_middleware
+      template: cp_full_consent/consent_middleware.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+    - path: src/consent/entities/consent.entity.ts
+      file_type: consent_entity
+      template: cp_full_consent/consent.entity.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+    - path: src/consent/dtos/consent.dto.ts
+      file_type: consent_dto
+      template: cp_full_consent/consent.dto.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+    - path: src/consent/services/consent.service.ts
+      file_type: consent_service
+      template: cp_full_consent/consent.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+    - path: src/consent/controllers/consent.controller.ts
+      file_type: consent_controller
+      template: cp_full_consent/consent.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/consent/consent.module.ts
+      file_type: consent_module
+      template: cp_full_consent/consent.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/consent/consent.guard.ts
+      file_type: consent_guard
+      template: cp_full_consent/consent.guard.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+    - path: src/app/consent/components/privacy-center.component.ts
+      file_type: privacy_center
+      template: cp_full_consent/privacy-center.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+      - consent_records
+    - path: src/app/consent/components/cookie-banner.component.ts
+      file_type: cookie_banner
+      template: cp_full_consent/cookie-banner.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - cookie_categories
+    - path: src/app/consent/components/consent-manager.component.ts
+      file_type: consent_manager
+      template: cp_full_consent/consent-manager.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - consent_records
+    - path: src/app/consent/components/preference-center.component.ts
+      file_type: preference_center
+      template: cp_full_consent/preference-center.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+      - consent_records
+    - path: src/app/core/consent/consent.service.ts
+      file_type: consent_service
+      template: cp_full_consent/consent.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/consent/consent.store.ts
+      file_type: consent_store
+      template: cp_full_consent/consent.store.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/consent/components/PrivacyCenter.tsx
+      file_type: privacy_center
+      template: cp_full_consent/PrivacyCenter.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+      - consent_records
+    - path: src/consent/components/CookieBanner.tsx
+      file_type: cookie_banner
+      template: cp_full_consent/CookieBanner.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - cookie_categories
+    - path: src/consent/components/ConsentManager.tsx
+      file_type: consent_manager
+      template: cp_full_consent/ConsentManager.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - consent_records
+    - path: src/consent/components/CommunicationPreferences.tsx
+      file_type: communication_preferences
+      template: cp_full_consent/CommunicationPreferences.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - comm_channels
+    - path: src/consent/components/PreferenceCenter.tsx
+      file_type: preference_center
+      template: cp_full_consent/preference-center.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - consent_policies
+      - consent_records
+    - path: src/consent/hooks/useConsent.ts
+      file_type: consent_hook
+      template: cp_full_consent/useConsent.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/consent/components/ConsentBanner.tsx
+      file_type: consent_banner
+      template: cp_full_consent/ConsentBanner.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - ui_framework
+    - path: src/consent/providers/ConsentProvider.tsx
+      file_type: consent_provider
+      template: cp_full_consent/ConsentProvider.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/consent/components/consent-banner.component.ts
+      file_type: consent_banner
+      template: cp_full_consent/consent-banner.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - ui_framework
+  frontend_integration:
+    react:
+    - PrivacyCenter
+    - CookieBanner
+    - ConsentManager
+    - CommunicationPreferences
+    - PreferenceCenter
+    - ConsentBanner
+    - ConsentProvider
+    angular:
+    - PrivacyCenterComponent
+    - CookieBannerComponent
+    - ConsentManagerComponent
+    - PreferenceCenterComponent
+    - ConsentBannerComponent
+  recipes:
+  - basic_consent_recipe
+  - full_consent_recipe
+  type: full
+  render_context_support: true

@@ -527,7 +527,7 @@ class TestCodeGenerationPackEmitterRouter:
         file_spec = {
             "path": "app/models/customer.py",
             "file_type": "model",
-            "template": "cp01_domain_model/entity.py.jinja2",
+            "template": "cp_base_domain_model/entity.py.jinja2",
             "context": {
                 "entity": {
                     "id": "Customer",

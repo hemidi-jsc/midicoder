@@ -1,0 +1,357 @@
+/**
+ * Export Service — CP38: Data Import/Export/ETL.
+ *
+ * Angular service cho các thao tác export dữ liệu:
+ * - Tạo export job
+ * - Tải về file export (Blob)
+ * - Xem trước dữ liệu export
+ * - Kiểm tra trạng thái export
+ * - Lấy danh sách export jobs
+ *
+ * Sử dụng @angular/common/http để giao tiếp với backend API.
+ * providedIn: 'root' để đăng ký singleton.
+ */
+
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
+import { Observable, throwError } from 'rxjs';
+import {
+  catchError,
+  tap,
+  map,
+} from 'rxjs/operators';
+
+// =========================================================================
+// Giao diện dữ liệu
+// =========================================================================
+
+/**
+ * Cấu hình cho export job.
+ */
+export interface ExportJobConfig {
+  /** Entity cần export */
+  entity: string;
+  /** Định dạng file (csv, json) */
+  format: string;
+  /** Danh sách các cột cần xuất */
+  columns: string[];
+  /** Bộ lọc dữ liệu */
+  filters?: ExportFilters;
+}
+
+/**
+ * Bộ lọc cho export.
+ */
+export interface ExportFilters {
+  /** Trường dùng để lọc theo ngày */
+  dateField?: string;
+  /** Từ ngày */
+  dateFrom?: Date | string | null;
+  /** Đến ngày */
+  dateTo?: Date | string | null;
+  /** Trường trạng thái */
+  statusField?: string;
+  /** Các giá trị trạng thái */
+  statusValues?: string[];
+}
+
+/**
+ * Kết quả sau khi tạo export job.
+ */
+export interface ExportJobResult {
+  /** Khóa duy nhất của job */
+  jobKey: string;
+  /** Trạng thái job */
+  status: string;
+  /** Thông điệp */
+  message?: string;
+  /** Thời gian tạo */
+  createdAt?: string;
+}
+
+/**
+ * Thông tin trạng thái của export job.
+ */
+export interface ExportStatusInfo {
+  /** Khóa job */
+  jobKey: string;
+  /** Trạng thái hiện tại */
+  status: string;
+  /** Phần trăm hoàn thành (0-100) */
+  progress?: number;
+  /** Số hàng đã xuất */
+  exportedRows?: number;
+  /** Tổng số hàng */
+  totalRows?: number;
+  /** Kích thước file (bytes) */
+  fileSize?: number;
+  /** URL tải về (nếu sẵn) */
+  downloadUrl?: string;
+  /** Thông báo lỗi */
+  message?: string;
+  /** Thời gian bắt đầu */
+  startedAt?: string;
+  /** Thời gian hoàn thành */
+  completedAt?: string;
+}
+
+/**
+ * Kết quả xem trước export.
+ */
+export interface ExportPreviewResult {
+  /** Dữ liệu xem trước */
+  rows: Record<string, any>[];
+  /** Tổng số hàng (ước lượng) */
+  totalCount: number;
+  /** Số hàng trong preview */
+  previewCount: number;
+}
+
+/**
+ * Tóm tắt một export job.
+ */
+export interface ExportJobSummary {
+  /** Khóa job */
+  jobKey: string;
+  /** Entity */
+  entity: string;
+  /** Định dạng */
+  format: string;
+  /** Số cột */
+  columnCount: number;
+  /** Trạng thái */
+  status: string;
+  /** Tổng hàng đã xuất */
+  totalRows?: number;
+  /** Thời gian tạo */
+  createdAt: string;
+  /** Thời gian hoàn thành */
+  completedAt?: string;
+}
+
+/**
+ * Kết quả phân trang cho danh sách export jobs.
+ */
+export interface PagedExportList {
+  /** Danh sách export jobs */
+  items: ExportJobSummary[];
+  /** Tổng số jobs */
+  total: number;
+  /** Số lượng trả về */
+  limit: number;
+  /** Dời trang */
+  offset: number;
+}
+
+// =========================================================================
+// Service
+// =========================================================================
+
+@Injectable({
+  providedIn: 'root',
+})
+export class ExportService {
+  /** URL cơ sở cho API export */
+  private readonly baseUrl = '/api/export';
+
+  // =========================================================================
+  // Context variables từ Jinja2
+  // =========================================================================
+
+  /** Danh sách các job export (từ context) */
+  private exportJobs: Readonly<ExportJobSummary[]> = {{ export_jobs | tojson if export_jobs else [] | tojson }};
+
+  /** Số lượng job export (từ context) */
+  private exportJobCount: number = {{ export_job_count | tojson if export_job_count is defined else 0 }};
+
+  /** Các định dạng import/export được hỗ trợ (từ context) */
+  supportedFormats: Readonly<string[]> = {{ import_formats | tojson if import_formats else ['csv', 'json'] | tojson }};
+
+  /** Các trạng thái job (từ context) */
+  jobStatuses: Readonly<string[]> = {{ job_statuses | tojson if job_statuses else ['pending', 'running', 'completed', 'failed', 'cancelled'] | tojson }};
+
+  /** Các loại transform (từ context) */
+  transformTypes: Readonly<string[]> = {{ transform_types | tojson if transform_types else [] | tojson }};
+
+  /** Các nguồn extract (từ context) */
+  extractSources: Readonly<string[]> = {{ extract_sources | tojson if extract_sources else [] | tojson }};
+
+  /** Các chế độ load (từ context) */
+  loadModes: Readonly<string[]> = {{ load_modes | tojson if load_modes else ['insert', 'update', 'upsert'] | tojson }};
+
+  /** Cấu hình bulk (từ context) */
+  bulkConfig: Readonly<Record<string, any>> = {{ bulk_config | tojson if bulk_config is defined else {} | tojson }};
+
+  // =========================================================================
+  // Constructor
+  // =========================================================================
+
+  constructor(private http: HttpClient) {}
+
+  // =========================================================================
+  // Tạo Export Job
+  // =========================================================================
+
+  /**
+   * Tạo export job mới với cấu hình đã cho.
+   *
+   * @param config — Cấu hình export job
+   * @returns Observable chứa ExportJobResult
+   */
+  createExportJob(config: ExportJobConfig): Observable<ExportJobResult> {
+    // Chuẩn bị body: chuyển Date thành string ISO
+    const body: any = { ...config };
+    if (body.filters) {
+      if (body.filters.dateFrom instanceof Date) {
+        body.filters.dateFrom = body.filters.dateFrom.toISOString();
+      }
+      if (body.filters.dateTo instanceof Date) {
+        body.filters.dateTo = body.filters.dateTo.toISOString();
+      }
+    }
+
+    return this.http.post<ExportJobResult>(`${this.baseUrl}/jobs`, body).pipe(
+      tap((result) => {
+        console.log(`[ExportService] Tạo export job thành công: ${result.jobKey}`);
+      }),
+      catchError((error) => {
+        console.error('[ExportService] Lỗi tạo export job:', error);
+        return throwError(() => new Error(`Không thể tạo job export: ${error.message || error}`));
+      }),
+    );
+  }
+
+  // =========================================================================
+  // Tải về Export
+  // =========================================================================
+
+  /**
+   * Tải về file export dưới dạng Blob.
+   *
+   * @param jobKey — Khóa của export job
+   * @returns Observable chứa Blob (file dữ liệu)
+   */
+  downloadExport(jobKey: string): Observable<Blob> {
+    return this.http.get(`${this.baseUrl}/jobs/${jobKey}/download`, {
+      responseType: 'blob',
+    }).pipe(
+      tap((blob) => {
+        console.log(`[ExportService] Tải file export thành công, kích thước: ${blob.size} bytes`);
+      }),
+      catchError((error) => {
+        console.error(`[ExportService] Lỗi tải file export ${jobKey}:`, error);
+        return throwError(() => new Error(`Không thể tải file: ${error.message || error}`));
+      }),
+    );
+  }
+
+  // =========================================================================
+  // Xem trước Export
+  // =========================================================================
+
+  /**
+   * Xem trước dữ liệu export (số hàng giới hạn).
+   *
+   * @param jobKey — Khóa job hoặc 'preview' để xem trước trước khi tạo job
+   * @param limit — Số hàng tối đa trong preview, mặc định 10
+   * @returns Observable chứa ExportPreviewResult
+   */
+  previewExport(jobKey: string, limit: number = 10): Observable<ExportPreviewResult> {
+    const params = new HttpParams()
+      .set('limit', limit.toString());
+
+    return this.http.get<ExportPreviewResult>(
+      `${this.baseUrl}/jobs/${jobKey}/preview`,
+      { params },
+    ).pipe(
+      tap((result) => {
+        console.log(
+          `[ExportService] Preview export: ${result.previewCount} hàng (tổng: ${result.totalCount})`,
+        );
+      }),
+      catchError((error) => {
+        console.error(`[ExportService] Lỗi xem trước export ${jobKey}:`, error);
+        return throwError(() => new Error(`Không thể xem trước: ${error.message || error}`));
+      }),
+    );
+  }
+
+  // =========================================================================
+  // Trạng thái Export
+  // =========================================================================
+
+  /**
+   * Kiểm tra trạng thái của export job.
+   *
+   * @param jobKey — Khóa của export job
+   * @returns Observable chứa ExportStatusInfo
+   */
+  getExportStatus(jobKey: string): Observable<ExportStatusInfo> {
+    return this.http.get<ExportStatusInfo>(`${this.baseUrl}/jobs/${jobKey}/status`).pipe(
+      tap((status) => {
+        console.log(
+          `[ExportService] Export ${jobKey}: ${status.status} (${status.progress || 0}%)`,
+        );
+      }),
+      catchError((error) => {
+        console.error(`[ExportService] Lỗi kiểm tra trạng thái export ${jobKey}:`, error);
+        return throwError(() => new Error(`Không thể lấy trạng thái: ${error.message || error}`));
+      }),
+    );
+  }
+
+  // =========================================================================
+  // Danh sách Export Jobs
+  // =========================================================================
+
+  /**
+   * Lấy danh sách tất cả export jobs.
+   *
+   * @returns Observable chứa PagedExportList
+   */
+  listExportJobs(): Observable<PagedExportList> {
+    return this.http.get<PagedExportList>(`${this.baseUrl}/jobs`).pipe(
+      tap((result) => {
+        console.log(`[ExportService] Lấy danh sách: ${result.total} export jobs`);
+      }),
+      catchError((error) => {
+        console.error('[ExportService] Lỗi lấy danh sách export jobs:', error);
+        return throwError(() => new Error(`Không thể lấy danh sách: ${error.message || error}`));
+      }),
+    );
+  }
+
+  /**
+   * Lấy danh sách export jobs với bộ lọc.
+   *
+   * @param status — Lọc theo trạng thái (nếu có)
+   * @param entity — Lọc theo entity (nếu có)
+   * @param limit — Số lượng tối đa, mặc định 50
+   * @param offset — Dời trang, mặc định 0
+   * @returns Observable chứa PagedExportList
+   */
+  listExportJobsFiltered(
+    status?: string,
+    entity?: string,
+    limit: number = 50,
+    offset: number = 0,
+  ): Observable<PagedExportList> {
+    let params = new HttpParams();
+    params = params.set('limit', limit.toString());
+    params = params.set('offset', offset.toString());
+
+    if (status) {
+      params = params.set('status', status);
+    }
+    if (entity) {
+      params = params.set('entity', entity);
+    }
+
+    return this.http.get<PagedExportList>(`${this.baseUrl}/jobs`, { params }).pipe(
+      catchError((error) => {
+        console.error('[ExportService] Lỗi lấy danh sách export jobs (đã lọc):', error);
+        return throwError(() => new Error(`Không thể lấy danh sách: ${error.message || error}`));
+      }),
+    );
+  }
+}

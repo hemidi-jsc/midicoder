@@ -1,15 +1,18 @@
 ﻿"""
-Tests cho Contracts Registry và Pack Emitter Router consistency.
+Tests cho Contracts Registry và Pack Emitter Router consistency (taxonomy-v2).
 
 Kiểm tra:
-- contracts/registry.py: CP_ID_TO_INTERNAL sync với taxonomy.yml
+- contracts/registry.py: ID_TO_INTERNAL (alias CP_ID_TO_INTERNAL) sync với taxonomy.yml
 - contracts/registry.py: stack constants đúng convention
 - pack_emitter_router.py: EMITTER_REGISTRY module/class tồn tại
-- pack_emitter_router.py: PARSER_REGISTRY覆盖所有 parser_key
+- pack_emitter_router.py: PARSER_REGISTRY bao phủ tất cả parser_key
 - Cross-consistency: internal_id trong registry khớp với EMITTER_REGISTRY module path
 
+Taxonomy v2: 52 packs trong 6 tier (BASE, INFRA, CORE, BACKEND, FRONTEND, FULL).
+IDs: B01, I01-I05, C01-C03, BE01-BE06, FE01-FE02, F01-F36.
+
 Author: Midicoder Team
-Version: 2.0.0
+Version: 3.0.0 (taxonomy-v2)
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from midicoder.contracts.registry import (
     BACKEND_STACKS,
     CP_ID_TO_INTERNAL,
     FRONTEND_STACKS,
+    ID_TO_INTERNAL,
     INFRA_STACK,
 )
 
@@ -36,8 +40,8 @@ from midicoder.contracts.registry import (
 
 @pytest.fixture
 def taxonomy_path() -> Path:
-    """Đường dẫn đến taxonomy.yml."""
-    return Path(__file__).resolve().parent.parent.parent.parent / "industry" / "taxonomy.yml"
+    """Đường dẫn đến taxonomy.yml (taxonomy-v2)."""
+    return Path(__file__).resolve().parent.parent.parent / "packs" / "taxonomy.yml"
 
 
 @pytest.fixture
@@ -122,18 +126,32 @@ class TestCPIDToInternal:
             assert isinstance(v, str), f"Value {v!r} không phải str"
 
     def test_keys_are_cp_ids(self):
-        """Tất cả keys có prefix 'CP' và số."""
-        for k in CP_ID_TO_INTERNAL:
-            assert k.startswith("CP"), f"Key {k!r} không có prefix CP"
-            assert k[2:].isdigit(), f"Key {k!r} phần sau CP không phải số"
-
-    def test_values_are_snake_case_internal_ids(self):
-        """Tất cả values là snake_case, có prefix cpNN_."""
+        """Tất cả keys là taxonomy-v2 IDs: B01, I01, C01, BE01, FE01, F01."""
         import re
 
-        pattern = re.compile(r"^cp\d{2}_[\w_]+$")
+        pattern = re.compile(r"^[BCFI]|BE|FE\d+$")
+        valid_prefixes = {"B", "I", "C", "BE", "FE", "F"}
+        for k in CP_ID_TO_INTERNAL:
+            assert k[0] in {"B", "I", "C", "F"}, (
+                f"Key {k!r} không bắt đầu bằng prefix hợp lệ (B/I/C/F)"
+            )
+            # Extract prefix: BE/FE → 2 chars, else 1 char
+            if k.startswith("BE") or k.startswith("FE"):
+                prefix = k[:2]
+                suffix = k[2:]
+            else:
+                prefix = k[0]
+                suffix = k[1:]
+            assert prefix in valid_prefixes, f"Key {k!r} prefix {prefix!r} không hợp lệ"
+            assert suffix.isdigit(), f"Key {k!r} phần số {suffix!r} không phải số"
+
+    def test_values_are_snake_case_internal_ids(self):
+        """Tất cả values là snake_case, có prefix cp_{tier}_ (taxonomy-v2)."""
+        import re
+
+        pattern = re.compile(r"^cp_(base|infra|core|backend|frontend|full)_[\w_]+$")
         for v in CP_ID_TO_INTERNAL.values():
-            assert pattern.match(v), f"Value {v!r} không khớp pattern cpNN_..."
+            assert pattern.match(v), f"Value {v!r} không khớp pattern cp_{{tier}}_..."
 
     def test_no_duplicate_values(self):
         """Không có 2 CP ánh xạ cùng 1 internal_id."""
@@ -141,10 +159,10 @@ class TestCPIDToInternal:
         assert len(values) == len(set(values)), "Có internal_id bị duplicate"
 
     def test_sync_with_taxonomy(self, taxonomy_cp_mapping: dict[str, str]):
-        """CP_ID_TO_INTERNAL phải sync với internal_id trong taxonomy.yml.
+        """CP_ID_TO_INTERNAL phải sync với internal_id trong taxonomy.yml (v2).
 
         Các CP có trong registry và cũng có trong taxonomy → mapping phải khớp.
-        Registry có thể chưa chứa hết CP (taxonomy có 53 CP, registry chỉ có CP
+        Registry có thể chưa chứa hết CP (taxonomy có 52 CP, registry chỉ có CP
         đã implement). Test không enforce taxonomy ⊆ registry.
         """
         registry_keys = set(CP_ID_TO_INTERNAL.keys())
@@ -170,23 +188,26 @@ class TestCPIDToInternal:
         )
 
     def test_known_packs_present(self):
-        """Các CP quan trọng phải có trong registry."""
-        essential = {"CP01", "CP02", "CP03", "CP04", "CP05", "CP07", "CP08", "CP10", "CP51", "CP52", "CP53"}
+        """Các pack quan trọng (taxonomy-v2) phải có trong registry.
+
+        Bỏ CP51/CP52/CP53 vì đã REMOVE (compiler internal).
+        """
+        essential = {"B01", "I01", "C01", "C02", "BE01", "BE02", "F01", "F02", "F08"}
         missing = essential - set(CP_ID_TO_INTERNAL.keys())
-        assert not missing, f"Các CP quan trọng thiếu trong registry: {missing}"
+        assert not missing, f"Các pack quan trọng thiếu trong registry: {missing}"
 
     def test_known_internal_ids(self):
-        """Kiểm tra các internal_id cụ thể."""
-        assert CP_ID_TO_INTERNAL["CP01"] == "cp01_domain_model"
-        assert CP_ID_TO_INTERNAL["CP02"] == "cp02_multi_tenant"
-        assert CP_ID_TO_INTERNAL["CP03"] == "cp03_auth"
-        assert CP_ID_TO_INTERNAL["CP05"] == "cp05_event_driven"
-        assert CP_ID_TO_INTERNAL["CP07"] == "cp07_iac"
-        assert CP_ID_TO_INTERNAL["CP08"] == "cp08_database"
-        assert CP_ID_TO_INTERNAL["CP10"] == "cp10_search"
-        assert CP_ID_TO_INTERNAL["CP51"] == "cp51_blueprint"
-        assert CP_ID_TO_INTERNAL["CP52"] == "cp52_invariant"
-        assert CP_ID_TO_INTERNAL["CP53"] == "cp53_domain_bridge"
+        """Kiểm tra các internal_id cụ thể (taxonomy-v2).
+
+        Bỏ CP51/CP52/CP53 vì đã REMOVE.
+        """
+        assert CP_ID_TO_INTERNAL["B01"] == "cp_base_domain_model"
+        assert CP_ID_TO_INTERNAL["C01"] == "cp_core_multi_tenant"
+        assert CP_ID_TO_INTERNAL["F01"] == "cp_full_auth"
+        assert CP_ID_TO_INTERNAL["C02"] == "cp_core_event_driven"
+        assert CP_ID_TO_INTERNAL["I01"] == "cp_infra_iac"
+        assert CP_ID_TO_INTERNAL["BE01"] == "cp_backend_database"
+        assert CP_ID_TO_INTERNAL["F08"] == "cp_full_notification"
 
     def test_folder_exists_for_each_internal_id(self):
         """Mỗi internal_id phải tương ứng với folder tồn tại trong packs/."""
@@ -290,7 +311,7 @@ class TestEmitterRegistry:
         used_internal_ids = set()
         for key, (module_path, _, _) in self.emitter_registry.items():
             # Extract internal_id from module path
-            # "midicoder.packs.cp01_domain_model.entity_fastapi"
+            # "midicoder.packs.cp_base_domain_model.entity_fastapi"
             parts = module_path.split(".")
             for i, p in enumerate(parts):
                 if p in CP_ID_TO_INTERNAL.values():
@@ -298,8 +319,8 @@ class TestEmitterRegistry:
                     break
 
         # Các CP đã harden nên có emitter
-        expected_harden = {"cp01_domain_model", "cp03_auth", "cp05_event_driven",
-                           "cp07_iac", "cp08_database", "cp10_search"}
+        expected_harden = {"cp_base_domain_model", "cp_full_auth", "cp_core_event_driven",
+                           "cp_infra_iac", "cp_backend_database", "cp_full_search"}
         missing_emitters = expected_harden - used_internal_ids
         assert not missing_emitters, (
             f"Các CP đã harden nhưng chưa có emitter trong EMITTER_REGISTRY: "
@@ -322,8 +343,8 @@ class TestCrossConsistency:
     def test_emitter_module_paths_use_internal_ids_from_registry(self):
         """Module path trong EMITTER_REGISTRY phải dùng internal_id từ CP_ID_TO_INTERNAL.
 
-        Ví dụ: "midicoder.packs.cp01_domain_model.entity_fastapi"
-        → "cp01_domain_model" phải là value trong CP_ID_TO_INTERNAL.
+        Ví dụ: "midicoder.packs.cp_base_domain_model.entity_fastapi"
+        → "cp_base_domain_model" phải là value trong CP_ID_TO_INTERNAL.
         """
         internal_values = set(CP_ID_TO_INTERNAL.values())
         mismatches = []
@@ -354,8 +375,12 @@ class TestCrossConsistency:
             "với contracts.registry.CP_ID_TO_INTERNAL — có thể đang tự define duplicate"
         )
 
+    @pytest.mark.skip(reason="CP51 Blueprint đã REMOVE trong taxonomy-v2 — compiler internal")
     def test_cp51_resolver_imports_from_registry(self):
-        """cp51_blueprint/resolver phải import CP_ID_TO_INTERNAL từ contracts.registry."""
+        """cp51_blueprint/resolver phải import CP_ID_TO_INTERNAL từ contracts.registry.
+
+        SKIP: CP51 đã được REMOVE khỏi taxonomy-v2 (compiler internal).
+        """
         import midicoder.packs.cp51_blueprint.resolver as resolver_mod
 
         # Source-level check: resolver.py should import from contracts.registry

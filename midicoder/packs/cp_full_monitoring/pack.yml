@@ -1,0 +1,183 @@
+pack:
+  id: F15
+  name: API & System Monitoring Generator
+  internal_id: cp_full_monitoring
+  version: 2.0.0
+  status: stable
+  category: observability
+  merged_with: cp17_bi_analytics
+  depends_on:
+  - C03
+  - F07
+  definitions_count: 10
+  obligations_count: 7
+  error_codes:
+    prefix: MDC-F15
+    range: MDC-CP16-001 to MDC-CP16-017
+  capabilities_provided:
+  - dashboard_create
+  - alert_define
+  - sli_monitor
+  - health_check
+  - notification_route
+  - escalation_manage
+  - slo_track
+  - analytics_query_engine
+  - dashboard_builder
+  - report_scheduler
+  capabilities:
+  - id: dashboard
+    emitter: fastapi, nestjs, angular, react
+  - id: alert_engine
+    emitter: fastapi, nestjs
+  - id: sli_tracker
+    emitter: fastapi, nestjs
+  - id: health_check
+    emitter: fastapi, nestjs
+  - id: notification
+    emitter: fastapi, nestjs
+  - id: escalation
+    emitter: fastapi, nestjs
+  - id: slo_tracking
+    emitter: fastapi, nestjs
+  - id: analytics_query_engine
+    emitter: fastapi, nestjs
+  - id: dashboard_builder
+    emitter: fastapi, nestjs
+  - id: report_scheduler
+    emitter: fastapi, nestjs
+  definitions:
+  - name: DashboardProfile
+    description: Dashboard layout, widgets, and data sources
+  - name: AlertRule
+    description: Threshold-based alert with notification channel
+  - name: SLIDefinition
+    description: Service Level Indicator with target and measurement
+  - name: HealthCheck
+    description: Liveness, readiness, and custom health probes
+  - name: NotificationChannel
+    description: Alert routing channels (email, slack, webhook, pagerduty)
+  - name: EscalationPolicy
+    description: Multi-level escalation rules with timeout
+  - name: SLOTracking
+    description: Service Level Objective with error budget and burn rate
+  - name: AnalyticsModel
+    description: Aggregation model with metrics, filters, and aggregations
+  - name: DashboardDefinition
+    description: Visual dashboard with widgets and refresh interval
+  - name: ScheduledReport
+    description: Report with schedule, format, and delivery channel
+  obligations:
+  - name: AlertNotification
+    description: Alerts must route to configured notification channels
+  - name: ModelNameRequired
+    description: AnalyticsModel.name must be non-empty
+  - name: DataFreshness
+    description: AnalyticsModel.max_stale_seconds must be >= 1
+  - name: DashboardNameRequired
+    description: DashboardDefinition.name must be non-empty
+  - name: RefreshIntervalMinimum
+    description: DashboardDefinition.refresh_interval_seconds must be >= 5
+  - name: ReportNameRequired
+    description: ScheduledReport.name must be non-empty
+  - name: ReportNextRunAuto
+    description: ScheduledReport.next_run auto-assigned when None
+  file_contributions:
+    infrastructure:
+    - path: app/monitoring/monitoring_service.py
+      file_type: monitoring_service
+      template: cp_full_monitoring/monitoring_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: app/monitoring/monitoring_router.py
+      file_type: monitoring_router
+      template: cp_full_monitoring/monitoring_router.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: src/monitoring/monitoring.module.ts
+      file_type: monitoring_module
+      template: cp_full_monitoring/monitoring.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/monitoring/monitoring.service.ts
+      file_type: monitoring_service
+      template: cp_full_monitoring/monitoring.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/monitoring/monitoring.controller.ts
+      file_type: monitoring_controller
+      template: cp_full_monitoring/monitoring.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: app/monitoring/health_check.py
+      file_type: health_check
+      template: cp_full_monitoring/health_check.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: src/monitoring/health.controller.ts
+      file_type: health_controller
+      template: cp_full_monitoring/health.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/monitoring/alert_panel.component.ts
+      file_type: alert_component
+      template: cp_full_monitoring/alert_panel.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/app/core/monitoring/dashboard_widget.component.ts
+      file_type: dashboard_component
+      template: cp_full_monitoring/dashboard_widget.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/app/core/monitoring/slo-dashboard.component.ts
+      file_type: slo_dashboard_component
+      template: cp_full_monitoring/slo-dashboard.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/monitoring/AlertBanner.tsx
+      file_type: alert_component
+      template: cp_full_monitoring/AlertBanner.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+    - path: src/monitoring/DashboardPanel.tsx
+      file_type: dashboard_component
+      template: cp_full_monitoring/DashboardPanel.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+    - path: src/monitoring/SLODashboard.tsx
+      file_type: slo_dashboard_component
+      template: cp_full_monitoring/SLODashboard.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+    - path: src/monitoring/types.ts
+      file_type: monitoring_types
+      template: cp_full_monitoring/types.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+  frontend_integration:
+    angular:
+    - DashboardWidget
+    - AlertPanel
+    - SLODashboard
+    react:
+    - DashboardPanel
+    - AlertBanner
+    - SLODashboard
+  type: full
+  render_context_support: true

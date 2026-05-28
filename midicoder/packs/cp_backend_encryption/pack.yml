@@ -1,0 +1,153 @@
+pack:
+  id: BE05
+  name: Data Encryption at Rest
+  internal_id: cp_backend_encryption
+  version: 2.0.0
+  status: stable
+  category: backend
+  type: backend
+  depends_on:
+  - B01
+  - BE01
+  - F14
+  render_context_support: true
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: MDC-BE05
+    range: MDC-CP58-001 to MDC-CP58-006
+  capabilities_provided:
+  - field_encryption
+  - table_encryption
+  - key_rotation
+  - encryption_at_rest
+  - compliance_encryption
+  capabilities:
+  - id: field_encryption
+    emitter: fastapi, nestjs
+  - id: table_encryption
+    emitter: fastapi, nestjs
+  - id: key_rotation
+    emitter: fastapi, nestjs
+  - id: encryption_at_rest
+    emitter: fastapi, nestjs
+  - id: compliance_encryption
+    emitter: fastapi, nestjs
+  definitions:
+  - name: EncryptionConfig
+    description: Cấu hình mã hóa tổng thể (thuật toán, khóa, key management)
+  - name: EncryptedField
+    description: Trường dữ liệu được mã hóa ở tầng ORM/model
+  - name: EncryptionKey
+    description: Khóa mã hóa với vòng đời quản lý (active, rotating, retired)
+  - name: EncryptionPolicy
+    description: Chính sách mã hóa với compliance standards (HIPAA, SOX, PCI-DSS)
+  obligations:
+  - name: EncryptionAtRest
+    description: Tất cả dữ liệu nhạy cảm được mã hóa trước khi lưu trữ
+  - name: KeyRotationPolicy
+    description: Khóa mã hóa phải được xoay định kỳ theo chính sách cấu hình
+  file_contributions:
+    infrastructure:
+    - path: app/models/encryption_models.py
+      file_type: encryption_models
+      template: cp_backend_encryption/encryption_models.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - configs
+    - path: app/services/encryption_service.py
+      file_type: encryption_service
+      template: cp_backend_encryption/encryption_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - configs
+      - fields
+    - path: app/middleware/encryption_middleware.py
+      file_type: encryption_middleware
+      template: cp_backend_encryption/encryption_middleware.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - fields
+    - path: app/services/key_rotation.py
+      file_type: key_rotation
+      template: cp_backend_encryption/key_rotation.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - keys
+      - policies
+    - path: app/api/encryption_router.py
+      file_type: encryption_router
+      template: cp_backend_encryption/encryption_router.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/api/compliance_audit.py
+      file_type: compliance_audit
+      template: cp_backend_encryption/compliance_audit.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - policies
+    - path: src/encryption/entities/encryption.entity.ts
+      file_type: encryption_entity
+      template: cp_backend_encryption/encryption.entity.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - configs
+    - path: src/encryption/dtos/encryption.dto.ts
+      file_type: encryption_dto
+      template: cp_backend_encryption/encryption.dto.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - configs
+    - path: src/encryption/services/encryption.service.ts
+      file_type: encryption_service
+      template: cp_backend_encryption/encryption.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - configs
+      - fields
+    - path: src/encryption/controllers/encryption.controller.ts
+      file_type: encryption_controller
+      template: cp_backend_encryption/encryption.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/encryption/schedulers/key-rotation.scheduler.ts
+      file_type: key_rotation_scheduler
+      template: cp_backend_encryption/key-rotation.scheduler.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - keys
+      - policies
+    - path: src/encryption/encryption.module.ts
+      file_type: encryption_module
+      template: cp_backend_encryption/encryption.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+  recipes:
+  - aes256_field_encryption_recipe
+  - table_encryption_recipe
+  - key_rotation_recipe
+  - compliance_encryption_recipe

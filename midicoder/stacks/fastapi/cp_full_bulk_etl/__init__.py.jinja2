@@ -1,0 +1,105 @@
+# coding: utf-8
+"""
+CP38: Data Import/Export/ETL Package.
+
+Cung cấp các dịch vụ và router cho:
+- Nhập liệu hàng loạt (CSV, JSON)
+- Xuất dữ liệu có phân trang
+- Pipeline ETL (Extract → Transform → Load)
+
+Số lượng import jobs: {{ import_job_count }}
+Số lượng export jobs: {{ export_job_count }}
+Số lượng ETL jobs: {{ etl_job_count }}
+
+Định dạng hỗ trợ: {{ ', '.join(import_formats) }}
+Trạng thái jobs: {{ ', '.join(job_statuses) }}
+"""
+
+# ============================================================================
+# Service imports
+# ============================================================================
+
+from .import_service import ImportService
+from .export_service import ExportService
+from .etl_service import ETLService
+
+# ============================================================================
+# Parser imports
+# ============================================================================
+
+from .csv_parser import CSVParser
+from .json_parser import JSONParser
+
+# ============================================================================
+# Worker imports
+# ============================================================================
+
+from .bulk_worker import BulkWorker
+
+# ============================================================================
+# Router imports
+# ============================================================================
+
+from .import_router import router as import_router
+from .export_router import router as export_router
+
+# ============================================================================
+# Model imports (cho convenience)
+# ============================================================================
+
+from .import_models import (
+    ImportJob,
+    ExportJob,
+    ETLJob,
+    ETLMapping,
+    ImportError,
+    BulkConfig,
+)
+
+# ============================================================================
+# Schema imports (cho convenience)
+# ============================================================================
+
+from .import_schemas import (
+    ImportJobCreate,
+    ImportJobRead,
+    ExportJobCreate,
+    ExportJobRead,
+    ETLJobCreate,
+    ETLJobRead,
+    JobStatusResponse,
+    ImportResult,
+    ExportResult,
+)
+
+__all__ = [
+    # Services
+    "ImportService",
+    "ExportService",
+    "ETLService",
+    # Parsers
+    "CSVParser",
+    "JSONParser",
+    # Worker
+    "BulkWorker",
+    # Routers
+    "import_router",
+    "export_router",
+    # Models
+    "ImportJob",
+    "ExportJob",
+    "ETLJob",
+    "ETLMapping",
+    "ImportError",
+    "BulkConfig",
+    # Schemas
+    "ImportJobCreate",
+    "ImportJobRead",
+    "ExportJobCreate",
+    "ExportJobRead",
+    "ETLJobCreate",
+    "ETLJobRead",
+    "JobStatusResponse",
+    "ImportResult",
+    "ExportResult",
+]

@@ -1,0 +1,17 @@
+# {{ "=".center(66, "=") }}
+# CP54: Helm Chart.yaml
+# {{ "=".center(66, "=") }}
+apiVersion: v2
+name: myapp
+description: A Helm chart for Kubernetes deployment
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+keywords:
+  - kubernetes
+  - deployment
+  - {{ deployments[0].labels.get('app', 'app') if deployments else 'myapp' }}
+
+maintainers:
+  - name: Midicoder Team

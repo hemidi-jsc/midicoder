@@ -13,7 +13,7 @@ Version: 1.0.0
 import pytest
 from datetime import datetime
 
-from midicoder.packs.cp12_notification.template_engine import (
+from midicoder.packs.cp_full_notification.template_engine import (
     TemplateRenderer,
     TemplateValidator,
     RenderedTemplate,
@@ -156,7 +156,7 @@ class TestTemplateRendererRenderTemplate:
 
     def test_render_full_template(self):
         """Render toàn bộ template (subject, body_html, body_text)."""
-        from midicoder.packs.cp12_notification.models import (
+        from midicoder.packs.cp_full_notification.models import (
             NotificationTemplate,
             NotificationChannel,
         )

@@ -1,0 +1,450 @@
+pack:
+  id: F35
+  name: Feature Flags & Dynamic Config
+  internal_id: cp_full_service_discovery
+  version: 2.0.0
+  status: stable
+  category: runtime
+  depends_on:
+  - B01
+  - C02
+  - F14
+  - F07
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: MDC-F35
+    range: MDC-CP37-001 to MDC-CP37-022
+  capabilities_provided:
+  - evaluate_feature_flag
+  - assign_experiment
+  - read_dynamic_config
+  - feature_toggle
+  - ab_test
+  - dynamic_config
+  - service_registration
+  - service_discovery
+  capabilities:
+  - id: feature_toggle
+    emitter: fastapi, nestjs, angular, react
+  - id: ab_test
+    emitter: fastapi, nestjs, angular, react
+  - id: dynamic_config
+    emitter: fastapi, nestjs, angular, react
+  - id: remote_sync
+    emitter: fastapi, nestjs, angular, react
+  definitions:
+  - name: FeatureFlag
+    description: Feature toggle với boolean/percentage/targeted variants và tenant
+      override
+  - name: ABExperiment
+    description: A/B experiment với variants, deterministic assignment, và traffic
+      control
+  - name: DynamicConfig
+    description: Dynamic configuration key-value với global/tenant/environment scope
+  - name: FlagStore
+    description: Abstract storage interface cho flag/backend (Database + Redis)
+  obligations:
+  - name: FlagEvaluationDeterminism
+    description: Feature flag evaluation phải deterministic cho cùng context input
+  - name: ConfigChangeAudit
+    description: Tất cả config changes phải được audit log qua CP14
+  file_contributions:
+    infrastructure:
+    - path: app/feature_flags/__init__.py
+      file_type: flag_init
+      template: cp_full_service_discovery/__init__.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - flags
+      - experiments
+      - configs
+    - path: app/feature_flags/models/flag_model.py
+      file_type: flag_model
+      template: cp_full_service_discovery/flag_model.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - flags
+    - path: app/feature_flags/models/ab_experiment_model.py
+      file_type: ab_experiment_model
+      template: cp_full_service_discovery/ab_experiment_model.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - experiments
+    - path: app/feature_flags/models/config_model.py
+      file_type: config_model
+      template: cp_full_service_discovery/config_model.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - configs
+    - path: app/feature_flags/schemas/flag_schema.py
+      file_type: flag_schema
+      template: cp_full_service_discovery/flag_schema.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - flags
+    - path: app/feature_flags/schemas/experiment_schema.py
+      file_type: experiment_schema
+      template: cp_full_service_discovery/experiment_schema.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - experiments
+    - path: app/feature_flags/schemas/config_schema.py
+      file_type: config_schema
+      template: cp_full_service_discovery/config_schema.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - configs
+    - path: app/feature_flags/services/flag_evaluator.py
+      file_type: flag_evaluator
+      template: cp_full_service_discovery/flag_evaluator.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - flags
+    - path: app/feature_flags/services/flag_service.py
+      file_type: flag_service
+      template: cp_full_service_discovery/flag_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - flags
+    - path: app/feature_flags/services/experiment_service.py
+      file_type: experiment_service
+      template: cp_full_service_discovery/experiment_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - experiments
+    - path: app/feature_flags/services/config_service.py
+      file_type: config_service
+      template: cp_full_service_discovery/config_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - configs
+    - path: app/feature_flags/routers/flag_router.py
+      file_type: flag_router
+      template: cp_full_service_discovery/flag_router.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/feature_flags/routers/experiment_router.py
+      file_type: experiment_router
+      template: cp_full_service_discovery/experiment_router.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/feature_flags/routers/config_router.py
+      file_type: config_router
+      template: cp_full_service_discovery/config_router.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/feature_flags/stores/flag_store.py
+      file_type: flag_store
+      template: cp_full_service_discovery/flag_store.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/feature_flags/stores/redis_store.py
+      file_type: redis_store
+      template: cp_full_service_discovery/redis_store.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/feature_flags/stores/db_store.py
+      file_type: db_store
+      template: cp_full_service_discovery/db_store.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/feature_flags/middleware.py
+      file_type: flag_middleware
+      template: cp_full_service_discovery/flag_middleware.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - flags
+    - path: app/feature_flags/websocket.py
+      file_type: websocket_handler
+      template: cp_full_service_discovery/websocket_handler.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/feature_flags/sync_worker.py
+      file_type: sync_worker
+      template: cp_full_service_discovery/sync_worker.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: src/feature-flags/feature-flags.module.ts
+      file_type: flag_module
+      template: cp_full_service_discovery/feature-flags.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/feature-flags/entities/flag.entity.ts
+      file_type: flag_entity
+      template: cp_full_service_discovery/flag.entity.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - flags
+    - path: src/feature-flags/entities/experiment.entity.ts
+      file_type: experiment_entity
+      template: cp_full_service_discovery/experiment.entity.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - experiments
+    - path: src/feature-flags/entities/config.entity.ts
+      file_type: config_entity
+      template: cp_full_service_discovery/config.entity.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - configs
+    - path: src/feature-flags/dtos/flag-dto.ts
+      file_type: flag_dto
+      template: cp_full_service_discovery/flag.dto.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - flags
+    - path: src/feature-flags/dtos/experiment-dto.ts
+      file_type: experiment_dto
+      template: cp_full_service_discovery/experiment.dto.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - experiments
+    - path: src/feature-flags/dtos/config-dto.ts
+      file_type: config_dto
+      template: cp_full_service_discovery/config.dto.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - configs
+    - path: src/feature-flags/services/flag.service.ts
+      file_type: flag_service
+      template: cp_full_service_discovery/flag.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - flags
+    - path: src/feature-flags/services/experiment.service.ts
+      file_type: experiment_service
+      template: cp_full_service_discovery/experiment.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - experiments
+    - path: src/feature-flags/services/config.service.ts
+      file_type: config_service
+      template: cp_full_service_discovery/config.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - configs
+    - path: src/feature-flags/controllers/flag.controller.ts
+      file_type: flag_controller
+      template: cp_full_service_discovery/flag.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/feature-flags/controllers/experiment.controller.ts
+      file_type: experiment_controller
+      template: cp_full_service_discovery/experiment.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/feature-flags/controllers/config.controller.ts
+      file_type: config_controller
+      template: cp_full_service_discovery/config.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/feature-flags/interceptors/flag.interceptor.ts
+      file_type: flag_interceptor
+      template: cp_full_service_discovery/flag.interceptor.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - flags
+    - path: src/feature-flags/gateways/flag-sync.gateway.ts
+      file_type: ws_gateway
+      template: cp_full_service_discovery/flag-sync.gateway.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/feature-flags/flag-provider.service.ts
+      file_type: flag_provider
+      template: cp_full_service_discovery/flag-provider.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - flags
+    - path: src/app/core/feature-flags/flag-directive.ts
+      file_type: flag_directive
+      template: cp_full_service_discovery/flag-directive.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/feature-flags/flag-interceptor.ts
+      file_type: flag_interceptor
+      template: cp_full_service_discovery/flag-interceptor.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/feature-flags/config.service.ts
+      file_type: config_service
+      template: cp_full_service_discovery/config.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - configs
+    - path: src/app/core/feature-flags/flag-sync.service.ts
+      file_type: flag_sync
+      template: cp_full_service_discovery/flag-sync.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/admin/feature-flags/feature-flag-admin.component.ts
+      file_type: flag_admin
+      template: cp_full_service_discovery/feature-flag-admin.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - flags
+      - experiments
+    - path: src/feature-flags/FeatureFlagProvider.tsx
+      file_type: flag_provider
+      template: cp_full_service_discovery/FeatureFlagProvider.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - flags
+    - path: src/feature-flags/hooks/useFeatureFlag.ts
+      file_type: flag_hook
+      template: cp_full_service_discovery/useFeatureFlag.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/feature-flags/hooks/useAllFlags.ts
+      file_type: all_flags_hook
+      template: cp_full_service_discovery/useAllFlags.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/feature-flags/hooks/useABVariant.ts
+      file_type: ab_hook
+      template: cp_full_service_discovery/useABVariant.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - experiments
+    - path: src/feature-flags/hooks/useConfig.ts
+      file_type: config_hook
+      template: cp_full_service_discovery/useConfig.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - configs
+    - path: src/feature-flags/components/FeatureFlagGate.tsx
+      file_type: flag_gate
+      template: cp_full_service_discovery/FeatureFlagGate.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/feature-flags/workers/FlagSyncWorker.ts
+      file_type: sync_worker
+      template: cp_full_service_discovery/FlagSyncWorker.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/admin/feature-flags/FeatureFlagAdmin.tsx
+      file_type: flag_admin
+      template: cp_full_service_discovery/FeatureFlagAdmin.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - flags
+      - experiments
+  frontend_integration:
+    angular:
+    - FlagProviderService
+    - FlagDirective
+    - FlagInterceptor
+    - ConfigService
+    - FlagSyncService
+    react:
+    - FeatureFlagProvider
+    - useFeatureFlag
+    - useAllFlags
+    - useABVariant
+    - useConfig
+    - FeatureFlagGate
+    - FlagSyncWorker
+  recipes:
+  - feature_flags_recipe
+  - ab_testing_recipe
+  - dynamic_config_recipe
+  type: full
+  render_context_support: true

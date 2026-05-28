@@ -1,0 +1,151 @@
+pack:
+  id: F02
+  name: RBAC & Policy Engine
+  internal_id: cp_full_rbac
+  version: 2.0.0
+  status: stable
+  category: security
+  depends_on:
+  - C01
+  - F01
+  - F07
+  definitions_count: 11
+  obligations_count: 1
+  error_codes:
+    prefix: MDC-F02
+    range: MDC-CP04-001 to MDC-CP04-008
+  capabilities_provided:
+  - authorize_role
+  - check_policy
+  capabilities:
+  - id: role_check
+    emitter: fastapi, nestjs, angular, react
+  - id: policy_evaluation
+    emitter: fastapi, nestjs, angular, react
+  - id: role_hierarchy
+    emitter: fastapi, nestjs
+  - id: abac_engine
+    emitter: fastapi, nestjs
+  definitions:
+  - name: Permission
+    description: Atomic access right on a resource (resource.action)
+  - name: Role
+    description: Named set of permissions with hierarchical inheritance
+  - name: PolicyEffect
+    description: Enum for policy effect (ALLOW, DENY)
+  - name: PolicyCondition
+    description: Field/operator/value condition for policy evaluation
+  - name: PolicyEvaluationResult
+    description: Result of a single policy evaluation
+  - name: Policy
+    description: Full policy with effect, conditions, actions, resources
+  - name: PolicyRule
+    description: ABAC rule with condition expression DSL
+  - name: PolicyContext
+    description: Evaluation context (user, resource, action, env)
+  - name: PolicyDecision
+    description: Final decision (allowed, policy_id, reason)
+  - name: RBACConfig
+    description: Complete RBAC configuration (roles + policies)
+  - name: GeneratedFile
+    description: Emitter output artifact (path, content, capability)
+  obligations:
+  - name: RoleHierarchy
+    description: Role assignments must respect hierarchical ordering
+  file_contributions:
+    infrastructure:
+    - path: app/rbac/__init__.py
+      file_type: rbac_init
+      template: cp_full_rbac/__init__.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: cp04.rbac.fastapi
+    - path: app/rbac/service.py
+      file_type: rbac_service
+      template: cp_full_rbac/service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: cp04.rbac.fastapi
+    - path: app/rbac/guards.py
+      file_type: rbac_guard
+      template: cp_full_rbac/guards.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: cp04.rbac.fastapi
+    - path: src/core/rbac/rbac.module.ts
+      file_type: rbac_module
+      template: cp_full_rbac/module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: cp04.rbac.nestjs
+    - path: src/core/rbac/rbac.service.ts
+      file_type: rbac_service
+      template: cp_full_rbac/service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: cp04.rbac.nestjs
+    - path: src/core/rbac/roles.guard.ts
+      file_type: rbac_guard
+      template: cp_full_rbac/guard.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: cp04.rbac.nestjs
+    - path: src/core/rbac/policy.guard.ts
+      file_type: policy_guard
+      template: cp_full_rbac/policy_guard.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: cp04.rbac.nestjs
+    - path: src/core/rbac/decorators.ts
+      file_type: rbac_decorator
+      template: cp_full_rbac/decorator.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: cp04.rbac.nestjs
+    - path: src/app/core/rbac/rbac.service.ts
+      file_type: rbac_service
+      template: cp_full_rbac/service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: cp04.rbac.angular
+    - path: src/app/core/rbac/role.guard.ts
+      file_type: role_guard
+      template: cp_full_rbac/guard.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: cp04.rbac.angular
+    - path: src/app/core/rbac/permission.directive.ts
+      file_type: permission_directive
+      template: cp_full_rbac/directive.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: cp04.rbac.angular
+    - path: src/core/rbac/useRbac.ts
+      file_type: rbac_hook
+      template: cp_full_rbac/hook.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: cp04.rbac.react
+    - path: src/core/rbac/ProtectedRoute.tsx
+      file_type: rbac_component
+      template: cp_full_rbac/component.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: cp04.rbac.react
+    - path: src/core/rbac/WithPermission.tsx
+      file_type: rbac_hoc
+      template: cp_full_rbac/with_permission.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: cp04.rbac.react
+  frontend_integration:
+    angular:
+    - RbacService
+    - RoleGuard
+    - PermissionDirective
+    react:
+    - useRbac
+    - ProtectedRoute
+    - WithPermission
+  type: full
+  render_context_support: true

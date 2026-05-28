@@ -1,0 +1,77 @@
+# FastAPI Dockerfile - Build image cho API Gateway
+# Dockerfile cho FastAPI application
+# CP06-Phase5: Infrastructure
+# KPI-029: Tenant Isolation - Multi-tenant support trong container
+
+# Stage 1: Build stage - build application
+FROM python:3.11-slim as builder
+
+# LABEL metadata - thông tin container
+LABEL maintainer="Midicoder"
+LABEL description="FastAPI Gateway Service"
+
+# Set WORKDIR - thư mục làm việc
+WORKDIR /app
+
+# Cài đặt build dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# COPY requirements - copy dependency file
+COPY requirements.txt .
+
+# Cài đặt Python dependencies với pip
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Stage 2: Production stage - runtime image
+FROM python:3.11-slim as production
+
+# LABEL metadata
+LABEL maintainer="Midicoder"
+LABEL description="FastAPI Gateway Service Production"
+
+# ENV environment variables - biến môi trường
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PATH="/root/.local/bin:$PATH"
+ENV APP_HOME=/app
+# KPI-029: Tenant Isolation environment variables
+ENV TENANT_ISOLATION_ENABLED=true
+ENV TENANT_ID_HEADER=X-Tenant-Id
+ENV MULTI_TENANT_MODE=true
+
+# Set WORKDIR
+WORKDIR /app
+
+# COPY source code - copy ứng dụng
+COPY --from=builder /root/.local /root/.local
+COPY . .
+
+# EXPOSE port - expose cổng API
+EXPOSE 8000
+
+# Tạo user không root cho security
+RUN useradd --create-home --shell /bin/bash appuser
+
+# USER non-root user
+USER appuser
+
+# HEALTHCHECK - health check cho container
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# KPI-029: Additional health checks cho tenant services
+# HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+#     CMD curl -f http://localhost:8000/health?check=tenant || exit 1
+
+# CMD command - command chạy ứng dụng
+CMD ["uvicorn", "gateway_app:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# Multi-stage build optimization - nhỏ image size
+# Final image size tối ưu cho production
+
+# {{ config }} template variables
+# {{ config.port }}
+{% if config %}
+{% endif %}

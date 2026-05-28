@@ -1,0 +1,205 @@
+pack:
+  id: F20
+  name: Background Job & Workflow Generator
+  internal_id: cp_full_workflow_scheduler
+  version: 2.0.0
+  status: stable
+  category: runtime
+  depends_on:
+  - C02
+  - F14
+  - F07
+  definitions_count: 14
+  obligations_count: 5
+  error_codes:
+    prefix: MDC-F20
+    range: MDC-CP13-001 to MDC-CP13-011
+  capabilities_provided:
+  - schedule_job
+  - background_worker
+  - workflow_orchestrate
+  - dag_execution
+  - saga_orchestration
+  - queue_abstraction
+  - dead_letter_queue
+  - retry_policy
+  - cron_schedule
+  - recurring_job
+  - calendar_schedule
+  capabilities:
+  - id: job_scheduler
+    emitter: fastapi, nestjs
+  - id: background_worker
+    emitter: fastapi, nestjs
+  - id: workflow_engine
+    emitter: fastapi, nestjs
+  - id: dag_executor
+    emitter: fastapi, nestjs
+  - id: saga_orchestrator
+    emitter: fastapi, nestjs
+  - id: queue_provider
+    emitter: fastapi, nestjs
+  - id: dead_letter_queue
+    emitter: fastapi, nestjs
+  - id: retry_policy
+    emitter: fastapi, nestjs
+  definitions:
+  - name: JobSpec
+    description: Background job with schedule, payload, and retry policy
+  - name: WorkflowDefinition
+    description: Ordered sequence of steps with conditional branching
+  - name: WorkerConfig
+    description: Worker pool size, concurrency, and queue binding
+  - name: DAGWorkflow
+    description: DAG execution with parallel branches, fan-in, dynamic nodes
+  - name: DAGNode
+    description: Node in DAG (task, branch, merge, wait, condition)
+  - name: SagaDefinition
+    description: Saga orchestration with action/compensation pairs
+  - name: SagaStep
+    description: Saga step with backward/forward/mixed compensation
+  - name: DAGFailurePolicy
+    description: Failure policy (fail_fast, skip_and_continue, retry_then_skip, compensate)
+  - name: QueueConfig
+    description: Queue provider config (Redis, RabbitMQ, SQS, in-memory)
+  - name: RetryPolicy
+    description: Exponential backoff retry policy with jitter
+  - name: DeadLetterQueue
+    description: Dead letter queue for permanently failed jobs
+  - name: TimeoutPolicy
+    description: Timeout policy for workflow steps and idle
+  - name: DeadlockDetection
+    description: Deadlock detection configuration
+  obligations:
+  - name: JobRetry
+    description: Failed jobs must retry with exponential backoff
+  - name: SagaCompensation
+    description: Failed saga steps must trigger compensation chain
+  - name: DAGAcyclicity
+    description: DAG must have no cycles (topological order required)
+  - name: NodeTimeout
+    description: Each DAG node must have timeout to prevent hangs
+  - name: DeadLetterQueue
+    description: Permanently failed jobs must move to dead letter queue
+  file_contributions:
+    infrastructure:
+    - path: app/workflow/celery_app.py
+      file_type: celery_app
+      template: cp_full_workflow_scheduler/celery_app.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: app/workflow/job_scheduler.py
+      file_type: job_scheduler
+      template: cp_full_workflow_scheduler/job_scheduler.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: app/workflow/tasks.py
+      file_type: tasks
+      template: cp_full_workflow_scheduler/tasks.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: app/workflow/workflow_service.py
+      file_type: workflow_service
+      template: cp_full_workflow_scheduler/workflow_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: app/workflow/workflow_router.py
+      file_type: workflow_router
+      template: cp_full_workflow_scheduler/workflow_router.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+    - path: src/workflow/queue.module.ts
+      file_type: queue_module
+      template: cp_full_workflow_scheduler/queue.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/workflow/job.scheduler.ts
+      file_type: job_scheduler
+      template: cp_full_workflow_scheduler/job.scheduler.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/workflow/worker.service.ts
+      file_type: worker_service
+      template: cp_full_workflow_scheduler/worker.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/workflow/workflow.controller.ts
+      file_type: workflow_controller
+      template: cp_full_workflow_scheduler/workflow.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/workflow/workflow.service.ts
+      file_type: workflow_service
+      template: cp_full_workflow_scheduler/workflow.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+    - path: src/app/core/workflow/workflow.service.ts
+      file_type: workflow_service
+      template: cp_full_workflow_scheduler/workflow.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/app/shared/components/job-status/job-status.component.ts
+      file_type: job_status_component
+      template: cp_full_workflow_scheduler/job-status.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/app/shared/components/workflow-visualizer/workflow-visualizer.component.ts
+      file_type: workflow_visualizer_component
+      template: cp_full_workflow_scheduler/workflow-visualizer.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+    - path: src/workflow/WorkflowContext.tsx
+      file_type: workflow_context
+      template: cp_full_workflow_scheduler/WorkflowContext.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+    - path: src/workflow/useWorkflow.ts
+      file_type: workflow_hook
+      template: cp_full_workflow_scheduler/useWorkflow.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+    - path: src/workflow/useJobStatus.ts
+      file_type: job_status_hook
+      template: cp_full_workflow_scheduler/useJobStatus.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+    - path: src/workflow/types.ts
+      file_type: workflow_types
+      template: cp_full_workflow_scheduler/types.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+    - path: src/workflow/WorkflowVisualizer.tsx
+      file_type: workflow_visualizer_component
+      template: cp_full_workflow_scheduler/WorkflowVisualizer.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+  frontend_integration:
+    angular:
+    - WorkflowService
+    - JobStatusComponent
+    - WorkflowVisualizerComponent
+    react:
+    - useWorkflow
+    - useJobStatus
+    - WorkflowContext
+    - WorkflowVisualizer
+  type: full
+  render_context_support: true

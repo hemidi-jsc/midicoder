@@ -1,0 +1,499 @@
+/**
+ * Các DTO (Data Transfer Object) cho Data Import/Export/ETL.
+ *
+ * Sử dụng class-validator và class-transformer để validate
+ * và transform dữ liệu đầu vào từ yêu cầu HTTP.
+ *
+ * Bao gồm:
+ * - ImportJobCreateDto: Tạo công việc import mới
+ * - ImportJobUpdateDto: Cập nhật công việc import
+ * - ExportJobCreateDto: Tạo công việc export mới
+ * - ETLJobCreateDto: Tạo pipeline ETL mới
+ * - JobQueryDto: Truy vấn và lọc danh sách công việc
+ *
+ * CP38: Data Import/Export/ETL
+ */
+
+import {
+  IsString,
+  IsEnum,
+  IsInt,
+  IsBoolean,
+  IsOptional,
+  IsNotEmpty,
+  IsObject,
+  IsArray,
+  Min,
+  Max,
+  MaxLength,
+  ValidateNested,
+  IsPositive,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ImportFormat,
+  JobStatus,
+  TransformType,
+  ExtractSource,
+  LoadMode,
+} from './import.entity';
+
+// ============================================================================
+// Import DTOs
+// ============================================================================
+
+/**
+ * DTO để tạo công việc import mới.
+ *
+ * Yêu cầu bắt buộc:
+ * - fileName: tên file cần import
+ * - format: định dạng file (csv hoặc json)
+ *
+ * Tùy chọn:
+ * - chunkSize: số hàng mỗi đợt xử lý (mặc định 1000)
+ * - maxRetries: số lần thử lại tối đa (mặc định 3)
+ * - bulkConfigKey: khóa cấu hình hàng loạt
+ */
+export class ImportJobCreateDto {
+  /**
+   * Tên file cần import.
+   */
+  @IsString()
+  @IsNotEmpty({ message: 'Tên file không được để trống' })
+  @MaxLength(512)
+  fileName: string;
+
+  /**
+   * Định dạng file: csv hoặc json.
+   */
+  @IsEnum(ImportFormat, { message: 'Định dạng file phải là csv hoặc json' })
+  format: ImportFormat;
+
+  /**
+   * Kích thước chunk - số hàng xử lý mỗi đợt.
+   * Mặc định là 1000.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  chunkSize?: number;
+
+  /**
+   * Số lần thử lại tối đa cho mỗi chunk.
+   * Mặc định là 3.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  maxRetries?: number;
+
+  /**
+   * Khóa cấu hình hàng loạt (nếu có).
+   * Tham chiếu đến BulkConfig.entity.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  bulkConfigKey?: string;
+}
+
+/**
+ * DTO để cập nhật thông tin công việc import.
+ *
+ * Tất cả trường đều là tùy chọn - chỉ cập nhật
+ * những trường được cung cấp trong yêu cầu.
+ */
+export class ImportJobUpdateDto {
+  /**
+   * Cập nhật kích thước chunk.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  chunkSize?: number;
+
+  /**
+   * Cập nhật số lần thử lại tối đa.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  maxRetries?: number;
+
+  /**
+   * Cập nhật thông báo lỗi (cho admin).
+   */
+  @IsOptional()
+  @IsString()
+  errorMessage?: string;
+}
+
+// ============================================================================
+// Export DTOs
+// ============================================================================
+
+/**
+ * DTO để tạo công việc export mới.
+ *
+ * Yêu cầu bắt buộc:
+ * - sourceTable: tên bảng/entity cần export
+ * - format: định dạng file output (csv hoặc json)
+ *
+ * Tùy chọn:
+ * - queryFilter: bộ lọc dữ liệu
+ * - selectedColumns: danh sách cột cần export
+ * - fileName: tên file output tùy chỉnh
+ * - chunkSize: kích thước chunk
+ */
+export class ExportJobCreateDto {
+  /**
+   * Tên bảng hoặc entity cần export dữ liệu.
+   */
+  @IsString()
+  @IsNotEmpty({ message: 'Tên bảng nguồn không được để trống' })
+  @MaxLength(256)
+  sourceTable: string;
+
+  /**
+   * Định dạng file output: csv hoặc json.
+   */
+  @IsEnum(ImportFormat, { message: 'Định dạng file phải là csv hoặc json' })
+  format: ImportFormat;
+
+  /**
+   * Tên file output tùy chỉnh.
+   * Nếu không cung cấp, hệ thống sẽ tự động tạo tên file.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  fileName?: string;
+
+  /**
+   * Bộ lọc truy vấn để chọn dữ liệu cần export.
+   * Định dạng JSON object, ví dụ:
+   * { "status": "active", "createdAt": { "$gte": "2024-01-01" } }
+   */
+  @IsOptional()
+  @IsObject()
+  queryFilter?: Record<string, any>;
+
+  /**
+   * Danh sách các trường cần export.
+   * Nếu null hoặc rỗng thì export tất cả trường.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  selectedColumns?: string[];
+
+  /**
+   * Kích thước chunk khi xuất dữ liệu.
+   * Mặc định là 1000.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  chunkSize?: number;
+}
+
+// ============================================================================
+// ETL DTOs
+// ============================================================================
+
+/**
+ * DTO cấu hình cho từng biến đổi trong pipeline ETL.
+ */
+export class ETLTransformDto {
+  /**
+   * Loại biến đổi: map, filter, aggregate, convert, rename.
+   */
+  @IsEnum(TransformType, { message: 'Loại biến đổi không hợp lệ' })
+  type: TransformType;
+
+  /**
+   * Cấu hình chi tiết cho biến đổi này.
+   * Ví dụ:
+   * - MAP: { sourceField, targetField }
+   * - FILTER: { field, operator, value }
+   * - AGGREGATE: { field, function }
+   * - CONVERT: { field, fromType, toType }
+   * - RENAME: { oldName, newName }
+   */
+  @IsObject()
+  config: Record<string, any>;
+}
+
+/**
+ * DTO để tạo pipeline ETL mới.
+ *
+ * Yêu cầu bắt buộc:
+ * - pipelineName: tên pipeline
+ * - extractSource: nguồn dữ liệu (file, database, api)
+ * - loadMode: chế độ ghi (insert, update, upsert, delete)
+ *
+ * Tùy chọn:
+ * - extractConfig: cấu hình nguồn extract
+ * - loadConfig: cấu hình đích load
+ * - transforms: danh sách biến đổi
+ * - batchSize: kích thước batch
+ * - enableRollback: bật rollback khi thất bại
+ */
+export class ETLJobCreateDto {
+  /**
+   * Tên mô tả pipeline ETL.
+   */
+  @IsString()
+  @IsNotEmpty({ message: 'Tên pipeline không được để trống' })
+  @MaxLength(256)
+  pipelineName: string;
+
+  /**
+   * Mô tả chi tiết về pipeline.
+   */
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  /**
+   * Nguồn dữ liệu cho bước Extract: file, database, api.
+   */
+  @IsEnum(ExtractSource, { message: 'Nguồn extract phải là file, database, hoặc api' })
+  extractSource: ExtractSource;
+
+  /**
+   * Cấu hình chi tiết cho bước Extract.
+   * Ví dụ:
+   * - file: { filePath: '/path/to/file.csv' }
+   * - database: { connectionName: 'default', query: 'SELECT * FROM...' }
+   * - api: { url: 'https://api.example.com/data', method: 'GET' }
+   */
+  @IsOptional()
+  @IsObject()
+  extractConfig?: Record<string, any>;
+
+  /**
+   * Chế độ ghi cho bước Load: insert, update, upsert, delete.
+   */
+  @IsEnum(LoadMode, { message: 'Chế độ load phải là insert, update, upsert, hoặc delete' })
+  loadMode: LoadMode;
+
+  /**
+   * Cấu hình đích đến cho bước Load.
+   * Ví dụ:
+   * { targetTable: 'users', connectionName: 'default' }
+   */
+  @IsOptional()
+  @IsObject()
+  loadConfig?: Record<string, any>;
+
+  /**
+   * Danh sách các biến đổi áp dụng giữa Extract và Load.
+   */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ETLTransformDto)
+  transforms?: ETLTransformDto[];
+
+  /**
+   * Kích thước batch khi xử lý.
+   * Mặc định là 1000.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  batchSize?: number;
+
+  /**
+   * Có cho phép rollback khi pipeline thất bại không.
+   * Mặc định là true.
+   */
+  @IsOptional()
+  @IsBoolean()
+  enableRollback?: boolean;
+}
+
+// ============================================================================
+// Query DTOs
+// ============================================================================
+
+/**
+ * DTO cho việc truy vấn và lọc danh sách công việc.
+ *
+ * Hỗ trợ:
+ * - Lọc theo trạng thái (status)
+ * - Lọc theo định dạng (format) - chỉ cho import/export
+ * - Phân trang (page, pageSize)
+ * - Sắp xếp (sortBy, sortOrder)
+ *
+ * Usage:
+ * ```typescript
+ * const query = new JobQueryDto();
+ * query.status = JobStatus.COMPLETED;
+ * query.page = 1;
+ * query.pageSize = 20;
+ * const jobs = await service.listJobs(query);
+ * ```
+ */
+export class JobQueryDto {
+  /**
+   * Lọc theo trạng thái công việc.
+   */
+  @IsOptional()
+  @IsEnum(JobStatus, { message: 'Trạng thái không hợp lệ' })
+  status?: JobStatus;
+
+  /**
+   * Lọc theo định dạng file (chỉ áp dụng cho import/export).
+   */
+  @IsOptional()
+  @IsEnum(ImportFormat, { message: 'Định dạng không hợp lệ' })
+  format?: ImportFormat;
+
+  /**
+   * Từ khóa tìm kiếm trong tên file hoặc job key.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  search?: string;
+
+  /**
+   * Số trang (bắt đầu từ 1).
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  page?: number;
+
+  /**
+   * Số bản ghi mỗi trang.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  @Type(() => Number)
+  pageSize?: number;
+
+  /**
+   * Trường sắp xếp.
+   */
+  @IsOptional()
+  @IsString()
+  sortBy?: string;
+
+  /**
+   * Hướng sắp xếp: 'asc' hoặc 'desc'.
+   */
+  @IsOptional()
+  @IsEnum(['asc', 'desc'], { message: 'Hướng sắp xếp phải là asc hoặc desc' })
+  sortOrder?: 'asc' | 'desc';
+
+  /**
+   * Tính offset cho query phân trang.
+   *
+   * @returns Offset tính từ trang và kích thước trang
+   */
+  get offset(): number {
+    return ((this.page || 1) - 1) * (this.pageSize || 50);
+  }
+
+  /**
+   * Lấy limit cho query phân trang.
+   *
+   * @returns Số lượng bản ghi tối đa trả về
+   */
+  get limit(): number {
+    return this.pageSize || 50;
+  }
+}
+
+// ============================================================================
+// Response DTOs
+// ============================================================================
+
+/**
+ * DTO phản hồi thông tin chi tiết công việc import.
+ */
+export class ImportJobResponseDto {
+  id: string;
+  jobKey: string;
+  fileName: string;
+  format: ImportFormat;
+  status: JobStatus;
+  totalRows: number;
+  processedRows: number;
+  errorRows: number;
+  progress: number;
+  errorMessage: string | null;
+  createdAt: Date;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+
+  constructor(job: any) {
+    this.id = job.id;
+    this.jobKey = job.jobKey;
+    this.fileName = job.fileName;
+    this.format = job.format;
+    this.status = job.status;
+    this.totalRows = job.totalRows;
+    this.processedRows = job.processedRows;
+    this.errorRows = job.errorRows;
+    this.progress = job.progress;
+    this.errorMessage = job.errorMessage;
+    this.createdAt = job.createdAt;
+    this.startedAt = job.startedAt;
+    this.finishedAt = job.finishedAt;
+  }
+}
+
+/**
+ * DTO phản hồi lỗi từng hàng.
+ */
+export class ImportErrorResponseDto {
+  id: string;
+  rowNumber: number;
+  rowData: Record<string, any>;
+  errorMessage: string;
+  errorType: string;
+  fieldName: string | null;
+  createdAt: Date;
+
+  constructor(error: any) {
+    this.id = error.id;
+    this.rowNumber = error.rowNumber;
+    this.rowData = error.rowData;
+    this.errorMessage = error.errorMessage;
+    this.errorType = error.errorType;
+    this.fieldName = error.fieldName;
+    this.createdAt = error.createdAt;
+  }
+}
+
+/**
+ * DTO phản hồi danh sách công việc với phân trang.
+ */
+export class PaginatedJobsDto<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+
+  constructor(items: T[], total: number, page: number, pageSize: number) {
+    this.items = items;
+    this.total = total;
+    this.page = page;
+    this.pageSize = pageSize;
+    this.totalPages = Math.ceil(total / pageSize);
+  }
+}

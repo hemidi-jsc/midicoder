@@ -1,0 +1,1012 @@
+/**
+* Export Dialog Component — CP38: Data Import/Export/ETL.
+*{% raw %}
+* UI Framework: {{{ ui_framework }}}{% endraw %}
+*
+* Component standalone hien thi dialog de cau hinh export du lieu:
+* - Chon thuc the, dinh dang (CSV/JSON), cac cot can xuat
+* - Bo loc tuy chon (khoang ngay, trang thai)
+* - Nut Xem truoc, Nut Xuat
+* - Thanh tien trinh trong khi export
+*
+* Su dung @angular/material/dialog, @angular/material/checkbox,
+* @angular/material/select, @angular/material/date-picker.
+*/
+
+import {
+Component,
+OnInit,
+Inject,
+ChangeDetectorRef,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+
+{% if ui_framework == "material" %}
+import {
+MatDialogRef,
+MAT_DIALOG_DATA,
+MatDialogModule,
+} from '@angular/material/dialog';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatSelectModule } from '@angular/material/select';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatIconModule } from '@angular/material/icon';
+import { MatDividerModule } from '@angular/material/divider';
+import { MatCardModule } from '@angular/material/card';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatNativeDateModule } from '@angular/material/core';
+import { MatTableModule } from '@angular/material/table';
+import { MatPaginatorModule } from '@angular/material/paginator';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+// Su dung Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+// Ant Design khong ung dung cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon khong ung dung cho Angular
+{% endif %}
+
+import { Subscription } from 'rxjs';
+import { ExportService } from './export.service';
+{% raw %}
+
+// =========================================================================
+// Giao diện dữ liệu
+// =========================================================================
+
+/**
+* Dữ liệu đầu vào từ cha truyền vào dialog.
+*/
+interface ExportDialogInput {
+/** Entity mặc định đã chọn (nếu có) */
+defaultEntity?: string;
+/** Chế độ chỉ xem trước */
+previewOnly?: boolean;
+}
+
+/**
+* Một cột có thể chọn để export.
+*/
+interface ExportableColumn {
+name: string;
+label: string;
+type: string;
+selected: boolean;
+}
+
+/**
+* Định dạng export được hỗ trợ.
+*/
+interface ExportFormat {
+value: string;
+label: string;
+mimeType: string;
+extension: string;
+}
+
+/**
+* Kết quả xem trước export.
+*/
+interface PreviewRow {
+[key: string]: any;
+}
+
+/**
+* Cấu hình export đã hoàn chỉnh.
+*/
+interface ExportConfig {
+entity: string;
+format: string;
+columns: string[];
+filters: ExportFilters;
+}
+
+/**
+* Bộ lọc cho export.
+*/
+interface ExportFilters {
+dateField?: string;
+dateFrom?: Date | null;
+dateTo?: Date | null;
+statusField?: string;
+statusValues?: string[];
+}
+
+/**
+* Kết quả từ ExportService.
+*/
+interface ExportJobResult {
+jobKey: string;
+status: string;
+message?: string;
+}
+
+// =========================================================================
+// Định nghĩa dữ liệu cố định
+// =========================================================================
+
+/**
+* Danh sách các định dạng export được hỗ trợ.
+*/
+const EXPORT_FORMATS: ExportFormat[] = [
+{ value: 'csv', label: 'CSV', mimeType: 'text/csv', extension: '.csv' },
+{ value: 'json', label: 'JSON', mimeType: 'application/json', extension: '.json' },
+];
+
+/**
+* Định nghĩa các entity có thể export với cột tương ứng.
+*/
+const ENTITY_DEFINITIONS: Record<string, ExportableColumn[]> = {
+    users: [
+    { name: 'id', label: 'Mã người dùng', type: 'number', selected: true },
+    { name: 'username', label: 'Tên đăng nhập', type: 'string', selected: true },
+    { name: 'email', label: 'Email', type: 'string', selected: true },
+    { name: 'full_name', label: 'Họ và tên', type: 'string', selected: true },
+    { name: 'phone', label: 'Số điện thoại', type: 'string', selected: false },
+    { name: 'role', label: 'Vai trò', type: 'string', selected: false },
+    { name: 'created_at', label: 'Ngày tạo', type: 'date', selected: false },
+    { name: 'status', label: 'Trạng thái', type: 'string', selected: false },
+    ],
+    products: [
+    { name: 'id', label: 'Mã sản phẩm', type: 'number', selected: true },
+    { name: 'sku', label: 'Mã SKU', type: 'string', selected: true },
+    { name: 'name', label: 'Tên sản phẩm', type: 'string', selected: true },
+    { name: 'price', label: 'Giá', type: 'number', selected: true },
+    { name: 'category', label: 'Danh mục', type: 'string', selected: false },
+    { name: 'stock', label: 'Số lượng kho', type: 'number', selected: false },
+    { name: 'status', label: 'Trạng thái', type: 'string', selected: false },
+    { name: 'created_at', label: 'Ngày tạo', type: 'date', selected: false },
+    ],
+    orders: [
+    { name: 'id', label: 'Mã đơn hàng', type: 'number', selected: true },
+    { name: 'order_id', label: 'Số đơn hàng', type: 'string', selected: true },
+    { name: 'customer_name', label: 'Tên khách hàng', type: 'string', selected: true },
+    { name: 'total_amount', label: 'Tổng tiền', type: 'number', selected: true },
+    { name: 'status', label: 'Trạng thái', type: 'string', selected: false },
+    { name: 'order_date', label: 'Ngày đặt hàng', type: 'date', selected: false },
+    { name: 'shipping_address', label: 'Địa chỉ giao hàng', type: 'string', selected: false },
+    { name: 'notes', label: 'Ghi chú', type: 'string', selected: false },
+    ],
+    };
+
+    /**
+    * Các giá trị trạng thái có thể lọc.
+    */
+    const STATUS_OPTIONS = [
+    { value: 'active', label: 'Hoạt động' },
+    { value: 'inactive', label: 'Không hoạt động' },
+    { value: 'pending', label: 'Chờ xử lý' },
+    { value: 'completed', label: 'Hoàn thành' },
+    { value: 'cancelled', label: 'Đã hủy' },
+    { value: 'failed', label: 'Thất bại' },
+    ];
+
+    // =========================================================================
+    // Component
+    // =========================================================================
+
+    @Component({
+    selector: 'mc-export-dialog',
+    standalone: true,
+    imports: [
+    CommonModule,
+    FormsModule,
+    ReactiveFormsModule,
+    {% if ui_framework == "material" %}
+    MatDialogModule,
+    MatButtonModule,
+    MatCheckboxModule,
+    MatSelectModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatProgressBarModule,
+    MatProgressSpinnerModule,
+    MatIconModule,
+    MatDividerModule,
+    MatCardModule,
+    MatChipsModule,
+    MatDatepickerModule,
+    MatNativeDateModule,
+    MatTableModule,
+    MatPaginatorModule,
+    MatSnackBarModule,
+    {% elif ui_framework == "antd" %}
+    {% endif %}
+    ],
+    template: `
+    <div class="mc-export-dialog">
+        <!-- Tiêu đề dialog -->
+        <h2 mat-dialog-title class="mc-dialog-title">
+            <mat-icon>download</mat-icon>
+            Xuất dữ liệu
+        </h2>
+
+        <mat-dialog-content class="mc-dialog-content">
+            <!-- Form cấu hình export -->
+            <form [formGroup]="exportForm" class="mc-export-form">
+
+                <!-- =================================================================
+               Chọn thực thể và định dạng
+               ================================================================= -->
+                <div class="mc-form-row">
+                    <!-- Chọn entity -->
+                    <mat-form-field class="mc-form-field" appearance="outline">
+                        <mat-label>Chọn thực thể</mat-label>
+                        <mat-select formControlName="entity" (selectionChange)="onEntityChanged()">
+                            <mat-option *ngFor="let entity of availableEntities" [value]="entity.value">
+                                {{ entity.label }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
+
+                    <!-- Chọn định dạng -->
+                    <mat-form-field class="mc-form-field" appearance="outline">
+                        <mat-label>Định dạng xuất</mat-label>
+                        <mat-select formControlName="format">
+                            <mat-option *ngFor="let fmt of exportFormats" [value]="fmt.value">
+                                {{ fmt.label }} <small>({{ fmt.extension }})</small>
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
+                </div>
+
+                <!-- =================================================================
+               Chọn các cột cần xuất
+               ================================================================= -->
+                <div class="mc-section" *ngIf="exportColumns.length > 0">
+                    <div class="mc-section-header">
+                        <h4>Các cột cần xuất ({{ getSelectedColumnCount() }}/{{ exportColumns.length }})</h4>
+                        <div class="mc-column-actions">
+                            <button mat-stroked-button (click)="selectAllColumns()" type="button"
+                                class="mc-select-all-btn">
+                                Chọn tất cả
+                            </button>
+                            <button mat-stroked-button (click)="deselectAllColumns()" type="button"
+                                class="mc-deselect-all-btn">
+                                Bỏ chọn tất cả
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Checkbox grid cho từng cột -->
+                    <div class="mc-column-grid">
+                        <mat-checkbox *ngFor="let col of exportColumns; let i = index" [formControlName]="'col_' + i"
+                            (change)="onColumnToggle()">
+                            <span class="mc-column-name">{{ col.label }}</span>
+                            <span class="mc-column-type">({{ col.type }})</span>
+                        </mat-checkbox>
+                    </div>
+                </div>
+
+                <mat-divider class="mc-section-divider"></mat-divider>
+
+                <!-- =================================================================
+               Bộ lọc (tùy chọn)
+               ================================================================= -->
+                <div class="mc-section">
+                    <h4>Bộ lọc (tùy chọn)</h4>
+
+                    <!-- Lọc theo khoảng ngày -->
+                    <div class="mc-form-row">
+                        <mat-form-field class="mc-form-field" appearance="outline">
+                            <mat-label>Từ ngày</mat-label>
+                            <input matInput [matDatepicker]="fromPicker" formControlName="dateFrom"
+                                (dateChange)="onFilterChanged()" />
+                            <mat-datepicker #fromPicker></mat-datepicker>
+                            <mat-icon matSuffix>calendar_today</mat-icon>
+                        </mat-form-field>
+
+                        <mat-form-field class="mc-form-field" appearance="outline">
+                            <mat-label>Đến ngày</mat-label>
+                            <input matInput [matDatepicker]="toPicker" formControlName="dateTo"
+                                (dateChange)="onFilterChanged()" />
+                            <mat-datepicker #toPicker></mat-datepicker>
+                            <mat-icon matSuffix>calendar_today</mat-icon>
+                        </mat-form-field>
+                    </div>
+
+                    <!-- Lọc theo trạng thái -->
+                    <div class="mc-form-row">
+                        <mat-form-field class="mc-full-width" appearance="outline">
+                            <mat-label>Lọc theo trạng thái</mat-label>
+                            <mat-select formControlName="statusFilter" multiple (selectionChange)="onFilterChanged()">
+                                <mat-option *ngFor="let status of statusOptions" [value]="status.value">
+                                    {{ status.label }}
+                                </mat-option>
+                            </mat-select>
+                        </mat-form-field>
+                    </div>
+                </div>
+
+                <mat-divider class="mc-section-divider"></mat-divider>
+
+                <!-- =================================================================
+               Thanh tiến trình export
+               ================================================================= -->
+                <div *ngIf="exporting" class="mc-export-progress">
+                    <mat-progress-bar mode="indeterminate" color="primary"></mat-progress-bar>
+                    <p class="mc-progress-text">
+                        <mat-icon>hourglass_top</mat-icon>
+                        Đang tạo file xuất... vui lòng chờ
+                    </p>
+                </div>
+
+                <!-- =================================================================
+               Bảng xem trước dữ liệu
+               ================================================================= -->
+                <div *ngIf="previewData.length > 0" class="mc-preview-section">
+                    <div class="mc-section-header">
+                        <h4>Xem trước ({{ previewData.length }} hàng đầu)</h4>
+                    </div>
+
+                    <div class="mc-preview-table-wrapper">
+                        <table mat-table [dataSource]="previewData" class="mc-preview-table">
+                            <!-- Cột động cho preview -->
+                            <ng-container *ngFor="let col of previewColumns" [matColumnDef]="col">
+                                <th mat-header-cell *matHeaderCellDef>
+                                    {{ col }}
+                                </th>
+                                <td mat-cell *matCellDef="let row">
+                                    {{ row[col] ?? '(null)' }}
+                                </td>
+                            </ng-container>
+
+                            <tr mat-header-row *matHeaderRowDef="previewColumnNames"></tr>
+                            <tr mat-row *matRowDef="let row; columns: previewColumnNames;"></tr>
+
+                            <tr class="mat-row" *matNoDataRow>
+                                <td class="mat-cell" [colSpan]="previewColumnNames.length">
+                                    Không có dữ liệu xem trước
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <mat-paginator [pageSize]="5" [pageSizeOptions]="[5]" showFirstLastButtons>
+                    </mat-paginator>
+                </div>
+
+                <!-- Hiển thị lỗi từ service -->
+                <div *ngIf="errorMessage" class="mc-error-message">
+                    <mat-icon color="warn">error</mat-icon>
+                    <span>{{ errorMessage }}</span>
+                </div>
+            </form>
+        </mat-dialog-content>
+
+        <!-- =================================================================
+           Footer — các nút hành động
+           ================================================================= -->
+        <mat-dialog-actions align="end" class="mc-dialog-actions">
+            <button mat-button (click)="onClose()" [disabled]="exporting">
+                Hủy
+            </button>
+            <button mat-stroked-button color="accent" (click)="loadPreview()"
+                [disabled]="!canExport || exporting || !!previewData.length">
+                <mat-icon>visibility</mat-icon>
+                Xem trước
+            </button>
+            <button mat-raised-button color="primary" (click)="executeExport()" [disabled]="!canExport || exporting">
+                <mat-icon>download</mat-icon>
+                {{ exporting ? 'Đang xuất...' : 'Xuất dữ liệu' }}
+            </button>
+        </mat-dialog-actions>
+    </div>
+    `,
+    styles: [
+    `
+    :host {
+    display: block;
+    }
+
+    .mc-export-dialog {
+    min-width: 640px;
+    max-width: 900px;
+    }
+
+    .mc-dialog-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 1.25rem;
+    color: #333;
+    }
+
+    .mc-dialog-content {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 16px 24px;
+    }
+
+    .mc-export-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    }
+
+    /* ==========================================================================
+    Hàng form
+    ========================================================================== */
+    .mc-form-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    }
+
+    .mc-form-field {
+    flex: 1;
+    min-width: 200px;
+    }
+
+    .mc-full-width {
+    width: 100%;
+    }
+
+    /* ==========================================================================
+    Section
+    ========================================================================== */
+    .mc-section {
+    padding: 8px 0;
+    }
+
+    .mc-section h4 {
+    margin: 0 0 12px;
+    font-size: 0.95rem;
+    color: #444;
+    }
+
+    .mc-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    }
+
+    .mc-section-header h4 {
+    margin: 0;
+    }
+
+    .mc-section-divider {
+    margin: 8px 0;
+    }
+
+    /* ==========================================================================
+    Cột grid
+    ========================================================================== */
+    .mc-column-actions {
+    display: flex;
+    gap: 8px;
+    }
+
+    .mc-column-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px 16px;
+    }
+
+    .mc-column-name {
+    font-weight: 500;
+    font-size: 0.9rem;
+    }
+
+    .mc-column-type {
+    color: #888;
+    font-size: 0.8rem;
+    margin-left: 4px;
+    }
+
+    /* ==========================================================================
+    Thanh tiến trình
+    ========================================================================== */
+    .mc-export-progress {
+    padding: 12px 0;
+    }
+
+    .mc-progress-text {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 0.9rem;
+    color: #555;
+    }
+
+    /* ==========================================================================
+    Bảng xem trước
+    ========================================================================== */
+    .mc-preview-section {
+    padding: 8px 0;
+    }
+
+    .mc-preview-table-wrapper {
+    max-height: 240px;
+    overflow: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    }
+
+    .mc-preview-table {
+    width: 100%;
+    font-size: 0.85rem;
+    }
+
+    /* ==========================================================================
+    Thông báo lỗi
+    ========================================================================== */
+    .mc-error-message {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: #ffebee;
+    border-radius: 4px;
+    color: #c62828;
+    font-size: 0.9rem;
+    }
+
+    /* ==========================================================================
+    Dialog actions
+    ========================================================================== */
+    .mc-dialog-actions {
+    padding: 12px 24px;
+    gap: 8px;
+    }
+    `,
+    ],
+    })
+    export class ExportDialogComponent implements OnInit {
+    // =========================================================================
+    // Form Reactive
+    // =========================================================================
+
+    /** Form chứa tất cả cấu hình export */
+    exportForm: FormGroup;
+
+    // =========================================================================
+    // Dữ liệu dialog
+    // =========================================================================
+
+    /** Dữ liệu đầu vào từ MatDialog.open() */
+    inputData: ExportDialogInput;
+
+    // =========================================================================
+    // Danh sách tùy chọn
+    // =========================================================================
+
+    /** Các định dạng export */
+    exportFormats: ExportFormat[] = EXPORT_FORMATS;
+
+    /** Các entity có thể export */
+    availableEntities: { value: string; label: string }[] = [
+    { value: 'users', label: 'Người dùng' },
+    { value: 'products', label: 'Sản phẩm' },
+    { value: 'orders', label: 'Đơn hàng' },
+    ];
+
+    /** Các tùy chọn trạng thái để lọc */
+    statusOptions = STATUS_OPTIONS;
+
+    // =========================================================================
+    // Trạng thái động
+    // =========================================================================
+
+    /** Các cột của entity đang chọn */
+    exportColumns: ExportableColumn[] = [];
+
+    /** Dữ liệu xem trước */
+    previewData: PreviewRow[] = [];
+
+    /** Danh sách tên cột trong preview */
+    previewColumns: string[] = [];
+
+    /** Tên cột để render trong bảng preview */
+    previewColumnNames: string[] = [];
+
+    /** Đang export chưa */
+    exporting: boolean = false;
+
+    /** Thông báo lỗi */
+    errorMessage: string = '';
+
+    /** Tổng số hàng ước lượng */
+    estimatedRowCount: number = 0;
+
+    // =========================================================================
+    // Subscription
+    // =========================================================================
+
+    /** Collection subscriptions để hủy khi destroy */
+    private subscriptions: Subscription = new Subscription();
+
+    // =========================================================================
+    // Context variables từ Jinja2
+    // =========================================================================
+
+    /** Các định dạng import/export được hỗ trợ */
+    supportedFormats: Readonly<string[]> = {{ import_formats | tojson if import_formats else ['csv', 'json'] | tojson
+        }};
+
+        /** Các trạng thái job */
+        jobStatuses: Readonly<string[]> = {{ job_statuses | tojson if job_statuses else ['pending', 'running',
+            'completed', 'failed', 'cancelled'] | tojson }};
+
+            /** Các loại transform */
+            transformTypes: Readonly<string[]> = {{ transform_types | tojson if transform_types else [] | tojson }};
+
+                /** Các nguồn extract */
+                extractSources: Readonly<string[]> = {{ extract_sources | tojson if extract_sources else [] | tojson }};
+
+                    /** Các chế độ load */
+                    loadModes: Readonly<string[]> = {{ load_modes | tojson if load_modes else ['insert', 'update',
+                        'upsert'] | tojson }};
+
+                        // =========================================================================
+                        // Lifecycle
+                        // =========================================================================
+
+                        constructor(
+                        public dialogRef: MatDialogRef<ExportDialogComponent>,
+                            @Inject(MAT_DIALOG_DATA) public data: ExportDialogInput | null,
+                            private fb: FormBuilder,
+                            private exportService: ExportService,
+                            private snackBar: MatSnackBar,
+                            private cdr: ChangeDetectorRef,
+                            ) {
+                            this.inputData = data || {};
+
+                            // Khởi tạo form nhóm
+                            this.exportForm = this.fb.group({
+                            entity: ['', Validators.required],
+                            format: ['csv', Validators.required],
+                            dateFrom: [null],
+                            dateTo: [null],
+                            statusFilter: [[]],
+                            });
+                            }
+
+                            /**
+                            * OnInit — khởi tạo form và load dữ liệu ban đầu.
+                            */
+                            ngOnInit(): void {
+                            // Đặt entity mặc định nếu có
+                            if (this.inputData.defaultEntity && ENTITY_DEFINITIONS[this.inputData.defaultEntity]) {
+                            this.exportForm.patchValue({ entity: this.inputData.defaultEntity });
+                            this.onEntityChanged();
+                            }
+                            }
+
+                            // =========================================================================
+                            // Chọn entity
+                            // =========================================================================
+
+                            /**
+                            * Xử lý khi thay đổi entity đã chọn.
+                            *
+                            * Tự động tải danh sách cột tương ứng và tạo form controls.
+                            */
+                            onEntityChanged(): void {
+                            const entity = this.exportForm.get('entity')?.value;
+                            this.errorMessage = '';
+                            this.previewData = [];
+                            this.previewColumns = [];
+                            this.previewColumnNames = [];
+
+                            if (!entity || !ENTITY_DEFINITIONS[entity]) {
+                            this.exportColumns = [];
+                            return;
+                            }
+
+                            // Sao chép cột để tránh mutate dữ liệu gốc
+                            this.exportColumns = ENTITY_DEFINITIONS[entity].map((col) => ({ ...col }));
+
+                            // Thêm form controls cho từng cột checkbox
+                            this.exportColumns.forEach((col, i) => {
+                            this.exportForm.addControl(`col_${i}`, this.fb.control(col.selected));
+                            });
+                            }
+
+                            /**
+                            * Xử lý khi toggle checkbox cột.
+                            *
+                            * Cập nhật trạng thái selected của cột.
+                            */
+                            onColumnToggle(): void {
+                            this.exportColumns.forEach((col, i) => {
+                            const ctrl = this.exportForm.get(`col_${i}`);
+                            if (ctrl) {
+                            col.selected = ctrl.value === true;
+                            }
+                            });
+                            }
+
+                            // =========================================================================
+                            // Bộ lọc
+                            // =========================================================================
+
+                            /**
+                            * Xử lý khi thay đổi bộ lọc.
+                            *
+                            * Hiện tại chỉ reset preview nếu đang hiển thị.
+                            */
+                            onFilterChanged(): void {
+                            // Nếu có dữ liệu preview, đánh dấu cần tải lại
+                            if (this.previewData.length > 0) {
+                            this.previewData = [];
+                            this.previewColumns = [];
+                            this.previewColumnNames = [];
+                            }
+                            }
+
+                            // =========================================================================
+                            // Chọn cột
+                            // =========================================================================
+
+                            /**
+                            * Chọn tất cả cột.
+                            */
+                            selectAllColumns(): void {
+                            this.exportColumns.forEach((col, i) => {
+                            col.selected = true;
+                            const ctrl = this.exportForm.get(`col_${i}`);
+                            if (ctrl) ctrl.setValue(true);
+                            });
+                            this.cdr.detectChanges();
+                            }
+
+                            /**
+                            * Bỏ chọn tất cả cột.
+                            */
+                            deselectAllColumns(): void {
+                            this.exportColumns.forEach((col, i) => {
+                            col.selected = false;
+                            const ctrl = this.exportForm.get(`col_${i}`);
+                            if (ctrl) ctrl.setValue(false);
+                            });
+                            this.cdr.detectChanges();
+                            }
+
+                            /**
+                            * Đếm số cột đang được chọn.
+                            *
+                            * @returns Số cột selected
+                            */
+                            getSelectedColumnCount(): number {
+                            return this.exportColumns.filter((c) => c.selected).length;
+                            }
+
+                            // =========================================================================
+                            // Điều kiện export
+                            // =========================================================================
+
+                            /**
+                            * Kiểm tra có thể thực hiện export không.
+                            *
+                            * @returns true nếu form hợp lệ và có cột được chọn
+                            */
+                            get canExport(): boolean {
+                            return (
+                            this.exportForm.valid &&
+                            this.getSelectedColumnCount() > 0
+                            );
+                            }
+
+                            // =========================================================================
+                            // Xem trước
+                            // =========================================================================
+
+                            /**
+                            * Tải dữ liệu xem trước từ backend.
+                            */
+                            loadPreview(): void {
+                            const config = this.buildExportConfig();
+                            this.errorMessage = '';
+
+                            const sub = this.exportService
+                            .previewExport('preview', 10)
+                            .subscribe({
+                            next: (data: any) => {
+                            const rows = Array.isArray(data) ? data : data.rows || [];
+                            this.previewData = rows.slice(0, 10);
+
+                            if (this.previewData.length > 0) {
+                            this.previewColumns = Object.keys(this.previewData[0]);
+                            // Chỉ lấy các cột đã chọn
+                            const selectedColNames = this.getSelectedColumnNames();
+                            this.previewColumnNames = this.previewColumns.filter((c) =>
+                            selectedColNames.includes(c)
+                            );
+                            }
+
+                            this.estimatedRowCount = data.totalCount || rows.length;
+                            this.cdr.detectChanges();
+                            },
+                            error: (err: any) => {
+                            this.errorMessage = `Không thể xem trước: ${err.message || err}`;
+                            console.error('Lỗi xem trước export:', err);
+                            },
+                            });
+
+                            this.subscriptions.add(sub);
+                            }
+
+                            // =========================================================================
+                            // Thực hiện export
+                            // =========================================================================
+
+                            /**
+                            * Tạo và gửi yêu cầu export đến backend.
+                            */
+                            executeExport(): void {
+                            if (!this.canExport) return;
+
+                            this.exporting = true;
+                            this.errorMessage = '';
+
+                            const config = this.buildExportConfig();
+
+                            // Bước 1: Tạo export job
+                            const createSub = this.exportService
+                            .createExportJob(config)
+                            .subscribe({
+                            next: (jobResult: ExportJobResult) => {
+                            // Bước 2: Polling trạng thái job
+                            this.pollAndDownload(jobResult.jobKey);
+                            },
+                            error: (err: any) => {
+                            this.exporting = false;
+                            this.errorMessage = `Không thể tạo job export: ${err.message || err}`;
+                            console.error('Lỗi tạo export job:', err);
+                            },
+                            });
+
+                            this.subscriptions.add(createSub);
+                            }
+
+                            /**
+                            * Polling trạng thái job và tải về file khi hoàn thành.
+                            *
+                            * @param jobKey — Khóa của export job
+                            */
+                            private pollAndDownload(jobKey: string): void {
+                            const pollSub = this.exportService
+                            .getExportStatus(jobKey)
+                            .subscribe({
+                            next: (status: any) => {
+                            if (status.status === 'completed' || status.status === 'done') {
+                            // Job hoàn thành — tải về file
+                            this.exporting = false;
+                            this.downloadFile(jobKey);
+                            this.showSnackBar('Xuất dữ liệu thành công!', 'success');
+                            this.dialogRef.close({ success: true, jobKey });
+                            } else if (
+                            status.status === 'failed' ||
+                            status.status === 'error'
+                            ) {
+                            this.exporting = false;
+                            this.errorMessage = `Export thất bại: ${status.message || 'Lỗi không xác định'}`;
+                            this.showSnackBar('Xuất dữ liệu thất bại', 'error');
+                            } else {
+                            // Vẫn đang chạy — polling sau 2 giây
+                            setTimeout(() => this.pollAndDownload(jobKey), 2000);
+                            }
+                            },
+                            error: (err: any) => {
+                            this.exporting = false;
+                            this.errorMessage = `Không thể kiểm tra trạng thái: ${err.message || err}`;
+                            },
+                            });
+
+                            this.subscriptions.add(pollSub);
+                            }
+
+                            /**
+                            * Tải file export về máy.
+                            *
+                            * @param jobKey — Khóa export job
+                            */
+                            private downloadFile(jobKey: string): void {
+                            const downloadSub = this.exportService
+                            .downloadExport(jobKey)
+                            .subscribe({
+                            next: (blob: Blob) => {
+                            // Tạo URL và kích hoạt tải về
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+
+                            // Lấy phần mở rộng từ định dạng đã chọn
+                            const format = this.exportForm.get('format')?.value || 'csv';
+                            const fmtDef = this.exportFormats.find((f) => f.value === format);
+                            const ext = fmtDef?.extension || '.csv';
+                            const entity = this.exportForm.get('entity')?.value || 'data';
+
+                            a.download = `${entity}_export${ext}`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
+                            },
+                            error: (err: any) => {
+                            console.error('Lỗi tải file export:', err);
+                            this.showSnackBar('Không thể tải file', 'error');
+                            },
+                            });
+
+                            this.subscriptions.add(downloadSub);
+                            }
+
+                            // =========================================================================
+                            // Xây dựng cấu hình export
+                            // =========================================================================
+
+                            /**
+                            * Xây dựng đối tượng ExportConfig từ form.
+                            *
+                            * @returns ExportConfig hoàn chỉnh
+                            */
+                            private buildExportConfig(): ExportConfig {
+                            const selectedColumns = this.getSelectedColumnNames();
+                            const statusValues = this.exportForm.get('statusFilter')?.value || [];
+
+                            return {
+                            entity: this.exportForm.get('entity')?.value || '',
+                            format: this.exportForm.get('format')?.value || 'csv',
+                            columns: selectedColumns,
+                            filters: {
+                            dateFrom: this.exportForm.get('dateFrom')?.value || undefined,
+                            dateTo: this.exportForm.get('dateTo')?.value || undefined,
+                            statusValues: Array.isArray(statusValues) ? statusValues : [],
+                            },
+                            };
+                            }
+
+                            /**
+                            * Lấy danh sách tên cột đã chọn.
+                            *
+                            * @returns Mảng tên cột
+                            */
+                            private getSelectedColumnNames(): string[] {
+                            return this.exportColumns
+                            .filter((c) => c.selected)
+                            .map((c) => c.name);
+                            }
+
+                            // =========================================================================
+                            // Đóng dialog
+                            // =========================================================================
+
+                            /**
+                            * Đóng dialog mà không thực hiện export.
+                            */
+                            onClose(): void {
+                            this.subscriptions.unsubscribe();
+                            this.dialogRef.close({ success: false });
+                            }
+
+                            // =========================================================================
+                            // Tiện ích hiển thị thông báo
+                            // =========================================================================
+
+                            /**
+                            * Hiển thị thông báo snackbar.
+                            *
+                            * @param message — Nội dung thông báo
+                            * @param type — Loại thông báo
+                            */
+                            private showSnackBar(message: string, type: 'success' | 'error'): void {
+                            this.snackBar.open(message, 'Đóng', {
+                            duration: type === 'success' ? 4000 : 6000,
+                            horizontalPosition: 'center',
+                            verticalPosition: 'bottom',
+                            });
+                            }
+                            }

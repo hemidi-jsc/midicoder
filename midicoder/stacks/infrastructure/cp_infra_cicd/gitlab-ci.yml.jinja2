@@ -1,0 +1,147 @@
+# CP55: GitLab CI/CD Pipeline
+# Tự động generate bởi Midicoder CE
+
+stages:
+  - lint
+  - build
+  - test
+  - docker
+  - deploy
+
+# =========================================================================
+# Biến môi trường mặc định
+# =========================================================================
+variables:
+  PYTHON_VERSION: "3.12"
+  DOCKER_IMAGE: "$CI_REGISTRY_IMAGE"
+  PYTHONPATH: "$CI_PROJECT_DIR"
+
+# =========================================================================
+# Lint Stage
+# =========================================================================
+lint:
+  stage: lint
+  image: python:${PYTHON_VERSION}-slim
+  script:
+    - pip install flake8 black isort mypy
+    - flake8 midicoder/ --count --select=E9,F63,F7,F82 --show-source --statistics
+    - black --check --diff midicoder/
+    - isort --check-only --diff midicoder/
+  allow_failure: false
+
+# =========================================================================
+# Build Stage
+# =========================================================================
+build:
+  stage: build
+  image: python:${PYTHON_VERSION}-slim
+  script:
+    - python -m pip install --upgrade pip
+    - pip install -e ".[dev]"
+    - python -c "import midicoder; print('Build thành công')"
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+# =========================================================================
+# Test Stage
+# =========================================================================
+test:unit:
+  stage: test
+  image: python:${PYTHON_VERSION}-slim
+  script:
+    - pip install -e ".[test]"
+    - python -m pytest tests/unit/ -v --cov=midicoder --cov-report=xml
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - htmlcov/
+    expire_in: 1 week
+
+test:integration:
+  stage: test
+  image: python:${PYTHON_VERSION}-slim
+  script:
+    - pip install -e ".[test]"
+    - python -m pytest tests/integration/ -v
+  services:
+    - postgres:15
+    - redis:7
+  variables:
+    POSTGRES_DB: midicoder_test
+    POSTGRES_USER: test
+    POSTGRES_PASSWORD: test
+  allow_failure: true
+
+# =========================================================================
+# Docker Build & Scan Stage
+# =========================================================================
+docker:build:
+  stage: docker
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build -t $DOCKER_IMAGE:$CI_COMMIT_SHA .
+    - docker tag $DOCKER_IMAGE:$CI_COMMIT_SHA $DOCKER_IMAGE:latest
+  only:
+    - main
+    - develop
+
+docker:scan:
+  stage: docker
+  image: aquasec/trivy:latest
+  script:
+    - trivy image --severity HIGH,CRITICAL --exit-code 1 $DOCKER_IMAGE:$CI_COMMIT_SHA
+  only:
+    - main
+    - develop
+  allow_failure: true
+
+docker:push:
+  stage: docker
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $DOCKER_IMAGE:$CI_COMMIT_SHA
+    - docker push $DOCKER_IMAGE:latest
+  only:
+    - main
+    - tags
+
+# =========================================================================
+# Deploy Stage
+# =========================================================================
+deploy:staging:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - echo "Deploying to staging"
+    # - apk add --no-cache curl
+    # - curl -f https://staging.example.com/health
+  environment:
+    name: staging
+    url: https://staging.example.com
+  only:
+    - main
+
+deploy:production:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - echo "Deploying to production"
+    # - apk add --no-cache curl
+    # - curl -f https://prod.example.com/health
+  environment:
+    name: production
+    url: https://prod.example.com
+  only:
+    - tags
+  when: manual
+  allow_failure: false

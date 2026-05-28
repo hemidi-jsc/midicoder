@@ -1,0 +1,82 @@
+/**
+ * Scheduler Controller — sinh tự động bởi Midicoder CP31.
+ *
+ * Module này cung cấp REST API endpoints cho scheduler:
+ * - GET /schedules — Lấy danh sách schedules
+ * - GET /schedules/:id — Lấy chi tiết schedule
+ * - POST /schedules/:id/execute — Execute schedule thủ công
+ * - GET /schedules/due — Lấy schedules cần thực thi
+ *
+ * CP31: Scheduler & Cron Engine
+ * KPI-029: Tenant Isolation
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
+import { SchedulerService } from './scheduler.service';
+
+@Controller('api/scheduler')
+export class SchedulerController {
+  constructor(private readonly schedulerService: SchedulerService) {}
+
+  /** Lấy danh sách tất cả schedules. */
+  @Get('schedules')
+  listSchedules() {
+    return this.schedulerService.listSchedules();
+  }
+
+  /** Lấy danh sách schedules cần thực thi. */
+  @Get('schedules/due')
+  listDueSchedules() {
+    return this.schedulerService.getDueSchedules();
+  }
+
+  /** Lấy chi tiết một schedule. */
+  @Get('schedules/:scheduleId')
+  getSchedule(@Param('scheduleId') scheduleId: string) {
+    const schedule = this.schedulerService.getSchedule(scheduleId);
+    if (!schedule) {
+      throw new HttpException(
+        `Schedule ${scheduleId} không tồn tại`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return schedule;
+  }
+
+  /** Execute một schedule thủ công. */
+  @Post('schedules/:scheduleId/execute')
+  async executeSchedule(@Param('scheduleId') scheduleId: string) {
+    const schedule = this.schedulerService.getSchedule(scheduleId);
+    if (!schedule) {
+      throw new HttpException(
+        `Schedule ${scheduleId} không tồn tại`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    return this.schedulerService.executeSchedule(scheduleId, async (s) => ({
+      executed: true,
+    }));
+  }
+
+  /** Bắt đầu scheduler loop. */
+  @Post('start')
+  startScheduler() {
+    this.schedulerService.start();
+    return { status: 'running' };
+  }
+
+  /** Dừng scheduler loop. */
+  @Post('stop')
+  stopScheduler() {
+    this.schedulerService.stop();
+    return { status: 'stopped' };
+  }
+}

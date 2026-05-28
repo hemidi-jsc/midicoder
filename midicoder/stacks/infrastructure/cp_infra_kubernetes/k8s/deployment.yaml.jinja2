@@ -1,0 +1,92 @@
+# {{ "=".center(66, "=") }}
+# CP54: Kubernetes Deployment Manifest
+# {{ "=".center(66, "=") }}
+{% for deployment in deployments %}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ deployment.name }}
+  labels:
+    app: {{ deployment.name }}
+{% for key, value in deployment.labels.items() %}
+    {{ key }}: {{ value }}
+{% endfor %}
+spec:
+  replicas: {{ deployment.replicas }}
+  strategy:
+    type: {{ deployment.strategy }}
+  selector:
+    matchLabels:
+      app: {{ deployment.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ deployment.name }}
+{% for key, value in deployment.labels.items() %}
+        {{ key }}: {{ value }}
+{% endfor %}
+    spec:
+      containers:
+        - name: {{ deployment.name }}
+          image: {{ deployment.image }}
+          ports:
+{% for port in deployment.ports %}
+            - containerPort: {{ port.container_port }}
+              protocol: {{ port.protocol }}
+{% if port.name %}
+              name: {{ port.name }}
+{% endif %}
+{% endfor %}
+          resources:
+            limits:
+              cpu: {{ deployment.resources.cpu }}
+              memory: {{ deployment.resources.memory }}
+            requests:
+              cpu: {{ deployment.resources.cpu }}
+              memory: {{ deployment.resources.memory }}
+{% if deployment.env %}
+          env:
+{% for env_var in deployment.env %}
+            - name: {{ env_var.name }}
+{% if env_var.value is not none %}
+              value: "{{ env_var.value }}"
+{% elif env_var.value_from %}
+              valueFrom:
+{% if env_var.value_from.config_map_key_ref %}
+                configMapKeyRef:
+                  name: {{ env_var.value_from.config_map_key_ref.name }}
+                  key: {{ env_var.value_from.config_map_key_ref.key }}
+{% elif env_var.value_from.secret_key_ref %}
+                secretKeyRef:
+                  name: {{ env_var.value_from.secret_key_ref.name }}
+                  key: {{ env_var.value_from.secret_key_ref.key }}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if deployment.volume_mounts %}
+          volumeMounts:
+{% for vm in deployment.volume_mounts %}
+            - name: {{ vm.name }}
+              mountPath: {{ vm.mount_path }}
+{% if vm.read_only %}
+              readOnly: true
+{% endif %}
+{% endfor %}
+{% endif %}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ deployment.ports[0].container_port if deployment.ports else 8080 }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ deployment.ports[0].container_port if deployment.ports else 8080 }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+{% if not loop.last %}
+---
+{% endif %}
+{% endfor %}

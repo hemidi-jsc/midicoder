@@ -1,0 +1,1522 @@
+/**
+* ImportWizard Component — CP38: Data Import/Export/ETL.
+*{% raw %}
+* UI Framework: {{{ ui_framework }}}{% endraw %}
+*
+* Component wizard da buoc de import du lieu.
+* Buoc 1: Tai len file (CSV/JSON) voi vung drag-and-drop va xac thuc.
+* Buoc 2: Anh xa cot (chon thuc the muc tieu, dropdown anh xa cot).
+* Buoc 3: Xem truoc (hien thi 10 dong dau trong bang).
+* Buoc 4: Xac nhan va bat dau import (tom tat, nut gui).
+*
+* Dieu huong: Nut Tiep theo/Qua lai, thanh tien trinh o tren.
+*/
+
+import React, { useState, useCallback, useRef, useMemo } from 'react';
+import { ImportService, ImportJob, RowError } from './import.service';
+import { useImportJob } from './useImportJob';
+import { JobStatusPanel } from './JobStatusPanel';
+
+{% if ui_framework == "material" %}
+import { Stepper, Step, StepLabel, Button, Paper, Typography, Table, TableBody, TableCell, TableContainer, TableHead,
+TableRow, FormControl, InputLabel, Select, MenuItem, Chip, Alert, LinearProgress } from '@mui/material';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind utility classes inline
+{% elif ui_framework == "bootstrap" %}
+import { Button, Table, Form, Alert, Card, ProgressBar } from 'react-bootstrap';
+{% elif ui_framework == "antd" %}
+import { Steps, Button, Table, Form, Select, Card, Typography, Alert, Tag, Upload } from 'antd';
+{% elif ui_framework == "carbon" %}
+import { Button, StructuredList, InlineNotification, Tile, Accordion, AccordionItem } from '@carbon/react';
+{% endif %}
+{% raw %}
+
+/* ===== Loại dữ liệu ===== */
+
+/**
+* Bước trong wizard.
+*/
+type WizardStep = 'upload' | 'mapping' | 'preview' | 'confirm';
+
+/**
+* Một cột trong file được tải lên.
+*/
+interface FileColumn {
+/** Tên cột trong file. */
+name: string;
+/** Loại dữ liệu đã phát hiện. */
+detectedType: string;
+}
+
+/**
+* Trường mục tiêu trong thực thể.
+*/
+interface TargetField {
+/** Khóa trường. */
+key: string;
+/** Nhãn hiển thị. */
+label: string;
+/** Loại dữ liệu. */
+type: string;
+/** Bắt buộc hay không. */
+required: boolean;
+}
+
+/**
+* Một dòng dữ liệu xem trước.
+*/
+type PreviewRow = Record<string, unknown>;
+
+    /**
+    * Bản đồ ánh xạ cột: { tên_cột_file → khóa_trường_mục_tiêu }.
+    */
+    type ColumnMapping = Record<string, string>;
+
+        /**
+        * Props của ImportWizard.
+        */
+        export interface ImportWizardProps {
+        /**
+        * Danh sách các thực thể mục tiêu có thể import vào.
+        * Mỗi thực thể có danh sách các trường hợp lệ.
+        */
+        targetEntities: {
+        key: string;
+        label: string;
+        fields: TargetField[];
+        }[];
+        /** Chế độ tải mặc định. */
+        defaultLoadMode?: 'insert' | 'update' | 'upsert' | 'truncate';
+        /** Kích thước file tối đa (byte). Mặc định 50MB. */
+        maxFileSize?: number;
+        /** Định dạng file cho phép. Mặc định ['csv', 'json']. */
+        allowedFormats?: string[];
+        /** Callback khi import hoàn tất thành công. */
+        onSuccess?: (job: ImportJob) => void;
+        /** Callback khi wizard bị đóng/hủy. */
+        onCancel?: () => void;
+        /** Class tên tùy chỉnh cho container. */
+        className?: string;
+        }
+
+        /* ===== Labels cho các bước ===== */
+
+        const STEP_CONFIG: Record<WizardStep, { label: string; description: string }> = {
+            upload: {
+            label: 'Tải lên file',
+            description: 'Chọn hoặc kéo thả file CSV/JSON',
+            },
+            mapping: {
+            label: 'Ánh xạ cột',
+            description: 'Ghép cột file với trường mục tiêu',
+            },
+            preview: {
+            label: 'Xem trước',
+            description: 'Kiểm tra dữ liệu trước khi import',
+            },
+            confirm: {
+            label: 'Xác nhận',
+            description: 'Xem tóm tắt và bắt đầu import',
+            },
+            };
+
+            const ALL_STEPS: WizardStep[] = ['upload', 'mapping', 'preview', 'confirm'];
+
+            /* ===== Component chính ===== */
+
+            /**
+            * Wizard đa bước để hướng dẫn người dùng import dữ liệu.
+            *
+            * @example
+            * ```tsx
+            * <ImportWizard * targetEntities={[ * { * key: 'products' , * label: 'Sản phẩm' , * fields: [ * {
+                key: 'name' , label: 'Tên' , type: 'string' , required: true }, * { key: 'price' , label: 'Giá' ,
+                type: 'number' , required: true }, * ], * }, * ]} * onSuccess={(job)=> console.log('Import job:', job)}
+                * />
+                * ```
+                */
+                export const ImportWizard: React.FC<ImportWizardProps> = ({
+                    targetEntities,
+                    defaultLoadMode = 'insert',
+                    maxFileSize = 50 * 1024 * 1024,
+                    allowedFormats = ['csv', 'json'],
+                    onSuccess,
+                    onCancel,
+                    className = '',
+                    }) => {
+                    // --- Hook quản lý job ---
+                    const importHook = useImportJob();
+
+                    // --- Trạng thái wizard ---
+                    const [currentStep, setCurrentStep] = useState<WizardStep>('upload');
+                        const [isDragging, setIsDragging] = useState(false);
+
+                        // --- Trạng thái Bước 1: Tải lên file ---
+                        const [fileValidationErrors, setFileValidationErrors] = useState<string[]>([]);
+
+                            // --- Trạng thái Bước 2: Ánh xạ cột ---
+                            const [selectedEntity, setSelectedEntity] = useState<string>('');
+                                const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
+                                    const [fileColumns, setFileColumns] = useState<FileColumn[]>([]);
+                                        const [mappingErrors, setMappingErrors] = useState<string[]>([]);
+
+                                            // --- Trạng thái Bước 3: Xem trước ---
+                                            const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
+                                                const [previewLoading, setPreviewLoading] = useState(false);
+
+                                                // --- Trạng thái Bước 4: Xác nhận ---
+                                                const [loadMode, setLoadMode] = useState<'insert' | 'update' | 'upsert'
+                                                    | 'truncate'>(defaultLoadMode);
+                                                    const [batchSize, setBatchSize] = useState(1000);
+                                                    const [skipHeader, setSkipHeader] = useState(true);
+                                                    const [transformType, setTransformType] = useState<string>('');
+
+                                                        // --- Trạng thái Job đã tạo ---
+                                                        const [createdJobKey, setCreatedJobKey] = useState<string |
+                                                            null>(null);
+
+                                                            // Ref cho input file ẩn
+                                                            const fileInputRef = useRef<HTMLInputElement>(null);
+
+                                                                // --- Tính toán bước hiện tại (số thứ tự) ---
+                                                                const currentStepIndex = useMemo(
+                                                                () => ALL_STEPS.indexOf(currentStep),
+                                                                [currentStep],
+                                                                );
+
+                                                                // --- Thực thể mục tiêu đã chọn ---
+                                                                const selectedEntityData = useMemo(
+                                                                () => targetEntities.find((e) => e.key ===
+                                                                selectedEntity) || null,
+                                                                [targetEntities, selectedEntity],
+                                                                );
+
+                                                                // --- Định dạng kích thước file ---
+                                                                const formatFileSize = (bytes: number): string => {
+                                                                if (bytes === 0) return '0 B';
+                                                                const units = ['B', 'KB', 'MB', 'GB'];
+                                                                const i = Math.floor(Math.log(bytes) / Math.log(1024));
+                                                                return `${(bytes / Math.pow(1024, i)).toFixed(2)}
+                                                                ${units[i]}`;
+                                                                };
+
+                                                                /* ===== Xử lý điều hướng ===== */
+
+                                                                /**
+                                                                * Chuyển sang bước tiếp theo.
+                                                                */
+                                                                const handleNext = useCallback(() => {
+                                                                // Xác thực trước khi chuyển bước
+                                                                if (currentStep === 'upload' &&
+                                                                fileValidationErrors.length > 0) return;
+                                                                if (currentStep === 'mapping' && mappingErrors.length >
+                                                                0) return;
+
+                                                                const nextIndex = currentStepIndex + 1;
+                                                                if (nextIndex < ALL_STEPS.length) {
+                                                                    setCurrentStep(ALL_STEPS[nextIndex]); } },
+                                                                    [currentStep, currentStepIndex,
+                                                                    fileValidationErrors, mappingErrors]); /** * Quay
+                                                                    lại bước trước. */ const handleBack=useCallback(()=>
+                                                                    {
+                                                                    const prevIndex = currentStepIndex - 1;
+                                                                    if (prevIndex >= 0) {
+                                                                    setCurrentStep(ALL_STEPS[prevIndex]);
+                                                                    }
+                                                                    }, [currentStepIndex]);
+
+                                                                    /**
+                                                                    * Reset toàn bộ wizard về trạng thái ban đầu.
+                                                                    */
+                                                                    const handleReset = useCallback(() => {
+                                                                    setCurrentStep('upload');
+                                                                    setFileValidationErrors([]);
+                                                                    setSelectedEntity('');
+                                                                    setColumnMapping({});
+                                                                    setFileColumns([]);
+                                                                    setMappingErrors([]);
+                                                                    setPreviewData([]);
+                                                                    setCreatedJobKey(null);
+                                                                    setLoadMode(defaultLoadMode);
+                                                                    importHook.reset();
+                                                                    }, [defaultLoadMode, importHook]);
+
+                                                                    /* ===== Xử lý Bước 1: Tải lên file ===== */
+
+                                                                    /**
+                                                                    * Xử lý khi người dùng chọn file.
+                                                                    */
+                                                                    const handleFileSelect = useCallback(
+                                                                    async (file: File) => {
+                                                                    // Xác thực file
+                                                                    const validation = ImportService.validateFile(file,
+                                                                    maxFileSize, allowedFormats);
+                                                                    setFileValidationErrors(validation.errors);
+
+                                                                    if (!validation.valid) return;
+
+                                                                    // Lưu file qua hook
+                                                                    const hookResult = importHook.selectFile(file);
+                                                                    if (!hookResult.valid) return;
+
+                                                                    // Đọc các cột của file
+                                                                    try {
+                                                                    const columns = await
+                                                                    ImportService.extractColumns(file);
+                                                                    const fileCols: FileColumn[] = columns.map((name) =>
+                                                                    ({
+                                                                    name,
+                                                                    detectedType: 'string', // Loại sẽ được phát hiện
+                                                                    khi đọc dữ liệu
+                                                                    }));
+                                                                    setFileColumns(fileCols);
+
+                                                                    // Tự động ánh xạ cột (khớp tên cột với tên trường)
+                                                                    if (selectedEntityData && fileCols.length > 0) {
+                                                                    const autoMapping: ColumnMapping = {};
+                                                                    for (const col of fileCols) {
+                                                                    const match = selectedEntityData.fields.find(
+                                                                    (f) => f.key.toLowerCase() ===
+                                                                    col.name.toLowerCase(),
+                                                                    );
+                                                                    if (match) {
+                                                                    autoMapping[col.name] = match.key;
+                                                                    }
+                                                                    }
+                                                                    setColumnMapping(autoMapping);
+                                                                    }
+                                                                    } catch (err) {
+                                                                    setFileValidationErrors([
+                                                                    `Không thể đọc cột từ file: ${err instanceof Error ?
+                                                                    err.message : 'Lỗi không xác định'}`,
+                                                                    ]);
+                                                                    }
+                                                                    },
+                                                                    [importHook, maxFileSize, allowedFormats,
+                                                                    selectedEntityData],
+                                                                    );
+
+                                                                    /**
+                                                                    * Xử lý khi kéo file vào vùng drop.
+                                                                    */
+                                                                    const handleDragEnter = useCallback((e:
+                                                                    React.DragEvent) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    setIsDragging(true);
+                                                                    }, []);
+
+                                                                    /**
+                                                                    * Xử lý khi kéo file ra khỏi vùng drop.
+                                                                    */
+                                                                    const handleDragLeave = useCallback((e:
+                                                                    React.DragEvent) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    setIsDragging(false);
+                                                                    }, []);
+
+                                                                    /**
+                                                                    * Xử lý khi thả file vào vùng drop.
+                                                                    */
+                                                                    const handleDragOver = useCallback((e:
+                                                                    React.DragEvent) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    }, []);
+
+                                                                    /**
+                                                                    * Xử lý khi thả file.
+                                                                    */
+                                                                    const handleDrop = useCallback(
+                                                                    (e: React.DragEvent) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    setIsDragging(false);
+
+                                                                    const files = e.dataTransfer.files;
+                                                                    if (files.length > 0) {
+                                                                    handleFileSelect(files[0]);
+                                                                    }
+                                                                    },
+                                                                    [handleFileSelect],
+                                                                    );
+
+                                                                    /**
+                                                                    * Xử lý khi input file thay đổi.
+                                                                    */
+                                                                    const handleInputChange = useCallback(
+                                                                    (e: React.ChangeEvent<HTMLInputElement>) => {
+                                                                        const files = e.target.files;
+                                                                        if (files && files.length > 0) {
+                                                                        handleFileSelect(files[0]);
+                                                                        }
+                                                                        },
+                                                                        [handleFileSelect],
+                                                                        );
+
+                                                                        /* ===== Xử lý Bước 2: Ánh xạ cột ===== */
+
+                                                                        /**
+                                                                        * Xử lý khi thay đổi thực thể mục tiêu.
+                                                                        */
+                                                                        const handleEntityChange =
+                                                                        useCallback((entityKey: string) => {
+                                                                        setSelectedEntity(entityKey);
+                                                                        setColumnMapping({}); // Reset ánh xạ khi thay
+                                                                        đổi thực thể
+                                                                        }, []);
+
+                                                                        /**
+                                                                        * Xử lý khi thay đổi ánh xạ cho một cột.
+                                                                        */
+                                                                        const handleMappingChange =
+                                                                        useCallback((fileColumn: string, targetField:
+                                                                        string) => {
+                                                                        setColumnMapping((prev) => ({
+                                                                        ...prev,
+                                                                        [fileColumn]: targetField,
+                                                                        }));
+                                                                        setMappingErrors([]);
+                                                                        }, []);
+
+                                                                        /**
+                                                                        * Xác thực ánh xạ cột — đảm bảo các trường bắt
+                                                                        buộc đều được ánh xạ.
+                                                                        */
+                                                                        const validateMapping = useCallback((): boolean
+                                                                        => {
+                                                                        if (!selectedEntityData) {
+                                                                        setMappingErrors(['Vui lòng chọn thực thể mục
+                                                                        tiêu']);
+                                                                        return false;
+                                                                        }
+
+                                                                        const errors: string[] = [];
+                                                                        const requiredFields =
+                                                                        selectedEntityData.fields.filter((f) =>
+                                                                        f.required);
+
+                                                                        for (const field of requiredFields) {
+                                                                        if
+                                                                        (!Object.values(columnMapping).includes(field.key))
+                                                                        {
+                                                                        errors.push(`Trường bắt buộc "${field.label}"
+                                                                        chưa được ánh xạ`);
+                                                                        }
+                                                                        }
+
+                                                                        // Kiểm tra ánh xạ trùng — nhiều cột ánh xạ vào
+                                                                        cùng một trường
+                                                                        const targetValues =
+                                                                        Object.values(columnMapping).filter(Boolean);
+                                                                        const duplicates = targetValues.filter(
+                                                                        (v, i) => targetValues.indexOf(v) !== i,
+                                                                        );
+                                                                        if (duplicates.length > 0) {
+                                                                        const uniqueDups = [...new Set(duplicates)];
+                                                                        const fieldLabels = uniqueDups.map((key) => {
+                                                                        const f = selectedEntityData.fields.find((fld)
+                                                                        => fld.key === key);
+                                                                        return f ? f.label : key;
+                                                                        });
+                                                                        errors.push(
+                                                                        `Nhiều cột ánh xạ vào cùng một trường:
+                                                                        ${fieldLabels.join(', ')}`,
+                                                                        );
+                                                                        }
+
+                                                                        setMappingErrors(errors);
+                                                                        return errors.length === 0;
+                                                                        }, [selectedEntityData, columnMapping]);
+
+                                                                        /* ===== Xử lý Bước 3: Xem trước ===== */
+
+                                                                        /**
+                                                                        * Tải dữ liệu xem trước từ file.
+                                                                        */
+                                                                        const loadPreview = useCallback(async () => {
+                                                                        if (!importHook.selectedFile) return;
+
+                                                                        setPreviewLoading(true);
+                                                                        try {
+                                                                        const data = await
+                                                                        ImportService.previewFile(importHook.selectedFile,
+                                                                        10);
+                                                                        // Áp dụng ánh xạ cột — rename keys
+                                                                        const mappedData: PreviewRow[] = data.map((row)
+                                                                        => {
+                                                                        const mapped: PreviewRow = {};
+                                                                        for (const [fileCol, targetField] of
+                                                                        Object.entries(columnMapping)) {
+                                                                        if (targetField && row[fileCol] !== undefined) {
+                                                                        mapped[targetField] = row[fileCol];
+                                                                        }
+                                                                        }
+                                                                        // Giữ các cột chưa ánh xạ
+                                                                        for (const [key, value] of Object.entries(row))
+                                                                        {
+                                                                        if (!columnMapping[key]) {
+                                                                        mapped[`_ unmapped_${key}`] = value;
+                                                                        }
+                                                                        }
+                                                                        return mapped;
+                                                                        });
+                                                                        setPreviewData(mappedData);
+                                                                        } catch (err) {
+                                                                        setPreviewData([]);
+                                                                        } finally {
+                                                                        setPreviewLoading(false);
+                                                                        }
+                                                                        }, [importHook.selectedFile, columnMapping]);
+
+                                                                        /* ===== Xử lý Bước 4: Xác nhận và gửi ===== */
+
+                                                                        /**
+                                                                        * Xác nhận và bắt đầu import.
+                                                                        */
+                                                                        const handleSubmit = useCallback(async () => {
+                                                                        if (!importHook.selectedFile || !selectedEntity)
+                                                                        return;
+
+                                                                        try {
+                                                                        // 1. Tải file lên
+                                                                        await importHook.uploadFile();
+
+                                                                        // 2. Tạo import job
+                                                                        const job = await importHook.createJob({
+                                                                        targetEntity: selectedEntity,
+                                                                        format:
+                                                                        importHook.selectedFile.name.split('.').pop()?.toLowerCase()
+                                                                        as 'csv' | 'json',
+                                                                        columnMapping,
+                                                                        loadMode,
+                                                                        skipHeader,
+                                                                        batchSize,
+                                                                        transformType: transformType || undefined,
+                                                                        });
+
+                                                                        setCreatedJobKey(job.jobKey);
+
+                                                                        // 3. Thực thi job
+                                                                        await importHook.executeJob();
+
+                                                                        // Callback thành công
+                                                                        onSuccess?.(importHook.job!);
+                                                                        } catch (err) {
+                                                                        // Lỗi đã được hook xử lý và lưu vào state
+                                                                        }
+                                                                        }, [
+                                                                        importHook,
+                                                                        selectedEntity,
+                                                                        columnMapping,
+                                                                        loadMode,
+                                                                        skipHeader,
+                                                                        batchSize,
+                                                                        transformType,
+                                                                        onSuccess,
+                                                                        ]);
+
+                                                                        /* ===== Render thanh tiến trình ===== */
+
+                                                                        const renderProgressBar = () => (
+                                                                        <div className="mb-8">
+                                                                            {/* Thanh tiến trình bước */}
+                                                                            <div
+                                                                                className="flex items-center justify-between mb-4">
+                                                                                {ALL_STEPS.map((step, index) => {
+                                                                                const isActive = index ===
+                                                                                currentStepIndex;
+                                                                                const isCompleted = index <
+                                                                                    currentStepIndex; const
+                                                                                    config=STEP_CONFIG[step]; return (
+                                                                                    <div key={step}
+                                                                                    className="flex items-center flex-1 last:flex-none">
+                                                                                    {/*圆圈 bước */}
+                                                                                    <div
+                                                                                        className="flex flex-col items-center relative z-10">
+                                                                                        <div className={`w-10 h-10
+                                                                                            rounded-full flex
+                                                                                            items-center justify-center
+                                                                                            border-2 transition-colors
+                                                                                            duration-200 ${ isCompleted
+                                                                                            ? 'bg-emerald-600 border-emerald-600 text-white'
+                                                                                            : isActive
+                                                                                            ? 'bg-white border-blue-600 text-blue-600'
+                                                                                            : 'bg-white border-gray-300 text-gray-400'
+                                                                                            }`}>
+                                                                                            {isCompleted ? (
+                                                                                            {/* Icon kiểm tra */}
+                                                                                            <svg className="w-5 h-5"
+                                                                                                fill="currentColor"
+                                                                                                viewBox="0 0 20 20">
+                                                                                                <path fillRule="evenodd"
+                                                                                                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                                                                                    clipRule="evenodd" />
+                                                                                            </svg>
+                                                                                            ) : (
+                                                                                            <span
+                                                                                                className="text-sm font-semibold">{index
+                                                                                                + 1}</span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                        <span className={`mt-2 text-xs
+                                                                                            font-medium text-center
+                                                                                            hidden sm:block ${ isActive
+                                                                                            ? 'text-blue-600' :
+                                                                                            isCompleted
+                                                                                            ? 'text-emerald-600'
+                                                                                            : 'text-gray-400' }`}>
+                                                                                            {config.label}
+                                                                                        </span>
+                                                                                    </div>
+
+                                                                                    {/* Đường nối giữa các bước */}
+                                                                                    {index < ALL_STEPS.length - 1 && (
+                                                                                        <div
+                                                                                        className="flex-1 mx-2 sm:mx-4">
+                                                                                        <div
+                                                                                            className="h-0.5 bg-gray-200 rounded">
+                                                                                            <div className="h-full bg-emerald-600 rounded transition-all duration-300"
+                                                                                                style={{ width:
+                                                                                                isCompleted ? '100%'
+                                                                                                : '0%' }} />
+                                                                                        </div>
+                                                                            </div>
+                                                                            )}
+                                                                        </div>
+                                                                        );
+                                                                        })}
+                                                                        </div>
+
+                                                                        {/* Mô tả bước hiện tại */}
+                                                                        <p
+                                                                            className="text-sm text-gray-500 text-center">
+                                                                            {STEP_CONFIG[currentStep].description}
+                                                                        </p>
+                                                                        </div>
+                                                                        );
+
+                                                                        /* ===== Render Bước 1: Tải lên file ===== */
+
+                                                                        const renderUploadStep = () => (
+                                                                        <div className="space-y-6">
+                                                                            {/* Vùng drag-and-drop */}
+                                                                            <div onDragEnter={handleDragEnter}
+                                                                                onDragLeave={handleDragLeave}
+                                                                                onDragOver={handleDragOver}
+                                                                                onDrop={handleDrop} onClick={()=>
+                                                                                fileInputRef.current?.click()}
+                                                                                className={`relative border-2
+                                                                                border-dashed rounded-xl p-12
+                                                                                text-center cursor-pointer
+                                                                                transition-all duration-200 ${
+                                                                                isDragging
+                                                                                ? 'border-blue-500 bg-blue-50
+                                                                                scale-[1.02]'
+                                                                                : importHook.selectedFile
+                                                                                ? 'border-emerald-400 bg-emerald-50'
+                                                                                : 'border-gray-300 bg-gray-50
+                                                                                hover:border-gray-400 hover:bg-gray-100'
+                                                                                }`}
+                                                                                role="button"
+                                                                                tabIndex={0}
+                                                                                aria-label="Kéo thả file hoặc nhấp để
+                                                                                chọn"
+                                                                                onKeyDown={(e) => {
+                                                                                if (e.key === 'Enter' || e.key === ' ')
+                                                                                {
+                                                                                e.preventDefault();
+                                                                                fileInputRef.current?.click();
+                                                                                }
+                                                                                }}
+                                                                                >
+                                                                                {/* Input file ẩn */}
+                                                                                <input ref={fileInputRef} type="file"
+                                                                                    accept={allowedFormats.map((f)=>
+                                                                                `.${f}`).join(',')}
+                                                                                onChange={handleInputChange}
+                                                                                className="hidden"
+                                                                                aria-hidden="true"
+                                                                                />
+
+                                                                                {importHook.selectedFile ? (
+                                                                                /* File đã chọn — hiển thị thông tin */
+                                                                                <div className="space-y-3">
+                                                                                    {/* Icon file */}
+                                                                                    <div
+                                                                                        className="mx-auto w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center">
+                                                                                        <svg className="w-8 h-8 text-emerald-600"
+                                                                                            fill="none"
+                                                                                            viewBox="0 0 24 24"
+                                                                                            stroke="currentColor"
+                                                                                            strokeWidth={1.5}>
+                                                                                            <path strokeLinecap="round"
+                                                                                                strokeLinejoin="round"
+                                                                                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p
+                                                                                            className="text-lg font-semibold text-gray-900">
+                                                                                            {importHook.selectedFile.name}
+                                                                                        </p>
+                                                                                        <p
+                                                                                            className="text-sm text-gray-500 mt-1">
+                                                                                            {formatFileSize(importHook.selectedFile.size)}
+                                                                                            &middot;{' '}
+                                                                                            {importHook.selectedFile.name.split('.').pop()?.toUpperCase()}
+                                                                                        </p>
+                                                                                    </div>
+                                                                                    <p
+                                                                                        className="text-xs text-gray-400">
+                                                                                        Nhấp hoặc kéo thả để thay đổi
+                                                                                        file</p>
+                                                                                </div>
+                                                                                ) : (
+                                                                                /* Chưa chọn file — hiển thị hướng dẫn
+                                                                                */
+                                                                                <div className="space-y-3">
+                                                                                    {/* Icon upload */}
+                                                                                    <div
+                                                                                        className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
+                                                                                        <svg className="w-8 h-8 text-gray-400"
+                                                                                            fill="none"
+                                                                                            viewBox="0 0 24 24"
+                                                                                            stroke="currentColor"
+                                                                                            strokeWidth={1.5}>
+                                                                                            <path strokeLinecap="round"
+                                                                                                strokeLinejoin="round"
+                                                                                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p
+                                                                                            className="text-lg font-semibold text-gray-700">
+                                                                                            Kéo thả file vào đây
+                                                                                        </p>
+                                                                                        <p
+                                                                                            className="text-sm text-gray-500 mt-1">
+                                                                                            hoặc{' '}
+                                                                                            <span
+                                                                                                className="text-blue-600 underline">nhấp
+                                                                                                để chọn file</span>
+                                                                                        </p>
+                                                                                    </div>
+                                                                                    <p
+                                                                                        className="text-xs text-gray-400">
+                                                                                        Định dạng:
+                                                                                        {allowedFormats.map((f) =>
+                                                                                        f.toUpperCase()).join(', ')}
+                                                                                        &middot;{' '}
+                                                                                        Tối đa
+                                                                                        {formatFileSize(maxFileSize)}
+                                                                                    </p>
+                                                                                </div>
+                                                                                )}
+                                                                            </div>
+
+                                                                            {/* Lỗi xác thực file */}
+                                                                            {fileValidationErrors.length > 0 && (
+                                                                            <div
+                                                                                className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-2">
+                                                                                <p
+                                                                                    className="text-sm font-medium text-red-800">
+                                                                                    Lỗi xác thực file:</p>
+                                                                                <ul
+                                                                                    className="list-disc list-inside text-sm text-red-700 space-y-1">
+                                                                                    {fileValidationErrors.map((err, i)
+                                                                                    => (
+                                                                                    <li key={i}>{err}</li>
+                                                                                    ))}
+                                                                                </ul>
+                                                                            </div>
+                                                                            )}
+
+                                                                            {/* Thông tin cột đã phát hiện */}
+                                                                            {fileColumns.length > 0 && (
+                                                                            <div
+                                                                                className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                                                                <p
+                                                                                    className="text-sm font-medium text-blue-800 mb-2">
+                                                                                    Đã phát hiện {fileColumns.length}
+                                                                                    cột trong file:
+                                                                                </p>
+                                                                                <div className="flex flex-wrap gap-2">
+                                                                                    {fileColumns.map((col) => (
+                                                                                    <span key={col.name}
+                                                                                        className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-mono bg-blue-100 text-blue-700 border border-blue-200">
+                                                                                        {col.name}
+                                                                                    </span>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                            )}
+                                                                        </div>
+                                                                        );
+
+                                                                        /* ===== Render Bước 2: Ánh xạ cột ===== */
+
+                                                                        const renderMappingStep = () => (
+                                                                        <div className="space-y-6">
+                                                                            {/* Chọn thực thể mục tiêu */}
+                                                                            <div>
+                                                                                <label htmlFor="target-entity"
+                                                                                    className="block text-sm font-medium text-gray-700 mb-2">
+                                                                                    Thực thể mục tiêu <span
+                                                                                        className="text-red-500">*</span>
+                                                                                </label>
+                                                                                <select id="target-entity"
+                                                                                    value={selectedEntity}
+                                                                                    onChange={(e)=>
+                                                                                    handleEntityChange(e.target.value)}
+                                                                                    className="w-full px-4 py-2.5 border
+                                                                                    border-gray-300 rounded-lg
+                                                                                    focus:outline-none focus:ring-2
+                                                                                    focus:ring-blue-500
+                                                                                    focus:border-blue-500 bg-white
+                                                                                    text-sm"
+                                                                                    >
+                                                                                    <option value="">— Chọn thực thể —
+                                                                                    </option>
+                                                                                    {targetEntities.map((entity) => (
+                                                                                    <option key={entity.key}
+                                                                                        value={entity.key}>
+                                                                                        {entity.label}
+                                                                                    </option>
+                                                                                    ))}
+                                                                                </select>
+                                                                            </div>
+
+                                                                            {/* Bảng ánh xạ cột */}
+                                                                            {selectedEntityData && fileColumns.length >
+                                                                            0 && (
+                                                                            <div>
+                                                                                <h4
+                                                                                    className="text-sm font-medium text-gray-700 mb-3">
+                                                                                    Ánh xạ cột file &rarr; trường mục
+                                                                                    tiêu
+                                                                                </h4>
+                                                                                <div
+                                                                                    className="overflow-x-auto rounded-lg border border-gray-200">
+                                                                                    <table
+                                                                                        className="min-w-full text-sm">
+                                                                                        <thead className="bg-gray-50">
+                                                                                            <tr>
+                                                                                                <th
+                                                                                                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                                                                    Cột trong file
+                                                                                                </th>
+                                                                                                <th
+                                                                                                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                                                                    Ánh xạ vào
+                                                                                                </th>
+                                                                                                <th
+                                                                                                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                                                                                                    Bắt buộc
+                                                                                                </th>
+                                                                                            </tr>
+                                                                                        </thead>
+                                                                                        <tbody
+                                                                                            className="bg-white divide-y divide-gray-200">
+                                                                                            {fileColumns.map((col) => {
+                                                                                            const mappedTarget =
+                                                                                            columnMapping[col.name] ||
+                                                                                            '';
+                                                                                            const targetField =
+                                                                                            selectedEntityData.fields.find(
+                                                                                            (f) => f.key ===
+                                                                                            mappedTarget,
+                                                                                            );
+                                                                                            const isRequired =
+                                                                                            targetField?.required ||
+                                                                                            false;
+
+                                                                                            return (
+                                                                                            <tr key={col.name}
+                                                                                                className="hover:bg-gray-50">
+                                                                                                <td
+                                                                                                    className="px-4 py-3">
+                                                                                                    <span
+                                                                                                        className="font-mono text-sm text-gray-900">{col.name}</span>
+                                                                                                </td>
+                                                                                                <td
+                                                                                                    className="px-4 py-3">
+                                                                                                    <select
+                                                                                                        value={mappedTarget}
+                                                                                                        onChange={(e)=>
+                                                                                                        handleMappingChange(col.name,
+                                                                                                        e.target.value)}
+                                                                                                        className="w-full
+                                                                                                        px-3 py-2 border
+                                                                                                        border-gray-300
+                                                                                                        rounded-md
+                                                                                                        text-sm
+                                                                                                        focus:outline-none
+                                                                                                        focus:ring-2
+                                                                                                        focus:ring-blue-500
+                                                                                                        focus:border-blue-500"
+                                                                                                        >
+                                                                                                        <option
+                                                                                                            value="">—
+                                                                                                            Bỏ qua —
+                                                                                                        </option>
+                                                                                                        {selectedEntityData.fields.map((field)
+                                                                                                        => (
+                                                                                                        <option
+                                                                                                            key={field.key}
+                                                                                                            value={field.key}>
+                                                                                                            {field.label}{'
+                                                                                                            '}
+                                                                                                            <span
+                                                                                                                className="text-gray-400 text-xs">({field.type})</span>
+                                                                                                        </option>
+                                                                                                        ))}
+                                                                                                    </select>
+                                                                                                </td>
+                                                                                                <td
+                                                                                                    className="px-4 py-3">
+                                                                                                    {isRequired ? (
+                                                                                                    <span
+                                                                                                        className="text-red-500 text-xs font-medium">Bắt
+                                                                                                        buộc</span>
+                                                                                                    ) : (
+                                                                                                    <span
+                                                                                                        className="text-gray-400 text-xs">Tùy
+                                                                                                        chọn</span>
+                                                                                                    )}
+                                                                                                </td>
+                                                                                            </tr>
+                                                                                            );
+                                                                                            })}
+                                                                                        </tbody>
+                                                                                    </table>
+                                                                                </div>
+                                                                            </div>
+                                                                            )}
+
+                                                                            {/* Chế độ tải */}
+                                                                            {selectedEntityData && (
+                                                                            <div>
+                                                                                <label htmlFor="load-mode"
+                                                                                    className="block text-sm font-medium text-gray-700 mb-2">
+                                                                                    Chế độ tải
+                                                                                </label>
+                                                                                <select id="load-mode" value={loadMode}
+                                                                                    onChange={(e)=>
+                                                                                    setLoadMode(e.target.value as typeof
+                                                                                    loadMode)}
+                                                                                    className="w-full px-4 py-2.5 border
+                                                                                    border-gray-300 rounded-lg
+                                                                                    focus:outline-none focus:ring-2
+                                                                                    focus:ring-blue-500
+                                                                                    focus:border-blue-500 bg-white
+                                                                                    text-sm"
+                                                                                    >
+                                                                                    <option value="insert">Chèn mới
+                                                                                        (Insert)</option>
+                                                                                    <option value="update">Cập nhật
+                                                                                        (Update)</option>
+                                                                                    <option value="upsert">Chèn hoặc cập
+                                                                                        nhật (Upsert)</option>
+                                                                                    <option value="truncate">Xóa rồi
+                                                                                        chèn (Truncate & Insert)
+                                                                                    </option>
+                                                                                </select>
+                                                                            </div>
+                                                                            )}
+
+                                                                            {/* Lỗi ánh xạ */}
+                                                                            {mappingErrors.length > 0 && (
+                                                                            <div
+                                                                                className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-2">
+                                                                                <p
+                                                                                    className="text-sm font-medium text-red-800">
+                                                                                    Lỗi ánh xạ:</p>
+                                                                                <ul
+                                                                                    className="list-disc list-inside text-sm text-red-700 space-y-1">
+                                                                                    {mappingErrors.map((err, i) => (
+                                                                                    <li key={i}>{err}</li>
+                                                                                    ))}
+                                                                                </ul>
+                                                                            </div>
+                                                                            )}
+                                                                        </div>
+                                                                        );
+
+                                                                        /* ===== Render Bước 3: Xem trước ===== */
+
+                                                                        const renderPreviewStep = () => (
+                                                                        <div className="space-y-6">
+                                                                            {/* Nút tải xem trước */}
+                                                                            <div
+                                                                                className="flex items-center justify-between">
+                                                                                <h4
+                                                                                    className="text-sm font-medium text-gray-700">
+                                                                                    Dữ liệu xem trước (10 dòng đầu)
+                                                                                </h4>
+                                                                                <button onClick={loadPreview}
+                                                                                    disabled={previewLoading ||
+                                                                                    !importHook.selectedFile}
+                                                                                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                                                                                    {previewLoading ? (
+                                                                                    <>
+                                                                                        <svg className="w-4 h-4 animate-spin"
+                                                                                            fill="none"
+                                                                                            viewBox="0 0 24 24">
+                                                                                            <circle
+                                                                                                className="opacity-25"
+                                                                                                cx="12" cy="12" r="10"
+                                                                                                stroke="currentColor"
+                                                                                                strokeWidth="4" />
+                                                                                            <path className="opacity-75"
+                                                                                                fill="currentColor"
+                                                                                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                                                                        </svg>
+                                                                                        Đang tải...
+                                                                                    </>
+                                                                                    ) : (
+                                                                                    <>
+                                                                                        <svg className="w-4 h-4"
+                                                                                            fill="none"
+                                                                                            viewBox="0 0 24 24"
+                                                                                            stroke="currentColor"
+                                                                                            strokeWidth={2}>
+                                                                                            <path strokeLinecap="round"
+                                                                                                strokeLinejoin="round"
+                                                                                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                                                        </svg>
+                                                                                        Tải xem trước
+                                                                                    </>
+                                                                                    )}
+                                                                                </button>
+                                                                            </div>
+
+                                                                            {/* Bảng xem trước */}
+                                                                            {previewData.length > 0 ? (
+                                                                            <div
+                                                                                className="overflow-x-auto rounded-lg border border-gray-200">
+                                                                                <table className="min-w-full text-sm">
+                                                                                    <thead className="bg-gray-50">
+                                                                                        <tr>
+                                                                                            <th
+                                                                                                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                                                                                                #
+                                                                                            </th>
+                                                                                            {Object.keys(previewData[0]).map((key)
+                                                                                            => (
+                                                                                            <th key={key}
+                                                                                                className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                                                                {key}
+                                                                                            </th>
+                                                                                            ))}
+                                                                                        </tr>
+                                                                                    </thead>
+                                                                                    <tbody
+                                                                                        className="bg-white divide-y divide-gray-200">
+                                                                                        {previewData.map((row, index) =>
+                                                                                        (
+                                                                                        <tr key={index}
+                                                                                            className="hover:bg-gray-50">
+                                                                                            <td
+                                                                                                className="px-4 py-2.5 text-xs text-gray-400 font-mono">
+                                                                                                {index + 1}</td>
+                                                                                            {Object.entries(row).map(([key,
+                                                                                            value]) => (
+                                                                                            <td key={key}
+                                                                                                className={`px-4 py-2.5
+                                                                                                text-sm max-w-xs
+                                                                                                truncate ${
+                                                                                                key.startsWith('_unmapped_')
+                                                                                                ? 'text-gray-400 italic'
+                                                                                                : 'text-gray-900' }`}
+                                                                                                title={String(value)}>
+                                                                                                {value !== undefined &&
+                                                                                                value !== null ?
+                                                                                                String(value) : '—'}
+                                                                                            </td>
+                                                                                            ))}
+                                                                                        </tr>
+                                                                                        ))}
+                                                                                    </tbody>
+                                                                                </table>
+                                                                            </div>
+                                                                            ) : (
+                                                                            !previewLoading && (
+                                                                            <div
+                                                                                className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                                                                                <p className="text-gray-500 text-sm">
+                                                                                    Nhấn &ldquo;Tải xem trước&rdquo; để
+                                                                                    xem dữ liệu
+                                                                                </p>
+                                                                            </div>
+                                                                            )
+                                                                            )}
+
+                                                                            {/* Thông tin tóm tắt */}
+                                                                            {importHook.selectedFile && (
+                                                                            <div
+                                                                                className="bg-gray-50 rounded-lg p-4 text-sm space-y-2">
+                                                                                <div className="flex justify-between">
+                                                                                    <span
+                                                                                        className="text-gray-500">File:</span>
+                                                                                    <span
+                                                                                        className="font-mono text-gray-900">{importHook.selectedFile.name}</span>
+                                                                                </div>
+                                                                                <div className="flex justify-between">
+                                                                                    <span className="text-gray-500">Kích
+                                                                                        thước:</span>
+                                                                                    <span
+                                                                                        className="text-gray-900">{formatFileSize(importHook.selectedFile.size)}</span>
+                                                                                </div>
+                                                                                <div className="flex justify-between">
+                                                                                    <span className="text-gray-500">Thực
+                                                                                        thể:</span>
+                                                                                    <span className="text-gray-900">
+                                                                                        {selectedEntityData?.label ||
+                                                                                        selectedEntity}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="flex justify-between">
+                                                                                    <span className="text-gray-500">Chế
+                                                                                        độ tải:</span>
+                                                                                    <span
+                                                                                        className="text-gray-900 capitalize">{loadMode}</span>
+                                                                                </div>
+                                                                                <div className="flex justify-between">
+                                                                                    <span className="text-gray-500">Cột
+                                                                                        đã ánh xạ:</span>
+                                                                                    <span className="text-gray-900">
+                                                                                        {Object.values(columnMapping).filter(Boolean).length}
+                                                                                        /{' '}
+                                                                                        {fileColumns.length}
+                                                                                    </span>
+                                                                                </div>
+                                                                            </div>
+                                                                            )}
+                                                                        </div>
+                                                                        );
+
+                                                                        /* ===== Render Bước 4: Xác nhận ===== */
+
+                                                                        const renderConfirmStep = () => (
+                                                                        <div className="space-y-6">
+                                                                            {/* Tóm tắt trước khi gửi */}
+                                                                            <div
+                                                                                className="bg-emerald-50 border border-emerald-200 rounded-lg p-5">
+                                                                                <div
+                                                                                    className="flex items-center gap-3 mb-4">
+                                                                                    <div
+                                                                                        className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
+                                                                                        <svg className="w-5 h-5 text-emerald-600"
+                                                                                            fill="none"
+                                                                                            viewBox="0 0 24 24"
+                                                                                            stroke="currentColor"
+                                                                                            strokeWidth={2}>
+                                                                                            <path strokeLinecap="round"
+                                                                                                strokeLinejoin="round"
+                                                                                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                    <h4
+                                                                                        className="text-lg font-semibold text-emerald-900">
+                                                                                        Sẵn sàng import
+                                                                                    </h4>
+                                                                                </div>
+
+                                                                                <div className="space-y-3 text-sm">
+                                                                                    <div
+                                                                                        className="flex justify-between py-2 border-b border-emerald-100">
+                                                                                        <span
+                                                                                            className="text-emerald-700">File:</span>
+                                                                                        <span
+                                                                                            className="font-mono text-emerald-900">{importHook.selectedFile?.name}</span>
+                                                                                    </div>
+                                                                                    <div
+                                                                                        className="flex justify-between py-2 border-b border-emerald-100">
+                                                                                        <span
+                                                                                            className="text-emerald-700">Kích
+                                                                                            thước:</span>
+                                                                                        <span
+                                                                                            className="text-emerald-900">
+                                                                                            {importHook.selectedFile ?
+                                                                                            formatFileSize(importHook.selectedFile.size)
+                                                                                            : '—'}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <div
+                                                                                        className="flex justify-between py-2 border-b border-emerald-100">
+                                                                                        <span
+                                                                                            className="text-emerald-700">Thực
+                                                                                            thể:</span>
+                                                                                        <span
+                                                                                            className="text-emerald-900">{selectedEntityData?.label}</span>
+                                                                                    </div>
+                                                                                    <div
+                                                                                        className="flex justify-between py-2 border-b border-emerald-100">
+                                                                                        <span
+                                                                                            className="text-emerald-700">Chế
+                                                                                            độ tải:</span>
+                                                                                        <span
+                                                                                            className="text-emerald-900 capitalize">{loadMode}</span>
+                                                                                    </div>
+                                                                                    <div
+                                                                                        className="flex justify-between py-2 border-b border-emerald-100">
+                                                                                        <span
+                                                                                            className="text-emerald-700">Cột
+                                                                                            đã ánh xạ:</span>
+                                                                                        <span
+                                                                                            className="text-emerald-900">
+                                                                                            {Object.values(columnMapping).filter(Boolean).length}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <div
+                                                                                        className="flex justify-between py-2 border-b border-emerald-100">
+                                                                                        <span
+                                                                                            className="text-emerald-700">Bỏ
+                                                                                            qua tiêu đề:</span>
+                                                                                        <span
+                                                                                            className="text-emerald-900">{skipHeader
+                                                                                            ? 'Có' : 'Không'}</span>
+                                                                                    </div>
+                                                                                    <div
+                                                                                        className="flex justify-between py-2">
+                                                                                        <span
+                                                                                            className="text-emerald-700">Kích
+                                                                                            thước lô:</span>
+                                                                                        <span
+                                                                                            className="text-emerald-900">{batchSize.toLocaleString('vi-VN')}</span>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Chi tiết ánh xạ cột */}
+                                                                            <div>
+                                                                                <h5
+                                                                                    className="text-sm font-medium text-gray-700 mb-3">
+                                                                                    Chi tiết ánh xạ cột</h5>
+                                                                                <div
+                                                                                    className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                                    {Object.entries(columnMapping)
+                                                                                    .filter(([, target]) => target)
+                                                                                    .map(([source, target]) => {
+                                                                                    const field =
+                                                                                    selectedEntityData?.fields.find((f)
+                                                                                    => f.key === target);
+                                                                                    return (
+                                                                                    <div key={source}
+                                                                                        className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-md text-sm">
+                                                                                        <span
+                                                                                            className="font-mono text-gray-900">{source}</span>
+                                                                                        <svg className="w-4 h-4 text-gray-400"
+                                                                                            fill="none"
+                                                                                            viewBox="0 0 24 24"
+                                                                                            stroke="currentColor"
+                                                                                            strokeWidth={2}>
+                                                                                            <path strokeLinecap="round"
+                                                                                                strokeLinejoin="round"
+                                                                                                d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                                                                        </svg>
+                                                                                        <span
+                                                                                            className="text-blue-700">{field?.label
+                                                                                            || target}</span>
+                                                                                    </div>
+                                                                                    );
+                                                                                    })}
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Tùy chọn bổ sung */}
+                                                                            <div
+                                                                                className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                                                {/* Bỏ qua tiêu đề */}
+                                                                                <div>
+                                                                                    <label
+                                                                                        className="flex items-center gap-3 cursor-pointer">
+                                                                                        <input type="checkbox"
+                                                                                            checked={skipHeader}
+                                                                                            onChange={(e)=>
+                                                                                        setSkipHeader(e.target.checked)}
+                                                                                        className="w-4 h-4 text-blue-600
+                                                                                        border-gray-300 rounded
+                                                                                        focus:ring-blue-500"
+                                                                                        />
+                                                                                        <span
+                                                                                            className="text-sm text-gray-700">Bỏ
+                                                                                            qua dòng tiêu đề</span>
+                                                                                    </label>
+                                                                                </div>
+
+                                                                                {/* Kích thước lô */}
+                                                                                <div>
+                                                                                    <label htmlFor="batch-size"
+                                                                                        className="block text-sm font-medium text-gray-700 mb-1">
+                                                                                        Kích thước lô
+                                                                                    </label>
+                                                                                    <input id="batch-size" type="number"
+                                                                                        min={100} max={10000} step={100}
+                                                                                        value={batchSize}
+                                                                                        onChange={(e)=>
+                                                                                    setBatchSize(Number(e.target.value))}
+                                                                                    className="w-full px-3 py-2 border
+                                                                                    border-gray-300 rounded-lg text-sm
+                                                                                    focus:outline-none focus:ring-2
+                                                                                    focus:ring-blue-500"
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Cảnh báo cho chế độ truncate */}
+                                                                            {loadMode === 'truncate' && (
+                                                                            <div
+                                                                                className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                                                                <div className="flex items-start gap-3">
+                                                                                    <svg className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5"
+                                                                                        fill="none" viewBox="0 0 24 24"
+                                                                                        stroke="currentColor"
+                                                                                        strokeWidth={2}>
+                                                                                        <path strokeLinecap="round"
+                                                                                            strokeLinejoin="round"
+                                                                                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                                                                    </svg>
+                                                                                    <div>
+                                                                                        <p
+                                                                                            className="text-sm font-medium text-amber-800">
+                                                                                            Cảnh báo!</p>
+                                                                                        <p
+                                                                                            className="text-sm text-amber-700 mt-1">
+                                                                                            Chế độ <strong>Truncate
+                                                                                                &amp; Insert</strong> sẽ
+                                                                                            xóa toàn bộ dữ liệu hiện có
+                                                                                            trong{' '}
+                                                                                            <strong>{selectedEntityData?.label}</strong>
+                                                                                            trước khi chèn dữ liệu mới.
+                                                                                            Thao tác này không thể hoàn
+                                                                                            tác.
+                                                                                        </p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                            )}
+
+                                                                            {/* Nút xác nhận và gửi */}
+                                                                            <div
+                                                                                className="flex items-center gap-3 pt-4 border-t border-gray-200">
+                                                                                <button onClick={handleSubmit}
+                                                                                    disabled={importHook.loading}
+                                                                                    className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 shadow-sm">
+                                                                                    {importHook.loading ? (
+                                                                                    <>
+                                                                                        <svg className="w-5 h-5 animate-spin"
+                                                                                            fill="none"
+                                                                                            viewBox="0 0 24 24">
+                                                                                            <circle
+                                                                                                className="opacity-25"
+                                                                                                cx="12" cy="12" r="10"
+                                                                                                stroke="currentColor"
+                                                                                                strokeWidth="4" />
+                                                                                            <path className="opacity-75"
+                                                                                                fill="currentColor"
+                                                                                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                                                                        </svg>
+                                                                                        Đang xử lý...
+                                                                                    </>
+                                                                                    ) : (
+                                                                                    <>
+                                                                                        <svg className="w-5 h-5"
+                                                                                            fill="none"
+                                                                                            viewBox="0 0 24 24"
+                                                                                            stroke="currentColor"
+                                                                                            strokeWidth={2}>
+                                                                                            <path strokeLinecap="round"
+                                                                                                strokeLinejoin="round"
+                                                                                                d="M5 13l4 4L19 7" />
+                                                                                        </svg>
+                                                                                        Bắt đầu import
+                                                                                    </>
+                                                                                    )}
+                                                                                </button>
+                                                                            </div>
+
+                                                                            {/* Lỗi hook */}
+                                                                            {importHook.error && (
+                                                                            <div
+                                                                                className="bg-red-50 border border-red-200 rounded-lg p-4">
+                                                                                <p
+                                                                                    className="text-sm font-medium text-red-800">
+                                                                                    Lỗi:</p>
+                                                                                <p
+                                                                                    className="text-sm text-red-700 mt-1">
+                                                                                    {importHook.error}</p>
+                                                                            </div>
+                                                                            )}
+                                                                        </div>
+                                                                        );
+
+                                                                        /* ===== Render nội dung bước hiện tại ===== */
+
+                                                                        const renderStepContent = () => {
+                                                                        // Nếu job đã được tạo và đang chạy/hoàn thành,
+                                                                        hiển thị JobStatusPanel
+                                                                        if (createdJobKey && importHook.job) {
+                                                                        return (
+                                                                        <div className="space-y-6">
+                                                                            <JobStatusPanel job={{ jobKey:
+                                                                                importHook.job.jobKey, status:
+                                                                                importHook.job.status, progress:
+                                                                                importHook.job.progress, totalRows:
+                                                                                importHook.job.totalRows, successRows:
+                                                                                importHook.job.successRows, failedRows:
+                                                                                importHook.job.failedRows, skippedRows:
+                                                                                importHook.job.skippedRows, startedAt:
+                                                                                importHook.job.startedAt, completedAt:
+                                                                                importHook.job.completedAt,
+                                                                                errorMessage:
+                                                                                importHook.job.errorMessage, rowErrors:
+                                                                                importHook.rowErrors.map((e)=> ({
+                                                                                rowNumber: e.rowNumber,
+                                                                                message: e.message,
+                                                                                })),
+                                                                                fileName: importHook.job.fileName,
+                                                                                entity: importHook.job.targetEntity,
+                                                                                }}
+                                                                                onCancel={async () => {
+                                                                                await importHook.cancelJob();
+                                                                                }}
+                                                                                onRefresh={importHook.refresh}
+                                                                                onAutoRefresh={async () => {
+                                                                                const job = await
+                                                                                importHook.getStatus();
+                                                                                return {
+                                                                                jobKey: job.jobKey,
+                                                                                status: job.status,
+                                                                                progress: job.progress,
+                                                                                totalRows: job.totalRows,
+                                                                                successRows: job.successRows,
+                                                                                failedRows: job.failedRows,
+                                                                                skippedRows: job.skippedRows,
+                                                                                startedAt: job.startedAt,
+                                                                                completedAt: job.completedAt,
+                                                                                errorMessage: job.errorMessage,
+                                                                                };
+                                                                                }}
+                                                                                />
+
+                                                                                {/* Nút hoàn tất */}
+                                                                                {importHook.job.status === 'completed'
+                                                                                && (
+                                                                                <div
+                                                                                    className="flex justify-center pt-4">
+                                                                                    <button onClick={handleReset}
+                                                                                        className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                                                                                        Import mới
+                                                                                    </button>
+                                                                                </div>
+                                                                                )}
+                                                                        </div>
+                                                                        );
+                                                                        }
+
+                                                                        switch (currentStep) {
+                                                                        case 'upload':
+                                                                        return renderUploadStep();
+                                                                        case 'mapping':
+                                                                        return renderMappingStep();
+                                                                        case 'preview':
+                                                                        return renderPreviewStep();
+                                                                        case 'confirm':
+                                                                        return renderConfirmStep();
+                                                                        default:
+                                                                        return null;
+                                                                        }
+                                                                        };
+
+                                                                        /* ===== Render chính ===== */
+
+                                                                        return (
+                                                                        <div className={`max-w-4xl mx-auto
+                                                                            ${className}`}>
+                                                                            {/* Header wizard */}
+                                                                            <div className="mb-8">
+                                                                                <h2
+                                                                                    className="text-2xl font-bold text-gray-900">
+                                                                                    Import dữ liệu</h2>
+                                                                                <p
+                                                                                    className="text-sm text-gray-500 mt-1">
+                                                                                    Hướng dẫn từng bước để import dữ
+                                                                                    liệu từ file CSV/JSON
+                                                                                </p>
+                                                                            </div>
+
+                                                                            {/* Thanh tiến trình */}
+                                                                            {renderProgressBar()}
+
+                                                                            {/* Nội dung bước */}
+                                                                            <div
+                                                                                className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                                                                                {renderStepContent()}
+                                                                            </div>
+
+                                                                            {/* Footer: Nút điều hướng */}
+                                                                            {!createdJobKey && (
+                                                                            <div
+                                                                                className="flex items-center justify-between mt-6 pt-4 border-t border-gray-200">
+                                                                                {/* Quay lại */}
+                                                                                <button onClick={currentStep==='upload'
+                                                                                    ? onCancel : handleBack}
+                                                                                    disabled={importHook.loading}
+                                                                                    className={`inline-flex items-center
+                                                                                    gap-2 px-4 py-2.5 text-sm
+                                                                                    font-medium rounded-lg border
+                                                                                    focus:outline-none focus:ring-2
+                                                                                    focus:ring-offset-1
+                                                                                    disabled:opacity-50
+                                                                                    disabled:cursor-not-allowed ${
+                                                                                    currentStep==='upload'
+                                                                                    ? 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50 focus:ring-gray-500'
+                                                                                    : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50 focus:ring-gray-500'
+                                                                                    }`}>
+                                                                                    {currentStep === 'upload' ? 'Hủy' :
+                                                                                    'Quay lại'}
+                                                                                </button>
+
+                                                                                {/* Tiếp theo */}
+                                                                                {currentStep !== 'confirm' && (
+                                                                                <button onClick={handleNext} disabled={
+                                                                                    importHook.loading ||
+                                                                                    (currentStep==='upload' &&
+                                                                                    !importHook.selectedFile) ||
+                                                                                    (currentStep==='mapping' &&
+                                                                                    !selectedEntity) ||
+                                                                                    (currentStep==='mapping' &&
+                                                                                    mappingErrors.length> 0)
+                                                                                    }
+                                                                                    className="inline-flex items-center
+                                                                                    gap-2 px-6 py-2.5 text-sm
+                                                                                    font-medium text-white bg-blue-600
+                                                                                    rounded-lg hover:bg-blue-700 border
+                                                                                    border-transparent
+                                                                                    focus:outline-none focus:ring-2
+                                                                                    focus:ring-blue-500
+                                                                                    focus:ring-offset-1
+                                                                                    disabled:opacity-50
+                                                                                    disabled:cursor-not-allowed"
+                                                                                    >
+                                                                                    Tiếp theo
+                                                                                    <svg className="w-4 h-4" fill="none"
+                                                                                        viewBox="0 0 24 24"
+                                                                                        stroke="currentColor"
+                                                                                        strokeWidth={2}>
+                                                                                        <path strokeLinecap="round"
+                                                                                            strokeLinejoin="round"
+                                                                                            d="M9 5l7 7-7 7" />
+                                                                                    </svg>
+                                                                                </button>
+                                                                                )}
+                                                                            </div>
+                                                                            )}
+                                                                        </div>
+                                                                        );
+                                                                        };
+
+                                                                        export default ImportWizard;

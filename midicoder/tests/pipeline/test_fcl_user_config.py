@@ -22,7 +22,7 @@ class TestExpandPerEntityUserConfig:
         """Không có user_config -> render_context = entity RC (EU-0.1 behavior)."""
         fc = FileContributions(
             pack_id="CP01",
-            pack_internal_id="cp01_domain_model",
+            pack_internal_id="cp_base_domain_model",
             per_entity=[PerEntityFile(
                 path_pattern="app/models/{entity_snake}.py",
                 file_type="model",
@@ -39,7 +39,7 @@ class TestExpandPerEntityUserConfig:
         """Có user_config -> merge defaults -> entity RC ghi đè."""
         fc = FileContributions(
             pack_id="CP01",
-            pack_internal_id="cp01_domain_model",
+            pack_internal_id="cp_base_domain_model",
             per_entity=[PerEntityFile(
                 path_pattern="app/models/{entity_snake}.py",
                 file_type="model",
@@ -66,7 +66,7 @@ class TestExpandPerEntityUserConfig:
         """Deep merge -- nested keys được preserve."""
         fc = FileContributions(
             pack_id="CP01",
-            pack_internal_id="cp01_domain_model",
+            pack_internal_id="cp_base_domain_model",
             per_entity=[PerEntityFile(
                 path_pattern="app/models/{entity_snake}.py",
                 file_type="model",
@@ -101,7 +101,7 @@ class TestExpandPerCommandUserConfig:
         """Command render_context merge đúng với user config."""
         fc = FileContributions(
             pack_id="CP01",
-            pack_internal_id="cp01_domain_model",
+            pack_internal_id="cp_base_domain_model",
             per_command=[PerCommandFile(
                 path_pattern="app/commands/{command_snake}_handler.py",
                 file_type="command",
@@ -130,7 +130,7 @@ class TestExpandPerQueryUserConfig:
         """Query render_context merge đúng với user config."""
         fc = FileContributions(
             pack_id="CP01",
-            pack_internal_id="cp01_domain_model",
+            pack_internal_id="cp_base_domain_model",
             per_query=[PerQueryFile(
                 path_pattern="app/queries/{query_snake}_handler.py",
                 file_type="query",
@@ -158,7 +158,7 @@ class TestExpandInfrastructureUserConfig:
         """Infrastructure inject render.infrastructure vào context."""
         fc = FileContributions(
             pack_id="CP07",
-            pack_internal_id="cp07_iac",
+            pack_internal_id="cp_infra_iac",
             infrastructure=[InfrastructureFile(
                 path="docker-compose.yml",
                 file_type="docker_compose",
@@ -180,7 +180,7 @@ class TestExpandInfrastructureUserConfig:
         """Không có user_config -> render_context = {}."""
         fc = FileContributions(
             pack_id="CP07",
-            pack_internal_id="cp07_iac",
+            pack_internal_id="cp_infra_iac",
             infrastructure=[InfrastructureFile(
                 path="docker-compose.yml",
                 file_type="docker_compose",
@@ -198,7 +198,7 @@ class TestFullPriorityChain:
         """Nhiều entity, mỗi entity có config khác nhau."""
         fc = FileContributions(
             pack_id="CP01",
-            pack_internal_id="cp01_domain_model",
+            pack_internal_id="cp_base_domain_model",
             per_entity=[PerEntityFile(
                 path_pattern="app/models/{entity_snake}.py",
                 file_type="model",

@@ -1,0 +1,735 @@
+# coding: utf-8
+"""
+CSV Parser cho Data Import.
+
+Cung cấp lớp CSVParser để parse và validate file CSV:
+- auto_detect_delimiter: Tự động phát hiện ký tự phân cách
+- detect_header: Phát hiện hàng header
+- parse_streaming: Parse theo từng dòng (generator) — hỗ trợ file lớn
+- validate_row: Validate một hàng theo schema
+- flatten_nested: Làm phẳng dữ liệu lồng nhau
+
+Hỗ trợ các định dạng: {{ ', '.join(import_formats) }}
+
+CP38: Data Import/Export/ETL
+"""
+
+import csv
+import io
+import logging
+from typing import Any, Dict, List, Optional, Tuple, Generator
+
+# Logger cho module
+logger = logging.getLogger(__name__)
+
+# Các delimiter thường gặp để auto-detect
+COMMON_DELIMITERS = [",", ";", "\t", "|", ":"]
+
+
+# ============================================================================
+# Exception: CSVParserError
+# ============================================================================
+
+class CSVParserError(Exception):
+    """Exception base cho CSVParser."""
+
+    def __init__(self, message: str, error_code: str = "CSV_PARSE_ERROR") -> None:
+        self.message = message
+        self.error_code = error_code
+        super().__init__(self.message)
+
+
+class DelimiterDetectError(CSVParserError):
+    """Lỗi khi không thể phát hiện delimiter."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="DELIMITER_DETECT_ERROR")
+
+
+class HeaderDetectError(CSVParserError):
+    """Lỗi khi không thể phát hiện header."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="HEADER_DETECT_ERROR")
+
+
+class ValidationError(CSVParserError):
+    """Lỗi validate hàng."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="VALIDATION_ERROR")
+
+
+# ============================================================================
+# CSVParser
+# ============================================================================
+
+class CSVParser:
+    """
+    Parser cho file CSV với các tính năng:
+
+    1. Auto-detect delimiter: Tự động phát hiện ký tự phân cách
+       (dựa trên Sniffer của Python csv module)
+
+    2. Detect header: Tự động phát hiện hàng đầu tiên có phải header không
+       (kiểm tra các giá trị có phải string không phải number)
+
+    3. Parse streaming: Parse theo dòng (generator) để hỗ trợ file lớn
+       không cần load toàn bộ vào memory
+
+    4. Validate row: Validate từng hàng theo schema định nghĩa
+
+    5. Flatten nested: Làm phẳng dữ liệu lồng nhau (nested dict trong CSV cell)
+
+    Usage:
+        parser = CSVParser()
+
+        # Parse toàn bộ file
+        rows, headers = parser.parse_sync(content_bytes)
+
+        # Parse streaming (generator)
+        for row in parser.parse_streaming(content_bytes):
+            process(row)
+
+        # Validate row
+        is_valid, errors = parser.validate_row(row, schema)
+
+        # Flatten nested data
+        flat = parser.flatten_nested({"a": {"b": 1, "c": {"d": 2}}})
+        # => {"a.b": 1, "a.c.d": 2}
+    """
+
+    def __init__(
+        self,
+        delimiter: Optional[str] = None,
+        encoding: str = "utf-8-sig",
+        has_header: bool = True,
+        skip_blank_lines: bool = True,
+        max_field_size: int = 131072,  # 128KB
+    ) -> None:
+        """
+        Khởi tạo CSVParser.
+
+        Args:
+            delimiter: Ký tự phân cách (None = auto detect)
+            encoding: Encoding của file (default: utf-8-sig, hỗ trợ BOM)
+            has_header: Có hàng header không (default: True)
+            skip_blank_lines: Có bỏ qua dòng trống không (default: True)
+            max_field_size: Kích thước tối đa của một field (byte)
+        """
+        self.delimiter = delimiter
+        self.encoding = encoding
+        self.has_header = has_header
+        self.skip_blank_lines = skip_blank_lines
+        self.max_field_size = max_field_size
+        self._detected_delimiter: Optional[str] = None
+        self._detected_headers: Optional[List[str]] = None
+
+    def auto_detect_delimiter(self, sample: str) -> str:
+        """
+        Tự động phát hiện ký tự phân cách từ mẫu dữ liệu.
+
+        Dùng csv.Sniffer để phân tích mẫu (5 dòng đầu tiên).
+        Nếu Sniffer không xác định được, thử từng delimiter phổ biến
+        và chọn delimiter cho ra nhiều columns nhất.
+
+        Args:
+            sample: Mẫu dữ liệu CSV (ít nhất 3-5 dòng đầu)
+
+        Returns:
+            Ký tự phân cách (delimiter)
+
+        Raises:
+            DelimiterDetectError: Nếu không thể phát hiện delimiter
+        """
+        # Thử dùng Sniffer trước
+        try:
+            # Lấy 5 dòng đầu để Sniffer phân tích
+            lines = sample.strip().split("\n")[:5]
+            sample_for_sniff = "\n".join(lines)
+
+            dialect = csv.Sniffer().sniff(
+                sample_for_sniff,
+                delimiters="".join(COMMON_DELIMITERS),
+            )
+            self._detected_delimiter = dialect.delimiter
+            logger.info("Auto-detect delimiter (Sniffer): '%s'", repr(dialect.delimiter))
+            return dialect.delimiter
+
+        except csv.Error:
+            # Sniffer không xác định được — thử manual detection
+            pass
+
+        # Manual detection: thử từng delimiter và đếm columns
+        best_delimiter = ","
+        max_columns = 0
+        first_line = sample.strip().split("\n")[0]
+
+        for delim in COMMON_DELIMITERS:
+            # Đếm số columns khi parse với delimiter này
+            try:
+                reader = csv.reader(
+                    io.StringIO(sample),
+                    delimiter=delim,
+                    quotechar='"',
+                )
+                first_row = next(reader, [])
+                column_count = len(first_row)
+
+                # Loại bỏ delimiter cho ra 1 column duy nhất (không hợp lệ)
+                if column_count > 1 and column_count > max_columns:
+                    max_columns = column_count
+                    best_delimiter = delim
+            except Exception:
+                continue
+
+        if max_columns <= 1:
+            raise DelimiterDetectError(
+                f"Không thể phát hiện delimiter từ dữ liệu. "
+                f"Mẫu: {sample[:200]!r}"
+            )
+
+        self._detected_delimiter = best_delimiter
+        logger.info(
+            "Auto-detect delimiter (manual): '%s' (%d columns)",
+            repr(best_delimiter),
+            max_columns,
+        )
+        return best_delimiter
+
+    def detect_header(self, first_row: List[str]) -> Tuple[bool, List[str]]:
+        """
+        Phát hiện hàng đầu tiên có phải header không.
+
+        Logic phát hiện:
+        - Nếu tất cả giá trị đều là string (không parse được thành number) => header
+        - Nếu có ít nhất một giá trị là number => không phải header
+        - Nếu có giá trị chứa khoảng trắng hoặc ký tự đặc biệt => header
+
+        Args:
+            first_row: Hàng đầu tiên của CSV
+
+        Returns:
+            Tuple: (is_header, headers)
+            - is_header: True nếu hàng đầu là header
+            - headers: Danh sách header names (hoặc ["col_1", "col_2", ...] nếu không có header)
+
+        Raises:
+            HeaderDetectError: Nếu hàng đầu rỗng
+        """
+        if not first_row or all(not cell.strip() for cell in first_row):
+            raise HeaderDetectError("Hàng đầu tiên rỗng, không thể phát hiện header")
+
+        # Kiểm tra xem hàng đầu có phải header không
+        is_header = False
+        string_count = 0
+
+        for cell in first_row:
+            stripped = cell.strip()
+            if not stripped:
+                continue
+
+            # Thử parse thành number
+            try:
+                float(stripped)
+                # Parse được => đây là number, không phải header
+            except ValueError:
+                # Không parse được => string, có thể là header
+                string_count += 1
+
+        # Nếu tất cả hoặc hầu hết là string => đây là header
+        non_empty_cells = [c for c in first_row if c.strip()]
+        if non_empty_cells and string_count >= len(non_empty_cells) * 0.7:
+            is_header = True
+
+        if is_header:
+            headers = [cell.strip() for cell in first_row]
+            self._detected_headers = headers
+            logger.info("Detect header: %s", headers)
+        else:
+            # Không có header — tạo column names tự động
+            headers = [f"col_{i+1}" for i in range(len(first_row))]
+            self._detected_headers = headers
+            logger.info("Không có header, tạo auto: %s", headers)
+
+        return is_header, headers
+
+    def parse_sync(self, content: bytes) -> Tuple[List[Dict[str, Any]], List[str]]:
+        """
+        Parse toàn bộ nội dung CSV thành danh sách dictionaries.
+
+        Đọc toàn bộ content, detect delimiter và header,
+        parse từng hàng thành dictionary.
+
+        Args:
+            content: Nội dung file CSV (bytes)
+
+        Returns:
+            Tuple: (rows, headers)
+            - rows: Danh sách dictionaries (mỗi dict là một hàng)
+            - headers: Danh sách header names
+
+        Raises:
+            CSVParserError: Nếu parse thất bại
+        """
+        # Decode content
+        try:
+            text = content.decode(self.encoding)
+        except UnicodeDecodeError:
+            # Thử UTF-8 nếu utf-8-sig lỗi
+            text = content.decode("utf-8", errors="replace")
+
+        if not text.strip():
+            return [], []
+
+        # Lấy delimiter
+        delimiter = self.delimiter
+        if not delimiter:
+            # Tự động detect từ 5 dòng đầu
+            sample = text[:4096]  # Lấy 4KB đầu
+            delimiter = self.auto_detect_delimiter(sample)
+
+        # Tạo CSV reader
+        reader = csv.reader(
+            io.StringIO(text),
+            delimiter=delimiter,
+            quotechar='"',
+            skipinitialspace=True,
+            strict=False,
+        )
+
+        rows = []
+        headers = []
+
+        for row_index, row in enumerate(reader):
+            # Bỏ qua dòng trống
+            if not row or all(not cell.strip() for cell in row):
+                if self.skip_blank_lines:
+                    continue
+                else:
+                    rows.append({})
+                continue
+
+            if row_index == 0 and self.has_header:
+                # Hàng đầu là header
+                _, headers = self.detect_header(row)
+                continue
+
+            # Nếu không có header, detect từ hàng đầu tiên
+            if not headers:
+                _, headers = self.detect_header(row)
+                continue
+
+            # Convert row thành dictionary
+            row_dict = self._row_to_dict(row, headers)
+            rows.append(row_dict)
+
+        logger.info(
+            "Parse CSV: %d rows, %d columns, delimiter='%s'",
+            len(rows),
+            len(headers),
+            repr(delimiter),
+        )
+
+        return rows, headers
+
+    def parse_streaming(
+        self,
+        content: bytes,
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        Parse CSV theo từng dòng (generator).
+
+        Dùng cho file lớn — không load toàn bộ vào memory.
+        Yield từng row dictionary khi parse xong.
+
+        Args:
+            content: Nội dung file CSV (bytes)
+
+        Yields:
+            Dictionary cho mỗi hàng CSV
+
+        Raises:
+            CSVParserError: Nếu parse thất bại
+        """
+        # Decode content
+        try:
+            text = content.decode(self.encoding)
+        except UnicodeDecodeError:
+            text = content.decode("utf-8", errors="replace")
+
+        if not text.strip():
+            return
+
+        # Lấy delimiter
+        delimiter = self.delimiter
+        if not delimiter:
+            sample = text[:4096]
+            delimiter = self.auto_detect_delimiter(sample)
+
+        # Tạo CSV reader
+        reader = csv.reader(
+            io.StringIO(text),
+            delimiter=delimiter,
+            quotechar='"',
+            skipinitialspace=True,
+            strict=False,
+        )
+
+        headers: List[str] = []
+        header_found = False
+
+        for row_index, row in enumerate(reader):
+            # Bỏ qua dòng trống
+            if not row or all(not cell.strip() for cell in row):
+                if self.skip_blank_lines:
+                    continue
+                else:
+                    yield {}
+                continue
+
+            if row_index == 0 and self.has_header:
+                # Hàng đầu là header
+                _, headers = self.detect_header(row)
+                header_found = True
+                continue
+
+            # Nếu chưa có header, detect từ hàng đầu
+            if not header_found:
+                _, headers = self.detect_header(row)
+                header_found = True
+                continue
+
+            # Yield row dictionary
+            row_dict = self._row_to_dict(row, headers)
+            yield row_dict
+
+    def validate_row(
+        self,
+        row: Dict[str, Any],
+        schema: Dict[str, Dict[str, Any]],
+    ) -> Tuple[bool, List[str]]:
+        """
+        Validate một hàng theo schema.
+
+        Schema có dạng:
+        {
+            "field_name": {
+                "type": "str|int|float|bool|datetime",  # kiểu dữ liệu
+                "required": True,                        # có bắt buộc không
+                "min_length": 1,                         # độ dài tối thiểu (string)
+                "max_length": 255,                       # độ dài tối đa (string)
+                "min_value": 0,                          # giá trị tối thiểu (number)
+                "max_value": 999,                        # giá trị tối đa (number)
+                "pattern": "^[a-z]+$",                   # regex pattern (string)
+                "allowed_values": ["a", "b", "c"],       # giá trị cho phép
+                "default": "",                           # giá trị mặc định
+            }
+        }
+
+        Args:
+            row: Dictionary với row data
+            schema: Schema validate
+
+        Returns:
+            Tuple: (is_valid, errors)
+            - is_valid: True nếu row hợp lệ
+            - errors: Danh sách error messages (rỗng nếu valid)
+        """
+        errors = []
+
+        for field_name, field_schema in schema.items():
+            value = row.get(field_name)
+            is_required = field_schema.get("required", False)
+
+            # Kiểm tra required
+            if value is None or (isinstance(value, str) and not value.strip()):
+                if is_required:
+                    errors.append(
+                        f"Trường '{field_name}' là bắt buộc nhưng không có giá trị"
+                    )
+                continue
+
+            # Strip string values
+            if isinstance(value, str):
+                value = value.strip()
+
+            # Validate type
+            expected_type = field_schema.get("type", "str")
+            type_error = self._validate_type(value, expected_type, field_name)
+            if type_error:
+                errors.append(type_error)
+                continue  # Không validate tiếp nếu type sai
+
+            # Validate min_length (cho string)
+            min_length = field_schema.get("min_length")
+            if min_length is not None and isinstance(value, str):
+                if len(value) < min_length:
+                    errors.append(
+                        f"Trường '{field_name}' phải có ít nhất {min_length} ký tự "
+                        f"(hiện tại: {len(value)})"
+                    )
+
+            # Validate max_length (cho string)
+            max_length = field_schema.get("max_length")
+            if max_length is not None and isinstance(value, str):
+                if len(value) > max_length:
+                    errors.append(
+                        f"Trường '{field_name}' không được quá {max_length} ký tự "
+                        f"(hiện tại: {len(value)})"
+                    )
+
+            # Validate min_value (cho number)
+            min_value = field_schema.get("min_value")
+            if min_value is not None and isinstance(value, (int, float)):
+                if value < min_value:
+                    errors.append(
+                        f"Trường '{field_name}' phải >= {min_value} "
+                        f"(hiện tại: {value})"
+                    )
+
+            # Validate max_value (cho number)
+            max_value = field_schema.get("max_value")
+            if max_value is not None and isinstance(value, (int, float)):
+                if value > max_value:
+                    errors.append(
+                        f"Trường '{field_name}' phải <= {max_value} "
+                        f"(hiện tại: {value})"
+                    )
+
+            # Validate pattern (cho string)
+            pattern = field_schema.get("pattern")
+            if pattern and isinstance(value, str):
+                import re
+                if not re.match(pattern, value):
+                    errors.append(
+                        f"Trường '{field_name}' không khớp pattern '{pattern}': '{value}'"
+                    )
+
+            # Validate allowed_values
+            allowed = field_schema.get("allowed_values")
+            if allowed is not None:
+                if value not in allowed:
+                    errors.append(
+                        f"Trường '{field_name}' phải là một trong: {allowed} "
+                        f"(hiện tại: {value!r})"
+                    )
+
+        is_valid = len(errors) == 0
+        return is_valid, errors
+
+    def flatten_nested(
+        self,
+        data: Dict[str, Any],
+        parent_key: str = "",
+        separator: str = ".",
+    ) -> Dict[str, Any]:
+        """
+        Làm phẳng dictionary lồng nhau thành dictionary 1 cấp.
+
+        Dùng dấu phân tách (default: ".") để join nested keys.
+
+        Example:
+            Input:  {"a": {"b": 1, "c": {"d": 2}}, "e": 3}
+            Output: {"a.b": 1, "a.c.d": 2, "e": 3}
+
+        Args:
+            data: Dictionary có thể lồng nhau
+            parent_key: Key cha (dùng cho recursive call)
+            separator: Dấu phân tách giữa các cấp (default: ".")
+
+        Returns:
+            Dictionary đã làm phẳng
+        """
+        items = {}
+
+        for key, value in data.items():
+            new_key = f"{parent_key}{separator}{key}" if parent_key else key
+
+            if isinstance(value, dict):
+                # Đệ quy vào nested dict
+                nested = self.flatten_nested(value, new_key, separator)
+                items.update(nested)
+            elif isinstance(value, list):
+                # Xử lý list — flatten từng item
+                for index, item in enumerate(value):
+                    list_key = f"{new_key}[{index}]"
+                    if isinstance(item, dict):
+                        nested = self.flatten_nested(item, list_key, separator)
+                        items.update(nested)
+                    else:
+                        items[list_key] = item
+            else:
+                items[new_key] = value
+
+        return items
+
+    def unflatten(
+        self,
+        data: Dict[str, Any],
+        separator: str = ".",
+    ) -> Dict[str, Any]:
+        """
+        Ngược lại với flatten — tạo dictionary lồng nhau từ dictionary phẳng.
+
+        Example:
+            Input:  {"a.b": 1, "a.c.d": 2, "e": 3}
+            Output: {"a": {"b": 1, "c": {"d": 2}}, "e": 3}
+
+        Args:
+            data: Dictionary đã flatten
+            separator: Dấu phân tách (default: ".")
+
+        Returns:
+            Dictionary lồng nhau
+        """
+        result: Dict[str, Any] = {}
+
+        for key, value in data.items():
+            parts = key.split(separator)
+            current = result
+
+            for i, part in enumerate(parts[:-1]):
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+
+            current[parts[-1]] = value
+
+        return result
+
+    # ========================================================================
+    # Internal methods
+    # ========================================================================
+
+    def _row_to_dict(
+        self,
+        row: List[str],
+        headers: List[str],
+    ) -> Dict[str, Any]:
+        """
+        Chuyển CSV row (list) thành dictionary theo headers.
+
+        Tự động convert các giá trị về kiểu phù hợp:
+        - "123" => 123 (int)
+        - "12.5" => 12.5 (float)
+        - "true"/"false" => True/False (bool)
+        - "" => None (empty string)
+
+        Args:
+            row: Danh sách values (strings từ CSV)
+            headers: Danh sách header names
+
+        Returns:
+            Dictionary với header names làm keys
+        """
+        row_dict = {}
+
+        for i, header in enumerate(headers):
+            if i < len(row):
+                value = row[i].strip()
+                row_dict[header] = self._auto_convert_value(value)
+            else:
+                # Row ngắn hơn số headers — fill None
+                row_dict[header] = None
+
+        # Nếu row dài hơn số headers — thêm columns extra
+        for i in range(len(headers), len(row)):
+            extra_key = f"extra_{i}"
+            value = row[i].strip()
+            row_dict[extra_key] = self._auto_convert_value(value)
+
+        return row_dict
+
+    def _auto_convert_value(self, value: str) -> Any:
+        """
+        Tự động convert string value về kiểu phù hợp.
+
+        Thứ tự thử: bool -> int -> float -> giữ nguyên string
+
+        Args:
+            value: String value từ CSV
+
+        Returns:
+            Giá trị đã convert (int, float, bool, None, hoặc string)
+        """
+        if not value:
+            return None
+
+        # Bool
+        lower = value.lower()
+        if lower == "true":
+            return True
+        if lower == "false":
+            return False
+
+        # Int
+        try:
+            int_value = int(value)
+            # Kiểm tra xem int có bằng với giá trị gốc không (tránh "123abc")
+            if str(int_value) == value:
+                return int_value
+        except ValueError:
+            pass
+
+        # Float
+        try:
+            float_value = float(value)
+            return float_value
+        except ValueError:
+            pass
+
+        # Giữ nguyên string
+        return value
+
+    def _validate_type(
+        self,
+        value: Any,
+        expected_type: str,
+        field_name: str,
+    ) -> Optional[str]:
+        """
+        Validate kiểu dữ liệu của value.
+
+        Args:
+            value: Giá trị cần validate
+            expected_type: Kiểu mong đợi (str, int, float, bool, datetime)
+            field_name: Tên trường (cho error message)
+
+        Returns:
+            None nếu valid, error message nếu invalid
+        """
+        if expected_type == "str":
+            # Mọi thứ đều có thể cast thành string
+            return None
+
+        elif expected_type == "int":
+            try:
+                int(value)
+                return None
+            except (ValueError, TypeError):
+                return f"Trường '{field_name}' phải là số nguyên (int), nhận được: {value!r}"
+
+        elif expected_type == "float":
+            try:
+                float(value)
+                return None
+            except (ValueError, TypeError):
+                return f"Trường '{field_name}' phải là số thập phân (float), nhận được: {value!r}"
+
+        elif expected_type == "bool":
+            if not isinstance(value, bool) and str(value).lower() not in ("true", "false", "0", "1"):
+                return f"Trường '{field_name}' phải là boolean (true/false), nhận được: {value!r}"
+            return None
+
+        elif expected_type == "datetime":
+            if isinstance(value, str):
+                try:
+                    from datetime import datetime
+                    datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    return None
+                except (ValueError, TypeError):
+                    return f"Trường '{field_name}' phải là datetime hợp lệ (ISO format), nhận được: {value!r}"
+            return None
+
+        return None

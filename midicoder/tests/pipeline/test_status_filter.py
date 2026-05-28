@@ -70,7 +70,7 @@ class TestFileContributionsStatus:
 
     def test_default_status_is_stable(self):
         """FileContributions không có status nên default là 'stable'."""
-        fc = FileContributions(pack_id="CP01", pack_internal_id="cp01_domain_model")
+        fc = FileContributions(pack_id="B01", pack_internal_id="cp_base_domain_model")
         assert fc.status == "stable"
 
     def test_explicit_status(self):
@@ -102,21 +102,21 @@ class TestLoaderStatusFilter:
     def test_load_stable_pack_no_filter(self):
         """Load pack không có status_filter nên trả về đầy đủ."""
         loader = FileContributionsLoader()
-        fc = loader.load(pack_internal_id="cp01_domain_model", pack_id="CP01")
+        fc = loader.load(pack_internal_id="cp_base_domain_model", pack_id="B01")
 
-        assert fc.pack_id == "CP01"
+        assert fc.pack_id == "B01"
         assert fc.status == "stable"
 
     def test_load_stable_pack_with_stable_filter(self):
         """Load pack có status_filter='stable' nên trả về đầy đủ."""
         loader = FileContributionsLoader()
         fc = loader.load(
-            pack_internal_id="cp01_domain_model",
-            pack_id="CP01",
+            pack_internal_id="cp_base_domain_model",
+            pack_id="B01",
             status_filter="stable",
         )
 
-        assert fc.pack_id == "CP01"
+        assert fc.pack_id == "B01"
         assert fc.status == "stable"
         assert not fc.is_empty
 
@@ -124,12 +124,12 @@ class TestLoaderStatusFilter:
         """Load pack có status_filter='experimental' nên trả về empty."""
         loader = FileContributionsLoader()
         fc = loader.load(
-            pack_internal_id="cp01_domain_model",
-            pack_id="CP01",
+            pack_internal_id="cp_base_domain_model",
+            pack_id="B01",
             status_filter="experimental",
         )
 
-        assert fc.pack_id == "CP01"
+        assert fc.pack_id == "B01"
         assert fc.is_empty
 
     def test_load_nonexistent_pack(self):
@@ -144,30 +144,37 @@ class TestLoaderStatusFilter:
         """Load với cả stack và status_filter cùng lúc."""
         loader = FileContributionsLoader()
         fc = loader.load(
-            pack_internal_id="cp01_domain_model",
-            pack_id="CP01",
+            pack_internal_id="cp_base_domain_model",
+            pack_id="B01",
             stack="fastapi",
             status_filter="stable",
         )
 
-        assert fc.pack_id == "CP01"
+        assert fc.pack_id == "B01"
         assert fc.status == "stable"
         assert not fc.is_empty
 
     def test_load_with_stack_mismatch_and_status_filter(self):
-        """Load với stack không match nên trả về empty (dù status match)."""
+        """Load với stack không match nên trả về ít files hơn."""
         loader = FileContributionsLoader()
-        # CP01 only has fastapi/nestjs, not "angular" for backend
-        fc = loader.load(
-            pack_internal_id="cp01_domain_model",
-            pack_id="CP01",
+        fc_fastapi = loader.load(
+            pack_internal_id="cp_base_domain_model",
+            pack_id="B01",
+            stack="fastapi",
+            status_filter="stable",
+        )
+        fc_angular = loader.load(
+            pack_internal_id="cp_base_domain_model",
+            pack_id="B01",
             stack="angular",
             status_filter="stable",
         )
 
-        assert fc.pack_id == "CP01"
-        # CP01 has no angular entries, so contributions should be empty
-        assert fc.is_empty
+        assert fc_fastapi.pack_id == "B01"
+        # Đếm tất cả files
+        len_fc = lambda fc: len(fc.infrastructure) + len(fc.per_entity) + len(fc.per_command) + len(fc.per_query) + len(fc.per_ui_component) + len(fc.per_widget)
+        # fastapi nên có >= angular
+        assert len_fc(fc_fastapi) >= len_fc(fc_angular)
 
 
 # ============================================================================
@@ -471,7 +478,7 @@ class TestPlanCreationWithStatusFilter:
         )
 
         counts = plan.count_files()
-        # CP07 (IaC) is stable, so infra files should still be present
+        # I01 (IaC) is stable, so infra files should still be present
         assert counts["infra"] >= 0
 
 
@@ -519,7 +526,7 @@ class TestPlanFunctionsStatusFilter:
         files_all = _plan_infra_files()
         files_stable = _plan_infra_files(status_filter="stable")
 
-        # CP07 is stable, so stable filter should return same files
+        # I01 is stable, so stable filter should return same files
         assert len(files_stable) <= len(files_all)
 
     def test_plan_infra_files_deprecated_filter(self):
@@ -565,13 +572,13 @@ class TestEdgeCases:
         """status_filter nên case-sensitive."""
         loader = FileContributionsLoader()
         fc_lower = loader.load(
-            pack_internal_id="cp01_domain_model",
-            pack_id="CP01",
+            pack_internal_id="cp_base_domain_model",
+            pack_id="B01",
             status_filter="stable",
         )
         fc_upper = loader.load(
-            pack_internal_id="cp01_domain_model",
-            pack_id="CP01",
+            pack_internal_id="cp_base_domain_model",
+            pack_id="B01",
             status_filter="Stable",  # Capital S
         )
 

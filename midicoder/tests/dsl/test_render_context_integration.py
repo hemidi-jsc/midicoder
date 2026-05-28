@@ -158,12 +158,12 @@ class TestFileContributionsLoaderRenderContext:
             file_type="python",
             template="entity_model.py.jinja2",
             context_keys=[],
-            pack_emitter="cp01_domain_model.fastapi",
+            pack_emitter="cp_base_domain_model.fastapi",
             stacks=["fastapi"],
         )
         contributions = FileContributions(
             pack_id="CP01",
-            pack_internal_id="cp01_domain_model",
+            pack_internal_id="cp_base_domain_model",
             per_entity=[entry],
             per_command=[],
             per_query=[],
@@ -197,12 +197,12 @@ class TestFileContributionsLoaderRenderContext:
             file_type="python",
             template="command.py.jinja2",
             context_keys=[],
-            pack_emitter="cp01_domain_model.fastapi",
+            pack_emitter="cp_base_domain_model.fastapi",
             stacks=["fastapi"],
         )
         contributions = FileContributions(
             pack_id="CP01",
-            pack_internal_id="cp01_domain_model",
+            pack_internal_id="cp_base_domain_model",
             per_entity=[],
             per_command=[entry],
             per_query=[],
@@ -236,12 +236,12 @@ class TestFileContributionsLoaderRenderContext:
             file_type="python",
             template="query.py.jinja2",
             context_keys=[],
-            pack_emitter="cp01_domain_model.fastapi",
+            pack_emitter="cp_base_domain_model.fastapi",
             stacks=["fastapi"],
         )
         contributions = FileContributions(
             pack_id="CP01",
-            pack_internal_id="cp01_domain_model",
+            pack_internal_id="cp_base_domain_model",
             per_entity=[],
             per_command=[],
             per_query=[entry],
@@ -269,12 +269,12 @@ class TestFileContributionsLoaderRenderContext:
             file_type="yaml",
             template="docker-compose.yml.jinja2",
             context_keys=[],
-            pack_emitter="cp07_iac.infrastructure",
+            pack_emitter="cp_infra_iac.infrastructure",
             stacks=["infrastructure"],
         )
         contributions = FileContributions(
             pack_id="CP07",
-            pack_internal_id="cp07_iac",
+            pack_internal_id="cp_infra_iac",
             per_entity=[],
             per_command=[],
             per_query=[],

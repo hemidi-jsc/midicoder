@@ -1,0 +1,279 @@
+pack:
+  id: F25
+  name: Chat & Messaging
+  internal_id: cp_full_chat
+  version: 2.0.0
+  status: stable
+  category: communication
+  depends_on:
+  - B01
+  - C02
+  - FE02
+  - F07
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: MDC-F25
+    range: MDC-CP41-001 to MDC-CP41-010
+  capabilities_provided:
+  - chat_message
+  - realtime_messaging
+  - support_ticket
+  - notification_center
+  capabilities:
+  - id: chat_message
+    emitter: fastapi, nestjs, angular, react
+  - id: realtime_messaging
+    emitter: fastapi, nestjs, angular, react
+  - id: support_ticket
+    emitter: fastapi, nestjs, angular, react
+  - id: notification_center
+    emitter: fastapi, nestjs, angular, react
+  definitions:
+  - name: Conversation
+    description: Phòng chat, hỗ trợ direct/group/support/broadcast
+  - name: ChatMessage
+    description: Tin nhắn, hỗ trợ nhiều loại (text/image/video/file/reaction)
+  - name: ReadReceipt
+    description: Xác nhận đọc
+  - name: Notification
+    description: Thông báo trong hệ thống chat
+  obligations:
+  - name: MessageValidation
+    description: Validate message content trước khi broadcast
+  - name: RealtimeDelivery
+    description: Đảm bảo message được giao qua WebSocket/SSE
+  file_contributions:
+    infrastructure:
+    - path: app/chat/models.py
+      file_type: chat_models
+      template: cp_full_chat/chat_models.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - conversations
+      - message_types
+    - path: app/chat/schemas.py
+      file_type: chat_schemas
+      template: cp_full_chat/chat_schemas.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - conversations
+    - path: app/chat/services/chat_service.py
+      file_type: chat_service
+      template: cp_full_chat/chat_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - conversations
+      - message_types
+    - path: app/chat/routers/chat_router.py
+      file_type: chat_router
+      template: cp_full_chat/chat_router.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/chat/websocket/chat_websocket.py
+      file_type: chat_websocket
+      template: cp_full_chat/chat_websocket.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/chat/consumers/chat_consumer.py
+      file_type: chat_consumer
+      template: cp_full_chat/chat_consumer.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - conversations
+    - path: app/chat/workers/chat_worker.py
+      file_type: chat_worker
+      template: cp_full_chat/chat_worker.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - redis_url
+    - path: src/chat/entities/chat.entity.ts
+      file_type: chat_entity
+      template: cp_full_chat/chat.entity.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - conversations
+    - path: src/chat/dtos/chat.dto.ts
+      file_type: chat_dto
+      template: cp_full_chat/chat.dto.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - conversations
+    - path: src/chat/services/chat.service.ts
+      file_type: chat_service
+      template: cp_full_chat/chat.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - conversations
+    - path: src/chat/controllers/chat.controller.ts
+      file_type: chat_controller
+      template: cp_full_chat/chat.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/chat/gateways/chat.gateway.ts
+      file_type: chat_gateway
+      template: cp_full_chat/chat.gateway.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - conversations
+    - path: src/chat/chat.module.ts
+      file_type: chat_module
+      template: cp_full_chat/chat.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/chat/services/chat-queue.service.ts
+      file_type: chat_queue
+      template: cp_full_chat/chat-queue.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - redis_url
+    - path: src/app/chat/components/chat-window.component.ts
+      file_type: chat_window
+      template: cp_full_chat/chat-window.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - conversations
+    - path: src/app/chat/components/chat-conversation-list.component.ts
+      file_type: chat_conversation_list
+      template: cp_full_chat/chat-conversation-list.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/chat/components/chat-notification.component.ts
+      file_type: chat_notification
+      template: cp_full_chat/chat-notification.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/chat/components/rich-message.component.ts
+      file_type: rich_message_component
+      template: cp_full_chat/rich-message.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/chat/chat.service.ts
+      file_type: chat_service
+      template: cp_full_chat/chat.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/chat/chat.store.ts
+      file_type: chat_store
+      template: cp_full_chat/chat.store.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/chat/chat-types.ts
+      file_type: chat_types
+      template: cp_full_chat/chat-types.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/chat/components/ChatWindow.tsx
+      file_type: chat_window
+      template: cp_full_chat/ChatWindow.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - conversations
+    - path: src/chat/components/ConversationList.tsx
+      file_type: conversation_list
+      template: cp_full_chat/ConversationList.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/chat/components/NotificationBell.tsx
+      file_type: notification_bell
+      template: cp_full_chat/NotificationBell.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/chat/components/RichMessage.tsx
+      file_type: rich_message_component
+      template: cp_full_chat/RichMessage.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/chat/hooks/useChat.ts
+      file_type: chat_hook
+      template: cp_full_chat/useChat.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/chat/hooks/useNotifications.ts
+      file_type: notifications_hook
+      template: cp_full_chat/useNotifications.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/chat/services/chatService.ts
+      file_type: chat_service
+      template: cp_full_chat/chatService.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+  frontend_integration:
+    angular:
+    - ChatWindowComponent
+    - ChatConversationListComponent
+    - ChatNotificationComponent
+    - RichMessageComponent
+    - ChatService
+    - ChatStore
+    - ChatTypes
+    react:
+    - ChatWindow
+    - ConversationList
+    - NotificationBell
+    - RichMessage
+    - useChat
+    - useNotifications
+    - chatService
+  recipes:
+  - basic_chat_recipe
+  - full_messaging_recipe
+  type: full
+  render_context_support: true

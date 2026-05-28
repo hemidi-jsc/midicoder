@@ -12,14 +12,14 @@ Schema (in pack.yml)::
      infrastructure:
        - path: "app/database.py"
          file_type: "database"
-         template: "cp08_database/database.py.jinja2"
+         template: "cp_backend_database/database.py.jinja2"
          stacks: ["fastapi", "nestjs"]
          pack_emitter: null
      # Emitted once per entity in MIR metadata
      per_entity:
        - path_pattern: "app/repositories/{entity_snake}_repo.py"
          file_type: "repository"
-         template: "cp08_database/repository.py.jinja2"
+         template: "cp_backend_database/repository.py.jinja2"
          stacks: ["fastapi", "nestjs"]
          pack_emitter: null  # null = raw Jinja2; string = pack_emitter key
          context_keys: ["entity"]  # which MIR metadata keys to inject
@@ -259,7 +259,7 @@ class FileContributionsLoader:
         """Load contributions for a single pack, optionally filtered by stack.
 
         Args:
-            pack_internal_id: Folder name (e.g. ``cp08_database``).
+            pack_internal_id: Folder name (e.g. ``cp_backend_database``).
             pack_id: Pack id (e.g. ``CP08``).
             stack: If set, only keep entries whose ``stacks`` list contains
                    the given value.

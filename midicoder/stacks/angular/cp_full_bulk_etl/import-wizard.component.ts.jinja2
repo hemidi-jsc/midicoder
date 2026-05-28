@@ -1,0 +1,1343 @@
+/**
+* Import Wizard Component — CP38: Data Import/Export/ETL.
+*{% raw %}
+* UI Framework: {{{ ui_framework }}}{% endraw %}
+*
+* Component standalone cho luu ong import du lieu da buoc:
+* Buoc 1: Tai len file (CSV/JSON) voi drag-and-drop, kiem tra file
+* Buoc 2: Anh xa cot (chon entity dich, anh xa cot voi dropdown)
+* Buoc 3: Xem truoc (hien thi N hang dau trong bang)
+* Buoc 4: Xac nhan va bat dau import
+*
+* Su dung @angular/cdk/drag-drop cho file upload, @angular/material
+* cho stepper, bang, nut bam.
+*/
+
+import {
+Component,
+OnInit,
+OnDestroy,
+ViewChild,
+ChangeDetectorRef,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+
+{% if ui_framework == "material" %}
+import {
+MatStepperModule,
+MatStepper,
+} from '@angular/material/stepper';
+import { MatButtonModule } from '@angular/material/button';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatTableModule } from '@angular/material/table';
+import { MatPaginatorModule } from '@angular/material/paginator';
+import { MatSortModule } from '@angular/material/sort';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+import { MatIconModule } from '@angular/material/icon';
+import { MatChipModule } from '@angular/material/chips';
+import { MatCardModule } from '@angular/material/card';
+import { MatListModule } from '@angular/material/list';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+{% elif ui_framework == "tailwind" %}
+// Su dung Tailwind utility classes trong template
+{% elif ui_framework == "bootstrap" %}
+// Su dung Bootstrap classes trong template
+{% elif ui_framework == "antd" %}
+// Ant Design khong ung dung cho Angular
+{% elif ui_framework == "carbon" %}
+// Carbon khong ung dung cho Angular
+{% endif %}
+
+import {
+CdkDragDrop,
+moveItemInArray,
+transferArrayItem,
+DragDropModule,
+} from '@angular/cdk/drag-drop';
+import { Subscription } from 'rxjs';
+import { ImportService } from './import.service';
+{% raw %}
+
+// =========================================================================
+// Giao diện dữ liệu
+// =========================================================================
+
+/**
+* Thông tin cột từ file được tải lên.
+*/
+interface SourceColumn {
+name: string;
+type: string;
+sampleValues: string[];
+}
+
+/**
+* Ánh xạ giữa cột nguồn và cột đích.
+*/
+interface ColumnMapping {
+sourceColumn: string;
+targetColumn: string;
+}
+
+/**
+* Dữ liệu xem trước mỗi hàng.
+*/
+interface PreviewRow {
+[key: string]: any;
+}
+
+/**
+* Danh sách các entity đích có sẵn để ánh xạ.
+*/
+interface TargetEntity {
+name: string;
+label: string;
+columns: { name: string; label: string; type: string }[];
+}
+
+/**
+* Kết quả từ ImportService.
+*/
+interface ImportJobResult {
+jobKey: string;
+status: string;
+message?: string;
+}
+
+// =========================================================================
+// Component
+// =========================================================================
+
+@Component({
+selector: 'mc-import-wizard',
+standalone: true,
+imports: [
+CommonModule,
+FormsModule,
+ReactiveFormsModule,
+{% if ui_framework == "material" %}
+MatStepperModule,
+MatButtonModule,
+MatProgressBarModule,
+MatTableModule,
+MatPaginatorModule,
+MatSortModule,
+MatFormFieldModule,
+MatInputModule,
+MatSelectModule,
+MatIconModule,
+MatChipModule,
+MatCardModule,
+MatListModule,
+MatSnackBarModule,
+{% elif ui_framework == "antd" %}
+{% endif %}
+DragDropModule,
+],
+template: `
+<div class="mc-import-wizard">
+    <!-- Tiêu đề -->
+    <h2 class="mc-wizard-title">Nhập dữ liệu</h2>
+
+    <!-- Stepper đa bước -->
+    <mat-stepper #stepper linear [linear]="true" color="primary" class="mc-stepper">
+        <!-- =================================================================
+             Bước 1: Tải lên file
+             ================================================================= -->
+        <mat-step [stepControl]="uploadForm" label="Tải file lên">
+            <ng-template matStepLabel>Tải file lên</ng-template>
+
+            <div class="mc-step-content">
+                <!-- Khu vực drag-and-drop -->
+                <div class="mc-drop-zone" [class.drag-over]="isDragOver" (dragover)="onDragOver($event)"
+                    (dragover.prevent)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)"
+                    cdkDropZone>
+                    <mat-icon class="mc-drop-icon">cloud_upload</mat-icon>
+                    <p class="mc-drop-text">
+                        {{ isDragOver ? 'Thả file vào đây' : 'Kéo thả file vào đây hoặc nhấn để chọn' }}
+                    </p>
+                    <p class="mc-drop-hint">
+                        Hỗ trợ: CSV, JSON — Tối đa {{ maxSize / 1024 / 1024 | number:'1.0-0' }}MB
+                    </p>
+                    <input #fileInput type="file" accept=".csv,.json" (change)="onFileSelected($event)"
+                        class="mc-file-input" style="display: none" />
+                    <button mat-raised-button color="primary" (click)="fileInput.click()">
+                        <mat-icon>folder_open</mat-icon>
+                        Chọn file
+                    </button>
+                </div>
+
+                <!-- Thông tin file đã chọn -->
+                <div *ngIf="selectedFile" class="mc-file-info">
+                    <mat-card class="mc-selected-file-card">
+                        <mat-card-content>
+                            <div class="mc-file-meta">
+                                <mat-icon class="mc-file-icon">
+                                    {{ getFileIcon(selectedFile.name) }}
+                                </mat-icon>
+                                <div class="mc-file-details">
+                                    <span class="mc-file-name">{{ selectedFile.name }}</span>
+                                    <span class="mc-file-size">
+                                        {{ selectedFile.size / 1024 | number:'1.0-0' }} KB
+                                    </span>
+                                </div>
+                                <button mat-icon-button (click)="clearFile()" aria-label="Xóa file">
+                                    <mat-icon>close</mat-icon>
+                                </button>
+                            </div>
+                            <!-- Chip hiển thị định dạng file -->
+                            <mat-chip-set class="mc-format-chips">
+                                <mat-chip color="primary">
+                                    {{ detectedFormat | uppercase }}
+                                </mat-chip>
+                            </mat-chip-set>
+                        </mat-card-content>
+                    </mat-card>
+                </div>
+
+                <!-- Hiển thị lỗi validation -->
+                <div *ngIf="fileError" class="mc-file-error">
+                    <mat-icon color="warn">error</mat-icon>
+                    <span>{{ fileError }}</span>
+                </div>
+
+                <!-- Danh sách các cột phát hiện được từ file -->
+                <div *ngIf="sourceColumns.length > 0" class="mc-detected-columns">
+                    <h4>Các cột phát hiện được:</h4>
+                    <mat-chip-set>
+                        <mat-chip *ngFor="let col of sourceColumns">
+                            {{ col.name }} ({{ col.type }})
+                        </mat-chip>
+                    </mat-chip-set>
+                </div>
+            </div>
+
+            <div class="mc-step-actions">
+                <button mat-button matStepperNext [disabled]="!canProceedToStep(1)">
+                    Tiếp tục
+                </button>
+            </div>
+        </mat-step>
+
+        <!-- =================================================================
+             Bước 2: Ánh xạ cột
+             ================================================================= -->
+        <mat-step [stepControl]="mappingForm" label="Ánh xạ cột">
+            <ng-template matStepLabel>Ánh xạ cột</ng-template>
+
+            <div class="mc-step-content">
+                <!-- Chọn entity đích -->
+                <mat-form-field class="mc-full-width">
+                    <mat-label>Chọn thực thể đích</mat-label>
+                    <mat-select [(ngModel)]="selectedEntity" (selectionChange)="onEntitySelected()" name="targetEntity">
+                        <mat-option *ngFor="let entity of targetEntities" [value]="entity.name">
+                            {{ entity.label }}
+                        </mat-option>
+                    </mat-select>
+                </mat-form-field>
+
+                <!-- Bảng ánh xạ cột -->
+                <div *ngIf="selectedEntity" class="mc-mapping-table">
+                    <h4>Ánh xạ cột nguồn sang cột đích</h4>
+                    <table mat-table [dataSource]="columnMappings" class="mc-mapping-grid">
+                        <!-- Cột nguồn -->
+                        <ng-container matColumnDef="source">
+                            <th mat-header-cell *matHeaderCellDef>Cột nguồn</th>
+                            <td mat-cell *matCellDef="let mapping">
+                                <mat-chip color="accent">{{ mapping.sourceColumn }}</mat-chip>
+                            </td>
+                        </ng-container>
+
+                        <!-- Mũi tên ánh xạ -->
+                        <ng-container matColumnDef="arrow">
+                            <th mat-header-cell *matHeaderCellDef></th>
+                            <td mat-cell *matCellDef="let mapping">
+                                <mat-icon>arrow_forward</mat-icon>
+                            </td>
+                        </ng-container>
+
+                        <!-- Dropdown chọn cột đích -->
+                        <ng-container matColumnDef="target">
+                            <th mat-header-cell *matHeaderCellDef>Cột đích</th>
+                            <td mat-cell *matCellDef="let mapping; let i = index">
+                                <mat-form-field class="mc-mapping-select">
+                                    <mat-label>Chọn cột đích</mat-label>
+                                    <mat-select [(value)]="columnMappings[i].targetColumn"
+                                        (selectionChange)="onMappingChanged()">
+                                        <mat-option value="">-- Không ánh xạ --</mat-option>
+                                        <mat-option *ngFor="let col of getTargetColumns()" [value]="col.name">
+                                            {{ col.label }} <small>({{ col.type }})</small>
+                                        </mat-option>
+                                    </mat-select>
+                                </mat-form-field>
+                            </td>
+                        </ng-container>
+
+                        <tr mat-header-row *matHeaderRowDef="mappingDisplayColumns"></tr>
+                        <tr mat-row *matRowDef="let row; columns: mappingDisplayColumns;"></tr>
+                    </table>
+                </div>
+
+                <!-- Lưu ý -->
+                <div *ngIf="selectedEntity && !columnMappings.length" class="mc-mapping-empty">
+                    <mat-icon>info</mat-icon>
+                    <span>Chưa có cột để ánh xạ. Vui lòng tải file ở bước trước.</span>
+                </div>
+            </div>
+
+            <div class="mc-step-actions">
+                <button mat-button matStepperPrevious>Quay lại</button>
+                <button mat-button matStepperNext [disabled]="!canProceedToStep(2)">
+                    Tiếp tục
+                </button>
+            </div>
+        </mat-step>
+
+        <!-- =================================================================
+             Bước 3: Xem trước dữ liệu
+             ================================================================= -->
+        <mat-step label="Xem trước">
+            <ng-template matStepLabel>Xem trước</ng-template>
+
+            <div class="mc-step-content">
+                <div class="mc-preview-header">
+                    <h4>Xem trước {{ previewData.length }} hàng đầu</h4>
+                    <mat-form-field class="mc-preview-limit">
+                        <mat-label>Số hàng xem trước</mat-label>
+                        <input matInput type="number" [(ngModel)]="previewLimit" (change)="loadPreview()" min="1"
+                            max="100" />
+                    </mat-form-field>
+                </div>
+
+                <!-- Bảng xem trước với thanh cuộn -->
+                <div class="mc-preview-table-wrapper">
+                    <table mat-table [dataSource]="previewData" matSort class="mc-preview-table">
+                        <!-- Cột động cho từng source column -->
+                        <ng-container *ngFor="let col of sourceColumns" [matColumnDef]="col.name">
+                            <th mat-header-cell *matHeaderCellDef mat-sort-header>
+                                {{ col.name }}
+                            </th>
+                            <td mat-cell *matCellDef="let row">
+                                {{ row[col.name] ?? '(null)' }}
+                            </td>
+                        </ng-container>
+
+                        <tr mat-header-row *matHeaderRowDef="previewColumns"></tr>
+                        <tr mat-row *matRowDef="let row; columns: previewColumns;"></tr>
+
+                        <!-- Hàng khi không có dữ liệu -->
+                        <tr class="mat-row" *matNoDataRow>
+                            <td class="mat-cell" [colSpan]="previewColumns.length">
+                                Không có dữ liệu để xem trước
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
+                <mat-paginator [pageSize]="10" [pageSizeOptions]="[5, 10, 25, 50]" showFirstLastButtons>
+                </mat-paginator>
+            </div>
+
+            <div class="mc-step-actions">
+                <button mat-button matStepperPrevious>Quay lại</button>
+                <button mat-button matStepperNext [disabled]="!canProceedToStep(3)">
+                    Tiếp tục
+                </button>
+            </div>
+        </mat-step>
+
+        <!-- =================================================================
+             Bước 4: Xác nhận và bắt đầu import
+             ================================================================= -->
+        <mat-step label="Xác nhận">
+            <ng-template matStepLabel>Xác nhận</ng-template>
+
+            <div class="mc-step-content">
+                <mat-card class="mc-confirm-card">
+                    <mat-card-header>
+                        <mat-card-title>Xác nhận thông tin import</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                        <table class="mc-confirm-table">
+                            <tr>
+                                <th>File:</th>
+                                <td>{{ selectedFile?.name }}</td>
+                            </tr>
+                            <tr>
+                                <th>Định dạng:</th>
+                                <td><mat-chip color="primary">{{ detectedFormat | uppercase }}</mat-chip></td>
+                            </tr>
+                            <tr>
+                                <th>Entity đích:</th>
+                                <td>{{ getSelectedEntityLabel() }}</td>
+                            </tr>
+                            <tr>
+                                <th>Các cột ánh xạ:</th>
+                                <td>
+                                    <mat-chip-set>
+                                        <mat-chip *ngFor="let m of columnMappings" [disabled]="!m.targetColumn">
+                                            {{ m.sourceColumn }} &rarr; {{ m.targetColumn || '—' }}
+                                        </mat-chip>
+                                    </mat-chip-set>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>Số hàng:</th>
+                                <td>{{ totalRowCount }}</td>
+                            </tr>
+                        </table>
+
+                        <!-- Tùy chọn import -->
+                        <div class="mc-import-options">
+                            <h4>Tùy chọn</h4>
+                            <mat-checkbox [(ngModel)]="importOptions.overwriteExisting">
+                                Ghi đè dữ liệu hiện có
+                            </mat-checkbox>
+                            <mat-checkbox [(ngModel)]="importOptions.validateBeforeImport">
+                                Kiểm tra dữ liệu trước khi import
+                            </mat-checkbox>
+                            <mat-checkbox [(ngModel)]="importOptions.continueOnError">
+                                Tiếp tục khi gặp lỗi hàng
+                            </mat-checkbox>
+                        </div>
+                    </mat-card-content>
+                </mat-card>
+
+                <!-- Hiển thị trạng thái import đang chạy -->
+                <div *ngIf="isImporting" class="mc-import-progress">
+                    <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+                    <p>Đang gửi yêu cầu import...</p>
+                </div>
+
+                <!-- Hiển thị kết quả import -->
+                <div *ngIf="importResult" class="mc-import-result">
+                    <mat-card [class.mc-success-card]="importResult.status === 'completed'"
+                        [class.mc-error-card]="importResult.status === 'failed'">
+                        <mat-card-content>
+                            <mat-icon [color]="importResult.status === 'completed' ? 'accent' : 'warn'">
+                                {{ importResult.status === 'completed' ? 'check_circle' : 'error' }}
+                            </mat-icon>
+                            <span>{{ importResult.message }}</span>
+                        </mat-card-content>
+                    </mat-card>
+                </div>
+            </div>
+
+            <div class="mc-step-actions">
+                <button mat-button matStepperPrevious>Quay lại</button>
+                <button mat-raised-button color="primary" (click)="startImport()"
+                    [disabled]="isImporting || !!importResult">
+                    <mat-icon>import_export</mat-icon>
+                    {{ isImporting ? 'Đang xử lý...' : 'Bắt đầu import' }}
+                </button>
+                <button *ngIf="importResult" mat-raised-button color="accent" (click)="resetWizard()">
+                    Import file mới
+                </button>
+            </div>
+        </mat-step>
+    </mat-stepper>
+</div>
+`,
+styles: [
+`
+:host {
+display: block;
+}
+
+.mc-import-wizard {
+padding: 16px;
+max-width: 960px;
+margin: 0 auto;
+}
+
+.mc-wizard-title {
+margin: 0 0 16px;
+font-size: 1.5rem;
+color: #333;
+}
+
+.mc-stepper {
+margin-top: 8px;
+}
+
+.mc-step-content {
+padding: 16px 0;
+}
+
+.mc-step-actions {
+display: flex;
+justify-content: flex-end;
+gap: 8px;
+padding: 16px 0 0;
+}
+
+/* ==========================================================================
+Bước 1: Drop zone
+========================================================================== */
+.mc-drop-zone {
+border: 2px dashed #90caf9;
+border-radius: 12px;
+padding: 48px 24px;
+text-align: center;
+cursor: pointer;
+transition: border-color 0.2s, background-color 0.2s;
+display: flex;
+flex-direction: column;
+align-items: center;
+gap: 12px;
+}
+
+.mc-drop-zone.drag-over {
+border-color: #1565c0;
+background-color: #e3f2fd;
+}
+
+.mc-drop-icon {
+font-size: 48px;
+width: 48px;
+height: 48px;
+color: #90caf9;
+}
+
+.mc-drop-text {
+font-size: 1.1rem;
+color: #555;
+margin: 0;
+}
+
+.mc-drop-hint {
+font-size: 0.85rem;
+color: #999;
+margin: 0;
+}
+
+/* ==========================================================================
+Thông tin file
+========================================================================== */
+.mc-file-info {
+margin-top: 16px;
+}
+
+.mc-selected-file-card {
+max-width: 480px;
+}
+
+.mc-file-meta {
+display: flex;
+align-items: center;
+gap: 12px;
+}
+
+.mc-file-icon {
+font-size: 32px;
+width: 32px;
+height: 32px;
+}
+
+.mc-file-details {
+flex: 1;
+display: flex;
+flex-direction: column;
+}
+
+.mc-file-name {
+font-weight: 500;
+font-size: 0.95rem;
+}
+
+.mc-file-size {
+font-size: 0.8rem;
+color: #888;
+}
+
+.mc-format-chips {
+margin-top: 8px;
+}
+
+.mc-file-error {
+display: flex;
+align-items: center;
+gap: 8px;
+margin-top: 12px;
+color: #c62828;
+font-size: 0.9rem;
+}
+
+.mc-detected-columns {
+margin-top: 16px;
+}
+
+.mc-detected-columns h4 {
+margin: 0 0 8px;
+font-size: 0.95rem;
+color: #555;
+}
+
+/* ==========================================================================
+Bước 2: Bảng ánh xạ
+========================================================================== */
+.mc-full-width {
+width: 100%;
+max-width: 400px;
+}
+
+.mc-mapping-table {
+margin-top: 16px;
+}
+
+.mc-mapping-table h4 {
+margin: 0 0 8px;
+font-size: 0.95rem;
+color: #555;
+}
+
+.mc-mapping-grid {
+width: 100%;
+border: 1px solid #e0e0e0;
+border-radius: 4px;
+}
+
+.mc-mapping-select {
+width: 260px;
+font-size: 0.85rem;
+}
+
+.mc-mapping-empty {
+display: flex;
+align-items: center;
+gap: 8px;
+margin-top: 16px;
+color: #888;
+font-size: 0.9rem;
+}
+
+/* ==========================================================================
+Bước 3: Xem trước
+========================================================================== */
+.mc-preview-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 12px;
+}
+
+.mc-preview-header h4 {
+margin: 0;
+font-size: 0.95rem;
+color: #555;
+}
+
+.mc-preview-limit {
+width: 160px;
+}
+
+.mc-preview-table-wrapper {
+max-height: 400px;
+overflow: auto;
+border: 1px solid #e0e0e0;
+border-radius: 4px;
+}
+
+.mc-preview-table {
+width: 100%;
+}
+
+/* ==========================================================================
+Bước 4: Xác nhận
+========================================================================== */
+.mc-confirm-card {
+margin-bottom: 16px;
+}
+
+.mc-confirm-table {
+width: 100%;
+border-collapse: collapse;
+}
+
+.mc-confirm-table th {
+text-align: right;
+padding: 8px 16px 8px 0;
+font-size: 0.9rem;
+color: #555;
+white-space: nowrap;
+vertical-align: top;
+}
+
+.mc-confirm-table td {
+padding: 8px 0;
+font-size: 0.9rem;
+}
+
+.mc-import-options {
+margin-top: 16px;
+border-top: 1px solid #e0e0e0;
+padding-top: 12px;
+}
+
+.mc-import-options h4 {
+margin: 0 0 8px;
+font-size: 0.9rem;
+color: #555;
+}
+
+.mc-import-options mat-checkbox {
+display: block;
+margin: 8px 0;
+}
+
+.mc-import-progress {
+margin-top: 16px;
+}
+
+.mc-import-result {
+margin-top: 16px;
+}
+
+.mc-import-result mat-card-content {
+display: flex;
+align-items: center;
+gap: 8px;
+}
+
+.mc-success-card {
+background: #e8f5e9;
+}
+
+.mc-error-card {
+background: #ffebee;
+}
+`,
+],
+})
+export class ImportWizardComponent implements OnInit, OnDestroy {
+// =========================================================================
+// Tham chiếu đến stepper
+// =========================================================================
+
+/** Tham chiếu đến MatStepper để điều hướng giữa các bước */
+@ViewChild('stepper') stepper!: MatStepper;
+
+// =========================================================================
+// Form Reactive
+// =========================================================================
+
+/** Form cho bước tải file lên */
+uploadForm: FormGroup;
+
+/** Form cho bước ánh xạ cột */
+mappingForm: FormGroup;
+
+// =========================================================================
+// Bước 1: Tải file lên
+// =========================================================================
+
+/** File được chọn bởi người dùng */
+selectedFile: File | null = null;
+
+/** Đang kéo file qua khu vực drop chưa */
+isDragOver: boolean = false;
+
+/** Thông báo lỗi validation file */
+fileError: string = '';
+
+/** Kích thước tối đa của file (10MB) */
+maxSize: number = 10 * 1024 * 1024;
+
+/** Định dạng file được phát hiện (csv hoặc json) */
+detectedFormat: string = '';
+
+/** Danh sách các cột phát hiện được từ file */
+sourceColumns: SourceColumn[] = [];
+
+// =========================================================================
+// Bước 2: Ánh xạ cột
+// =========================================================================
+
+/** Danh sách các entity đích có thể chọn (từ context) */
+targetEntities: TargetEntity[] = [
+{
+name: 'users',
+label: 'Người dùng',
+columns: [
+{ name: 'username', label: 'Tên đăng nhập', type: 'string' },
+{ name: 'email', label: 'Email', type: 'string' },
+{ name: 'full_name', label: 'Họ và tên', type: 'string' },
+{ name: 'phone', label: 'Số điện thoại', type: 'string' },
+{ name: 'role', label: 'Vai trò', type: 'string' },
+],
+},
+{
+name: 'products',
+label: 'Sản phẩm',
+columns: [
+{ name: 'sku', label: 'Mã sản phẩm', type: 'string' },
+{ name: 'name', label: 'Tên sản phẩm', type: 'string' },
+{ name: 'price', label: 'Giá', type: 'number' },
+{ name: 'category', label: 'Danh mục', type: 'string' },
+{ name: 'stock', label: 'Kho', type: 'number' },
+],
+},
+{
+name: 'orders',
+label: 'Đơn hàng',
+columns: [
+{ name: 'order_id', label: 'Mã đơn hàng', type: 'string' },
+{ name: 'customer_name', label: 'Tên khách hàng', type: 'string' },
+{ name: 'total_amount', label: 'Tổng tiền', type: 'number' },
+{ name: 'status', label: 'Trạng thái', type: 'string' },
+{ name: 'order_date', label: 'Ngày đặt hàng', type: 'date' },
+],
+},
+];
+
+/** Entity đích đang được chọn */
+selectedEntity: string = '';
+
+/** Danh sách ánh xạ cột */
+columnMappings: ColumnMapping[] = [];
+
+/** Các cột hiển thị trong bảng ánh xạ */
+mappingDisplayColumns: string[] = ['source', 'arrow', 'target'];
+
+// =========================================================================
+// Bước 3: Xem trước
+// =========================================================================
+
+/** Dữ liệu xem trước */
+previewData: PreviewRow[] = [];
+
+/** Số hàng xem trước */
+previewLimit: number = 10;
+
+/** Các cột hiển thị trong bảng xem trước */
+previewColumns: string[] = [];
+
+/** Tổng số hàng trong file */
+totalRowCount: number = 0;
+
+// =========================================================================
+// Bước 4: Xác nhận và import
+// =========================================================================
+
+/** Các tùy chọn import */
+importOptions = {
+overwriteExisting: false,
+validateBeforeImport: true,
+continueOnError: false,
+};
+
+/** Đang thực hiện import chưa */
+isImporting: boolean = false;
+
+/** Kết quả import job */
+importResult: ImportJobResult | null = null;
+
+// =========================================================================
+// Subscription
+// =========================================================================
+
+/** Collection subscriptions để hủy khi destroy */
+private subscriptions: Subscription = new Subscription();
+
+// =========================================================================
+// Context variables từ Jinja2
+// =========================================================================
+
+/** Các định dạng import được hỗ trợ */
+supportedFormats: Readonly<string[]> = {{ import_formats | tojson if import_formats else ['csv', 'json'] | tojson }};
+
+    /** Các trạng thái job */
+    jobStatuses: Readonly<string[]> = {{ job_statuses | tojson if job_statuses else ['pending', 'running', 'completed',
+        'failed', 'cancelled'] | tojson }};
+
+        /** Các loại transform */
+        transformTypes: Readonly<string[]> = {{ transform_types | tojson if transform_types else [] | tojson }};
+
+            /** Các nguồn extract */
+            extractSources: Readonly<string[]> = {{ extract_sources | tojson if extract_sources else [] | tojson }};
+
+                /** Các chế độ load */
+                loadModes: Readonly<string[]> = {{ load_modes | tojson if load_modes else ['insert', 'update', 'upsert']
+                    | tojson }};
+
+                    // =========================================================================
+                    // Lifecycle
+                    // =========================================================================
+
+                    constructor(
+                    private fb: FormBuilder,
+                    private importService: ImportService,
+                    private snackBar: MatSnackBar,
+                    private cdr: ChangeDetectorRef,
+                    ) {
+                    // Khởi tạo form cho bước upload
+                    this.uploadForm = this.fb.group({});
+                    // Khởi tạo form cho bước mapping
+                    this.mappingForm = this.fb.group({});
+                    }
+
+                    /**
+                    * OnInit — khởi tạo component.
+                    */
+                    ngOnInit(): void {
+                    // Không cần khởi tạo thêm ở đây
+                    }
+
+                    /**
+                    * OnDestroy — cleanup subscriptions và timer.
+                    */
+                    ngOnDestroy(): void {
+                    this.subscriptions.unsubscribe();
+                    }
+
+                    // =========================================================================
+                    // Bước 1: Handlers cho drag-and-drop và file input
+                    // =========================================================================
+
+                    /**
+                    * Xử lý khi kéo file vào khu vực drop.
+                    *
+                    * @param event — DragEvent
+                    */
+                    onDragOver(event: DragEvent): void {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.isDragOver = true;
+                    }
+
+                    /**
+                    * Xử lý khi kéo file ra khỏi khu vực drop.
+                    *
+                    * @param event — DragEvent
+                    */
+                    onDragLeave(event: DragEvent): void {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.isDragOver = false;
+                    }
+
+                    /**
+                    * Xử lý khi thả file vào khu vực drop.
+                    *
+                    * @param event — DragEvent chứa file list
+                    */
+                    onDrop(event: DragEvent): void {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.isDragOver = false;
+
+                    const files = event.dataTransfer?.files;
+                    if (files && files.length > 0) {
+                    this.processFile(files[0]);
+                    }
+                    }
+
+                    /**
+                    * Xử lý khi chọn file qua input[type=file].
+                    *
+                    * @param event — Event từ HTMLInputElement
+                    */
+                    onFileSelected(event: Event): void {
+                    const input = event.target as HTMLInputElement;
+                    if (input.files && input.files.length > 0) {
+                    this.processFile(input.files[0]);
+                    }
+                    // Reset input để cho phép chọn cùng file
+                    input.value = '';
+                    }
+
+                    /**
+                    * Xử lý file đã chọn: validate, phát hiện format, đọc cột.
+                    *
+                    * @param file — File cần xử lý
+                    */
+                    private processFile(file: File): void {
+                    this.selectedFile = file;
+                    this.fileError = '';
+                    this.sourceColumns = [];
+                    this.detectedFormat = '';
+
+                    // Kiểm tra kích thước file
+                    if (file.size > this.maxSize) {
+                    const mb = (file.size / 1024 / 1024).toFixed(1);
+                    this.fileError = `File quá lớn: ${mb}MB (tối đa ${this.maxSize / 1024 / 1024}MB)`;
+                    return;
+                    }
+
+                    // Phát hiện định dạng từ phần mở rộng
+                    const ext = file.name.split('.').pop()?.toLowerCase();
+                    if (ext === 'csv') {
+                    this.detectedFormat = 'csv';
+                    } else if (ext === 'json') {
+                    this.detectedFormat = 'json';
+                    } else {
+                    this.fileError = 'Định dạng không được hỗ trợ. Vui lòng chọn file CSV hoặc JSON.';
+                    return;
+                    }
+
+                    // Đọc file và phân tích các cột
+                    this.parseFileColumns(file);
+                    }
+
+                    /**
+                    * Đọc và phân tích các cột từ file CSV/JSON.
+                    *
+                    * @param file — File cần phân tích
+                    */
+                    private parseFileColumns(file: File): void {
+                    const reader = new FileReader();
+
+                    reader.onload = () => {
+                    const content = reader.result as string;
+
+                    if (this.detectedFormat === 'csv') {
+                    this.parseCSVColumns(content);
+                    } else {
+                    this.parseJSONColumns(content);
+                    }
+
+                    this.cdr.detectChanges();
+                    };
+
+                    reader.onerror = () => {
+                    this.fileError = 'Không thể đọc file. Vui lòng thử lại.';
+                    };
+
+                    reader.readAsText(file);
+                    }
+
+                    /**
+                    * Phân tích các cột từ nội dung CSV.
+                    *
+                    * @param content — Chuỗi nội dung CSV
+                    */
+                    private parseCSVColumns(content: string): void {
+                    const lines = content.trim().split('\n');
+                    if (!lines.length) {
+                    this.fileError = 'File CSV rỗng.';
+                    return;
+                    }
+
+                    // Lấy dòng tiêu đề (hàng đầu tiên)
+                    const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+
+                    // Phân loại kiểu dữ liệu dựa trên giá trị mẫu
+                    this.sourceColumns = headers.map((name) => {
+                    const sampleValues: string[] = [];
+                    // Lấy giá trị mẫu từ 5 hàng tiếp theo
+                    for (let i = 1; i < Math.min(lines.length, 6); i++) { const values=lines[i].split(','); if
+                        (values.length> headers.indexOf(name)) {
+                        sampleValues.push(values[headers.indexOf(name)].trim());
+                        }
+                        }
+
+                        return {
+                        name,
+                        type: this.inferColumnType(sampleValues),
+                        sampleValues,
+                        };
+                        });
+
+                        this.totalRowCount = Math.max(0, lines.length - 1);
+
+                        // Tải dữ liệu xem trước
+                        this.loadPreview();
+                        }
+
+                        /**
+                        * Phân tích các cột từ nội dung JSON.
+                        *
+                        * @param content — Chuỗi nội dung JSON
+                        */
+                        private parseJSONColumns(content: string): void {
+                        let data: any[] = [];
+
+                        try {
+                        const parsed = JSON.parse(content);
+                        data = Array.isArray(parsed) ? parsed : [parsed];
+                        } catch (e) {
+                        this.fileError = 'JSON không hợp lệ: Không thể phân tích cú pháp.';
+                        return;
+                        }
+
+                        if (!data.length) {
+                        this.fileError = 'File JSON không chứa dữ liệu.';
+                        return;
+                        }
+
+                        // Lấy các key từ object đầu tiên
+                        const keys = Object.keys(data[0]);
+                        this.sourceColumns = keys.map((name) => {
+                        const sampleValues: string[] = [];
+                        for (let i = 0; i < Math.min(data.length, 5); i++) { const val=data[i][name];
+                            sampleValues.push(val !==null && val !==undefined ? String(val) : '' ); } return { name,
+                            type: this.inferColumnType(sampleValues), sampleValues, }; });
+                            this.totalRowCount=data.length; // Tải dữ liệu xem trước this.previewData=data.slice(0,
+                            this.previewLimit); this.previewColumns=keys; } /** * Suy luận kiểu dữ liệu từ các giá trị
+                            mẫu. * * @param values — Danh sách giá trị mẫu * @returns Kiểu dữ liệu (number, date,
+                            boolean, string) */ private inferColumnType(values: string[]): string { if (!values.length
+                            || !values[0]) return 'string' ; // Kiểm tra number if (values.every((v)=> v !== '' &&
+                            !isNaN(Number(v)))) {
+                            return 'number';
+                            }
+
+                            // Kiểm tra boolean
+                            const lowerVals = values.map((v) => v.toLowerCase());
+                            if (lowerVals.every((v) => ['true', 'false', '0', '1', ''].includes(v))) {
+                            return 'boolean';
+                            }
+
+                            // Kiểm tra date (ISO format)
+                            if (values.every((v) => !v || !isNaN(Date.parse(v)))) {
+                            return 'date';
+                            }
+
+                            return 'string';
+                            }
+
+                            /**
+                            * Tải lại dữ liệu xem trước dựa trên previewLimit.
+                            */
+                            loadPreview(): void {
+                            if (!this.selectedFile || !this.sourceColumns.length) return;
+
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                            const content = reader.result as string;
+
+                            if (this.detectedFormat === 'csv') {
+                            const lines = content.trim().split('\n');
+                            const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+                            this.previewColumns = headers;
+                            this.previewData = lines
+                            .slice(1, 1 + this.previewLimit)
+                            .map((line) => {
+                            const vals = line.split(',');
+                            const row: PreviewRow = {};
+                            headers.forEach((h, i) => {
+                            row[h] = vals[i]?.trim() ?? null;
+                            });
+                            return row;
+                            });
+                            } else {
+                            try {
+                            const parsed = JSON.parse(content);
+                            const data = Array.isArray(parsed) ? parsed : [parsed];
+                            this.previewColumns = Object.keys(data[0] || {});
+                            this.previewData = data.slice(0, this.previewLimit);
+                            } catch (e) {
+                            this.previewData = [];
+                            }
+                            }
+                            };
+                            reader.readAsText(this.selectedFile);
+                            }
+
+                            /**
+                            * Xóa file đã chọn và reset trạng thái bước 1.
+                            */
+                            clearFile(): void {
+                            this.selectedFile = null;
+                            this.fileError = '';
+                            this.detectedFormat = '';
+                            this.sourceColumns = [];
+                            this.previewData = [];
+                            this.previewColumns = [];
+                            }
+
+                            /**
+                            * Trả về icon phù hợp với loại file.
+                            *
+                            * @param fileName — Tên file
+                            * @returns Tên icon Material
+                            */
+                            getFileIcon(fileName: string): string {
+                            const ext = fileName.split('.').pop()?.toLowerCase();
+                            if (ext === 'csv') return 'table_chart';
+                            if (ext === 'json') return 'code';
+                            return 'insert_drive_file';
+                            }
+
+                            // =========================================================================
+                            // Bước 2: Handlers cho ánh xạ cột
+                            // =========================================================================
+
+                            /**
+                            * Xử lý khi chọn entity đích.
+                            *
+                            * Tự động tạo ánh xạ ban đầu dựa trên tên cột giống nhau.
+                            */
+                            onEntitySelected(): void {
+                            this.columnMappings = this.sourceColumns.map((srcCol) => {
+                            // Thử tìm cột đích có tên tương tự
+                            const entity = this.targetEntities.find((e) => e.name === this.selectedEntity);
+                            const matchedTarget = entity?.columns.find(
+                            (tCol) => tCol.name.toLowerCase() === srcCol.name.toLowerCase()
+                            );
+
+                            return {
+                            sourceColumn: srcCol.name,
+                            targetColumn: matchedTarget?.name || '',
+                            };
+                            });
+                            }
+
+                            /**
+                            * Xử lý khi thay đổi ánh xạ cột.
+                            *
+                            * Có thể thêm logic validate ở đây.
+                            */
+                            onMappingChanged(): void {
+                            // Trigger detection để cập nhật state
+                            this.cdr.detectChanges();
+                            }
+
+                            /**
+                            * Trả về danh sách cột của entity đích đã chọn.
+                            *
+                            * @returns Mảng cột đích
+                            */
+                            getTargetColumns(): TargetEntity['columns'] {
+                            const entity = this.targetEntities.find((e) => e.name === this.selectedEntity);
+                            return entity?.columns || [];
+                            }
+
+                            /**
+                            * Trả về nhãn của entity đang chọn.
+                            *
+                            * @returns Nhãn entity hoặc chuỗi rỗng
+                            */
+                            getSelectedEntityLabel(): string {
+                            const entity = this.targetEntities.find((e) => e.name === this.selectedEntity);
+                            return entity?.label || '';
+                            }
+
+                            // =========================================================================
+                            // Bước 4: Xác nhận và import
+                            // =========================================================================
+
+                            /**
+                            * Bắt đầu quá trình import — gọi ImportService.
+                            */
+                            startImport(): void {
+                            this.isImporting = true;
+                            this.importResult = null;
+
+                            // Xây dựng cấu hình import job
+                            const config = {
+                            fileName: this.selectedFile?.name,
+                            format: this.detectedFormat,
+                            targetEntity: this.selectedEntity,
+                            columnMappings: this.columnMappings,
+                            totalRows: this.totalRowCount,
+                            options: this.importOptions,
+                            };
+
+                            // Gửi file và tạo import job
+                            const sub = this.importService
+                            .uploadFile(this.selectedFile!, this.detectedFormat)
+                            .subscribe({
+                            next: (uploadResponse: any) => {
+                            // Sau khi upload thành công, tạo import job
+                            const jobSub = this.importService
+                            .createImportJob(config)
+                            .subscribe({
+                            next: (jobResult: ImportJobResult) => {
+                            this.isImporting = false;
+                            this.importResult = jobResult;
+                            this.showSnackBar(`Job import đã được tạo: ${jobResult.jobKey}`, 'success');
+                            },
+                            error: (err: any) => {
+                            this.isImporting = false;
+                            this.importResult = {
+                            jobKey: '',
+                            status: 'failed',
+                            message: `Không thể tạo job: ${err.message || err}`,
+                            };
+                            this.showSnackBar('Không thể tạo job import', 'error');
+                            },
+                            });
+                            this.subscriptions.add(jobSub);
+                            },
+                            error: (err: any) => {
+                            this.isImporting = false;
+                            this.importResult = {
+                            jobKey: '',
+                            status: 'failed',
+                            message: `Lỗi upload file: ${err.message || err}`,
+                            };
+                            this.showSnackBar('Lỗi khi upload file', 'error');
+                            },
+                            });
+
+                            this.subscriptions.add(sub);
+                            }
+
+                            /**
+                            * Đặt lại wizard về trạng thái ban đầu.
+                            */
+                            resetWizard(): void {
+                            this.clearFile();
+                            this.selectedEntity = '';
+                            this.columnMappings = [];
+                            this.previewData = [];
+                            this.totalRowCount = 0;
+                            this.isImporting = false;
+                            this.importResult = null;
+                            this.importOptions = {
+                            overwriteExisting: false,
+                            validateBeforeImport: true,
+                            continueOnError: false,
+                            };
+                            if (this.stepper) {
+                            this.stepper.reset();
+                            }
+                            }
+
+                            // =========================================================================
+                            // Kiểm tra điều kiện chuyển bước
+                            // =========================================================================
+
+                            /**
+                            * Kiểm tra có thể chuyển tiếp từ bước hiện tại không.
+                            *
+                            * @param step — Số bước (1-indexed)
+                            * @returns true nếu có thể chuyển tiếp
+                            */
+                            canProceedToStep(step: number): boolean {
+                            switch (step) {
+                            case 1:
+                            // Bước 1: Phải có file hợp lệ với các cột
+                            return !!this.selectedFile && !this.fileError && this.sourceColumns.length > 0;
+                            case 2:
+                            // Bước 2: Phải chọn entity và có ít nhất 1 ánh xạ
+                            return !!this.selectedEntity && this.columnMappings.some((m) => m.targetColumn);
+                            case 3:
+                            // Bước 3: Phải có dữ liệu xem trước
+                            return this.previewData.length > 0;
+                            default:
+                            return true;
+                            }
+                            }
+
+                            // =========================================================================
+                            // Tiện ích hiển thị thông báo
+                            // =========================================================================
+
+                            /**
+                            * Hiển thị thông báo snackbar.
+                            *
+                            * @param message — Nội dung thông báo
+                            * @param type — Loại thông báo (success/error)
+                            */
+                            private showSnackBar(message: string, type: 'success' | 'error'): void {
+                            this.snackBar.open(message, 'Đóng', {
+                            duration: 5000,
+                            horizontalPosition: 'center',
+                            verticalPosition: 'bottom',
+                            });
+                            }
+                            }

@@ -1,0 +1,29 @@
+# {{ "=".center(66, "=") }}
+# CP54: Kubernetes Service Manifest
+# {{ "=".center(66, "=") }}
+{% for service in services %}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ service.name }}
+  labels:
+    app: {{ service.name }}
+spec:
+  type: {{ service.type }}
+  selector:
+{% for key, value in service.selector.items() %}
+    {{ key }}: {{ value }}
+{% endfor %}
+  ports:
+{% for port in service.ports %}
+    - port: {{ port.container_port }}
+      targetPort: {{ port.container_port }}
+      protocol: {{ port.protocol }}
+{% if port.name %}
+      name: {{ port.name }}
+{% endif %}
+{% endfor %}
+{% if not loop.last %}
+---
+{% endif %}
+{% endfor %}

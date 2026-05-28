@@ -600,10 +600,10 @@ class TestFileContributionsLoader:
     def test_load_cp08_contributions(self):
         """Test loading CP08 file_contributions from real pack.yml."""
         loader = FileContributionsLoader()
-        fc = loader.load(pack_internal_id="cp08_database", pack_id="CP08")
+        fc = loader.load(pack_internal_id="cp_backend_database", pack_id="CP08")
 
         assert fc.pack_id == "CP08"
-        assert fc.pack_internal_id == "cp08_database"
+        assert fc.pack_internal_id == "cp_backend_database"
         assert not fc.is_empty
         assert len(fc.infrastructure) >= 1  # at least database.py
         assert len(fc.per_entity) >= 1  # at least repository
@@ -619,7 +619,7 @@ class TestFileContributionsLoader:
     def test_expand_infrastructure(self):
         """Test expanding infrastructure entries into file plans."""
         loader = FileContributionsLoader()
-        fc = loader.load(pack_internal_id="cp08_database", pack_id="CP08")
+        fc = loader.load(pack_internal_id="cp_backend_database", pack_id="CP08")
 
         files = FileContributionsLoader.expand_infrastructure(fc)
         paths = [f["path"] for f in files]
@@ -629,7 +629,7 @@ class TestFileContributionsLoader:
     def test_expand_per_entity(self):
         """Test expanding per_entity entries with entity data."""
         loader = FileContributionsLoader()
-        fc = loader.load(pack_internal_id="cp08_database", pack_id="CP08")
+        fc = loader.load(pack_internal_id="cp_backend_database", pack_id="CP08")
 
         entities = [
             {"id": "Customer"},
@@ -654,9 +654,9 @@ class TestFileContributionsLoaderIntegration:
 
         assert "app/database.py" in paths
 
-        # Verify the template path is correct (cp08_database/ not db/)
+        # Verify the template path is correct (cp_backend_database/ not db/)
         db_file = next(f for f in files if f["path"] == "app/database.py")
-        assert db_file["template"] == "cp08_database/database.py.jinja2"
+        assert db_file["template"] == "cp_backend_database/database.py.jinja2"
 
     def test_plan_backend_includes_cp08_per_entity(self, sample_mir):
         """Verify CP08 per-entity files (repositories) appear in backend plan."""

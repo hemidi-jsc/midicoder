@@ -1,0 +1,188 @@
+pack:
+  id: F11
+  name: Documentation Generator
+  internal_id: cp_full_documentation
+  version: 2.0.0
+  status: stable
+  category: documentation
+  depends_on:
+  - B01
+  - F07
+  definitions_count: 3
+  obligations_count: 2
+  error_codes:
+    prefix: MDC-F11
+    range: MDC-CP26-001 to MDC-CP26-012
+  capabilities_provided:
+  - doc_portal_gen
+  - api_doc_gen
+  - doc_section_render
+  capabilities:
+  - id: doc_portal_gen
+    emitter: fastapi, nestjs, angular, react
+  - id: api_doc_gen
+    emitter: fastapi, nestjs
+  - id: doc_section_render
+    emitter: fastapi, nestjs, angular, react
+  definitions:
+  - name: DocPortal
+    description: Cấu hình documentation portal (MkDocs/Docusaurus/Storybook)
+  - name: DocSection
+    description: 1 section trong portal với title, path, content source
+  - name: ApiDocConfig
+    description: Cấu hình API docs (OpenAPI/Swagger)
+  obligations:
+  - name: DocsConsistency
+    description: Tất cả generated docs phải render được mà không lỗi
+  - name: ApiSpecValid
+    description: OpenAPI spec phải valid theo JSON schema
+  file_contributions:
+    infrastructure:
+    - path: mkdocs.yml
+      file_type: mkdocs_config
+      template: cp_full_documentation/mkdocs.yml.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: docs/index.md
+      file_type: docs_homepage
+      template: cp_full_documentation/docs_index.md.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: docs/api/openapi.json
+      file_type: openapi_spec
+      template: cp_full_documentation/openapi.json.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - entities
+      - commands
+      - queries
+    - path: docs/swagger_config.py
+      file_type: swagger_config
+      template: cp_full_documentation/swagger_config.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - app_title
+      - app_description
+    - path: docs/redoc_page.py
+      file_type: redoc_page
+      template: cp_full_documentation/redoc_page.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - app_title
+    - path: docs/nav.md
+      file_type: docs_nav
+      template: cp_full_documentation/nav.md.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: src/docs/swagger-ui.module.ts
+      file_type: swagger_ui_module
+      template: cp_full_documentation/swagger-ui.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - app_title
+      - app_description
+    - path: swagger-config.ts
+      file_type: swagger_config
+      template: cp_full_documentation/swagger_config.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: docs/docusaurus.config.js
+      file_type: docusaurus_config
+      template: cp_full_documentation/docusaurus.config.js.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: docs/sidebar.js
+      file_type: docusaurus_sidebar
+      template: cp_full_documentation/sidebar.js.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: docs/index.md
+      file_type: docs_homepage
+      template: cp_full_documentation/docs_index.md.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: .storybook/main.ts
+      file_type: storybook_main
+      template: cp_full_documentation/storybook_main.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: .storybook/preview.ts
+      file_type: storybook_preview
+      template: cp_full_documentation/storybook_preview.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: typedoc.json
+      file_type: typedoc_config
+      template: cp_full_documentation/typedoc.json.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: docs/components.md
+      file_type: component_docs
+      template: cp_full_documentation/components.md.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: .storybook/main.ts
+      file_type: storybook_main
+      template: cp_full_documentation/storybook_main.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: .storybook/preview.ts
+      file_type: storybook_preview
+      template: cp_full_documentation/storybook_preview.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: typedoc.json
+      file_type: typedoc_config
+      template: cp_full_documentation/typedoc.json.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: docs/components.md
+      file_type: component_docs
+      template: cp_full_documentation/components.md.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+  recipes:
+  - auto_generate_docs_from_mir
+  - generate_api_docs
+  - generate_component_docs
+  - generate_project_docs
+  type: full
+  render_context_support: true

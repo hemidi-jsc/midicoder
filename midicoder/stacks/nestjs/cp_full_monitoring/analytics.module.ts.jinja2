@@ -1,0 +1,25 @@
+/**
+ * Module analytics — cung cấp dịch vụ thu thập sự kiện, tính toán KPI, và tạo báo cáo.
+ *
+ * {% if project_name %}
+ * Dự án: {{ project_name }}
+ * {% endif %}
+ * Xuất AnalyticsService để các module khác có thể inject và sử dụng.
+ */
+import { Module, Global } from '@nestjs/common';
+import { AnalyticsService } from './analytics.service';
+import { AnalyticsController } from './analytics.controller';
+
+/**
+ * Module analytics toàn cục.
+ *
+ * Đăng ký AnalyticsService và AnalyticsController
+ * để cung cấp endpoint REST cho sự kiện, KPI, và báo cáo phân tích.
+ */
+@Global()
+@Module({
+  providers: [AnalyticsService],
+  controllers: [AnalyticsController],
+  exports: [AnalyticsService],
+})
+export class AnalyticsModule {}

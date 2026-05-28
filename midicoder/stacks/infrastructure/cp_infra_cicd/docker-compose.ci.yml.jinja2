@@ -1,0 +1,93 @@
+# CP55: Docker Compose CI Environment
+# Tự động generate bởi Midicoder CE
+
+services:
+  # =========================================================================
+  # Application service
+  # =========================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - PYTHON_VERSION=3.12
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/midicoder
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=ci
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import midicoder"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =========================================================================
+  # PostgreSQL database
+  # =========================================================================
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: midicoder
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================================
+  # Redis cache
+  # =========================================================================
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================================
+  # Test runner
+  # =========================================================================
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    command: python -m pytest tests/ -v --cov=midicoder --cov-report=xml
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/midicoder_test
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=test
+    volumes:
+      - ./coverage.xml:/app/coverage.xml
+    depends_on:
+      app:
+        condition: service_started
+
+  # =========================================================================
+  # Trivy container scanner
+  # =========================================================================
+  trivy:
+    image: aquasec/trivy:latest
+    command: >
+      image --severity HIGH,CRITICAL --exit-code 1
+      midicoder-ce:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    profiles:
+      - security
+
+volumes:
+  pgdata:

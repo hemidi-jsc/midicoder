@@ -1,0 +1,238 @@
+pack:
+  id: F30
+  name: MFA & Advanced Authentication
+  internal_id: cp_full_mfa
+  version: 2.0.0
+  status: stable
+  category: security
+  depends_on:
+  - F01
+  - F08
+  - F07
+  definitions_count: 4
+  obligations_count: 2
+  error_codes:
+    prefix: MDC-F30
+    range: MDC-CP46-001 to MDC-CP46-010
+  capabilities_provided:
+  - totp_auth
+  - sms_otp
+  - webauthn_fido2
+  - biometric_auth
+  capabilities:
+  - id: totp_auth
+    emitter: fastapi, nestjs, angular, react
+  - id: sms_otp
+    emitter: fastapi, nestjs, angular, react
+  - id: webauthn_fido2
+    emitter: fastapi, nestjs, angular, react
+  - id: biometric_auth
+    emitter: fastapi, nestjs, angular, react
+  definitions:
+  - name: MFACredential
+    description: Chứng chỉ MFA của user (TOTP, SMS, WebAuthn, Biometric)
+  - name: MFAChallengeSession
+    description: Phiên thử thách xác thực MFA
+  - name: MFAEnrollment
+    description: Đăng ký MFA của user
+  - name: MFASession
+    description: Phiên xác thực MFA thành công
+  obligations:
+  - name: MfaEnrollmentFlow
+    description: 'Enrollment flow hoàn chỉnh: setup → QR/secret → verify → enable'
+  - name: MfaChallengeVerification
+    description: Challenge/verification với timeout, max attempts, và rate limiting
+  file_contributions:
+    infrastructure:
+    - path: app/models/mfa_models.py
+      file_type: mfa_models
+      template: cp_full_mfa/mfa_models.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - mfa_rules
+    - path: app/schemas/mfa_schemas.py
+      file_type: mfa_schemas
+      template: cp_full_mfa/mfa_schemas.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - mfa_rules
+    - path: app/services/mfa_service.py
+      file_type: mfa_service
+      template: cp_full_mfa/mfa_service.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - mfa_rules
+      - require_mfa
+    - path: app/api/mfa_router.py
+      file_type: mfa_router
+      template: cp_full_mfa/mfa_router.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/services/mfa_totp.py
+      file_type: mfa_totp
+      template: cp_full_mfa/mfa_totp.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/services/mfa_webauthn.py
+      file_type: mfa_webauthn
+      template: cp_full_mfa/mfa_webauthn.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: src/mfa/entities/mfa.entity.ts
+      file_type: mfa_entity
+      template: cp_full_mfa/mfa.entity.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - mfa_rules
+    - path: src/mfa/dto/mfa.dto.ts
+      file_type: mfa_dto
+      template: cp_full_mfa/mfa.dto.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - mfa_rules
+    - path: src/mfa/mfa.service.ts
+      file_type: mfa_service
+      template: cp_full_mfa/mfa.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - mfa_rules
+    - path: src/mfa/mfa.controller.ts
+      file_type: mfa_controller
+      template: cp_full_mfa/mfa.controller.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/mfa/mfa.module.ts
+      file_type: mfa_module
+      template: cp_full_mfa/mfa.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/mfa/guards/mfa.guard.ts
+      file_type: mfa_guard
+      template: cp_full_mfa/mfa.guard.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - require_mfa
+    - path: src/app/mfa/mfa-setup.component.ts
+      file_type: mfa_setup
+      template: cp_full_mfa/mfa-setup.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - mfa_rules
+    - path: src/app/mfa/mfa-verify.component.ts
+      file_type: mfa_verify
+      template: cp_full_mfa/mfa-verify.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/mfa/mfa-methods.component.ts
+      file_type: mfa_methods
+      template: cp_full_mfa/mfa-methods.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/mfa/mfa.service.ts
+      file_type: mfa_service
+      template: cp_full_mfa/mfa.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/mfa/mfa-types.ts
+      file_type: mfa_types
+      template: cp_full_mfa/mfa-types.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/mfa/mfa-forms.ts
+      file_type: mfa_forms
+      template: cp_full_mfa/mfa-forms.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/components/mfa/MFASetup.tsx
+      file_type: mfa_setup
+      template: cp_full_mfa/MFASetup.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - mfa_rules
+    - path: src/components/mfa/MFAVerify.tsx
+      file_type: mfa_verify
+      template: cp_full_mfa/MFAVerify.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/components/mfa/MFAMethods.tsx
+      file_type: mfa_methods
+      template: cp_full_mfa/MFAMethods.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/hooks/mfa/useMFA.ts
+      file_type: mfa_hook
+      template: cp_full_mfa/useMFA.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/types/mfa-types.ts
+      file_type: mfa_types
+      template: cp_full_mfa/mfa-types.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/api/mfa-api.ts
+      file_type: mfa_api
+      template: cp_full_mfa/mfa-api.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+  frontend_integration:
+    react:
+    - MFASetup
+    - MFAVerify
+    - MFAMethods
+    angular:
+    - MfaSetupComponent
+    - MfaVerifyComponent
+    - MfaMethodsComponent
+  recipes:
+  - basic_mfa_recipe
+  - full_mfa_recipe
+  type: full
+  render_context_support: true

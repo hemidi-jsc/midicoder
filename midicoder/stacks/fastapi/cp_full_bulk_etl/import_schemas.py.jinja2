@@ -1,0 +1,694 @@
+# coding: utf-8
+"""
+Pydantic Schemas cho Data Import/Export/ETL.
+
+Bao gồm các schema cho:
+- ImportJobCreate, ImportJobRead
+- ExportJobCreate, ExportJobRead
+- ETLJobCreate, ETLJobRead
+- JobStatusResponse
+- ImportResult, ExportResult
+
+CP38: Data Import/Export/ETL
+"""
+
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, Field, field_validator
+
+
+# ============================================================================
+# Enum: Job Status
+# ============================================================================
+
+class JobStatusEnum(str, Enum):
+    """Các trạng thái job hợp lệ."""
+
+{% for status in job_statuses %}
+    {{ status }} = "{{ status }}"
+
+{% endfor %}
+
+
+# ============================================================================
+# Enum: File Format
+# ============================================================================
+
+class FileFormatEnum(str, Enum):
+    """Định dạng file hỗ trợ."""
+
+{% for fmt in import_formats %}
+    {{ fmt }} = "{{ fmt }}"
+
+{% endfor %}
+
+
+# ============================================================================
+# Enum: Load Mode
+# ============================================================================
+
+class LoadModeEnum(str, Enum):
+    """Chế độ load dữ liệu."""
+
+{% for mode in load_modes %}
+    {{ mode }} = "{{ mode }}"
+
+{% endfor %}
+
+
+# ============================================================================
+# Enum: Extract Source
+# ============================================================================
+
+class ExtractSourceEnum(str, Enum):
+    """Nguồn extract trong ETL."""
+
+{% for source in extract_sources %}
+    {{ source }} = "{{ source }}"
+
+{% endfor %}
+
+
+# ============================================================================
+# Enum: Transform Type
+# ============================================================================
+
+class TransformTypeEnum(str, Enum):
+    """Loại transform trong ETL."""
+
+{% for tt in transform_types %}
+    {{ tt }} = "{{ tt }}"
+
+{% endfor %}
+
+
+# ============================================================================
+# ImportJob Schemas
+# ============================================================================
+
+class ImportJobCreate(BaseModel):
+    """
+    Schema cho tạo import job mới.
+
+    Dùng khi client gửi yêu cầu tạo job nhập liệu.
+
+    Attributes:
+        filename: Tên file cần nhập
+        file_format: Định dạng file (csv, json)
+        target_table: Bảng đích trong database (optional)
+        created_by: Người tạo job (optional)
+        chunk_size: Số hàng mỗi chunk (default 1000)
+        continue_on_error: Tiếp tục khi gặp lỗi (default True)
+    """
+
+    filename: str = Field(
+        ...,
+        min_length=1,
+        max_length=512,
+        description="Tên file cần nhập liệu",
+        examples=["data.csv", "records.json"],
+    )
+    file_format: FileFormatEnum = Field(
+        ...,
+        description="Định dạng file: csv hoặc json",
+    )
+    target_table: Optional[str] = Field(
+        None,
+        max_length=256,
+        description="Tên bảng đích trong database",
+    )
+    created_by: Optional[str] = Field(
+        None,
+        max_length=256,
+        description="User hoặc tenant tạo job",
+    )
+    chunk_size: int = Field(
+        1000,
+        ge=100,
+        le=50000,
+        description="Số hàng xử lý mỗi chunk",
+    )
+    continue_on_error: bool = Field(
+        True,
+        description="Có tiếp tục xử lý khi gặp lỗi hàng không",
+    )
+
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, v: str) -> str:
+        """Validate tên file có phần mở rộng hợp lệ."""
+        if "." not in v:
+            raise ValueError(f"Tên file '{v}' không có phần mở rộng hợp lệ")
+        ext = v.rsplit(".", 1)[-1].lower()
+        allowed_extensions = [e.value for e in FileFormatEnum]
+        if ext not in allowed_extensions:
+            raise ValueError(
+                f"Phần mở rộng '.{ext}' không được hỗ trợ. "
+                f"Hãy dùng: {', '.join('.' + e for e in allowed_extensions)}"
+            )
+        return v
+
+
+class ImportJobRead(BaseModel):
+    """
+    Schema cho đọc import job.
+
+    Trả về thông tin đầy đủ của một import job.
+
+    Attributes:
+        job_key: Khóa duy nhất của job
+        filename: Tên file
+        file_format: Định dạng
+        status: Trạng thái hiện tại
+        total_rows: Tổng số hàng
+        processed_rows: Số hàng đã xử lý
+        error_count: Số hàng có lỗi
+        file_size_bytes: Kích thước file
+        target_table: Bảng đích
+        created_by: Người tạo
+        error_message: Thông báo lỗi (nếu có)
+        progress_percentage: Phần trăm tiến trình
+        started_at: Thời điểm bắt đầu
+        completed_at: Thời điểm hoàn thành
+        created_at: Thời điểm tạo
+        updated_at: Thời điểm cập nhật
+    """
+
+    job_key: UUID = Field(..., description="Khóa duy nhất của import job")
+    filename: str = Field(..., description="Tên file gốc")
+    file_format: str = Field(..., description="Định dạng file")
+    status: str = Field(..., description="Trạng thái job")
+    total_rows: Optional[int] = Field(None, description="Tổng số hàng trong file")
+    processed_rows: int = Field(..., description="Số hàng đã xử lý thành công")
+    error_count: int = Field(..., description="Số hàng có lỗi")
+    file_size_bytes: Optional[int] = Field(None, description="Kích thước file (byte)")
+    target_table: Optional[str] = Field(None, description="Bảng đích")
+    created_by: Optional[str] = Field(None, description="Người tạo job")
+    error_message: Optional[str] = Field(None, description="Thông báo lỗi nếu thất bại")
+    progress_percentage: float = Field(..., description="Phần trăm tiến trình (0-100)")
+    started_at: Optional[datetime] = Field(None, description="Thời điểm bắt đầu")
+    completed_at: Optional[datetime] = Field(None, description="Thời điểm hoàn thành")
+    created_at: datetime = Field(..., description="Thời điểm tạo job")
+    updated_at: datetime = Field(..., description="Thời điểm cập nhật cuối")
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+# ============================================================================
+# ExportJob Schemas
+# ============================================================================
+
+class ExportJobCreate(BaseModel):
+    """
+    Schema cho tạo export job mới.
+
+    Dùng khi client gửi yêu cầu xuất dữ liệu.
+
+    Attributes:
+        output_filename: Tên file đầu ra
+        file_format: Định dạng xuất (csv, json)
+        query_filter: Bộ lọc query (JSON object, optional)
+        columns: Danh sách cột cần xuất (optional)
+        page_size: Số hàng mỗi trang (default 1000)
+        created_by: Người tạo job (optional)
+    """
+
+    output_filename: str = Field(
+        ...,
+        min_length=1,
+        max_length=512,
+        description="Tên file sẽ xuất ra",
+        examples=["export_data.csv", "report.json"],
+    )
+    file_format: FileFormatEnum = Field(
+        ...,
+        description="Định dạng file xuất: csv hoặc json",
+    )
+    query_filter: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Bộ lọc query dưới dạng JSON object",
+        examples=[{"status": "active", "created_after": "2024-01-01"}],
+    )
+    columns: Optional[List[str]] = Field(
+        None,
+        description="Danh sách các cột cần xuất",
+        examples=[["id", "name", "email", "created_at"]],
+    )
+    page_size: int = Field(
+        1000,
+        ge=100,
+        le=10000,
+        description="Số hàng mỗi trang cho phân trang",
+    )
+    created_by: Optional[str] = Field(
+        None,
+        max_length=256,
+        description="User hoặc tenant tạo job",
+    )
+
+    @field_validator("output_filename")
+    @classmethod
+    def validate_output_filename(cls, v: str) -> str:
+        """Validate tên file đầu ra có phần mở rộng hợp lệ."""
+        if "." not in v:
+            raise ValueError(f"Tên file '{v}' không có phần mở rộng hợp lệ")
+        ext = v.rsplit(".", 1)[-1].lower()
+        allowed = [e.value for e in FileFormatEnum]
+        if ext not in allowed:
+            raise ValueError(
+                f"Phần mở rộng '.{ext}' không được hỗ trợ. "
+                f"Hãy dùng: {', '.join('.' + e for e in allowed)}"
+            )
+        return v
+
+
+class ExportJobRead(BaseModel):
+    """
+    Schema cho đọc export job.
+
+    Trả về thông tin đầy đủ của một export job.
+
+    Attributes:
+        job_key: Khóa duy nhất
+        output_filename: Tên file đầu ra
+        file_format: Định dạng
+        status: Trạng thái
+        total_rows: Tổng số hàng sẽ xuất
+        exported_rows: Số hàng đã xuất
+        query_filter: Bộ lọc query
+        columns: Các cột cần xuất
+        file_size_bytes: Kích thước file đầu ra
+        download_url: URL tải file
+        progress_percentage: Phần trăm tiến trình
+        created_by: Người tạo
+        error_message: Thông báo lỗi (nếu có)
+        created_at: Thời điểm tạo
+        completed_at: Thời điểm hoàn thành
+        updated_at: Thời điểm cập nhật
+    """
+
+    job_key: UUID = Field(..., description="Khóa duy nhất của export job")
+    output_filename: str = Field(..., description="Tên file đầu ra")
+    file_format: str = Field(..., description="Định dạng file")
+    status: str = Field(..., description="Trạng thái job")
+    total_rows: Optional[int] = Field(None, description="Tổng số hàng sẽ xuất")
+    exported_rows: int = Field(..., description="Số hàng đã xuất")
+    query_filter: Optional[Dict[str, Any]] = Field(None, description="Bộ lọc query")
+    columns: Optional[List[str]] = Field(None, description="Các cột cần xuất")
+    file_size_bytes: Optional[int] = Field(None, description="Kích thước file (byte)")
+    download_url: Optional[str] = Field(None, description="URL tải file")
+    progress_percentage: float = Field(..., description="Phần trăm tiến trình (0-100)")
+    created_by: Optional[str] = Field(None, description="Người tạo")
+    error_message: Optional[str] = Field(None, description="Thông báo lỗi nếu thất bại")
+    created_at: datetime = Field(..., description="Thời điểm tạo")
+    completed_at: Optional[datetime] = Field(None, description="Thời điểm hoàn thành")
+    updated_at: datetime = Field(..., description="Thời điểm cập nhật cuối")
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+# ============================================================================
+# ETLJob Schemas
+# ============================================================================
+
+class ETLMappingCreate(BaseModel):
+    """
+    Schema cho tạo ETL mapping.
+
+    Dùng để định nghĩa ánh xạ trường trong ETL pipeline.
+
+    Attributes:
+        source_field: Tên trường nguồn
+        target_field: Tên trường đích
+        transform_type: Loại transform (optional)
+        transform_config: Cấu hình transform (optional)
+        is_required: Có bắt buộc không
+        default_value: Giá trị mặc định (optional)
+    """
+
+    source_field: str = Field(
+        ...,
+        min_length=1,
+        max_length=256,
+        description="Tên trường ở nguồn dữ liệu",
+    )
+    target_field: str = Field(
+        ...,
+        min_length=1,
+        max_length=256,
+        description="Tên trường ở bảng đích",
+    )
+    transform_type: Optional[str] = Field(
+        None,
+        description="Loại transform: map, filter, aggregate, convert, rename",
+    )
+    transform_config: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Cấu hình chi tiết cho transform",
+    )
+    is_required: bool = Field(
+        False,
+        description="Trường có bắt buộc có giá trị không",
+    )
+    default_value: Optional[str] = Field(
+        None,
+        description="Giá trị mặc định nếu trường nguồn trống",
+    )
+
+
+class ETLJobCreate(BaseModel):
+    """
+    Schema cho tạo ETL job mới.
+
+    Dùng khi client gửi yêu cầu chạy ETL pipeline.
+
+    Attributes:
+        pipeline_name: Tên pipeline
+        source_type: Nguồn dữ liệu (file, database, api)
+        source_config: Cấu hình nguồn (JSON)
+        transform_steps: Các bước transform (JSON list)
+        mappings: Danh sách ánh xạ trường
+        target_table: Bảng đích
+        load_mode: Chế độ load (default: insert)
+        rollback_enabled: Có rollback không (default: True)
+        created_by: Người tạo (optional)
+    """
+
+    pipeline_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=256,
+        description="Tên của ETL pipeline",
+        examples=["import_customers", "sync_products"],
+    )
+    source_type: ExtractSourceEnum = Field(
+        ...,
+        description="Loại nguồn dữ liệu: file, database, api",
+    )
+    source_config: Dict[str, Any] = Field(
+        ...,
+        description="Cấu hình chi tiết cho nguồn dữ liệu",
+        examples=[{"path": "/data/input.csv", "delimiter": ","}],
+    )
+    transform_steps: Optional[List[Dict[str, Any]]] = Field(
+        None,
+        description="Danh sách các bước transform",
+        examples=[[{"type": "map", "config": {"source": "name", "target": "full_name"}}]],
+    )
+    mappings: Optional[List[ETLMappingCreate]] = Field(
+        None,
+        description="Danh sách ánh xạ trường nguồn sang đích",
+    )
+    target_table: str = Field(
+        ...,
+        min_length=1,
+        max_length=256,
+        description="Tên bảng đích trong database",
+    )
+    load_mode: LoadModeEnum = Field(
+        LoadModeEnum.insert,
+        description="Chế độ load: insert, update, upsert, delete",
+    )
+    rollback_enabled: bool = Field(
+        True,
+        description="Có rollback nếu pipeline thất bại",
+    )
+    created_by: Optional[str] = Field(
+        None,
+        max_length=256,
+        description="User hoặc tenant tạo job",
+    )
+
+
+class ETLJobRead(BaseModel):
+    """
+    Schema cho đọc ETL job.
+
+    Trả về thông tin đầy đủ của một ETL job.
+
+    Attributes:
+        job_key: Khóa duy nhất
+        pipeline_name: Tên pipeline
+        source_type: Nguồn dữ liệu
+        source_config: Cấu hình nguồn
+        transform_steps: Các bước transform
+        target_table: Bảng đích
+        load_mode: Chế độ load
+        status: Trạng thái
+        total_records: Tổng bản ghi
+        processed_records: Đã xử lý
+        error_count: Số lỗi
+        current_step: Bước đang thực hiện
+        rollback_enabled: Có rollback không
+        progress_percentage: Phần trăm tiến trình
+        created_by: Người tạo
+        error_message: Thông báo lỗi (nếu có)
+        started_at: Thời điểm bắt đầu
+        completed_at: Thời điểm hoàn thành
+        created_at: Thời điểm tạo
+        updated_at: Thời điểm cập nhật
+    """
+
+    job_key: UUID = Field(..., description="Khóa duy nhất của ETL job")
+    pipeline_name: str = Field(..., description="Tên pipeline")
+    source_type: str = Field(..., description="Loại nguồn dữ liệu")
+    source_config: Optional[Dict[str, Any]] = Field(None, description="Cấu hình nguồn")
+    transform_steps: Optional[List[Dict[str, Any]]] = Field(None, description="Các bước transform")
+    target_table: str = Field(..., description="Bảng đích")
+    load_mode: str = Field(..., description="Chế độ load")
+    status: str = Field(..., description="Trạng thái job")
+    total_records: Optional[int] = Field(None, description="Tổng bản ghi cần xử lý")
+    processed_records: int = Field(..., description="Số bản ghi đã xử lý")
+    error_count: int = Field(..., description="Số bản ghi có lỗi")
+    current_step: Optional[str] = Field(None, description="Bước đang thực hiện")
+    rollback_enabled: bool = Field(..., description="Có rollback không")
+    progress_percentage: float = Field(..., description="Phần trăm tiến trình (0-100)")
+    created_by: Optional[str] = Field(None, description="Người tạo")
+    error_message: Optional[str] = Field(None, description="Thông báo lỗi nếu thất bại")
+    started_at: Optional[datetime] = Field(None, description="Thời điểm bắt đầu")
+    completed_at: Optional[datetime] = Field(None, description="Thời điểm hoàn thành")
+    created_at: datetime = Field(..., description="Thời điểm tạo")
+    updated_at: datetime = Field(..., description="Thời điểm cập nhật cuối")
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+# ============================================================================
+# Job Status Response
+# ============================================================================
+
+class JobStatusResponse(BaseModel):
+    """
+    Schema cho phản hồi trạng thái job.
+
+    Dùng chung cho import, export, và ETL jobs.
+
+    Attributes:
+        job_key: Khóa duy nhất của job
+        job_type: Loại job (import, export, etl)
+        status: Trạng thái hiện tại
+        progress_percentage: Phần trăm tiến trình
+        total_items: Tổng số items cần xử lý
+        processed_items: Số items đã xử lý
+        error_count: Số items có lỗi
+        error_message: Thông báo lỗi (nếu có)
+        started_at: Thời điểm bắt đầu
+        completed_at: Thời điểm hoàn thành
+        is_terminal: Có ở trạng thái cuối không
+    """
+
+    job_key: UUID = Field(..., description="Khóa duy nhất của job")
+    job_type: str = Field(
+        ...,
+        description="Loại job: import, export, hoặc etl",
+    )
+    status: str = Field(..., description="Trạng thái hiện tại")
+    progress_percentage: float = Field(..., description="Phần trăm tiến trình (0-100)")
+    total_items: Optional[int] = Field(None, description="Tổng số items")
+    processed_items: int = Field(..., description="Số items đã xử lý")
+    error_count: int = Field(..., description="Số items có lỗi")
+    error_message: Optional[str] = Field(None, description="Thông báo lỗi nếu thất bại")
+    started_at: Optional[datetime] = Field(None, description="Thời điểm bắt đầu")
+    completed_at: Optional[datetime] = Field(None, description="Thời điểm hoàn thành")
+    is_terminal: bool = Field(..., description="Job đã ở trạng thái cuối chưa")
+
+
+# ============================================================================
+# Import Result
+# ============================================================================
+
+class RowError(BaseModel):
+    """
+    Schema cho lỗi từng hàng.
+
+    Attributes:
+        row_number: Số hàng (bắt đầu từ 1)
+        error_type: Loại lỗi
+        error_message: Thông báo chi tiết
+        column_name: Cột gây lỗi (nếu có)
+        can_retry: Có thể retry không
+    """
+
+    row_number: int = Field(..., description="Số thứ tự hàng (bắt đầu từ 1)")
+    error_type: str = Field(..., description="Loại lỗi: validation, type_mismatch, constraint, duplicate")
+    error_message: str = Field(..., description="Thông báo lỗi chi tiết")
+    column_name: Optional[str] = Field(None, description="Tên cột gây lỗi")
+    can_retry: bool = Field(..., description="Có thể retry hàng này không")
+
+
+class ImportResult(BaseModel):
+    """
+    Schema cho kết quả import.
+
+    Trả về sau khi hoàn thành import job.
+
+    Attributes:
+        job_key: Khóa job
+        status: Trạng thái cuối cùng
+        total_rows: Tổng số hàng trong file
+        imported_rows: Số hàng nhập thành công
+        error_count: Số hàng có lỗi
+        errors: Danh sách chi tiết các lỗi
+        duration_seconds: Thời gian xử lý (giây)
+        file_size_bytes: Kích thước file
+    """
+
+    job_key: UUID = Field(..., description="Khóa của import job")
+    status: str = Field(..., description="Trạng thái: completed hoặc failed")
+    total_rows: int = Field(..., description="Tổng số hàng trong file")
+    imported_rows: int = Field(..., description="Số hàng nhập thành công")
+    error_count: int = Field(..., description="Số hàng có lỗi")
+    errors: List[RowError] = Field(
+        default_factory=list,
+        description="Danh sách chi tiết các lỗi hàng",
+    )
+    duration_seconds: Optional[float] = Field(None, description="Thời gian xử lý (giây)")
+    file_size_bytes: Optional[int] = Field(None, description="Kích thước file (byte)")
+
+
+# ============================================================================
+# Export Result
+# ============================================================================
+
+class ExportResult(BaseModel):
+    """
+    Schema cho kết quả export.
+
+    Trả về sau khi hoàn thành export job.
+
+    Attributes:
+        job_key: Khóa job
+        status: Trạng thái cuối cùng
+        output_filename: Tên file đầu ra
+        file_format: Định dạng file
+        total_rows: Tổng số hàng đã xuất
+        file_size_bytes: Kích thước file
+        download_url: URL tải file
+        duration_seconds: Thời gian xử lý (giây)
+    """
+
+    job_key: UUID = Field(..., description="Khóa của export job")
+    status: str = Field(..., description="Trạng thái: completed hoặc failed")
+    output_filename: str = Field(..., description="Tên file đầu ra")
+    file_format: str = Field(..., description="Định dạng file")
+    total_rows: int = Field(..., description="Tổng số hàng đã xuất")
+    file_size_bytes: Optional[int] = Field(None, description="Kích thước file (byte)")
+    download_url: Optional[str] = Field(None, description="URL tải file")
+    duration_seconds: Optional[float] = Field(None, description="Thời gian xử lý (giây)")
+
+
+# ============================================================================
+# Preview Response
+# ============================================================================
+
+class ExportPreviewResponse(BaseModel):
+    """
+    Schema cho preview dữ liệu xuất.
+
+    Trả về N hàng đầu tiên để xem trước.
+
+    Attributes:
+        job_key: Khóa export job
+        preview_rows: Danh sách các hàng xem trước
+        total_preview: Số hàng xem trước
+        total_available: Tổng số hàng có sẵn
+        columns: Danh sách các cột
+    """
+
+    job_key: UUID = Field(..., description="Khóa export job")
+    preview_rows: List[Dict[str, Any]] = Field(
+        ...,
+        description="Danh sách các hàng xem trước",
+    )
+    total_preview: int = Field(..., description="Số hàng xem trước")
+    total_available: Optional[int] = Field(None, description="Tổng số hàng có sẵn")
+    columns: List[str] = Field(..., description="Danh sách các cột")
+
+
+# ============================================================================
+# List Response
+# ============================================================================
+
+class JobListResponse(BaseModel):
+    """
+    Schema cho danh sách jobs.
+
+    Trả về danh sách jobs với pagination.
+
+    Attributes:
+        items: Danh sách job items
+        total: Tổng số jobs
+        page: Trang hiện tại
+        page_size: Số items mỗi trang
+        total_pages: Tổng số trang
+    """
+
+    items: List[Any] = Field(..., description="Danh sách job items")
+    total: int = Field(..., description="Tổng số jobs")
+    page: int = Field(..., description="Trang hiện tại")
+    page_size: int = Field(..., description="Số items mỗi trang")
+    total_pages: int = Field(..., description="Tổng số trang")
+
+
+# ============================================================================
+# Bulk Config Response
+# ============================================================================
+
+class BulkConfigResponse(BaseModel):
+    """
+    Schema cho phản hồi bulk config.
+
+    Attributes:
+        id: Khóa chính
+        config_name: Tên cấu hình
+        chunk_size: Số hàng mỗi chunk
+        max_retries: Số lần retry tối đa
+        retry_delay_seconds: Thời gian delay giữa retry
+        timeout_seconds: Timeout mỗi chunk
+        parallel_workers: Số worker song song
+        batch_commit_size: Số bản ghi mỗi commit
+        continue_on_error: Tiếp tục khi lỗi
+        max_error_rate: Tỷ lệ lỗi tối đa
+        is_active: Có active không
+    """
+
+    id: int = Field(..., description="Khóa chính")
+    config_name: str = Field(..., description="Tên cấu hình")
+    chunk_size: int = Field(..., description="Số hàng mỗi chunk")
+    max_retries: int = Field(..., description="Số lần retry tối đa")
+    retry_delay_seconds: float = Field(..., description="Delay giữa retry (giây)")
+    timeout_seconds: int = Field(..., description="Timeout mỗi chunk (giây)")
+    parallel_workers: int = Field(..., description="Số worker song song")
+    batch_commit_size: int = Field(..., description="Số bản ghi mỗi commit")
+    continue_on_error: bool = Field(..., description="Tiếp tục khi lỗi")
+    max_error_rate: float = Field(..., description="Tỷ lệ lỗi tối đa (0-1)")
+    is_active: bool = Field(..., description="Có đang active không")

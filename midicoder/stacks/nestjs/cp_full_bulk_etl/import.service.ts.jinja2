@@ -1,0 +1,732 @@
+/**
+ * Import Service cho Data Import/Export/ETL.
+ *
+ * Cung cấp các phương thức:
+ * - uploadCsv: Upload và parse file CSV
+ * - uploadJson: Upload và parse file JSON
+ * - createImportJob: Tạo công việc import mới
+ * - executeImport: Thực thi import với chunking và retry
+ * - getJobStatus: Lấy trạng thái công việc
+ * - cancelJob: Hủy công việc đang chạy
+ * - getRowErrors: Lấy danh sách lỗi từng hàng
+ * - listImportJobs: Liệt kê tất cả công việc import
+ *
+ * CP38: Data Import/Export/ETL
+ */
+
+import {
+  Injectable,
+  Inject,
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+  Logger,
+} from '@nestjs/common';
+import { Repository, Like, In } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { v4 as uuidv4 } from 'uuid';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+
+import {
+  ImportJob,
+  ImportError,
+  BulkConfig,
+  JobStatus,
+  ImportFormat,
+} from './import.entity';
+import {
+  ImportJobCreateDto,
+  JobQueryDto,
+  ImportJobResponseDto,
+  ImportErrorResponseDto,
+  PaginatedJobsDto,
+} from './import.dto';
+import { BulkProcessorService } from './bulk-processor.service';
+
+/**
+ * Service chính cho việc import dữ liệu.
+ *
+ * Xử lý toàn bộ vòng đời import:
+ * 1. Upload file (CSV/JSON)
+ * 2. Parse và xác thực dữ liệu
+ * 3. Tạo ImportJob để theo dõi
+ * 4. Thực thi theo chunk với retry
+ * 5. Ghi lỗi hàng cho từng lỗi
+ *
+ * Pattern Chunking + Retry:
+ * - Dữ liệu được chia thành các chunk (mặc định 1000 hàng)
+ * - Mỗi chunk được xử lý độc lập
+ * - Nếu chunk thất bại, sẽ thử lại maxRetries lần
+ * - Lỗi từng hàng được ghi vào ImportError entity
+ */
+@Injectable()
+export class ImportService {
+  private readonly logger = new Logger(ImportService.name);
+
+  // Thư mục lưu trữ file tạm
+  private readonly uploadDir = process.env.UPLOAD_DIR || './uploads/temp';
+
+  constructor(
+    @InjectRepository(ImportJob)
+    private readonly importJobRepo: Repository<ImportJob>,
+    @InjectRepository(ImportError)
+    private readonly importErrorRepo: Repository<ImportError>,
+    @InjectRepository(BulkConfig)
+    private readonly bulkConfigRepo: Repository<BulkConfig>,
+    private readonly bulkProcessor: BulkProcessorService,
+  ) {}
+
+  // =========================================================================
+  // Upload Methods
+  // =========================================================================
+
+  /**
+   * Upload và parse file CSV.
+   *
+   * Đọc file CSV, parse thành mảng các đối tượng,
+   * sau đó tạo ImportJob để xử lý tiếp.
+   *
+   * @param file - File object từ multer
+   * @param dto - DTO cấu hình import
+   * @returns ImportJob mới được tạo
+   */
+  async uploadCsv(
+    file: Express.Multer.File,
+    dto: ImportJobCreateDto,
+  ): Promise<ImportJobResponseDto> {
+    this.logger.log(`Bắt đầu upload CSV: ${file.originalname}`);
+
+    // Đảm bảo thư mục upload tồn tại
+    await fs.mkdir(this.uploadDir, { recursive: true });
+
+    // Lưu file tạm
+    const tempFileName = `${uuidv4()}_${file.originalname}`;
+    const filePath = path.join(this.uploadDir, tempFileName);
+    await fs.writeFile(filePath, file.buffer);
+
+    // Parse CSV để đếm số hàng
+    const csvContent = file.buffer.toString('utf-8');
+    const lines = this.parseCsvLines(csvContent);
+    const totalRows = Math.max(0, lines.length - 1); // Trừ hàng header
+
+    // Tạo ImportJob
+    const job = await this.createImportJob({
+      ...dto,
+      fileName: file.originalname,
+      format: ImportFormat.CSV,
+    });
+
+    // Cập nhật thông tin file vào job
+    job.filePath = filePath;
+    job.fileSize = file.buffer.length;
+    job.totalRows = totalRows;
+    await this.importJobRepo.save(job);
+
+    this.logger.log(
+      `Upload CSV thành công: ${file.originalname}, ${totalRows} hàng, jobKey: ${job.jobKey}`,
+    );
+
+    return new ImportJobResponseDto(job);
+  }
+
+  /**
+   * Upload và parse file JSON.
+   *
+   * Đọc file JSON (array của objects), xác thực cấu trúc,
+   * sau đó tạo ImportJob để xử lý tiếp.
+   *
+   * @param file - File object từ multer
+   * @param dto - DTO cấu hình import
+   * @returns ImportJob mới được tạo
+   */
+  async uploadJson(
+    file: Express.Multer.File,
+    dto: ImportJobCreateDto,
+  ): Promise<ImportJobResponseDto> {
+    this.logger.log(`Bắt đầu upload JSON: ${file.originalname}`);
+
+    // Đảm bảo thư mục upload tồn tại
+    await fs.mkdir(this.uploadDir, { recursive: true });
+
+    // Lưu file tạm
+    const tempFileName = `${uuidv4()}_${file.originalname}`;
+    const filePath = path.join(this.uploadDir, tempFileName);
+    await fs.writeFile(filePath, file.buffer);
+
+    // Parse JSON để đếm số hàng
+    let jsonData: any[];
+    try {
+      const parsed = JSON.parse(file.buffer.toString('utf-8'));
+      // Hỗ trợ cả array và object chứa array
+      jsonData = Array.isArray(parsed) ? parsed : parsed.data || [];
+    } catch (error) {
+      throw new BadRequestException('File JSON không hợp lệ: không thể parse');
+    }
+
+    const totalRows = jsonData.length;
+
+    if (totalRows === 0) {
+      throw new BadRequestException('File JSON không có dữ liệu');
+    }
+
+    // Tạo ImportJob
+    const job = await this.createImportJob({
+      ...dto,
+      fileName: file.originalname,
+      format: ImportFormat.JSON,
+    });
+
+    // Cập nhật thông tin file vào job
+    job.filePath = filePath;
+    job.fileSize = file.buffer.length;
+    job.totalRows = totalRows;
+    await this.importJobRepo.save(job);
+
+    this.logger.log(
+      `Upload JSON thành công: ${file.originalname}, ${totalRows} hàng, jobKey: ${job.jobKey}`,
+    );
+
+    return new ImportJobResponseDto(job);
+  }
+
+  // =========================================================================
+  // Job Management
+  // =========================================================================
+
+  /**
+   * Tạo công việc import mới.
+   *
+   * Tạo một ImportJob với trạng thái PENDING, sinh jobKey duy nhất.
+   * Nếu cung cấp bulkConfigKey, sẽ tải cấu hình từ BulkConfig.
+   *
+   * @param dto - DTO chứa thông tin tạo job
+   * @returns ImportJob mới
+   */
+  async createImportJob(dto: ImportJobCreateDto): Promise<ImportJob> {
+    // Sinh jobKey định dạng: imp-{timestamp}-{random}
+    const timestamp = Date.now().toString(36);
+    const random = uuidv4().substring(0, 8);
+    const jobKey = `imp-${timestamp}-${random}`;
+
+    const job = this.importJobRepo.create({
+      jobKey,
+      fileName: dto.fileName,
+      format: dto.format,
+      chunkSize: dto.chunkSize || 1000,
+      maxRetries: dto.maxRetries ?? 3,
+      status: JobStatus.PENDING,
+      totalRows: 0,
+      processedRows: 0,
+      errorRows: 0,
+      filePath: '',
+      fileSize: 0,
+    });
+
+    // Nếu có cấu hình bulk, áp dụng vào job
+    if (dto.bulkConfigKey) {
+      const bulkConfig = await this.bulkConfigRepo.findOne({
+        where: { key: dto.bulkConfigKey },
+      });
+      if (bulkConfig) {
+        job.chunkSize = bulkConfig.chunkSize;
+        job.maxRetries = bulkConfig.maxRetries;
+      }
+    }
+
+    const savedJob = await this.importJobRepo.save(job);
+    this.logger.log(`Tạo ImportJob mới: ${jobKey}`);
+
+    return savedJob;
+  }
+
+  /**
+   * Thực thi công việc import với chunking và retry.
+   *
+   * Quy trình:
+   * 1. Kiểm tra trạng thái job (phải là PENDING hoặc FAILED để có thể chạy lại)
+   * 2. Đọc file theo chunk
+   * 3. Mỗi chunk: parse → validate → insert
+   * 4. Nếu chunk thất bại: retry maxRetries lần
+   * 5. Ghi ImportError cho từng hàng lỗi
+   * 6. Cập nhật tiến độ sau mỗi chunk
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns Kết quả import với thống kê
+   */
+  async executeImport(jobKey: string): Promise<ImportJob> {
+    // Lấy job theo jobKey
+    const job = await this.importJobRepo.findOne({ where: { jobKey } });
+    if (!job) {
+      throw new NotFoundException(`Không tìm thấy ImportJob với jobKey: ${jobKey}`);
+    }
+
+    // Kiểm tra trạng thái: chỉ cho chạy nếu PENDING, FAILED, hoặc đã bị cancel
+    if (job.status === JobStatus.RUNNING) {
+      throw new BadRequestException(
+        `Công việc ${jobKey} đang chạy, không thể thực thi lại`,
+      );
+    }
+    if (job.status === JobStatus.COMPLETED) {
+      throw new BadRequestException(
+        `Công việc ${jobKey} đã hoàn thành, không cần thực thi lại`,
+      );
+    }
+
+    // Cập nhật trạng thái thành RUNNING
+    job.status = JobStatus.RUNNING;
+    job.startedAt = new Date();
+    job.processedRows = 0;
+    job.errorRows = 0;
+    job.errorMessage = null;
+    await this.importJobRepo.save(job);
+
+    this.logger.log(`Bắt đầu executeImport: ${jobKey}`);
+
+    try {
+      // Đọc nội dung file
+      const fileContent = await fs.readFile(job.filePath, 'utf-8');
+
+      // Chia file thành các chunk và xử lý
+      const rows = this.extractRows(fileContent, job.format);
+      const chunks = this.chunkArray(rows, job.chunkSize);
+
+      for (let i = 0; i < chunks.length; i++) {
+        // Kiểm tra xem job có bị hủy không
+        const currentJob = await this.importJobRepo.findOne({ where: { jobKey } });
+        if (currentJob?.status === JobStatus.CANCELLED) {
+          this.logger.log(`Import bị hủy ở chunk ${i + 1}/${chunks.length}`);
+          break;
+        }
+
+        const chunk = chunks[i];
+        const chunkIndex = i + 1;
+
+        this.logger.log(
+          `Xử lý chunk ${chunkIndex}/${chunks.length} (${chunk.length} hàng)`,
+        );
+
+        // Xử lý chunk với retry
+        const result = await this.bulkProcessor.processChunk(
+          chunk,
+          job.maxRetries,
+          async (rowData: Record<string, any>) => {
+            // Xử lý từng hàng: validate và insert
+            return this.processSingleRow(rowData, job);
+          },
+        );
+
+        // Cập nhật tiến độ
+        job.processedRows += result.successCount;
+        job.errorRows += result.errorCount;
+
+        // Ghi lỗi hàng vào database
+        if (result.errors.length > 0) {
+          await this.saveRowErrors(job, result.errors, chunkIndex);
+        }
+
+        await this.importJobRepo.save(job);
+      }
+
+      // Hoàn thành công việc
+      job.status = JobStatus.COMPLETED;
+      job.finishedAt = new Date();
+      job.resultSummary = {
+        totalRows: job.totalRows,
+        processedRows: job.processedRows,
+        errorRows: job.errorRows,
+        duration: job.finishedAt.getTime() - (job.startedAt?.getTime() || 0),
+      };
+
+    } catch (error: any) {
+      this.logger.error(`ExecuteImport thất bại: ${error.message}`, error.stack);
+      job.status = JobStatus.FAILED;
+      job.errorMessage = error.message || 'Lỗi không xác định khi thực thi import';
+      job.finishedAt = new Date();
+    }
+
+    await this.importJobRepo.save(job);
+    this.logger.log(`ExecuteImport hoàn tất: ${jobKey}, trạng thái: ${job.status}`);
+
+    return job;
+  }
+
+  // =========================================================================
+  // Row Processing
+  // =========================================================================
+
+  /**
+   * Xử lý một hàng dữ liệu đơn lẻ.
+   *
+   * Validate dữ liệu và insert vào database.
+   * Trả về kết quả thành công/thất bại.
+   *
+   * @param rowData - Dữ liệu của hàng
+   * @param job - ImportJob đang xử lý
+   * @returns Kết quả xử lý
+   */
+  private async processSingleRow(
+    rowData: Record<string, any>,
+    job: ImportJob,
+  ): Promise<{ success: boolean; error?: string; fieldName?: string }> {
+    try {
+      // Validate dữ liệu cơ bản
+      const validationError = this.validateRow(rowData);
+      if (validationError) {
+        return {
+          success: false,
+          error: validationError.message,
+          fieldName: validationError.field,
+        };
+      }
+
+      // TODO: Implement actual database insert logic
+      // Ví dụ: await this.targetRepository.insert(rowData);
+
+      return { success: true };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || 'Lỗi không xác định khi xử lý hàng',
+      };
+    }
+  }
+
+  /**
+   * Validate dữ liệu của một hàng.
+   *
+   * Kiểm tra các ràng buộc cơ bản:
+   * - Không có giá trị null/undefined cho trường bắt buộc
+   * - Kiểu dữ liệu hợp lệ
+   *
+   * @param rowData - Dữ liệu hàng cần validate
+   * @returns Null nếu valid, hoặc đối tượng lỗi nếu invalid
+   */
+  private validateRow(
+    rowData: Record<string, any>,
+  ): { message: string; field: string } | null {
+    if (!rowData || typeof rowData !== 'object') {
+      return {
+        message: 'Dữ liệu hàng không hợp lệ: phải là đối tượng',
+        field: '',
+      };
+    }
+
+    // Kiểm tra các trường rỗng
+    for (const [key, value] of Object.entries(rowData)) {
+      if (value === null || value === undefined || value === '') {
+        // Cho phép các trường có giá trị rỗng - không reject ngay
+        // Việc enforce trường bắt buộc nên được cấu hình từ ETLMapping
+      }
+    }
+
+    return null;
+  }
+
+  // =========================================================================
+  // File Parsing Helpers
+  // =========================================================================
+
+  /**
+   * Parse nội dung CSV thành mảng các hàng.
+   *
+   * Hỗ trợ:
+   * - Hàng header làm key
+   * - Giá trị có dấu ngoặc kép
+   * - Ngăn cách bằng dấu phẩy
+   *
+   * @param content - Nội dung file CSV
+   * @returns Mảng các hàng (mỗi hàng là object { column: value })
+   */
+  private parseCsvLines(content: string): string[][] {
+    const lines = content
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    return lines.map((line) => {
+      // Simple CSV parse - không hỗ trợ quoted commas
+      return line.split(',').map((cell) => cell.trim().replace(/^"|"$/g, ''));
+    });
+  }
+
+  /**
+   * Trích xuất dữ liệu hàng từ file theo định dạng.
+   *
+   * @param content - Nội dung file
+   * @param format - Định dạng file (csv hoặc json)
+   * @returns Mảng các hàng dữ liệu
+   */
+  private extractRows(
+    content: string,
+    format: ImportFormat,
+  ): Record<string, any>[] {
+    if (format === ImportFormat.JSON) {
+      const parsed = JSON.parse(content);
+      return Array.isArray(parsed) ? parsed : parsed.data || [];
+    }
+
+    // Parse CSV
+    const lines = this.parseCsvLines(content);
+    if (lines.length === 0) return [];
+
+    const headers = lines[0];
+    const rows: Record<string, any>[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const row: Record<string, any> = {};
+      for (let j = 0; j < headers.length; j++) {
+        row[headers[j]] = lines[i][j] || '';
+      }
+      rows.push(row);
+    }
+
+    return rows;
+  }
+
+  /**
+   * Chia mảng thành các chunk nhỏ.
+   *
+   * @param array - Mảng cần chia
+   * @param size - Kích thước mỗi chunk
+   * @returns Mảng các chunk
+   */
+  private chunkArray<T>(array: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  }
+
+  // =========================================================================
+  // Error Handling
+  // =========================================================================
+
+  /**
+   * Lưu danh sách lỗi hàng vào database.
+   *
+   * @param job - ImportJob chứa các lỗi
+   * @param errors - Danh sách lỗi từ bulk processor
+   * @param chunkIndex - Số thứ tự chunk chứa lỗi
+   */
+  private async saveRowErrors(
+    job: ImportJob,
+    errors: Array<{
+      index: number;
+      data: Record<string, any>;
+      error: string;
+      fieldName?: string;
+    }>,
+    chunkIndex: number,
+  ): Promise<void> {
+    const errorEntities: ImportError[] = errors.map((err) => {
+      const importError = this.importErrorRepo.create({
+        job: job,
+        rowNumber: chunkIndex * job.chunkSize + err.index + 1,
+        rowData: err.data,
+        errorMessage: err.error,
+        errorType: this.classifyError(err.error),
+        fieldName: err.fieldName || null,
+      });
+      return importError;
+    });
+
+    // Bulk insert lỗi
+    await this.importErrorRepo.save(errorEntities);
+    this.logger.log(
+      `Đã lưu ${errorEntities.length} lỗi hàng cho job ${job.jobKey}`,
+    );
+  }
+
+  /**
+   * Phân loại lỗi dựa trên thông báo.
+   *
+   * @param errorMessage - Thông báo lỗi
+   * @returns Loại lỗi: validation, type_error, duplicate, constraint_violation
+   */
+  private classifyError(errorMessage: string): string {
+    const lower = errorMessage.toLowerCase();
+    if (lower.includes('duplicate') || lower.includes('trung lặp')) {
+      return 'duplicate';
+    }
+    if (lower.includes('constraint') || lower.includes('violation')) {
+      return 'constraint_violation';
+    }
+    if (lower.includes('type') || lower.includes('kiểu')) {
+      return 'type_error';
+    }
+    return 'validation';
+  }
+
+  // =========================================================================
+  // Query Methods
+  // =========================================================================
+
+  /**
+   * Lấy trạng thái công việc theo jobKey.
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns Thông tin chi tiết công việc
+   */
+  async getJobStatus(jobKey: string): Promise<ImportJobResponseDto> {
+    const job = await this.importJobRepo.findOne({ where: { jobKey } });
+    if (!job) {
+      throw new NotFoundException(`Không tìm thấy ImportJob với jobKey: ${jobKey}`);
+    }
+    return new ImportJobResponseDto(job);
+  }
+
+  /**
+   * Hủy công việc đang chạy.
+   *
+   * Chỉ có thể hủy các job có trạng thái PENDING hoặc RUNNING.
+   * Job đang chạy sẽ bị dừng ở điểm chunk tiếp theo.
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns ImportJob đã bị hủy
+   */
+  async cancelJob(jobKey: string): Promise<ImportJobResponseDto> {
+    const job = await this.importJobRepo.findOne({ where: { jobKey } });
+    if (!job) {
+      throw new NotFoundException(`Không tìm thấy ImportJob với jobKey: ${jobKey}`);
+    }
+
+    if (job.status === JobStatus.COMPLETED) {
+      throw new BadRequestException(
+        `Không thể hủy công việc đã hoàn thành: ${jobKey}`,
+      );
+    }
+    if (job.status === JobStatus.CANCELLED) {
+      throw new BadRequestException(
+        `Công việc đã bị hủy trước đó: ${jobKey}`,
+      );
+    }
+
+    job.status = JobStatus.CANCELLED;
+    job.finishedAt = new Date();
+    await this.importJobRepo.save(job);
+
+    this.logger.log(`Đã hủy ImportJob: ${jobKey}`);
+    return new ImportJobResponseDto(job);
+  }
+
+  /**
+   * Lấy danh sách lỗi hàng cho một công việc import.
+   *
+   * Hỗ trợ phân trang và lọc theo loại lỗi.
+   *
+   * @param jobKey - Mã định danh của job
+   * @param page - Số trang (bắt đầu từ 1)
+   * @param pageSize - Số lượng mỗi trang
+   * @returns Danh sách lỗi hàng với phân trang
+   */
+  async getRowErrors(
+    jobKey: string,
+    page: number = 1,
+    pageSize: number = 50,
+  ): Promise<{
+    errors: ImportErrorResponseDto[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    // Kiểm tra job tồn tại
+    const job = await this.importJobRepo.findOne({ where: { jobKey } });
+    if (!job) {
+      throw new NotFoundException(`Không tìm thấy ImportJob với jobKey: ${jobKey}`);
+    }
+
+    // Lấy lỗi với phân trang
+    const [errors, total] = await this.importErrorRepo.findAndCount({
+      where: { job: { id: job.id } },
+      order: { rowNumber: 'ASC' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+
+    return {
+      errors: errors.map((e) => new ImportErrorResponseDto(e)),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  /**
+   * Liệt kê tất cả công việc import với bộ lọc và phân trang.
+   *
+   * @param query - DTO chứa tham số lọc và phân trang
+   * @returns Danh sách công việc với phân trang
+   */
+  async listImportJobs(query: JobQueryDto): Promise<PaginatedJobsDto<ImportJobResponseDto>> {
+    const where: any = {};
+
+    // Lọc theo trạng thái
+    if (query.status) {
+      where.status = query.status;
+    }
+
+    // Lọc theo định dạng
+    if (query.format) {
+      where.format = query.format;
+    }
+
+    // Tìm kiếm theo tên file hoặc jobKey
+    if (query.search) {
+      where.fileName = Like(`%${query.search}%`);
+    }
+
+    // Sắp xếp
+    const order: any = {};
+    const sortBy = query.sortBy || 'createdAt';
+    const sortOrder = query.sortOrder || 'desc';
+    order[sortBy] = sortOrder;
+
+    // Truy vấn với phân trang
+    const [jobs, total] = await this.importJobRepo.findAndCount({
+      where,
+      order,
+      skip: query.offset,
+      take: query.limit,
+    });
+
+    const page = query.page || 1;
+    const pageSize = query.pageSize || 50;
+
+    return new PaginatedJobsDto(
+      jobs.map((j) => new ImportJobResponseDto(j)),
+      total,
+      page,
+      pageSize,
+    );
+  }
+
+  // =========================================================================
+  // Cleanup
+  // =========================================================================
+
+  /**
+   * Xóa file tạm của công việc import đã hoàn thành.
+   *
+   * Dùng để giải phóng dung lượng đĩa sau khi import xong.
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns True nếu xóa thành công
+   */
+  async cleanupJobFile(jobKey: string): Promise<boolean> {
+    const job = await this.importJobRepo.findOne({ where: { jobKey } });
+    if (!job || !job.filePath) {
+      return false;
+    }
+
+    try {
+      await fs.unlink(job.filePath);
+      this.logger.log(`Đã xóa file tạm: ${job.filePath}`);
+      return true;
+    } catch (error) {
+      this.logger.warn(`Không thể xóa file tạm: ${job.filePath}`);
+      return false;
+    }
+  }
+}

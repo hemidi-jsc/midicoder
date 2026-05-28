@@ -1,0 +1,229 @@
+pack:
+  id: F13
+  name: AI-Assisted Development Generator
+  internal_id: cp_full_ai_assisted
+  version: 2.0.0
+  status: stable
+  category: ai-assisted
+  depends_on:
+  - B01
+  - F07
+  definitions_count: 3
+  obligations_count: 2
+  error_codes:
+    prefix: MDC-F13
+    range: MDC-CP30-001 to MDC-CP30-014
+  capabilities_provided:
+  - ai_review
+  - ai_suggest
+  - prompt_template
+  capabilities:
+  - id: ai_review
+    emitter: fastapi, nestjs
+  - id: ai_suggest
+    emitter: fastapi, nestjs, angular, react
+  - id: prompt_template
+    emitter: fastapi, nestjs, angular, react
+  definitions:
+  - name: ReviewPolicy
+    description: Chính sách AI code review với severity, category, và prompt template
+      ref
+  - name: PromptTemplate
+    description: Template prompt AI với variables cho code review, suggestion, generation,
+      testing
+  - name: AIAssistantConfig
+    description: Cấu hình tổng thể AI assistant (model, token, timeout, enabled policies)
+  obligations:
+  - name: ConfigDriven
+    description: Không hardcode LLM provider hay API key — mọi thứ qua config file
+  - name: Standalone
+    description: Generated code không import module từ midicoder — fully self-contained
+  file_contributions:
+    infrastructure:
+    - path: app/ai_assistant/__init__.py
+      file_type: ai_assistant_init
+      template: cp_full_ai_assisted/__init__.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/ai_assistant/models.py
+      file_type: ai_assistant_models
+      template: cp_full_ai_assisted/models.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: app/ai_assistant/review_engine.py
+      file_type: ai_review_engine
+      template: cp_full_ai_assisted/review_engine.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - ai_review_policies
+    - path: app/ai_assistant/suggestion_engine.py
+      file_type: ai_suggestion_engine
+      template: cp_full_ai_assisted/suggestion_engine.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - suggestion_config
+    - path: app/ai_assistant/prompt_templates.py
+      file_type: prompt_template_registry
+      template: cp_full_ai_assisted/prompt_templates.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys:
+      - prompt_templates
+    - path: app/ai_assistant/registry.py
+      file_type: ai_assistant_registry
+      template: cp_full_ai_assisted/registry.py.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: config/ai_assistant.yaml
+      file_type: ai_assistant_config
+      template: cp_full_ai_assisted/ai_assistant.yaml.jinja2
+      stacks:
+      - fastapi
+      pack_emitter: null
+      context_keys: []
+    - path: src/ai-assistant/models.ts
+      file_type: ai_assistant_models
+      template: cp_full_ai_assisted/models.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/ai-assistant/ai-assistant.module.ts
+      file_type: ai_assistant_module
+      template: cp_full_ai_assisted/ai-assistant.module.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys: []
+    - path: src/ai-assistant/review.service.ts
+      file_type: ai_review_service
+      template: cp_full_ai_assisted/review.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - ai_review_policies
+    - path: src/ai-assistant/suggestion.service.ts
+      file_type: ai_suggestion_service
+      template: cp_full_ai_assisted/suggestion.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - suggestion_config
+    - path: src/ai-assistant/templates.service.ts
+      file_type: prompt_template_service
+      template: cp_full_ai_assisted/templates.service.ts.jinja2
+      stacks:
+      - nestjs
+      pack_emitter: null
+      context_keys:
+      - prompt_templates
+    - path: src/app/core/ai-assistant/models.ts
+      file_type: ai_assistant_models
+      template: cp_full_ai_assisted/models.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/ai-assistant/ai-assistant.module.ts
+      file_type: ai_assistant_module
+      template: cp_full_ai_assisted/ai-assistant.module.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/app/core/ai-assistant/review.service.ts
+      file_type: ai_review_service
+      template: cp_full_ai_assisted/review.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - ai_review_policies
+    - path: src/app/core/ai-assistant/suggestion.service.ts
+      file_type: ai_suggestion_service
+      template: cp_full_ai_assisted/suggestion.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - suggestion_config
+    - path: src/app/core/ai-assistant/templates.service.ts
+      file_type: prompt_template_service
+      template: cp_full_ai_assisted/templates.service.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys:
+      - prompt_templates
+    - path: src/app/core/ai-assistant/ai-suggestion-panel.component.ts
+      file_type: ai_suggestion_panel
+      template: cp_full_ai_assisted/ai-suggestion-panel.component.ts.jinja2
+      stacks:
+      - angular
+      pack_emitter: null
+      context_keys: []
+    - path: src/ai-assistant/types.ts
+      file_type: ai_assistant_types
+      template: cp_full_ai_assisted/types.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/ai-assistant/review.ts
+      file_type: ai_review
+      template: cp_full_ai_assisted/review.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - ai_review_policies
+    - path: src/ai-assistant/suggestion.ts
+      file_type: ai_suggestion
+      template: cp_full_ai_assisted/suggestion.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - suggestion_config
+    - path: src/ai-assistant/templates.ts
+      file_type: prompt_templates
+      template: cp_full_ai_assisted/templates.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys:
+      - prompt_templates
+    - path: src/ai-assistant/AISuggestionPanel.tsx
+      file_type: ai_suggestion_panel
+      template: cp_full_ai_assisted/AISuggestionPanel.tsx.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+    - path: src/ai-assistant/ai-assistant.ts
+      file_type: ai_assistant_main
+      template: cp_full_ai_assisted/ai-assistant.ts.jinja2
+      stacks:
+      - react
+      pack_emitter: null
+      context_keys: []
+  recipes:
+  - auto_generate_ai_assistant_from_mir
+  - generate_default_review_policies
+  - generate_default_prompt_templates
+  - generate_default_config
+  type: full
+  render_context_support: true

@@ -1,0 +1,687 @@
+/**
+ * Bulk Processor Service cho Data Import/Export/ETL.
+ *
+ * Cung cấp các phương thức:
+ * - processChunk: Xử lý một chunk dữ liệu với retry
+ * - executeWithRetry: Thực thi hàm với retry và backoff
+ * - trackProgress: Theo dõi tiến độ xử lý hàng loạt
+ * - rollbackChunk: Hoàn tác một chunk đã xử lý
+ *
+ * Hỗ trợ job nền (background job) để xử lý dataset lớn
+ * mà không block request HTTP.
+ *
+ * CP38: Data Import/Export/ETL
+ */
+
+import { Injectable, Logger } from '@nestjs/common';
+
+/**
+ * Kết quả xử lý của một hàng dữ liệu.
+ */
+export interface RowProcessResult {
+  /**
+   * Có thành công không.
+   */
+  success: boolean;
+
+  /**
+   * Thông báo lỗi (nếu thất bại).
+   */
+  error?: string;
+
+  /**
+   * Tên trường gây lỗi (nếu có thể xác định).
+   */
+  fieldName?: string;
+}
+
+/**
+ * Lỗi hàng từ quá trình xử lý chunk.
+ */
+export interface RowError {
+  /**
+   * Chỉ số hàng trong chunk (bắt đầu từ 0).
+   */
+  index: number;
+
+  /**
+   * Dữ liệu gốc của hàng.
+   */
+  data: Record<string, any>;
+
+  /**
+   * Thông báo lỗi.
+   */
+  error: string;
+
+  /**
+   * Tên trường gây lỗi (nếu có).
+   */
+  fieldName?: string;
+}
+
+/**
+ * Kết quả xử lý toàn bộ chunk.
+ */
+export interface ChunkProcessResult {
+  /**
+   * Số hàng xử lý thành công.
+   */
+  successCount: number;
+
+  /**
+   * Số hàng có lỗi.
+   */
+  errorCount: number;
+
+  /**
+   * Tổng số hàng trong chunk.
+   */
+  totalProcessed: number;
+
+  /**
+   * Danh sách lỗi chi tiết.
+   */
+  errors: RowError[];
+
+  /**
+   * Thời gian xử lý (ms).
+   */
+  durationMs: number;
+}
+
+/**
+ * Thông tin tiến độ xử lý hàng loạt.
+ */
+export interface BulkProgress {
+  /**
+   * Tổng số chunk cần xử lý.
+   */
+  totalChunks: number;
+
+  /**
+   * Số chunk đã xử lý.
+   */
+  processedChunks: number;
+
+  /**
+   * Tổng số hàng cần xử lý.
+   */
+  totalRows: number;
+
+  /**
+   * Số hàng đã xử lý thành công.
+   */
+  successRows: number;
+
+  /**
+   * Số hàng có lỗi.
+   */
+  errorRows: number;
+
+  /**
+   * Phần trăm tiến độ (0-100).
+   */
+  percentage: number;
+
+  /**
+   * Trạng thái hiện tại.
+   */
+  status: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+  /**
+   * Thời gian bắt đầu.
+   */
+  startTime: Date | null;
+
+  /**
+   * Thời gian hoàn thành.
+   */
+  finishTime: Date | null;
+}
+
+/**
+ * Service cho xử lý dữ liệu theo batch/chunk.
+ *
+ * Cung cấp cơ chế:
+ * - Chia nhỏ dữ liệu thành các chunk
+ * - Xử lý từng chunk với retry khi thất bại
+ * - Theo dõi tiến độ xử lý
+ * - Hỗ trợ rollback khi cần
+ * - Background job để không block request
+ *
+ * Pattern Retry với Exponential Backoff:
+ * - Lần thử 1: chờ 0ms
+ * - Lần thử 2: chờ 1000ms
+ * - Lần thử 3: chờ 2000ms
+ * - ... (tăng gấp đôi mỗi lần)
+ *
+ * Usage:
+ * ```typescript
+ * const result = await bulkProcessor.processChunk(
+ *   dataChunk,
+ *   maxRetries,
+ *   async (row) => {
+ *     // Xử lý từng hàng
+ *     await repository.save(row);
+ *     return { success: true };
+ *   }
+ * );
+ * ```
+ */
+@Injectable()
+export class BulkProcessorService {
+  private readonly logger = new Logger(BulkProcessorService.name);
+
+  // Cấu hình mặc định
+  private readonly defaultMaxRetries = 3;
+  private readonly defaultRetryDelayMs = 1000;
+  private readonly defaultTimeoutSeconds = 300;
+
+  // Map lưu tiến độ xử lý theo jobKey
+  private readonly progressMap = new Map<string, BulkProgress>();
+
+  // Flag hủy xử lý theo jobKey
+  private readonly cancelFlags = new Map<string, boolean>();
+
+  // =========================================================================
+  // Chunk Processing
+  // =========================================================================
+
+  /**
+   * Xử lý một chunk dữ liệu với retry cho từng hàng.
+   *
+   * Quy trình:
+   * 1. Duyệt từng hàng trong chunk
+   * 2. Gọi rowProcessor để xử lý hàng
+   * 3. Nếu thất bại: retry maxRetries lần với exponential backoff
+   * 4. Nếu vẫn thất bại sau hết lần retry: ghi lỗi và tiếp tục hàng tiếp
+   * 5. Trả về kết quả tổng hợp
+   *
+   * @param chunk - Mảng dữ liệu cần xử lý
+   * @param maxRetries - Số lần thử lại tối đa cho mỗi hàng
+   * @param rowProcessor - Hàm xử lý từng hàng, trả về RowProcessResult
+   * @returns ChunkProcessResult với thống kê và lỗi
+   */
+  async processChunk<T>(
+    chunk: T[],
+    maxRetries: number = this.defaultMaxRetries,
+    rowProcessor: (item: T) => Promise<RowProcessResult>,
+  ): Promise<ChunkProcessResult> {
+    const startTime = Date.now();
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: RowError[] = [];
+
+    this.logger.log(`Xử lý chunk: ${chunk.length} hàng, maxRetries: ${maxRetries}`);
+
+    for (let i = 0; i < chunk.length; i++) {
+      const item = chunk[i];
+
+      // Thử xử lý hàng với retry
+      const result = await this.executeWithRetry(
+        async () => rowProcessor(item),
+        maxRetries,
+      );
+
+      if (result.success) {
+        successCount++;
+      } else {
+        errorCount++;
+        errors.push({
+          index: i,
+          data: item as Record<string, any>,
+          error: result.error || 'Lỗi không xác định',
+          fieldName: result.fieldName,
+        });
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    this.logger.log(
+      `Chunk hoàn tất: ${successCount} thành công, ${errorCount} lỗi, ${durationMs}ms`,
+    );
+
+    return {
+      successCount,
+      errorCount,
+      totalProcessed: chunk.length,
+      errors,
+      durationMs,
+    };
+  }
+
+  // =========================================================================
+  // Retry with Exponential Backoff
+  // =========================================================================
+
+  /**
+   * Thực thi một hàm với retry và exponential backoff.
+   *
+   * Pattern:
+   * - Nếu hàm throw exception: catch và retry
+   * - Nếu hàm trả về { success: false }: retry
+   * - Thời gian chờ giữa các lần retry tăng gấp đôi
+   * - Jitter ngẫu nhiên để tránh thundering herd
+   *
+   * @param fn - Hàm async cần thực thi
+   * @param maxRetries - Số lần thử lại tối đa
+   * @param initialDelayMs - Thời gian chờ ban đầu (ms)
+   * @returns Kết quả cuối cùng sau tất cả các lần thử
+   */
+  async executeWithRetry<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = this.defaultMaxRetries,
+    initialDelayMs: number = this.defaultRetryDelayMs,
+  ): Promise<T> {
+    let lastError: string = '';
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Lần thử đầu không chờ
+        if (attempt > 0) {
+          // Exponential backoff + jitter ngẫu nhiên
+          const delay = initialDelayMs * Math.pow(2, attempt - 1);
+          const jitter = Math.random() * 100; // Jitter tối đa 100ms
+          const totalDelay = delay + jitter;
+
+          this.logger.log(
+            `Lần thử ${attempt + 1}/${maxRetries + 1}, chờ ${Math.round(totalDelay)}ms`,
+          );
+          await this.sleep(totalDelay);
+        }
+
+        const result = await fn();
+
+        // Nếu kết quả là RowProcessResult và thất bại, tiếp tục retry
+        if (
+          typeof result === 'object' &&
+          result !== null &&
+          'success' in result &&
+          result.success === false
+        ) {
+          lastError =
+            (result as RowProcessResult).error || 'Không có thông báo lỗi';
+          this.logger.warn(
+            `Hàng xử lý thất bại, lần ${attempt + 1}: ${lastError}`,
+          );
+          continue;
+        }
+
+        // Thành công
+        if (attempt > 0) {
+          this.logger.log(`Thành công sau ${attempt} lần thử lại`);
+        }
+
+        return result;
+      } catch (error: any) {
+        lastError = error.message || 'Exception không xác định';
+        this.logger.warn(
+          `Exception lần ${attempt + 1}/${maxRetries + 1}: ${lastError}`,
+        );
+
+        // Nếu đã hết lần retry, throw exception
+        if (attempt >= maxRetries) {
+          break;
+        }
+      }
+    }
+
+    // Tất cả các lần retry đều thất bại
+    this.logger.error(
+      `Tất cả ${maxRetries + 1} lần thử đều thất bại: ${lastError}`,
+    );
+
+    // Trả về kết quả thất bại thay vì throw
+    // để caller có thể xử lý linh hoạt
+    return {
+      success: false,
+      error: lastError,
+    } as unknown as T;
+  }
+
+  // =========================================================================
+  // Progress Tracking
+  // =========================================================================
+
+  /**
+   * Khởi tạo bộ theo dõi tiến độ cho một job.
+   *
+   * @param jobKey - Mã định danh của job
+   * @param totalChunks - Tổng số chunk
+   * @param totalRows - Tổng số hàng
+   * @returns BulkProgress ban đầu
+   */
+  trackProgress(
+    jobKey: string,
+    totalChunks: number,
+    totalRows: number,
+  ): BulkProgress {
+    const progress: BulkProgress = {
+      totalChunks,
+      processedChunks: 0,
+      totalRows,
+      successRows: 0,
+      errorRows: 0,
+      percentage: 0,
+      status: 'idle',
+      startTime: null,
+      finishTime: null,
+    };
+
+    this.progressMap.set(jobKey, progress);
+    this.cancelFlags.set(jobKey, false);
+
+    this.logger.log(
+      `Khởi tạo progress tracker: ${jobKey}, ${totalChunks} chunks, ${totalRows} hàng`,
+    );
+
+    return progress;
+  }
+
+  /**
+   * Cập nhật tiến độ sau khi xử lý xong một chunk.
+   *
+   * @param jobKey - Mã định danh của job
+   * @param successCount - Số hàng thành công trong chunk
+   * @param errorCount - Số hàng lỗi trong chunk
+   * @returns BulkProgress đã cập nhật
+   */
+  updateProgress(
+    jobKey: string,
+    successCount: number,
+    errorCount: number,
+  ): BulkProgress {
+    const progress = this.progressMap.get(jobKey);
+    if (!progress) {
+      this.logger.warn(`Không tìm thấy progress tracker cho job: ${jobKey}`);
+      return this.createEmptyProgress();
+    }
+
+    // Kiểm tra flag hủy
+    if (this.cancelFlags.get(jobKey)) {
+      progress.status = 'cancelled';
+      progress.finishTime = new Date();
+      return progress;
+    }
+
+    progress.processedChunks++;
+    progress.successRows += successCount;
+    progress.errorRows += errorCount;
+
+    // Tính phần trăm dựa trên số hàng đã xử lý
+    const processedRows = progress.successRows + progress.errorRows;
+    progress.percentage =
+      progress.totalRows > 0
+        ? Math.round((processedRows / progress.totalRows) * 100)
+        : 0;
+
+    // Cập nhật trạng thái
+    if (progress.processedChunks >= progress.totalChunks) {
+      progress.status = 'completed';
+      progress.finishTime = new Date();
+    } else {
+      progress.status = 'running';
+    }
+
+    this.logger.log(
+      `[${jobKey}] Tiến độ: ${progress.percentage}% ` +
+      `(${progress.processedChunks}/${progress.totalChunks} chunks, ` +
+      `${progress.successRows}OK/${progress.errorRows}ERR)`,
+    );
+
+    return progress;
+  }
+
+  /**
+   * Lấy tiến độ hiện tại của một job.
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns BulkProgress hoặc null nếu không tìm thấy
+   */
+  getProgress(jobKey: string): BulkProgress | null {
+    return this.progressMap.get(jobKey) || null;
+  }
+
+  /**
+   * Dừng theo dõi tiến độ của một job.
+   *
+   * @param jobKey - Mã định danh của job
+   */
+  clearProgress(jobKey: string): void {
+    this.progressMap.delete(jobKey);
+    this.cancelFlags.delete(jobKey);
+  }
+
+  // =========================================================================
+  // Cancel & Rollback
+  // =========================================================================
+
+  /**
+   * Yêu cầu hủy job đang chạy.
+   *
+   * Set flag hủy - job sẽ kiểm tra flag này sau mỗi chunk
+   * và dừng xử lý nếu flag được set.
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns True nếu set flag thành công
+   */
+  requestCancel(jobKey: string): boolean {
+    if (this.cancelFlags.has(jobKey)) {
+      this.logger.warn(`Job ${jobKey} đã được yêu cầu hủy`);
+      return false;
+    }
+
+    this.cancelFlags.set(jobKey, true);
+
+    const progress = this.progressMap.get(jobKey);
+    if (progress) {
+      progress.status = 'cancelled';
+      progress.finishTime = new Date();
+    }
+
+    this.logger.log(`Đã yêu cầu hủy job: ${jobKey}`);
+    return true;
+  }
+
+  /**
+   * Kiểm tra xem job có bị yêu cầu hủy không.
+   *
+   * Dùng trong vòng lặp xử lý chunk để kiểm tra
+   * và dừng sớm nếu job bị hủy.
+   *
+   * @param jobKey - Mã định danh của job
+   * @returns True nếu job bị yêu cầu hủy
+   */
+  isCancelled(jobKey: string): boolean {
+    return this.cancelFlags.get(jobKey) === true;
+  }
+
+  /**
+   * Hoàn tác một chunk đã xử lý.
+   *
+   * Gọi hàm rollback do caller cung cấp để hoàn tác
+   * dữ liệu của chunk cụ thể.
+   *
+   * @param jobKey - Mã định danh của job
+   * @param chunkIndex - Chỉ số chunk cần rollback
+   * @param chunkData - Dữ liệu của chunk cần rollback
+   * @param rollbackFn - Hàm rollback cho từng hàng
+   * @returns Kết quả rollback
+   */
+  async rollbackChunk<T>(
+    jobKey: string,
+    chunkIndex: number,
+    chunkData: T[],
+    rollbackFn: (item: T) => Promise<void>,
+  ): Promise<{
+    chunkIndex: number;
+    rolledBack: number;
+    failed: number;
+  }> {
+    this.logger.log(
+      `[${jobKey}] Rollback chunk ${chunkIndex}: ${chunkData.length} hàng`,
+    );
+
+    let rolledBack = 0;
+    let failed = 0;
+
+    for (const item of chunkData) {
+      try {
+        await rollbackFn(item);
+        rolledBack++;
+      } catch (error: any) {
+        failed++;
+        this.logger.error(
+          `[${jobKey}] Rollback hàng thất bại: ${error.message}`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `[${jobKey}] Rollback chunk ${chunkIndex} hoàn tất: ` +
+      `${rolledBack} thành công, ${failed} thất bại`,
+    );
+
+    return {
+      chunkIndex,
+      rolledBack,
+      failed,
+    };
+  }
+
+  // =========================================================================
+  // Background Job Support
+  // =========================================================================
+
+  /**
+   * Xử lý toàn bộ dữ liệu theo chunk trong background.
+   *
+   * Pattern:
+   * 1. Chia dữ liệu thành các chunk
+   * 2. Khởi tạo progress tracker
+   * 3. Duyệt và xử lý từng chunk
+   * 4. Cập nhật tiến độ sau mỗi chunk
+   * 5. Kiểm tra cancel flag sau mỗi chunk
+   * 6. Trả về Promise hoàn thành khi hết chunks
+   *
+   * NOTE: Trong môi trường sản xuất, nên sử dụng
+   * queue worker (BullMQ, Kafka, RabbitMQ) thay vì
+   * chạy trực tiếp trong process Node.js.
+   *
+   * @param jobKey - Mã định danh của job
+   * @param data - Toàn bộ dữ liệu cần xử lý
+   * @param chunkSize - Kích thước mỗi chunk
+   * @param maxRetries - Số lần retry tối đa
+   * @param processor - Hàm xử lý từng hàng
+   * @returns Promise với kết quả tổng hợp
+   */
+  async processInBackground<T>(
+    jobKey: string,
+    data: T[],
+    chunkSize: number,
+    maxRetries: number,
+    processor: (item: T) => Promise<RowProcessResult>,
+  ): Promise<{
+    jobKey: string;
+    totalChunks: number;
+    totalProcessed: number;
+    totalSuccess: number;
+    totalErrors: number;
+    durationMs: number;
+  }> {
+    const startTime = Date.now();
+
+    // Chia dữ liệu thành chunks
+    const chunks: T[][] = [];
+    for (let i = 0; i < data.length; i += chunkSize) {
+      chunks.push(data.slice(i, i + chunkSize));
+    }
+
+    // Khởi tạo progress
+    const progress = this.trackProgress(jobKey, chunks.length, data.length);
+    progress.status = 'running';
+    progress.startTime = new Date();
+
+    let totalSuccess = 0;
+    let totalErrors = 0;
+
+    this.logger.log(
+      `[${jobKey}] Bắt đầu background processing: ` +
+      `${chunks.length} chunks, ${data.length} hàng`,
+    );
+
+    for (let i = 0; i < chunks.length; i++) {
+      // Kiểm tra cancel flag
+      if (this.isCancelled(jobKey)) {
+        this.logger.log(`[${jobKey}] Job bị hủy ở chunk ${i + 1}`);
+        break;
+      }
+
+      // Xử lý chunk
+      const result = await this.processChunk(
+        chunks[i],
+        maxRetries,
+        processor,
+      );
+
+      totalSuccess += result.successCount;
+      totalErrors += result.errorCount;
+
+      // Cập nhật tiến độ
+      this.updateProgress(jobKey, result.successCount, result.errorCount);
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    // Dọn dẹp progress tracker
+    this.clearProgress(jobKey);
+
+    this.logger.log(
+      `[${jobKey}] Background processing hoàn tất: ` +
+      `${totalSuccess} thành công, ${totalErrors} lỗi, ${durationMs}ms`,
+    );
+
+    return {
+      jobKey,
+      totalChunks: chunks.length,
+      totalProcessed: totalSuccess + totalErrors,
+      totalSuccess,
+      totalErrors,
+      durationMs,
+    };
+  }
+
+  // =========================================================================
+  // Helpers
+  // =========================================================================
+
+  /**
+   * Sleep một khoảng thời gian (ms).
+   *
+   * @param ms - Thời gian chờ (ms)
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Tạo BulkProgress rỗng.
+   *
+   * @returns BulkProgress với tất cả giá trị 0
+   */
+  private createEmptyProgress(): BulkProgress {
+    return {
+      totalChunks: 0,
+      processedChunks: 0,
+      totalRows: 0,
+      successRows: 0,
+      errorRows: 0,
+      percentage: 0,
+      status: 'idle',
+      startTime: null,
+      finishTime: null,
+    };
+  }
+}

@@ -1,0 +1,78 @@
+# NestJS Dockerfile - Build image cho API Gateway
+# Dockerfile cho NestJS application
+# CP06-Phase5: Infrastructure
+# KPI-029: Tenant Isolation - Support tenant-specific environment variables
+
+# Stage 1: Build stage - build Node.js application
+FROM node:20-alpine as builder
+
+# LABEL metadata - thông tin container
+LABEL maintainer="Midicoder"
+LABEL description="NestJS Gateway Service"
+
+# Set WORKDIR - thư mục làm việc
+WORKDIR /app
+
+# COPY package.json - copy dependency files
+COPY package*.json ./
+
+# Cài đặt dependencies với npm
+RUN npm install
+
+# COPY source code - copy ứng dụng
+COPY . .
+
+# Build application
+RUN npm run build
+
+# Stage 2: Production stage - runtime image
+FROM node:20-alpine as production
+
+# LABEL metadata
+LABEL maintainer="Midicoder"
+LABEL description="NestJS Gateway Service Production"
+
+# ENV environment variables - biến môi trường
+ENV NODE_ENV=production
+ENV APP_HOME=/app
+
+# KPI-029: Tenant isolation environment variables
+ENV TENANT_ISOLATION_ENABLED=true
+ENV DEFAULT_TENANT_ID=default
+ENV TENANT_CACHE_PREFIX=tenant
+ENV TENANT_QUEUE_PREFIX=tenant
+
+# Set WORKDIR
+WORKDIR /app
+
+# Cài đặt production dependencies only
+COPY --from=builder /app/package*.json ./
+RUN npm install --only=production
+
+# COPY built application
+COPY --from=builder /app/dist ./dist
+
+# EXPOSE port - expose cổng API
+EXPOSE 3000
+
+# Tạo user không root cho security
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -S appuser -u 1001 -G appgroup
+
+# USER non-root user
+USER appuser
+
+# HEALTHCHECK - health check cho container
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3000/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })" || exit 1
+
+# CMD command - command chạy ứng dụng
+CMD ["node", "dist/main"]
+
+# Multi-stage build optimization - nhỏ image size
+# Final image size tối ưu cho production
+
+# {{ config }} template variables
+# {{ config.port }}
+{% if config %}
+{% endif %}
