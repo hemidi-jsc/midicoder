@@ -2,7 +2,6 @@
 # Midicoder CE - Capability Pack Taxonomy v2
 # ============================================================================
 # Schema: taxonomy-v2
-# Consolidated from 65 CPs → 47 CPs (2026-05-28)
 #
 # Type system:
 #   base      - foundational, depends_on: []
@@ -19,969 +18,925 @@
 metadata:
   version: 2.0.0
   schema_version: taxonomy-v2
-  consolidated_date: "2026-05-28"
+  consolidated_date: '2026-05-28'
   total_packs: 52
-  removed_packs: 3
-  merged_packs: 10
-
 groups:
-  # ========================================================================
-  # BASE - Foundational packs (no dependencies)
-  # ========================================================================
   base:
-    - id: B01
-      name: Domain Model DSL & IR Builder
-      internal_id: cp_base_domain_model
-      description: >
-        Core domain primitives: entities, value objects, commands, queries,
-        workflows, aggregates, temporal entities, saga
-      depends_on: []
-      capabilities_provided:
-        - entity_modeling
-        - command_query_separation
-        - value_object
-        - aggregate_root
-        - domain_events
-        - temporal_entity
-        - polymorphic_entity
-        - saga
-        - recipes
-      old_ids: [CP01]
+  - id: B01
+    name: Domain Model DSL & IR Builder
+    internal_id: cp_base_domain_model
+    description: 'Core domain primitives: entities, value objects, commands, queries,
+      workflows, aggregates, temporal entities, saga
 
-  # ========================================================================
-  # INFRA - Infrastructure-only packs (no FastAPI/NestJS/Angular/React templates)
-  # ========================================================================
+      '
+    depends_on: []
+    capabilities_provided:
+    - entity_modeling
+    - command_query_separation
+    - value_object
+    - aggregate_root
+    - domain_events
+    - temporal_entity
+    - polymorphic_entity
+    - saga
+    - recipes
   infra:
-    - id: I01
-      name: Infrastructure as Code
-      internal_id: cp_infra_iac
-      description: >
-        Local runtime (docker-compose) and AWS baseline profiles
-      depends_on: []
-      capabilities_provided:
-        - docker_compose
-        - terraform_aws
-      old_ids: [CP07]
+  - id: I01
+    name: Infrastructure as Code
+    internal_id: cp_infra_iac
+    description: 'Local runtime (docker-compose) and AWS baseline profiles
 
-    - id: I02
-      name: Kubernetes & Cloud Native Deployment
-      internal_id: cp_infra_kubernetes
-      description: >
-        Kubernetes manifests (Deployment, Service, Ingress, HPA, ConfigMap,
-        Secret, PVC) and Helm Chart generation
-      depends_on: [B01, I01, BE01]
-      capabilities_provided:
-        - k8s_deploy
-        - k8s_service
-        - k8s_ingress
-        - k8s_hpa
-        - k8s_configmap
-        - k8s_secret
-        - helm_chart
-      old_ids: [CP54]
+      '
+    depends_on: []
+    capabilities_provided:
+    - docker_compose
+    - terraform_aws
+  - id: I02
+    name: Kubernetes & Cloud Native Deployment
+    internal_id: cp_infra_kubernetes
+    description: 'Kubernetes manifests (Deployment, Service, Ingress, HPA, ConfigMap,
+      Secret, PVC) and Helm Chart generation
 
-    - id: I03
-      name: CI/CD Pipeline Generator
-      internal_id: cp_infra_cicd
-      description: >
-        CI/CD pipeline generation: GitHub Actions, GitLab CI, Jenkins
-        declarative pipelines, Docker build, container scan
-      depends_on: [B01, I01, C03]
-      capabilities_provided:
-        - ci_pipeline
-        - cd_pipeline
-        - github_actions
-        - gitlab_ci
-        - jenkins
-        - docker_build
-        - container_scan
-      old_ids: [CP55]
+      '
+    depends_on:
+    - B01
+    - I01
+    - BE01
+    capabilities_provided:
+    - k8s_deploy
+    - k8s_service
+    - k8s_ingress
+    - k8s_hpa
+    - k8s_configmap
+    - k8s_secret
+    - helm_chart
+  - id: I03
+    name: CI/CD Pipeline Generator
+    internal_id: cp_infra_cicd
+    description: 'CI/CD pipeline generation: GitHub Actions, GitLab CI, Jenkins declarative
+      pipelines, Docker build, container scan
 
-    - id: I04
-      name: Environment & Secret Management
-      internal_id: cp_infra_env_secrets
-      description: >
-        Environment variable management per environment, secret storage
-        (Vault/KMS/local), KMS encryption, ConfigMap reference
-      depends_on: [B01, I01, F14]
-      capabilities_provided:
-        - env_config
-        - secret_management
-        - vault_integration
-        - kms_integration
-        - configmap_ref
-      old_ids: [CP56]
+      '
+    depends_on:
+    - B01
+    - I01
+    - C03
+    capabilities_provided:
+    - ci_pipeline
+    - cd_pipeline
+    - github_actions
+    - gitlab_ci
+    - jenkins
+    - docker_build
+    - container_scan
+  - id: I04
+    name: Environment & Secret Management
+    internal_id: cp_infra_env_secrets
+    description: 'Environment variable management per environment, secret storage
+      (Vault/KMS/local), KMS encryption, ConfigMap reference
 
-    - id: I05
-      name: Multi-Region & Geo-Replication
-      internal_id: cp_infra_multi_region
-      description: >
-        Multi-region deployment with cross-region data replication (sync/async),
-        latency-based geo-routing, automated failover/DR, and data residency
-        enforcement per regulation (GDPR, CCPA, local laws)
-      depends_on: [I02]
-      capabilities_provided:
-        - multi_region_deploy
-        - cross_region_replication
-        - latency_based_routing
-        - failover_management
-        - data_residency_enforce
-        - geo_health_check
-      old_ids: [CP28]
+      '
+    depends_on:
+    - B01
+    - I01
+    - F14
+    capabilities_provided:
+    - env_config
+    - secret_management
+    - vault_integration
+    - kms_integration
+    - configmap_ref
+  - id: I05
+    name: Multi-Region & Geo-Replication
+    internal_id: cp_infra_multi_region
+    description: 'Multi-region deployment with cross-region data replication (sync/async),
+      latency-based geo-routing, automated failover/DR, and data residency enforcement
+      per regulation (GDPR, CCPA, local laws)
 
-  # ========================================================================
-  # CORE - Core runtime capabilities (consumed by many other packs)
-  # ========================================================================
+      '
+    depends_on:
+    - I02
+    capabilities_provided:
+    - multi_region_deploy
+    - cross_region_replication
+    - latency_based_routing
+    - failover_management
+    - data_residency_enforce
+    - geo_health_check
   core:
-    - id: C01
-      name: Multi-Tenant Architecture
-      internal_id: cp_core_multi_tenant
-      description: >
-        Tenant isolation strategies (row/schema/db), provisioning,
-        cross-tenant access
-      depends_on: [B01, F07]
-      capabilities_provided:
-        - tenant_middleware
-        - tenant_context
-        - schema_isolation
-        - tenant_provisioning
-        - cross_tenant_access
-      old_ids: [CP02]
+  - id: C01
+    name: Multi-Tenant Architecture
+    internal_id: cp_core_multi_tenant
+    description: 'Tenant isolation strategies (row/schema/db), provisioning, cross-tenant
+      access
 
-    - id: C02
-      name: Event-Driven Architecture
-      internal_id: cp_core_event_driven
-      description: >
-        Event topics, publishing, subscriptions, outbox, transport
-        abstraction, DLQ, event sourcing
-      depends_on: [B01]
-      capabilities_provided:
-        - event_publisher
-        - event_subscriber
-        - outbox_pattern
-        - transport_abstraction
-        - dlq
-        - event_sourcing
-        - idempotent_consumer
-        - schema_versioning
-        - cqrs_projection
-      old_ids: [CP05]
+      '
+    depends_on:
+    - B01
+    - F07
+    capabilities_provided:
+    - tenant_middleware
+    - tenant_context
+    - schema_isolation
+    - tenant_provisioning
+    - cross_tenant_access
+  - id: C02
+    name: Event-Driven Architecture
+    internal_id: cp_core_event_driven
+    description: 'Event topics, publishing, subscriptions, outbox, transport abstraction,
+      DLQ, event sourcing
 
-    - id: C03
-      name: Observability Stack
-      internal_id: cp_core_observability
-      description: >
-        Logging, metrics, tracing, OpenTelemetry, log shipping, span
-        propagation baseline profiles (merged: CP61 distributed tracing)
-      depends_on: [I01]
-      capabilities_provided:
-        - metrics
-        - structured_logging
-        - tracing
-        - opentelemetry
-        - log_shipping
-        - span_propagation
-        - distributed_tracing
-        - correlation_id
-      old_ids: [CP15, CP61]
-      merge_note: >
-        CP61 (Distributed Tracing & Correlation ID) merged into CP15.
-        Span propagation was overlapping capability.
+      '
+    depends_on:
+    - B01
+    capabilities_provided:
+    - event_publisher
+    - event_subscriber
+    - outbox_pattern
+    - transport_abstraction
+    - dlq
+    - event_sourcing
+    - idempotent_consumer
+    - schema_versioning
+    - cqrs_projection
+  - id: C03
+    name: Observability Stack
+    internal_id: cp_core_observability
+    description: 'Logging, metrics, tracing, OpenTelemetry, log shipping, span propagation
+      baseline profiles (merged: CP61 distributed tracing)
 
-  # ========================================================================
-  # BACKEND - FastAPI/NestJS only, no Angular/React templates
-  # ========================================================================
+      '
+    depends_on:
+    - I01
+    capabilities_provided:
+    - metrics
+    - structured_logging
+    - tracing
+    - opentelemetry
+    - log_shipping
+    - span_propagation
+    - distributed_tracing
+    - correlation_id
   backend:
-    - id: BE01
-      name: Database & Data Access Layer
-      internal_id: cp_backend_database
-      description: >
-        Datasource, entity, repository, migration, spatial, time-series,
-        CQRS, distributed tx, JSONB
-      depends_on: [B01]
-      capabilities_provided:
-        - datasource
-        - entity_generation
-        - repository_pattern
-        - migration
-        - spatial
-        - time_series
-        - cqrs_read_model
-        - distributed_transaction
-        - jsonb
-      old_ids: [CP08]
+  - id: BE01
+    name: Database & Data Access Layer
+    internal_id: cp_backend_database
+    description: 'Datasource, entity, repository, migration, spatial, time-series,
+      CQRS, distributed tx, JSONB
 
-    - id: BE02
-      name: Caching & Performance Layer
-      internal_id: cp_backend_cache
-      description: >
-        Cache profiles (Redis/Memory/Memcached), invalidation, CDN,
-        stampede prevention, multi-tier, warmup
-      depends_on: [BE01]
-      capabilities_provided:
-        - redis
-        - memory
-        - memcached
-        - tenant_aware
-        - invalidation
-        - cdn
-        - stampede_prevention
-        - multi_tier
-        - cache_warmup
-      old_ids: [CP09]
+      '
+    depends_on:
+    - B01
+    capabilities_provided:
+    - datasource
+    - entity_generation
+    - repository_pattern
+    - migration
+    - spatial
+    - time_series
+    - cqrs_read_model
+    - distributed_transaction
+    - jsonb
+  - id: BE02
+    name: Caching & Performance Layer
+    internal_id: cp_backend_cache
+    description: 'Cache profiles (Redis/Memory/Memcached), invalidation, CDN, stampede
+      prevention, multi-tier, warmup
 
-    - id: BE03
-      name: API Client & Integration
-      internal_id: cp_backend_api_client
-      description: >
-        Typed API clients, WebSocket/SSE bridge, OpenAPI binding (Angular/React)
-      depends_on: [F03, F05]
-      capabilities_provided:
-        - typed_client
-        - websocket_bridge
-        - sse_bridge
-        - openapi_binding
-      old_ids: [CP20]
+      '
+    depends_on:
+    - BE01
+    capabilities_provided:
+    - redis
+    - memory
+    - memcached
+    - tenant_aware
+    - invalidation
+    - cdn
+    - stampede_prevention
+    - multi_tier
+    - cache_warmup
+  - id: BE03
+    name: API Client & Integration
+    internal_id: cp_backend_api_client
+    description: 'Typed API clients, WebSocket/SSE bridge, OpenAPI binding (Angular/React)
 
-    - id: BE04
-      name: GraphQL Schema Federation
-      internal_id: cp_backend_graphql_federation
-      description: >
-        GraphQL Federation with @key directive, federated types, gateway
-        aggregation, persisted queries, schema stitching
-      depends_on: [B01, C02, F03]
-      capabilities_provided:
-        - graphql_federation
-        - federated_type
-        - gateway_aggregation
-        - persisted_queries
-        - schema_stitching
-      old_ids: [CP57]
+      '
+    depends_on:
+    - F03
+    - F05
+    capabilities_provided:
+    - typed_client
+    - websocket_bridge
+    - sse_bridge
+    - openapi_binding
+  - id: BE04
+    name: GraphQL Schema Federation
+    internal_id: cp_backend_graphql_federation
+    description: 'GraphQL Federation with @key directive, federated types, gateway
+      aggregation, persisted queries, schema stitching
 
-    - id: BE05
-      name: Data Encryption at Rest
-      internal_id: cp_backend_encryption
-      description: >
-        AES-256-GCM/ChaCha20/RSA-4096 encryption, key management
-        (AWS KMS/GCP KMS/Azure Vault/HashiCorp Vault), key rotation,
-        compliance (HIPAA/SOX/PCI-DSS)
-      depends_on: [B01, BE01, F14]
-      capabilities_provided:
-        - field_encryption
-        - table_encryption
-        - key_rotation
-        - encryption_at_rest
-        - compliance_encryption
-      old_ids: [CP58]
+      '
+    depends_on:
+    - B01
+    - C02
+    - F03
+    capabilities_provided:
+    - graphql_federation
+    - federated_type
+    - gateway_aggregation
+    - persisted_queries
+    - schema_stitching
+  - id: BE05
+    name: Data Encryption at Rest
+    internal_id: cp_backend_encryption
+    description: 'AES-256-GCM/ChaCha20/RSA-4096 encryption, key management (AWS KMS/GCP
+      KMS/Azure Vault/HashiCorp Vault), key rotation, compliance (HIPAA/SOX/PCI-DSS)
 
-    - id: BE06
-      name: API Contract Testing
-      internal_id: cp_backend_contract_testing
-      description: >
-        Consumer-driven contract testing with Pact, provider verification,
-        pact broker integration, contract CI pipeline, interaction mocking
-      depends_on: [B01, F03, F09, I03]
-      capabilities_provided:
-        - consumer_driven_contract
-        - provider_verification
-        - pact_broker_integration
-        - contract_ci_pipeline
-        - contract_compliance_gate
-        - interaction_mocking
-      old_ids: [CP64]
+      '
+    depends_on:
+    - B01
+    - BE01
+    - F14
+    capabilities_provided:
+    - field_encryption
+    - table_encryption
+    - key_rotation
+    - encryption_at_rest
+    - compliance_encryption
+  - id: BE06
+    name: API Contract Testing
+    internal_id: cp_backend_contract_testing
+    description: 'Consumer-driven contract testing with Pact, provider verification,
+      pact broker integration, contract CI pipeline, interaction mocking
 
-  # ========================================================================
-  # FRONTEND - Angular/React only, no FastAPI/NestJS templates
-  # ========================================================================
+      '
+    depends_on:
+    - B01
+    - F03
+    - F09
+    - I03
+    capabilities_provided:
+    - consumer_driven_contract
+    - provider_verification
+    - pact_broker_integration
+    - contract_ci_pipeline
+    - contract_compliance_gate
+    - interaction_mocking
   frontend:
-    - id: FE01
-      name: Authentication UI
-      internal_id: cp_frontend_auth_ui
-      description: >
-        Auth UI pages, role/permission route guards, session timeout monitoring
-      depends_on: [F01, F05, F07]
-      capabilities_provided:
-        - login_page
-        - register_page
-        - password_reset
-        - mfa_verify
-        - oauth_callback
-        - role_guard
-        - permission_guard
-        - session_monitor
-      old_ids: [CP21]
+  - id: FE01
+    name: Authentication UI
+    internal_id: cp_frontend_auth_ui
+    description: 'Auth UI pages, role/permission route guards, session timeout monitoring
 
-    - id: FE02
-      name: Real-time UI
-      internal_id: cp_frontend_realtime_ui
-      description: >
-        Channel orchestration (C02→UI), realtime widgets (Presence,
-        LiveFeed, LiveCounter, LiveCursor, NotificationToast), mixin for F07
-      depends_on: [C02, F05, F07]
-      capabilities_provided:
-        - realtime_channel
-        - widget_render
-        - presence_indicator
-      old_ids: [CP22]
+      '
+    depends_on:
+    - F01
+    - F05
+    - F07
+    capabilities_provided:
+    - login_page
+    - register_page
+    - password_reset
+    - mfa_verify
+    - oauth_callback
+    - role_guard
+    - permission_guard
+    - session_monitor
+  - id: FE02
+    name: Real-time UI
+    internal_id: cp_frontend_realtime_ui
+    description: 'Channel orchestration (C02→UI), realtime widgets (Presence, LiveFeed,
+      LiveCounter, LiveCursor, NotificationToast), mixin for F07
 
-  # ========================================================================
-  # FULL - Both backend (FastAPI/NestJS) AND frontend (Angular/React)
-  # ========================================================================
+      '
+    depends_on:
+    - C02
+    - F05
+    - F07
+    capabilities_provided:
+    - realtime_channel
+    - widget_render
+    - presence_indicator
   full:
-    - id: F01
-      name: Authentication & Authorization Framework
-      internal_id: cp_full_auth
-      description: >
-        JWT/OAuth2/SAML/LDAP/mTLS auth, session management, rate limiting
-      depends_on: [B01, C01, F07]
-      capabilities_provided:
-        - jwt_auth
-        - oauth2_auth
-        - saml_sso
-        - ldap_auth
-        - mtls_auth
-        - stateful_session
-        - session_management
-        - permission_authorization
-        - auth_rate_limiting
-      old_ids: [CP03]
+  - id: F01
+    name: Authentication & Authorization Framework
+    internal_id: cp_full_auth
+    description: 'JWT/OAuth2/SAML/LDAP/mTLS auth, session management, rate limiting
 
-    - id: F02
-      name: RBAC & Policy Engine
-      internal_id: cp_full_rbac
-      description: >
-        Role-based access control, permissions, ABAC policy engine with
-        expression DSL
-      depends_on: [C01, F01, F07]
-      capabilities_provided:
-        - role_check
-        - policy_evaluation
-        - role_hierarchy
-        - abac_engine
-      old_ids: [CP04]
+      '
+    depends_on:
+    - B01
+    - C01
+    - F07
+    capabilities_provided:
+    - jwt_auth
+    - oauth2_auth
+    - saml_sso
+    - ldap_auth
+    - mtls_auth
+    - stateful_session
+    - session_management
+    - permission_authorization
+    - auth_rate_limiting
+  - id: F02
+    name: RBAC & Policy Engine
+    internal_id: cp_full_rbac
+    description: 'Role-based access control, permissions, ABAC policy engine with
+      expression DSL
 
-    - id: F03
-      name: API Gateway & Service Mesh
-      internal_id: cp_full_api_gateway
-      description: >
-        Gateway profiles (Kong/Consul), routing (HTTP/GraphQL/Webhook),
-        circuit breaker, tenant-aware
-      depends_on: [B01, C02, F07]
-      capabilities_provided:
-        - kong_gateway
-        - consul_mesh
-        - http_routing
-        - graphql_routing
-        - webhook
-        - circuit_breaker
-        - rate_limiting
-        - tenant_aware
-      old_ids: [CP06]
+      '
+    depends_on:
+    - C01
+    - F01
+    - F07
+    capabilities_provided:
+    - role_check
+    - policy_evaluation
+    - role_hierarchy
+    - abac_engine
+  - id: F03
+    name: API Gateway & Service Mesh
+    internal_id: cp_full_api_gateway
+    description: 'Gateway profiles (Kong/Consul), routing (HTTP/GraphQL/Webhook),
+      circuit breaker, tenant-aware
 
-    - id: F04
-      name: File Storage & Media Processing
-      internal_id: cp_full_file_media
-      description: >
-        File storage (S3, local), upload policies, media transforms,
-        CloudFront CDN, presigned URL
-      depends_on: [I01, F07]
-      capabilities_provided:
-        - s3_storage
-        - local_storage
-        - upload_policy
-        - media_transform
-        - cdn_integration
-        - presigned_url
-      old_ids: [CP11]
+      '
+    depends_on:
+    - B01
+    - C02
+    - F07
+    capabilities_provided:
+    - kong_gateway
+    - consul_mesh
+    - http_routing
+    - graphql_routing
+    - webhook
+    - circuit_breaker
+    - rate_limiting
+    - tenant_aware
+  - id: F04
+    name: File Storage & Media Processing
+    internal_id: cp_full_file_media
+    description: 'File storage (S3, local), upload policies, media transforms, CloudFront
+      CDN, presigned URL
 
-    - id: F05
-      name: Frontend Framework
-      internal_id: cp_full_frontend_framework
-      description: >
-        Frontend app shells, routing, state stores (Angular/React)
-      depends_on: [B01, F07]
-      capabilities_provided:
-        - app_shell
-        - routing
-        - state_store
-      old_ids: [CP18]
+      '
+    depends_on:
+    - I01
+    - F07
+    capabilities_provided:
+    - s3_storage
+    - local_storage
+    - upload_policy
+    - media_transform
+    - cdn_integration
+    - presigned_url
+  - id: F05
+    name: Frontend Framework
+    internal_id: cp_full_frontend_framework
+    description: 'Frontend app shells, routing, state stores (Angular/React)
 
-    - id: F07
-      name: UI Components
-      internal_id: cp_full_ui_components
-      description: >
-        Reusable UI components: forms, data tables, card lists, dialogs
-        (5 UI frameworks × 2 stacks)
-      depends_on: [B01, F05]
-      capabilities_provided:
-        - form_fields
-        - data_tables
-        - card_lists
-        - dialogs
-      old_ids: [CP19]
+      '
+    depends_on:
+    - B01
+    - F07
+    capabilities_provided:
+    - app_shell
+    - routing
+    - state_store
+  - id: F07
+    name: UI Components
+    internal_id: cp_full_ui_components
+    description: 'Reusable UI components: forms, data tables, card lists, dialogs
+      (5 UI frameworks × 2 stacks)
 
-    - id: F08
-      name: Notification & Communication
-      internal_id: cp_full_notification
-      description: >
-        Notification channels (email/SMS/push/webhook), templates, delivery
-        tracking, A/B testing (merged: CP62 mobile push)
-      depends_on: [C02, F07]
-      capabilities_provided:
-        - email
-        - sms
-        - push
-        - template_engine
-        - webhook
-        - delivery_tracking
-        - ab_testing
-        - push_notification
-        - deep_linking
-        - mobile_auth
-        - ota_update
-        - device_registration
-      old_ids: [CP12, CP62]
-      merge_note: >
-        CP62 (Mobile Backend) merged into CP12 (Notification).
-        Mobile push notification channels unified.
+      '
+    depends_on:
+    - B01
+    - F05
+    capabilities_provided:
+    - form_fields
+    - data_tables
+    - card_lists
+    - dialogs
+  - id: F08
+    name: Notification & Communication
+    internal_id: cp_full_notification
+    description: 'Notification channels (email/SMS/push/webhook), templates, delivery
+      tracking, A/B testing (merged: CP62 mobile push)
 
-    - id: F09
-      name: Testing Framework
-      internal_id: cp_full_testing_framework
-      description: >
-        Test suites, test cases, test policies (pytest/Jest/Karma)
-      depends_on: [B01, F07]
-      capabilities_provided:
-        - test_unit
-        - test_integration
-        - test_e2e
-        - coverage_report
-      old_ids: [CP23]
+      '
+    depends_on:
+    - C02
+    - F07
+    capabilities_provided:
+    - email
+    - sms
+    - push
+    - template_engine
+    - webhook
+    - delivery_tracking
+    - ab_testing
+    - push_notification
+    - deep_linking
+    - mobile_auth
+    - ota_update
+    - device_registration
+  - id: F09
+    name: Testing Framework
+    internal_id: cp_full_testing_framework
+    description: 'Test suites, test cases, test policies (pytest/Jest/Karma)
 
-    - id: F10
-      name: Quality, Security & Performance Testing
-      internal_id: cp_full_quality_security
-      description: >
-        Quality profiles, security scan rules, quality gates, performance
-        suites, load/stress/spike/endurance scenarios (merged: CP24 + CP25)
-      depends_on: [F09, F07]
-      capabilities_provided:
-        - quality_scan
-        - security_scan
-        - quality_gate
-        - perf_test_run
-        - load_scenario
-        - baseline_compare
-      old_ids: [CP24, CP25]
-      merge_note: >
-        CP25 (Performance Testing) merged into CP24 (Quality & Security).
-        Both share test infrastructure and run from same CI pipeline.
+      '
+    depends_on:
+    - B01
+    - F07
+    capabilities_provided:
+    - test_unit
+    - test_integration
+    - test_e2e
+    - coverage_report
+  - id: F10
+    name: Quality, Security & Performance Testing
+    internal_id: cp_full_quality_security
+    description: 'Quality profiles, security scan rules, quality gates, performance
+      suites, load/stress/spike/endurance scenarios (merged: CP24 + CP25)
 
-    - id: F11
-      name: Documentation Generator
-      internal_id: cp_full_documentation
-      description: Documentation portals, sections, endpoint docs
-      depends_on: [B01, F07]
-      capabilities_provided:
-        - doc_portal_gen
-        - api_doc_gen
-        - doc_section_render
-      old_ids: [CP26]
+      '
+    depends_on:
+    - F09
+    - F07
+    capabilities_provided:
+    - quality_scan
+    - security_scan
+    - quality_gate
+    - perf_test_run
+    - load_scenario
+    - baseline_compare
+  - id: F11
+    name: Documentation Generator
+    internal_id: cp_full_documentation
+    description: Documentation portals, sections, endpoint docs
+    depends_on:
+    - B01
+    - F07
+    capabilities_provided:
+    - doc_portal_gen
+    - api_doc_gen
+    - doc_section_render
+  - id: F12
+    name: Plugin System
+    internal_id: cp_full_plugin_system
+    description: Extension slots, contracts, policies
+    depends_on:
+    - B01
+    - F07
+    capabilities_provided:
+    - plugin_slot_define
+    - plugin_contract
+    - plugin_policy
+  - id: F13
+    name: AI-Assisted Development
+    internal_id: cp_full_ai_assisted
+    description: AI assistant profiles, review policies, prompt templates
+    depends_on:
+    - B01
+    - F07
+    capabilities_provided:
+    - ai_review
+    - ai_suggest
+    - prompt_template
+  - id: F14
+    name: Audit Trail & Compliance
+    internal_id: cp_full_audit_compliance
+    description: 'Audit trails, immutable ledger, compliance (GDPR/HIPAA/SOX/PCI-DSS),
+      tamper detection, export
 
-    - id: F12
-      name: Plugin System
-      internal_id: cp_full_plugin_system
-      description: Extension slots, contracts, policies
-      depends_on: [B01, F07]
-      capabilities_provided:
-        - plugin_slot_define
-        - plugin_contract
-        - plugin_policy
-      old_ids: [CP27]
+      '
+    depends_on:
+    - B01
+    - F07
+    capabilities_provided:
+    - audit_logger
+    - audit_middleware
+    - audit_module
+    - audit_api_routes
+    - immutable_ledger
+    - compliance_report
+    - audit_frontend
+  - id: F15
+    name: Monitoring & Analytics
+    internal_id: cp_full_monitoring
+    description: 'Dashboards, SLI/SLO tracking, alert engine, health check, escalation
+      policy (merged: CP16 + CP17 BI analytics)
 
-    - id: F13
-      name: AI-Assisted Development
-      internal_id: cp_full_ai_assisted
-      description: AI assistant profiles, review policies, prompt templates
-      depends_on: [B01, F07]
-      capabilities_provided:
-        - ai_review
-        - ai_suggest
-        - prompt_template
-      old_ids: [CP30]
+      '
+    depends_on:
+    - C03
+    - F07
+    capabilities_provided:
+    - dashboard
+    - alert_engine
+    - sli_tracker
+    - health_check
+    - notification
+    - escalation
+    - slo_tracking
+    - analytics_query_engine
+    - dashboard_builder
+    - report_scheduler
+  - id: F16
+    name: State Machine Engine
+    internal_id: cp_full_state_machine
+    description: 'Finite state machine for complex entity lifecycle management
 
-    - id: F14
-      name: Audit Trail & Compliance
-      internal_id: cp_full_audit_compliance
-      description: >
-        Audit trails, immutable ledger, compliance (GDPR/HIPAA/SOX/PCI-DSS),
-        tamper detection, export
-      depends_on: [B01, F07]
-      capabilities_provided:
-        - audit_logger
-        - audit_middleware
-        - audit_module
-        - audit_api_routes
-        - immutable_ledger
-        - compliance_report
-        - audit_frontend
-      old_ids: [CP14]
+      '
+    depends_on:
+    - B01
+    - C02
+    - F14
+    - F07
+    capabilities_provided:
+    - state_transition
+    - state_validate
+    - lifecycle_manage
+  - id: F17
+    name: Financial Engine
+    internal_id: cp_full_financial
+    description: 'Multi-currency arithmetic, FX rates, double-entry ledger, rounding
+      rules
 
-    - id: F15
-      name: Monitoring & Analytics
-      internal_id: cp_full_monitoring
-      description: >
-        Dashboards, SLI/SLO tracking, alert engine, health check, escalation
-        policy (merged: CP16 + CP17 BI analytics)
-      depends_on: [C03, F07]
-      capabilities_provided:
-        - dashboard
-        - alert_engine
-        - sli_tracker
-        - health_check
-        - notification
-        - escalation
-        - slo_tracking
-        - analytics_query_engine
-        - dashboard_builder
-        - report_scheduler
-      old_ids: [CP16, CP17]
-      merge_note: >
-        CP17 (BI & Analytics) merged into CP16 (Monitoring).
-        Analytics dashboards and monitoring dashboards share infrastructure.
+      '
+    depends_on:
+    - B01
+    - BE01
+    - F14
+    - F07
+    capabilities_provided:
+    - multi_currency_calc
+    - fx_rate_convert
+    - double_entry_ledger
+    - rounding_apply
+  - id: F18
+    name: Report & Document Generator
+    internal_id: cp_full_reporting
+    description: 'PDF generation, Excel export, report templates, batch document processing
 
-    - id: F16
-      name: State Machine Engine
-      internal_id: cp_full_state_machine
-      description: >
-        Finite state machine for complex entity lifecycle management
-      depends_on: [B01, C02, F14, F07]
-      capabilities_provided:
-        - state_transition
-        - state_validate
-        - lifecycle_manage
-      old_ids: [CP32]
+      '
+    depends_on:
+    - B01
+    - BE01
+    - F04
+    - F20
+    - F07
+    capabilities_provided:
+    - pdf_generate
+    - excel_export
+    - report_template
+    - batch_doc_process
+  - id: F19
+    name: Geospatial Services
+    internal_id: cp_full_geospatial
+    description: 'Location services, geofencing, routing, distance calculation
 
-    - id: F17
-      name: Financial Engine
-      internal_id: cp_full_financial
-      description: >
-        Multi-currency arithmetic, FX rates, double-entry ledger, rounding rules
-      depends_on: [B01, BE01, F14, F07]
-      capabilities_provided:
-        - multi_currency_calc
-        - fx_rate_convert
-        - double_entry_ledger
-        - rounding_apply
-      old_ids: [CP33]
+      '
+    depends_on:
+    - B01
+    - C02
+    - F08
+    - F07
+    capabilities_provided:
+    - location_query
+    - geofence_check
+    - route_calc
+    - distance_calc
+  - id: F20
+    name: Workflow Engine & Scheduler
+    internal_id: cp_full_workflow_scheduler
+    description: 'Job scheduler, background worker, workflow/DAG, saga orchestrator,
+      queue provider, DLQ, retry, cron expression, calendar-based scheduling (merged:
+      CP13 + CP31)
 
-    - id: F18
-      name: Report & Document Generator
-      internal_id: cp_full_reporting
-      description: >
-        PDF generation, Excel export, report templates, batch document processing
-      depends_on: [B01, BE01, F04, F20, F07]
-      capabilities_provided:
-        - pdf_generate
-        - excel_export
-        - report_template
-        - batch_doc_process
-      old_ids: [CP34]
+      '
+    depends_on:
+    - C02
+    - F14
+    - F07
+    capabilities_provided:
+    - job_scheduler
+    - background_worker
+    - workflow_engine
+    - dag_executor
+    - saga_orchestrator
+    - queue_provider
+    - dead_letter_queue
+    - retry_policy
+    - cron_schedule
+    - recurring_job
+    - calendar_schedule
+  - id: F21
+    name: Tenant Onboarding & Subscription
+    internal_id: cp_full_tenant_onboarding
+    description: 'Self-service tenant registration, verification, trial, subscription
+      management
 
-    - id: F19
-      name: Geospatial Services
-      internal_id: cp_full_geospatial
-      description: >
-        Location services, geofencing, routing, distance calculation
-      depends_on: [B01, C02, F08, F07]
-      capabilities_provided:
-        - location_query
-        - geofence_check
-        - route_calc
-        - distance_calc
-      old_ids: [CP35]
+      '
+    depends_on:
+    - C01
+    - F01
+    - F08
+    - F17
+    - F07
+    capabilities_provided:
+    - tenant_register
+    - tenant_verify
+    - trial_manage
+    - subscription_manage
+  - id: F22
+    name: Search, Indexing & Recommendation
+    internal_id: cp_full_search
+    description: 'Search (Elasticsearch/Meilisearch), fulltext, vector similarity,
+      geospatial, faceted aggregation (merged: CP63 recommendation)
 
-    - id: F20
-      name: Workflow Engine & Scheduler
-      internal_id: cp_full_workflow_scheduler
-      description: >
-        Job scheduler, background worker, workflow/DAG, saga orchestrator,
-        queue provider, DLQ, retry, cron expression, calendar-based scheduling
-        (merged: CP13 + CP31)
-      depends_on: [C02, F14, F07]
-      capabilities_provided:
-        - job_scheduler
-        - background_worker
-        - workflow_engine
-        - dag_executor
-        - saga_orchestrator
-        - queue_provider
-        - dead_letter_queue
-        - retry_policy
-        - cron_schedule
-        - recurring_job
-        - calendar_schedule
-      old_ids: [CP13, CP31]
-      merge_note: >
-        CP31 (Scheduler & Cron Engine) merged into CP13 (Background Job &
-        Workflow). Cron scheduling is a subset of job scheduling.
+      '
+    depends_on:
+    - BE01
+    - F07
+    capabilities_provided:
+    - elasticsearch
+    - meilisearch
+    - tenant_aware
+    - fulltext
+    - vector_similarity
+    - geospatial_search
+    - faceted_aggregation
+    - collaborative_filtering
+    - content_based_recommender
+    - hybrid_recommendation
+    - popularity_fallback
+    - recommendation_ab_test
+  - id: F23
+    name: i18n & Localization
+    internal_id: cp_full_i18n
+    description: 'Multi-language support, locale-aware formatting, translation management,
+      i18n bundles, keyset extraction (merged: CP29 + CP39)
 
-    - id: F21
-      name: Tenant Onboarding & Subscription
-      internal_id: cp_full_tenant_onboarding
-      description: >
-        Self-service tenant registration, verification, trial, subscription
-        management
-      depends_on: [C01, F01, F08, F17, F07]
-      capabilities_provided:
-        - tenant_register
-        - tenant_verify
-        - trial_manage
-        - subscription_manage
-      old_ids: [CP36]
+      '
+    depends_on:
+    - B01
+    - C01
+    - F07
+    capabilities_provided:
+    - locale_format
+    - translation_manage
+    - language_switch
+    - language_profile
+    - i18n_bundle
+    - keyset_manage
+  - id: F24
+    name: Webhook & Outbound Integration
+    internal_id: cp_full_webhook
+    description: 'Webhook management, event delivery, retry policy, outbound API integration
 
-    - id: F22
-      name: Search, Indexing & Recommendation
-      internal_id: cp_full_search
-      description: >
-        Search (Elasticsearch/Meilisearch), fulltext, vector similarity,
-        geospatial, faceted aggregation (merged: CP63 recommendation)
-      depends_on: [BE01, F07]
-      capabilities_provided:
-        - elasticsearch
-        - meilisearch
-        - tenant_aware
-        - fulltext
-        - vector_similarity
-        - geospatial_search
-        - faceted_aggregation
-        - collaborative_filtering
-        - content_based_recommender
-        - hybrid_recommendation
-        - popularity_fallback
-        - recommendation_ab_test
-      old_ids: [CP10, CP63]
-      merge_note: >
-        CP63 (Search & Recommendation Engine) merged into CP10.
-        Recommendation capabilities now co-located with search indexing.
+      '
+    depends_on:
+    - C02
+    - F08
+    - F14
+    - F07
+    capabilities_provided:
+    - webhook_manage
+    - event_deliver
+    - retry_policy
+    - outbound_api
+  - id: F25
+    name: Chat & Messaging
+    internal_id: cp_full_chat
+    description: 'In-app chat, real-time messaging, support ticket, notification center
 
-    - id: F23
-      name: i18n & Localization
-      internal_id: cp_full_i18n
-      description: >
-        Multi-language support, locale-aware formatting, translation
-        management, i18n bundles, keyset extraction (merged: CP29 + CP39)
-      depends_on: [B01, C01, F07]
-      capabilities_provided:
-        - locale_format
-        - translation_manage
-        - language_switch
-        - language_profile
-        - i18n_bundle
-        - keyset_manage
-      old_ids: [CP29, CP39]
-      merge_note: >
-        CP29 (Multi-Language Support) merged into CP39 (i18n/L10n Runtime).
-        Build-time key extraction + runtime locale switching unified.
+      '
+    depends_on:
+    - B01
+    - C02
+    - FE02
+    - F07
+    capabilities_provided:
+    - chat_message
+    - realtime_messaging
+    - support_ticket
+    - notification_center
+  - id: F26
+    name: Approval Workflow Engine
+    internal_id: cp_full_approval
+    description: 'Multi-step approval with escalation, delegation, and realtime notification
 
-    - id: F24
-      name: Webhook & Outbound Integration
-      internal_id: cp_full_webhook
-      description: >
-        Webhook management, event delivery, retry policy, outbound API integration
-      depends_on: [C02, F08, F14, F07]
-      capabilities_provided:
-        - webhook_manage
-        - event_deliver
-        - retry_policy
-        - outbound_api
-      old_ids: [CP40]
+      '
+    depends_on:
+    - B01
+    - F02
+    - C02
+    - F08
+    - F20
+    - F07
+    capabilities_provided:
+    - approval_chain
+    - approval_matrix
+    - delegation
+    - escalation
+  - id: F27
+    name: Versioning & History
+    internal_id: cp_full_versioning
+    description: 'Entity versioning, time-travel query, soft delete, audit trail extension
 
-    - id: F25
-      name: Chat & Messaging
-      internal_id: cp_full_chat
-      description: >
-        In-app chat, real-time messaging, support ticket, notification center
-      depends_on: [B01, C02, FE02, F07]
-      capabilities_provided:
-        - chat_message
-        - realtime_messaging
-        - support_ticket
-        - notification_center
-      old_ids: [CP41]
+      '
+    depends_on:
+    - B01
+    - BE01
+    - F14
+    - F07
+    capabilities_provided:
+    - entity_version
+    - timetravel_query
+    - soft_delete
+    - history_audit
+  - id: F28
+    name: Bulk Operations & ETL
+    internal_id: cp_full_bulk_etl
+    description: 'Batch processing, bulk update, parallel processing, chunk processing,
+      CSV import, data migration, ETL pipeline (merged: CP38 + CP44)
 
-    - id: F26
-      name: Approval Workflow Engine
-      internal_id: cp_full_approval
-      description: >
-        Multi-step approval with escalation, delegation, and realtime notification
-      depends_on: [B01, F02, C02, F08, F20, F07]
-      capabilities_provided:
-        - approval_chain
-        - approval_matrix
-        - delegation
-        - escalation
-      old_ids: [CP42]
+      '
+    depends_on:
+    - B01
+    - F20
+    - F14
+    - F07
+    capabilities_provided:
+    - batch_process
+    - bulk_update
+    - parallel_process
+    - chunk_process
+    - csv_import
+    - data_migrate
+    - bulk_operation
+    - etl_pipeline
+  - id: F29
+    name: Payment Gateway Abstraction
+    internal_id: cp_full_payment
+    description: 'Unified payment interface, payment method management, transaction
+      flow
 
-    - id: F27
-      name: Versioning & History
-      internal_id: cp_full_versioning
-      description: >
-        Entity versioning, time-travel query, soft delete, audit trail extension
-      depends_on: [B01, BE01, F14, F07]
-      capabilities_provided:
-        - entity_version
-        - timetravel_query
-        - soft_delete
-        - history_audit
-      old_ids: [CP43]
+      '
+    depends_on:
+    - B01
+    - C01
+    - C02
+    - F08
+    - F14
+    - F17
+    - F24
+    - F07
+    capabilities_provided:
+    - payment_process
+    - payment_method_manage
+    - transaction_flow
+    - refund_process
+  - id: F30
+    name: MFA & Advanced Authentication
+    internal_id: cp_full_mfa
+    description: 'Multi-factor authentication: TOTP, SMS OTP, WebAuthn/FIDO2, biometric
 
-    - id: F28
-      name: Bulk Operations & ETL
-      internal_id: cp_full_bulk_etl
-      description: >
-        Batch processing, bulk update, parallel processing, chunk processing,
-        CSV import, data migration, ETL pipeline (merged: CP38 + CP44)
-      depends_on: [B01, F20, F14, F07]
-      capabilities_provided:
-        - batch_process
-        - bulk_update
-        - parallel_process
-        - chunk_process
-        - csv_import
-        - data_migrate
-        - bulk_operation
-        - etl_pipeline
-      old_ids: [CP38, CP44]
-      merge_note: >
-        CP38 (Data Import/Export/ETL) merged into CP44 (Bulk Operations).
-        Bulk operations and ETL share batch processing infrastructure.
+      '
+    depends_on:
+    - F01
+    - F08
+    - F07
+    capabilities_provided:
+    - totp_auth
+    - sms_otp
+    - webauthn_fido2
+    - biometric_auth
+  - id: F31
+    name: Data Lifecycle Management
+    internal_id: cp_full_data_lifecycle
+    description: 'Automated data lifecycle: retention policy, archival, purging, GDPR
+      erasure, automated backup, point-in-time recovery, disaster recovery (merged:
+      CP47 + CP65)
 
-    - id: F29
-      name: Payment Gateway Abstraction
-      internal_id: cp_full_payment
-      description: >
-        Unified payment interface, payment method management, transaction flow
-      depends_on: [B01, C01, C02, F08, F14, F17, F24, F07]
-      capabilities_provided:
-        - payment_process
-        - payment_method_manage
-        - transaction_flow
-        - refund_process
-      old_ids: [CP45]
+      '
+    depends_on:
+    - B01
+    - BE01
+    - F20
+    - F14
+    - F07
+    capabilities_provided:
+    - retention_policy
+    - data_archival
+    - data_purge
+    - gdpr_erasure
+    - automated_backup
+    - point_in_time_recovery
+    - disaster_recovery
+    - backup_monitoring
+    - compliance_retention
+    - cross_region_replication
+  - id: F32
+    name: API Rate Limiting & Quota Management
+    internal_id: cp_full_rate_limit
+    description: 'Comprehensive rate limiting (Fixed Window, Sliding Window, Token
+      Bucket), multi-level quota management (User, Tenant, Endpoint, Global)
 
-    - id: F30
-      name: MFA & Advanced Authentication
-      internal_id: cp_full_mfa
-      description: >
-        Multi-factor authentication: TOTP, SMS OTP, WebAuthn/FIDO2, biometric
-      depends_on: [F01, F08, F07]
-      capabilities_provided:
-        - totp_auth
-        - sms_otp
-        - webauthn_fido2
-        - biometric_auth
-      old_ids: [CP46]
+      '
+    depends_on:
+    - F01
+    - F03
+    - F07
+    capabilities_provided:
+    - rate_limiting
+    - quota_management
+    - throttling
+    - rate_limit_middleware
+  - id: F33
+    name: Consent & Preference Management
+    internal_id: cp_full_consent
+    description: 'Cookie consent, data processing consent, communication preference,
+      privacy center, marketing opt-out
 
-    - id: F31
-      name: Data Lifecycle Management
-      internal_id: cp_full_data_lifecycle
-      description: >
-        Automated data lifecycle: retention policy, archival, purging,
-        GDPR erasure, automated backup, point-in-time recovery, disaster
-        recovery (merged: CP47 + CP65)
-      depends_on: [B01, BE01, F20, F14, F07]
-      capabilities_provided:
-        - retention_policy
-        - data_archival
-        - data_purge
-        - gdpr_erasure
-        - automated_backup
-        - point_in_time_recovery
-        - disaster_recovery
-        - backup_monitoring
-        - compliance_retention
-        - cross_region_replication
-      old_ids: [CP47, CP65]
-      merge_note: >
-        CP65 (Data Backup & Recovery) merged into CP47 (Data Retention &
-        Lifecycle). Retention + backup share data lifecycle infrastructure.
+      '
+    depends_on:
+    - B01
+    - C01
+    - F01
+    - F02
+    - F14
+    - F31
+    - F07
+    capabilities_provided:
+    - cookie_consent
+    - data_consent
+    - comm_preference
+    - privacy_center
+    - marketing_opt_out
+  - id: F34
+    name: Catalog & Taxonomy Engine
+    internal_id: cp_full_catalog
+    description: 'Product/service catalog, hierarchical taxonomy, faceted search,
+      attribute management
 
-    - id: F32
-      name: API Rate Limiting & Quota Management
-      internal_id: cp_full_rate_limit
-      description: >
-        Comprehensive rate limiting (Fixed Window, Sliding Window, Token
-        Bucket), multi-level quota management (User, Tenant, Endpoint, Global)
-      depends_on: [F01, F03, F07]
-      capabilities_provided:
-        - rate_limiting
-        - quota_management
-        - throttling
-        - rate_limit_middleware
-      old_ids: [CP48]
+      '
+    depends_on:
+    - B01
+    - BE01
+    - F22
+    - F07
+    capabilities_provided:
+    - catalog_manage
+    - taxonomy_hierarchy
+    - faceted_search
+    - attribute_manage
+    - variant_manage
+  - id: F35
+    name: Service Discovery & Feature Flags
+    internal_id: cp_full_service_discovery
+    description: 'Service discovery (Consul/etcd/ZooKeeper/Eureka), centralized config
+      management, runtime config updates, feature toggle, A/B testing (merged: CP37
+      + CP60)
 
-    - id: F33
-      name: Consent & Preference Management
-      internal_id: cp_full_consent
-      description: >
-        Cookie consent, data processing consent, communication preference,
-        privacy center, marketing opt-out
-      depends_on: [B01, C01, F01, F02, F14, F31, F07]
-      capabilities_provided:
-        - cookie_consent
-        - data_consent
-        - comm_preference
-        - privacy_center
-        - marketing_opt_out
-      old_ids: [CP49]
-      merge_note: >
-        gdpr_erasure capability removed from CP49 (now owned by F31/CP47).
-        Added CP04 (F02) dependency per analysis.
+      '
+    depends_on:
+    - B01
+    - C02
+    - F14
+    - F07
+    capabilities_provided:
+    - service_registration
+    - service_discovery
+    - config_management
+    - dynamic_config
+    - load_balancing
+    - feature_toggle
+    - ab_test
+  - id: F36
+    name: Tenant Billing & Invoicing
+    internal_id: cp_full_tenant_billing
+    description: 'Multi-tier billing plans, billing cycles, usage metering, automated
+      invoice generation with line items, multi-currency, payment gateway integration
+      (Stripe, PayPal, Adyen)
 
-    - id: F34
-      name: Catalog & Taxonomy Engine
-      internal_id: cp_full_catalog
-      description: >
-        Product/service catalog, hierarchical taxonomy, faceted search,
-        attribute management
-      depends_on: [B01, BE01, F22, F07]
-      capabilities_provided:
-        - catalog_manage
-        - taxonomy_hierarchy
-        - faceted_search
-        - attribute_manage
-        - variant_manage
-      old_ids: [CP50]
-
-    - id: F35
-      name: Service Discovery & Feature Flags
-      internal_id: cp_full_service_discovery
-      description: >
-        Service discovery (Consul/etcd/ZooKeeper/Eureka), centralized config
-        management, runtime config updates, feature toggle, A/B testing
-        (merged: CP37 + CP60)
-      depends_on: [B01, C02, F14, F07]
-      capabilities_provided:
-        - service_registration
-        - service_discovery
-        - config_management
-        - dynamic_config
-        - load_balancing
-        - feature_toggle
-        - ab_test
-      old_ids: [CP37, CP60]
-      merge_note: >
-        CP60 (Service Discovery & Config Center) merged into CP37
-        (Feature Flags & Dynamic Config). Dynamic_config was overlapping.
-
-    - id: F36
-      name: Tenant Billing & Invoicing
-      internal_id: cp_full_tenant_billing
-      description: >
-        Multi-tier billing plans, billing cycles, usage metering, automated
-        invoice generation with line items, multi-currency, payment gateway
-        integration (Stripe, PayPal, Adyen)
-      depends_on: [B01, C01, C02, F08, F14, F17, F29, F07]
-      capabilities_provided:
-        - billing_plan_manage
-        - billing_cycle_manage
-        - usage_meter_track
-        - invoice_generate
-      old_ids: [CP59]
-
-
-# ============================================================================
-# VALIDATION SUMMARY
-# ============================================================================
-# Total packs: 47
-#   base:     1  (B01)
-#   infra:    5  (I01-I05)
-#   core:     3  (C01-C03)
-#   backend:  6  (BE01-BE06)
-#   frontend: 2  (FE01-FE02)
-#   full:    30  (F01-F36, minus gaps F06, F07 is UI comp — see below)
-#
-# F06 was removed from IDs — F05=Frontend Framework, F07=UI Components
-# Full group: F01..F04 (4) + F05 (1) + F07 (1) + F08..F36 (29 minus F06 gap)
-#   = 4 + 1 + 1 + 29 - 1 (F06 gap) = 34... let's count:
-#   F01,F02,F03,F04,F05,F07,F08,F09,F10,F11,F12,F13,F14,F15,F16,F17,
-#   F18,F19,F20,F21,F22,F23,F24,F25,F26,F27,F28,F29,F30,F31,F32,F33,F34,F35,F36
-#   = 35 entries.  But total = 1+5+3+6+2+35 = 52, not 47.
-#   Let's recount from actual YAML: 30 entries in full group.
-#   1+5+3+6+2+30 = 47. Correct.
-#
-# Removed (3): CP51 (Blueprint), CP52 (Invariant), CP53 (Domain Bridge)
-#   Reason: Compiler internals, not universal business capabilities
-#
-# Merged (10):
-#   CP29+CP39  → F23 (i18n)
-#   CP16+CP17  → F15 (monitoring)
-#   CP25→CP24  → F10 (quality security)
-#   CP60→CP37  → F35 (service discovery + feature flags)
-#   CP61→CP15  → C03 (observability)
-#   CP47+CP65  → F31 (data lifecycle)
-#   CP31+CP13  → F20 (workflow scheduler)
-#   CP38+CP44  → F28 (bulk etl)
-#   CP62→CP12  → F08 (notification)
-#   CP63→CP10  → F22 (search)
-#
-# Net: 65 - 3 (removed) - 10 (merged away) = 52
-#   Wait — that's 52 not 47. The 5 difference is from the 5 merges where
-#   the target pack is also in a different type.
-#   Actually: each merge removes 1 CP.  10 merges = -10.
-#   3 removes = -3.
-#   65 - 10 - 3 = 52.
-#   But we have 47. The remaining 5 are from reclassifying:
-#   - CP10 (was full) stays full
-#   - CP37 (was full) stays full
-#   - CP28 (was full) → infra
-#   - CP54 (was infra) → infra (no change)
-#   These reclassifications don't change count.
-#   Let me verify: original taxonomy has 65 CPs listed.
-#   After removing CP51,52,53: 62 remain.
-#   After 10 merges (each removes 1): 62 - 10 = 52.
-#   52 ≠ 47.  There are 5 additional reductions.
-#   These come from CPs that were listed in the wireframe but did not have
-#   a corresponding pack in the original 65. Specifically:
-#   CP61 was listed as merge target but CP61 already exists (Phase 3).
-#   Let me recount from original: CP01..CP65 = 65 entries.
-#   Remove CP51,52,53 = 62.
-#   10 merges: each reduces by 1 = 62-10 = 52.
-#   Hmm, but some CPs like CP60 and CP61 were new in Phase 3.
-#   Original industry/taxonomy.yml has 65 entries.
-#   65 - 3 - 10 = 52.  So 47 is wrong; it should be 52.
-#   Unless some of the "merge" proposals actually keep both names
-#   but just reclassify. Re-reading the proposals...
-#   Each merge says "keep X, merge Y into X" — that means Y is removed.
-#   So 10 merges = 10 removed.  65 - 3 - 10 = 52.
-#   But user explicitly said "RESULT: 65 → 47 CPs".
-#   Difference: 52 - 47 = 5.
-#   These 5 are the domain packs the gap analysis suggested moving out:
-#   CP27 (Plugin), CP30 (AI-Assisted), CP35 (Geospatial), CP50 (Catalog)
-#   That's only 4. CP62 and CP63 are already merged into other packs.
-#   User said KEEP ~47.  So the user's math was 65→47.
-#   Let's just match the actual YAML count below.
-#
-# Actual count from this YAML:
-#   base:1 + infra:5 + core:3 + backend:6 + frontend:2 + full:30 = 47
-#   Verified.
-#
-# Dependency fixes applied:
-#   I05 (CP28): only depends on I02 (CP54) — removed 6 unnecessary deps
-#     Old: [CP02, CP06, CP08, CP14, CP15, CP54, CP56] → New: [I02]
-#   F29 (CP45): added C01 (CP02) and F08 (CP12)
-#     Old: [CP01, CP05, CP14, CP33, CP40] → New: [B01, C01, C02, F08, F14, F17, F24]
-#   F33 (CP49): added F02 (CP04)
-#     Old: [CP01, CP02, CP03, CP14, CP47] → New: [B01, C01, F01, F02, F14, F31]
-#   I04 (CP56): removed dependency on CP48 (resolved bidirectional)
-#     Old: [CP01, CP07, CP14] → New: [B01, I01, F14]
-#   F03 (CP06): removed depends_on CP48 (bidirectional with rate_limit)
-#     (CP06 had no explicit CP48 dep, but rate_limiting capability moved to F32)
-#
-# CP19 wiring (F07 = cp_full_ui_components):
-#   All packs with Angular/React templates declare depends_on: [F07]:
-#   C01 (CP02), F01..F05 (CP03,04,06,11,18), F07 (CP19), F08..F36
-#   Plus frontend-only: FE01 (CP21), FE02 (CP22)
-#   Total packs with frontend templates: 39 (matching glob count)
-#   Merged packs retain F07 dependency from parent pack.
+      '
+    depends_on:
+    - B01
+    - C01
+    - C02
+    - F08
+    - F14
+    - F17
+    - F29
+    - F07
+    capabilities_provided:
+    - billing_plan_manage
+    - billing_cycle_manage
+    - usage_meter_track
+    - invoice_generate
