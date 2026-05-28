@@ -1,335 +1,724 @@
-# Material UI / Angular Material preset
-# Default CSS properties cho tất cả components trong stack React + Angular
+# ============================================================================
+# Material-UI Preset v2 — Component behavior + tokens
+# ============================================================================
 
-react:
-  Sidebar:
-    width: 280px
-    width_collapsed: 60px
-    background: "#ffffff"
-    border_right: "1px solid #e5e7eb"
-    display: flex
-    flex_direction: column
-    position: fixed
-    transition: "width 0.3s ease"
+DataTable:
+  behavior:
+    sortable: true
+    paginated: true
+    page_size: 20
+    selectable: false
+    filterable: true
+    searchable: true
+    editable: false
+    virtual_scroll: false
+  material:
+    container: "MuiTableContainer"
+    table: "MuiTable"
+    header: "MuiTableHead"
+    header_cell: "MuiTableCell-head"
+    body: "MuiTableBody"
+    row: "MuiTableRow hover"
+    cell: "MuiTableCell-body"
+    pagination: "MuiTablePagination"
+    empty: "text-gray-500 text-center py-8"
 
-  Navbar:
-    height: 64px
-    background: "#ffffff"
-    position: sticky
-    border_bottom: "1px solid #e5e7eb"
-    z_index: 1100
-    box_shadow: "0 1px 3px rgba(0,0,0,0.12)"
+Card:
+  behavior: {}
+  material:
+    container: "MuiCard"
+    header: "MuiCardHeader"
+    body: "MuiCardContent"
+    footer: "MuiCardActions"
+    media: "MuiCardMedia"
 
-  Modal:
-    width_sm: 400px
-    width_md: 600px
-    width_lg: 700px
-    width_xl: 900px
-    background: "#ffffff"
-    border_radius: 8px
-    box_shadow: "0 4px 24px rgba(0,0,0,0.2)"
-    max_height: "90vh"
-    z_index: 1200
+CardList:
+  behavior: {}
+  material:
+    container: "MuiGrid container spacing={2}"
 
-  Dialog:
-    width_sm: 416px
-    width_md: 520px
-    width_lg: 672px
-    background: "#ffffff"
-    border_radius: 8px
-    z_index: 1300
+Avatar:
+  behavior: {}
+  material:
+    component: "MuiAvatar"
+    xs: "size={24}"
+    sm: "size={32}"
+    md: "size={40}"
+    lg: "size={56}"
+    group: "MuiAvatarGroup"
+    fallback: "MuiAvatar colors={{ default: 'default' }}"
 
-  Card:
-    background: "#ffffff"
-    border_radius: 8px
-    border: "1px solid #e0e0e0"
-    box_shadow: "0 1px 3px rgba(0,0,0,0.12)"
-    padding: 20px
-    overflow: hidden
+Badge:
+  behavior: {}
+  material:
+    component: "MuiBadge"
+    dot: "badgeContent=·"
+    info: "color={info}"
+    success: "color={success}"
+    warning: "color={warning}"
+    error: "color={error}"
+    max: 99
 
-  DataTable:
-    background_header: "#fafafa"
-    background_body: "#ffffff"
-    background_hover: "#f5f5f5"
-    border: "1px solid #e0e0e0"
-    border_radius: 8px
-    padding_cell: "12px 16px"
-    font_size_header: 12px
-    text_transform_header: uppercase
-    overflow_x: auto
+Chip:
+  behavior: {}
+  material:
+    component: "MuiChip"
+    outlined: "variant={outlined}"
+    filled: "variant={filled}"
+    deletable: "deletable onDelete={handleDelete}"
+    avatar: "avatar={<Avatar />}"
+    clickable: "onClick={handleClick}"
+    color: "color={primary}"
 
-  Button:
-    padding_sm: "6px 12px"
-    padding_md: "8px 16px"
-    padding_lg: "12px 24px"
-    font_size_sm: 12px
-    font_size_md: 14px
-    font_size_lg: 16px
-    font_weight: 500
-    border_radius: 4px
-    transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
+DescriptionList:
+  behavior: {}
+  material:
+    container: "MuiList"
+    term: "MuiTypography variant={caption} color={text.secondary}"
+    detail: "MuiTypography variant={body2}"
 
-  Input:
-    width: "100%"
-    padding: "12px 16px"
-    border: "1px solid #bdbdbd"
-    border_radius: 4px
-    font_size: 14px
-    background: "#ffffff"
-    margin_bottom: 16px
-    label_font_size: 12px
-    label_color: "#616161"
-    hint_font_size: 12px
-    hint_color: "#9e9e9e"
+List:
+  behavior: {}
+  material:
+    container: "MuiList dense={false}"
+    item: "MuiListItem"
+    dense: "dense={true}"
+    divider: "divider"
+    button: "button onClick={handleClick}"
 
-  Select:
-    width: "100%"
-    padding: "12px 16px"
-    border: "1px solid #bdbdbd"
-    border_radius: 4px
-    font_size: 14px
-    background: "#ffffff"
-    margin_bottom: 16px
+Popover:
+  behavior: {}
+  material:
+    component: "MuiPopover"
+    paper: "MuiPaper elevation={2}"
+    content: "padding={16}"
 
-  Badge:
-    border_radius: 16px
-    font_size_sm: 12px
-    font_size_md: 14px
-    padding_sm: "2px 8px"
-    padding_md: "4px 12px"
+Timeline:
+  behavior: {}
+  material:
+    container: "MuiTimeline"
+    item: "MuiTimelineItem"
+    dot: "MuiTimelineDot"
+    content: "MuiTimelineContent"
+    connector: "MuiTimelineConnector"
 
-  Avatar:
-    size_xs: 24px
-    size_sm: 32px
-    size_md: 40px
-    size_lg: 56px
-    border_radius: "50%"
-    background: "#9e9e9e"
-    text_color: "#ffffff"
-    font_size_sm: 12px
-    font_size_md: 16px
-    font_size_lg: 20px
+Tooltip:
+  behavior: {}
+  material:
+    component: "MuiTooltip"
+    title: "title={tooltipText}"
+    placement: "placement={top}"
+    arrow: "arrow"
+    enter_delay: 300
+    leave_delay: 100
 
-  Chip:
-    border_radius: 16px
-    padding: "4px 12px"
-    font_size: 14px
+Autocomplete:
+  behavior:
+    filterable: true
+    searchable: true
+  material:
+    component: "MuiAutocomplete"
+    free_text: "freeSolo"
+    multiple: "multiple chips"
+    dropdown: "MuiAutocompleteOptions"
+    option: "MuiAutocompleteOption"
 
-  Toast:
-    position: fixed
-    z_index: 1400
-    min_width: 300px
-    border_radius: 8px
-    box_shadow: "0 4px 12px rgba(0,0,0,0.2)"
-    padding: "12px 16px"
-    text_color: "#ffffff"
+Checkbox:
+  behavior: {}
+  material:
+    component: "MuiCheckbox"
+    checked: "checked={value}"
+    indeterminate: "indeterminate"
+    color: "color={primary}"
+    disabled: "disabled"
 
-  Spinner:
-    size: 24px
-    border_width: 2px
-    border_color_track: "#e0e0e0"
-    border_color_primary: "#3f51b5"
+ColorPicker:
+  behavior: {}
+  material:
+    component: "MuiColorPicker"
+    format: "format={hex}"
+    alpha: "alpha"
+    preset_colors: "presetColors={colors}"
 
-  ProgressBar:
-    height: 8px
-    background_track: "#e0e0e0"
-    background_primary: "#3f51b5"
-    background_success: "#4caf50"
-    background_error: "#f44336"
-    border_radius: 4px
+DatePicker:
+  behavior: {}
+  material:
+    component: "MuiDatePicker"
+    format: "format={MM/DD/YYYY}"
+    views: "views={['year', 'month', 'day']}"
+    min_date: "minDate={new Date()}"
+    max_date: "maxDate={futureDate}"
 
-  Pagination:
-    font_size: 14px
-    padding_btn: "8px 16px"
-    border_radius: 4px
-    font_weight_active: 600
+DateTimePicker:
+  behavior: {}
+  material:
+    component: "MuiDateTimePicker"
+    format: "format={MM/DD/YYYY HH:mm}"
+    views: "views={['year', 'month', 'day', 'hours', 'minutes']}"
+    ampm: "ampm={false}"
 
-  Tabs:
-    padding_tab: "16px 8px"
-    font_size: 14px
-    font_weight: 500
-    padding_content: 16px
-    border_bottom: "1px solid #e0e0e0"
+FileUpload:
+  behavior: {}
+  material:
+    container: "MuiBox border={2} borderStyle={dashed} borderRadius={2}"
+    button: "MuiButton variant={contained}"
+    list: "MuiList"
+    item: "MuiListItemSecondaryAction"
+    dropzone: "onDragOver={handleDragOver} onDrop={handleDrop}"
 
-  Accordion:
-    border: "1px solid #e0e0e0"
-    border_radius: 8px
-    padding_header: "12px 16px"
-    padding_body: "12px 16px"
-    background_expanded: "#fafafa"
-    background_collapsed: "#ffffff"
+FormBuilder:
+  behavior:
+    form_layout: "single_column"
+    validation_mode: "on_submit"
+    conditional_enabled: false
+  material:
+    form: "MuiForm layout={vertical}"
+    field: "MuiFormControl fullWidth"
+    two_column: "MuiGrid container spacing={2}"
+    error_summary: "MuiAlert severity={error}"
+    wizard: "MuiStepper"
 
-  Alert:
-    border_radius: 8px
-    padding: "12px 16px"
-    font_size: 14px
+FormField:
+  behavior:
+    conditional_enabled: false
+  material:
+    container: "MuiFormControl fullWidth"
+    label: "MuiFormLabel"
+    hint: "MuiFormHelperText"
+    error: "error={true} helperText={errorMessage}"
 
-  Skeleton:
-    background: "#e0e0e0"
-    border_radius_rect: 4px
-    border_radius_rounded: 8px
-    default_height: 16px
+Input:
+  behavior:
+    conditional_enabled: false
+  material:
+    component: "MuiTextField"
+    variant: "variant={outlined}"
+    label: "label={fieldName}"
+    error: "error={true} helperText={errorMessage}"
+    disabled: "disabled={true}"
+    multiline: "multiline maxRows={4}"
+    helper: "helperText={hintText}"
 
-  Breadcrumbs:
-    font_size: 14px
-    font_weight_active: 500
+Radio:
+  behavior: {}
+  material:
+    component: "MuiRadio"
+    group: "MuiRadioGroup"
+    label: "MuiFormControlLabel label={optionLabel}"
+    color: "color={primary}"
 
-  Drawer:
-    width: 320px
-    background: "#ffffff"
-    position: fixed
-    z_index: 1200
-    box_shadow: "0 4px 24px rgba(0,0,0,0.2)"
-    padding_body: 24px
+RichTextEditor:
+  behavior: {}
+  material:
+    container: "MuiPaper elevation={1}"
+    toolbar: "MuiToolbar variant={dense}"
+    button: "MuiIconButton size={small}"
+    content: "contentEditable={true} minHeight={200}"
 
-  Dropdown:
-    width: 224px
-    background: "#ffffff"
-    border_radius: 6px
-    box_shadow: "0 4px 12px rgba(0,0,0,0.15)"
-    z_index: 1000
-    padding_item: "8px 16px"
-    font_size_item: 14px
+Select:
+  behavior: {}
+  material:
+    component: "MuiSelect"
+    native: "native={false}"
+    multiple: "multiple"
+    render_value: "renderValue={(selected) => selected.join(', ')}"
+    menu: "MenuProps={anchorOrigin}"
 
-  Tooltip:
-    background_dark: "#212121"
-    background_light: "#ffffff"
-    text_color_dark: "#ffffff"
-    text_color_light: "#212121"
-    border_radius: 4px
-    padding: "6px 12px"
-    font_size: 14px
-    z_index: 1500
+Slider:
+  behavior: {}
+  material:
+    component: "MuiSlider"
+    marks: "marks"
+    value_label: "valueLabelDisplay={true}"
+    min: "min={0}"
+    max: "max={100}"
+    step: "step={1}"
 
-  Container:
-    max_width_xs: 576px
-    max_width_sm: 768px
-    max_width_md: 992px
-    max_width_lg: 1280px
-    max_width_xl: 1536px
-    padding: 16px
+Switch:
+  behavior: {}
+  material:
+    component: "MuiSwitch"
+    checked: "checked={value}"
+    color: "color={primary}"
+    disabled: "disabled"
+    size: "size={medium}"
 
-  FacetedSearch:
-    sidebar_width: 240px
-    card_min_width: 280px
+Textarea:
+  behavior: {}
+  material:
+    component: "MuiTextField"
+    multiline: "multiline rows={4}"
+    max_rows: "maxRows={8}"
+    variant: "variant={outlined}"
+    label: "label={fieldName}"
+    error: "error={true} helperText={errorMessage}"
 
-  ProductList:
-    sidebar_width: 260px
-    container_max_width: 1200px
+Alert:
+  behavior: {}
+  material:
+    component: "MuiAlert"
+    info: "severity={info}"
+    success: "severity={success}"
+    warning: "severity={warning}"
+    error: "severity={error}"
+    dismissible: "action={<IconButton onClick={onClose} />}"
 
-  ProductDetail:
-    container_max_width: 1200px
+CircularProgress:
+  behavior: {}
+  material:
+    component: "MuiCircularProgress"
+    size: "size={40}"
+    indeterminate: "indeterminate"
+    determined: "value={percentage}"
+    color: "color={primary}"
 
-  ConsentBanner:
-    position: fixed
-    bottom: 0
-    z_index: 1600
-    background: "#ffffff"
-    box_shadow: "0 -2px 8px rgba(0,0,0,0.1)"
+Dialog:
+  behavior:
+    close_on_backdrop: true
+    show_cancel: true
+    default_width: "md"
+  material:
+    component: "MuiDialog"
+    full_screen: "fullScreen"
+    scroll: "scroll={body}"
+    paper: "PaperProps={{ component: 'div', role: 'dialog' }}"
+    title: "MuiDialogTitle"
+    content: "MuiDialogContent dividers"
+    actions: "MuiDialogActions"
+    sm: "maxWidth={xs}"
+    md: "maxWidth={sm}"
+    lg: "maxWidth={md}"
+    xl: "maxWidth={lg}"
 
-  ApprovalTimeline:
-    container_max_width: 1200px
+ErrorBoundary:
+  behavior: {}
+  material:
+    container: "MuiBox display={flex} flexDirection={column} alignItems={center} justifyContent={center} minHeight={200}"
+    icon: "MuiIcon color={error} fontSize={large}"
+    title: "MuiTypography variant={h6}"
+    message: "MuiTypography variant={body2} color={text.secondary}"
+    retry: "MuiButton variant={contained} color={primary} sx={{ mt: 2 }}"
 
-  BulkDashboard:
-    container_max_width: 1400px
+LinearProgress:
+  behavior: {}
+  material:
+    component: "MuiLinearProgress"
+    indeterminate: "indeterminate"
+    determined: "value={percentage}"
+    color: "color={primary}"
+    variant: "variant={determinate}"
 
-  RateLimitDashboard:
-    container_max_width: 1400px
+Modal:
+  behavior:
+    close_on_backdrop: true
+    show_cancel: true
+    default_width: "lg"
+  material:
+    component: "MuiDialog"
+    overlay: "BackdropProps={{ timeout: 200 }}"
+    container: "MuiDialogPaper"
+    header: "MuiDialogTitle"
+    body: "MuiDialogContent"
+    footer: "MuiDialogActions"
+    sm: "maxWidth={xs}"
+    md: "maxWidth={sm}"
+    lg: "maxWidth={md}"
+    xl: "maxWidth={lg}"
 
-  TransactionDashboard:
-    container_max_width: 1200px
+ProgressBar:
+  behavior: {}
+  material:
+    container: "MuiLinearProgress variant={determinate} value={percentage}"
+    primary: "color={primary}"
+    success: "color={success}"
+    error: "color={error}"
+    label: "MuiTypography variant={caption}"
 
-  ChatWindow:
-    container_max_width: 1200px
+Skeleton:
+  behavior: {}
+  material:
+    component: "MuiSkeleton"
+    animation: "animation={wave}"
+    variant: "variant={rectangular}"
+    text: "variant={text}"
+    circle: "variant={circular}"
+    rounded: "variant={rounded}"
 
-  WebhookDashboard:
-    container_max_width: 1200px
+Snackbar:
+  behavior: {}
+  material:
+    component: "MuiSnackbar"
+    anchor: "anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}"
+    auto_hide: "autoHideDuration={6000}"
+    message: "MuiSnackbarContent"
+    action: "action={<MuiButton size={small} onClick={close} />}"
 
-  RetentionDashboard:
-    container_max_width: 1200px
+Spinner:
+  behavior: {}
+  material:
+    component: "MuiCircularProgress"
+    sm: "size={16}"
+    md: "size={40}"
+    lg: "size={64}"
+    color: "color={primary}"
 
-# Angular components
-angular:
-  Sidebar:
-    width: 280px
-    width_antd: 220px
-    width_carbon: 280px
-    background: "#ffffff"
-    border_right: "1px solid #e5e7eb"
-    display: flex
-    flex_direction: column
-    header_height: 64px
+Toast:
+  behavior: {}
+  material:
+    component: "MuiSnackbar"
+    anchor: "anchorOrigin={{ vertical: 'top', horizontal: 'right' }}"
+    success: "MuiAlert severity={success}"
+    error: "MuiAlert severity={error}"
+    info: "MuiAlert severity={info}"
+    warning: "MuiAlert severity={warning}"
 
-  Navbar:
-    height_antd: 64px
-    height_carbon: 48px
-    background: "#ffffff"
-    z_index: 1100
+Box:
+  behavior: {}
+  material:
+    component: "MuiBox"
+    padding: "p={2}"
+    margin: "m={2}"
+    display: "display={flex}"
+    centered: "display={flex} alignItems={center} justifyContent={center}"
 
-  Dialog:
-    width_antd: 416px
-    width_carbon: 672px
-    background: "#ffffff"
-    border_radius: 8px
-    z_index: 1300
+Column:
+  behavior: {}
+  material:
+    component: "MuiBox"
+    flex: "display={flex} flexDirection={column}"
+    gap: "gap={2}"
+    center: "alignItems={center}"
 
-  Toast:
-    min_width_bootstrap: 300px
-    min_width_antd: 336px
-    min_width_carbon: 340px
-    z_index: 1400
+Container:
+  behavior: {}
+  material:
+    component: "MuiContainer"
+    xs: "maxWidth={xs}"
+    sm: "maxWidth={sm}"
+    md: "maxWidth={md}"
+    lg: "maxWidth={lg}"
+    xl: "maxWidth={xl}"
+    fluid: "maxWidth={false}"
 
-  Pagination:
-    btn_size_antd: 32px
-    btn_size_carbon: 28px
+Divider:
+  behavior: {}
+  material:
+    component: "MuiDivider"
+    light: "light"
+    inset: "variant={inset}"
+    middle: "variant={middle}"
+    vertical: "orientation={vertical}"
 
-  DesignTokens:
-    font_size_base: 1rem
-    font_size_sm: 14px
-    control_height: 32px
-    z_index_image: 1050
-    color_blue_500: "#3f51b5"
+Flex:
+  behavior: {}
+  material:
+    component: "MuiBox"
+    row: "display={flex} flexDirection={row}"
+    col: "display={flex} flexDirection={column}"
+    wrap: "flexWrap={wrap}"
+    center: "display={flex} alignItems={center} justifyContent={center}"
+    between: "display={flex} justifyContent={space-between}"
+    gap: "gap={2}"
 
-  FacetedSearch:
-    sidebar_width: 240px
+Grid:
+  behavior: {}
+  material:
+    component: "MuiGrid"
+    container: "container spacing={2}"
+    item_xs: "item xs={12}"
+    item_sm: "item sm={6}"
+    item_md: "item md={4}"
+    item_lg: "item lg={3}"
 
-  ComplianceDashboard:
-    container_max_width: 1200px
+Row:
+  behavior: {}
+  material:
+    component: "MuiBox"
+    flex: "display={flex} flexDirection={row}"
+    gap: "gap={2}"
+    center: "alignItems={center}"
+    between: "justifyContent={space-between}"
 
-  PaymentHistory:
-    container_max_width: 1200px
+Spacer:
+  behavior: {}
+  material:
+    xs: "height={4}"
+    sm: "height={8}"
+    md: "height={16}"
+    lg: "height={32}"
+    xl: "height={64}"
 
-  PaymentDashboard:
-    container_max_width: 1200px
+Breadcrumbs:
+  behavior: {}
+  material:
+    component: "MuiBreadcrumbs"
+    separator: "separator={'/'}"
+    link: "MuiLink underline={hover}"
+    current: "MuiTypography color={text.primary}"
+    max_items: "maxItems={5}"
 
-  RateLimitDashboard:
-    container_max_width: 1400px
+Menu:
+  behavior: {}
+  material:
+    component: "MuiMenu"
+    anchor: "anchorEl={anchorRef}"
+    paper: "MuiPaper elevation={8}"
+    item: "MuiMenuItem"
+    divider: "MuiDivider"
+    header: "MuiMenuList subheader"
 
-  QuotaStatus:
-    container_max_width: 1400px
+Navbar:
+  behavior: {}
+  material:
+    component: "MuiAppBar position={sticky}"
+    toolbar: "MuiToolbar"
+    brand: "MuiTypography variant={h6} component={div}"
+    nav: "MuiBox display={flex} gap={2}"
+    item: "MuiButton color={inherit}"
+    mobile: "MuiBox display={{ xs: 'block', lg: 'none' }}"
 
-  BulkDashboard:
-    container_max_width: 1400px
+Pagination:
+  behavior:
+    paginated: true
+    page_size: 20
+  material:
+    component: "MuiPagination"
+    variant: "variant={outlined}"
+    color: "color={primary}"
+    shape: "shape={rounded}"
+    count: "count={totalPages}"
+    sibling_count: "siblingCount={2}"
+    boundary_count: "boundaryCount={1}"
+    size: "size={medium}"
 
-  BulkJobDetails:
-    container_max_width: 1200px
-    dialog_width: 600px
+Sidebar:
+  behavior: {}
+  material:
+    component: "MuiDrawer"
+    permanent: "variant={permanent}"
+    temporary: "variant={temporary}"
+    mini: "variant={permanent} sx={{ width: 72, flexShrink: 0 }}"
+    width: "width={256}"
+    item: "MuiListItemButton"
+    item_active: "selected={true}"
+    group: "MuiListSubheader"
 
-  RetentionPolicy:
-    dialog_width: 520px
+Stepper:
+  behavior: {}
+  material:
+    component: "MuiStepper"
+    horizontal: "orientation={horizontal}"
+    vertical: "orientation={vertical}"
+    step: "MuiStep"
+    step_label: "MuiStepLabel"
+    step_content: "MuiStepContent"
+    completed: "completed"
+    active: "active"
 
-  RetentionErasure:
-    dialog_width: 600px
+Tabs:
+  behavior: {}
+  material:
+    component: "MuiTabs"
+    value: "value={tabValue}"
+    centered: "centered"
+    full_width: "variant={fullWidth}"
+    scrollable: "variant={scrollable}"
+    tab: "MuiTab"
+    panel: "MuiTabPanel"
 
-  NotificationPreference:
-    dialog_width: 600px
+TreeView:
+  behavior: {}
+  material:
+    component: "MuiTreeView"
+    node: "MuiTreeItem"
+    expand_all: "defaultExpandIcon={<ExpandMoreIcon />}"
+    collapse_all: "defaultCollapseIcon={<ChevronRightIcon />}"
+    selected: "selected={true}"
+    expanded: "expanded={true}"
 
-  ConsentBanner:
-    border_radius: 8px
-    padding: "12px 16px"
+Accordion:
+  behavior: {}
+  material:
+    component: "MuiAccordion"
+    header: "MuiAccordionSummary"
+    body: "MuiAccordionDetails"
+    expanded: "expanded={true}"
+    disabled: "disabled"
+    square: "square"
+    transition: "TransitionComponent={Collapse}"
 
-  ProductList:
-    container_max_width: 1200px
+Drawer:
+  behavior: {}
+  material:
+    component: "MuiDrawer"
+    anchor: "anchor={right}"
+    open: "open={isOpen}"
+    modal: "ModalProps={{ keepMounted: true }}"
+    paper: "PaperProps={{ sx: { width: 320 } }}"
+    header: "MuiDialogTitle"
+    body: "MuiBox p={2}"
 
-  ProductDetail:
-    container_max_width: 1200px
+ExpansionPanel:
+  behavior: {}
+  material:
+    component: "MuiAccordion"
+    header: "MuiAccordionSummary expandIcon={<ExpandMoreIcon />}"
+    body: "MuiAccordionDetails"
+    square: "square"
+    disabled: "disabled"
+
+BadgeButton:
+  behavior: {}
+  material:
+    component: "MuiBadge"
+    button: "MuiButton"
+    badge: "badgeContent={count} color={error}"
+    dot: "badgeContent=·"
+
+Button:
+  behavior: {}
+  material:
+    component: "MuiButton"
+    primary: "variant={contained} color={primary}"
+    secondary: "variant={contained} color={secondary}"
+    danger: "variant={contained} color={error}"
+    outlined: "variant={outlined}"
+    text: "variant={text}"
+    link: "variant={text} component={a}"
+    sm: "size={small}"
+    md: "size={medium}"
+    lg: "size={large}"
+    disabled: "disabled={true}"
+    icon: "startIcon={<Icon />}"
+
+IconButton:
+  behavior: {}
+  material:
+    component: "MuiIconButton"
+    sm: "size={small}"
+    md: "size={medium}"
+    lg: "size={large}"
+    color: "color={inherit}"
+    edge: "edge={end}"
+
+Image:
+  behavior: {}
+  material:
+    component: "img"
+    contained: "MuiBox borderRadius={2} overflow={hidden}"
+    media: "MuiCardMedia"
+    fallback: "MuiSkeleton variant={rectangular}"
+    responsive: "width={100%} height={auto}"
+
+ThemeProvider:
+  behavior:
+    dark_mode: false
+  material:
+    component: "MuiThemeProvider"
+    light: "theme={lightTheme}"
+    dark: "theme={darkTheme}"
+    palette: "theme.palette.mode = 'dark'"
+    css_variables: "theme.palette.mode"
+
+# ============================================================================
+# Dashboard components (legacy — keep for backward compat)
+# ============================================================================
+
+FacetedSearch:
+  behavior: {}
+  material:
+    sidebar: "MuiDrawer variant={permanent} PaperProps={{ sx: { width: 240 } }}"
+    card: "MuiCard elevation={1}"
+
+ProductList:
+  behavior: {}
+  material:
+    sidebar: "MuiDrawer variant={permanent}"
+    container: "MuiContainer maxWidth={lg}"
+
+ProductDetail:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+
+ConsentBanner:
+  behavior: {}
+  material:
+    container: "MuiPaper elevation={24} position={fixed} bottom={0}"
+
+ApprovalTimeline:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+
+BulkDashboard:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={xl}"
+
+RateLimitDashboard:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={xl}"
+
+TransactionDashboard:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+
+ChatWindow:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+    messages: "MuiBox flex={1} overflow={auto} p={2}"
+    input: "MuiBox borderTop={1} borderColor={divider} p={2}"
+
+WebhookDashboard:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+
+RetentionDashboard:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+
+ComplianceDashboard:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+
+PaymentHistory:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+
+PaymentDashboard:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+
+QuotaStatus:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={xl}"
+
+BulkJobDetails:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+
+RetentionPolicy:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+
+RetentionErasure:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"
+
+NotificationPreference:
+  behavior: {}
+  material:
+    container: "MuiContainer maxWidth={lg}"

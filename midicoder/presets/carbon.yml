@@ -1,298 +1,815 @@
-# IBM Carbon Design preset
+# ============================================================================
+# IBM Carbon Design Preset v2 — Component behavior + tokens
+# ============================================================================
 
-react:
-  Sidebar:
-    width: 280px
-    width_collapsed: 60px
-    background: "#373737"
-    display: flex
-    flex_direction: column
-    position: fixed
+DataTable:
+  behavior:
+    sortable: true
+    paginated: true
+    page_size: 20
+    selectable: false
+    filterable: true
+    searchable: true
+    editable: false
+    virtual_scroll: false
+  carbon:
+    component: "DataTable"
+    header: "DataTableHeader"
+    body: "DataTableBody"
+    row: "DataRow"
+    cell: "DataCell"
+    header_cell: "DataCell header"
+    sortable: "isSortable"
+    selected: "isSelected"
+    pagination: "TablePagination"
+    empty: "TableEmpty"
+    toolbar: "DataTableToolbar"
+    batch_actions: "TableBatchActions"
 
-  Navbar:
-    height: 48px
-    background: "#373737"
-    position: fixed
-    z_index: 8000
+Card:
+  behavior: {}
+  carbon:
+    component: "Card"
+    header: "Card.Header"
+    body: "Card.Body"
+    footer: "Card.Footer"
+    title: "title={cardTitle}"
+    description: "description={cardDesc}"
+    overflow_menu: "overflowMenu"
 
-  Modal:
-    width_sm: 400px
-    width_md: 600px
-    width_lg: 800px
-    width_xl: 900px
-    background: "#ffffff"
-    border_radius: 0px
-    z_index: 9000
+CardList:
+  behavior: {}
+  carbon:
+    component: "ContentSwitcher"
+    selection: "Selection"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
 
-  Dialog:
-    width_sm: 416px
-    width_md: 520px
-    width_lg: 672px
-    background: "#ffffff"
-    border_radius: 0px
-    z_index: 9000
+Avatar:
+  behavior: {}
+  carbon:
+    component: "Avatar"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
+    shape_square: "shape={square}"
+    shape_rounded: "shape={rounded}"
+    initials: "initials={AB}"
+    image: "src={imageUrl}"
+    alt: "alt={User name}"
 
-  Card:
-    background: "#ffffff"
-    border_radius: 0px
-    border: "1px solid #e0e0e0"
-    padding: 16px
-    overflow: hidden
+Badge:
+  behavior: {}
+  carbon:
+    component: "Badge"
+    info: "kind={info}"
+    success: "kind={success}"
+    warning: "kind={warning}"
+    error: "kind={error}"
+    neutral: "kind={neutral}"
+    outline: "hasBorder={true}"
 
-  DataTable:
-    background_header: "#ffffff"
-    background_body: "#ffffff"
-    background_hover: "#e5e5e5"
-    border: "0"
-    padding_cell: "10px 10px"
-    overflow_x: auto
+Chip:
+  behavior: {}
+  carbon:
+    component: "Tag"
+    info: "type={info}"
+    success: "type={success}"
+    warning: "type={warning}"
+    error: "type={error}"
+    neutral: "type={coolGray}"
+    warm: "type={warmGray}"
+    teal: "type={teal}"
+    dismissable: "dismissable"
+    multiselect: "multiselect"
+    filter: "type={filter}"
 
-  Button:
-    padding_sm: "0 1rem"
-    padding_md: "0 1.5rem"
-    padding_lg: "0 2rem"
-    font_size_sm: 13px
-    font_size_md: 14px
-    font_size_lg: 16px
-    font_weight: 400
-    border_radius: 0px
+DescriptionList:
+  behavior: {}
+  carbon:
+    component: "DescriptionList"
+    horizontal: "layout={horizontal}"
+    term: "DescriptionTerm"
+    detail: "DescriptionDetail"
+    title: "title={List Title}"
 
-  Input:
-    width: "100%"
-    padding: "10px 12px"
-    border: "0"
-    border_bottom: "1px solid #8d8d8d"
-    border_radius: 0px
-    font_size: 14px
-    background: "transparent"
+List:
+  behavior: {}
+  carbon:
+    component: "StructuredList"
+    header: "StructuredListHeader"
+    body: "StructuredListBody"
+    row: "StructuredListRow"
+    item: "StructuredListItem"
+    icon: "StructuredListIcon"
 
-  Select:
-    width: "100%"
-    padding: "10px 12px"
-    border: "1px solid #8d8d8d"
-    border_radius: 0px
-    font_size: 14px
+Popover:
+  behavior: {}
+  carbon:
+    component: "Popover"
+    body: "PopoverContent"
+    trigger: "Popover"
+    align_end: "align={end}"
 
-  Badge:
-    border_radius: 2px
-    font_size: 13px
-    padding: "0.125rem 0.5rem"
+Timeline:
+  behavior: {}
+  carbon:
+    component: "Timeline"
+    side_start: "side={start}"
+    side_end: "side={end}"
+    item: "TimelineItem"
+    title: "TimelineTitle"
+    content: "TimelineContent"
+    separator: "TimelineSeparator"
 
-  Avatar:
-    size_xs: 24px
-    size_sm: 32px
-    size_md: 32px
-    size_lg: 48px
-    border_radius: "50%"
-    background: "#6b7280"
-    text_color: "#ffffff"
+Tooltip:
+  behavior: {}
+  carbon:
+    component: "Tooltip"
+    align_end: "align={end}"
+    enter_delay: "enterDelayDelay={300}"
+    label: "label={tooltipText}"
+    show_on_focus: "showOnFocus"
+    trigger: "TooltipTrigger"
 
-  Chip:
-    border_radius: 2px
-    padding: "0.125rem 0.5rem"
-    font_size: 13px
+Autocomplete:
+  behavior:
+    filterable: true
+    searchable: true
+  carbon:
+    component: "ComboBox"
+    items: "items={itemList}"
+    item_to_text: "itemToText={(item) => item.label}"
+    label_text: "labelText={Search}"
+    placeholder: "placeholder={Select option}"
+    allow_custom_tags: "allowCustomTags"
+    inline: "inline"
+    light: "light"
 
-  Toast:
-    position: fixed
-    z_index: 9000
-    min_width: 340px
-    border_radius: 0px
-    padding: "1rem"
+Checkbox:
+  behavior: {}
+  carbon:
+    component: "Checkbox"
+    checked: "checked={value}"
+    indeterminate: "indeterminate"
+    disabled: "disabled"
+    label: "labelText={label}"
+    hide_label: "hideLabel"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
+    tooltip: "tooltipText={tooltip}"
 
-  Spinner:
-    size: 24px
-    border_width: 2px
-    border_color_track: "#e0e0e0"
-    border_color_primary: "#0f62fe"
+ColorPicker:
+  behavior: {}
+  carbon:
+    component: "ColorPicker"
+    label: "labelText={Color}"
+    hex: "hexValue={#0f62fe}"
+    inline: "inline"
+    alpha: "alpha={1}"
+    children: "children={children}"
 
-  ProgressBar:
-    height: 2px
-    background_track: "#e0e0e0"
-    background_primary: "#0f62fe"
-    background_success: "#198038"
-    background_error: "#da1e28"
-    border_radius: 0px
+DatePicker:
+  behavior: {}
+  carbon:
+    component: "DatePicker"
+    label: "labelText={Date}"
+    placeholder: "placeholder={mm/dd/yyyy}"
+    disabled: "disabled"
+    light: "light"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
+    range: "DatePickerInput"
+    year_range: "yearRange={[-70, 0]}"
 
-  Pagination:
-    font_size: 13px
-    padding_btn: "0 0.5rem"
-    border_radius: 0px
+DateTimePicker:
+  behavior: {}
+  carbon:
+    component: "TimePicker"
+    label: "labelText={Time}"
+    placeholder: "placeholder={hh:mm:ss}"
+    disabled: "disabled"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
 
-  Tabs:
-    padding_tab: "1rem"
-    font_size: 14px
-    font_weight: 400
-    padding_content: 1rem
+FileUpload:
+  behavior: {}
+  carbon:
+    component: "FileUploader"
+    button_label: "buttonLabel={Upload}"
+    filename_status: "filenameStatus={complete}"
+    filename_status_icon: "filenameStatusIcon={true}"
+    multiple: "multiple"
+    button_kind: "buttonKind={primary}"
+    label_title: "labelTitle={File}"
+    label_description: "labelDescription={Drag and drop a file}"
+    drop: "FileUploader.Button"
 
-  Accordion:
-    border: "0"
-    border_bottom: "1px solid #e0e0e0"
-    border_radius: 0px
-    padding_header: "1rem 1.5rem"
-    padding_body: "1rem 1.5rem"
+FormBuilder:
+  behavior:
+    form_layout: "single_column"
+    validation_mode: "on_submit"
+    conditional_enabled: false
+  carbon:
+    component: "Form"
+    label: "FormLabel"
+    field: "FormItem"
+    error_summary: "FormStatus type={error} message={errors}"
+    success: "FormStatus type={success} message={success}"
+    hint: "FormItem invalid invalidText={error}"
 
-  Alert:
-    border_radius: 0px
-    padding: "1rem"
-    font_size: 14px
+FormField:
+  behavior:
+    conditional_enabled: false
+  carbon:
+    component: "FormItem"
+    label: "FormLabel"
+    helper: "FormHelperText"
+    error: "invalid invalidText={errorMessage}"
+    hide_label: "FormLabel hideRequiredAsterisk"
 
-  Skeleton:
-    background: "#e0e0e0"
-    border_radius_rect: 0px
-    default_height: 16px
+Input:
+  behavior:
+    conditional_enabled: false
+  carbon:
+    component: "TextInput"
+    label: "labelText={Field label}"
+    placeholder: "placeholder={Enter text}"
+    invalid: "invalid"
+    invalid_text: "invalidText={Error message}"
+    helper: "helperText={Hint text}"
+    disabled: "disabled"
+    read_only: "readOnly"
+    light: "light"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
+    type_text: "type={text}"
+    type_password: "type={password}"
 
-  Breadcrumbs:
-    font_size: 13px
+Radio:
+  behavior: {}
+  carbon:
+    component: "RadioButtonGroup"
+    name: "name={groupName}"
+    legend: "legendText={Group label}"
+    inline: "orientation={horizontal}"
+    fieldset: "FieldSet legend={Legend}"
+    button: "RadioButton labelText={Option}"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
 
-  Drawer:
-    width: 320px
-    background: "#ffffff"
-    position: fixed
-    z_index: 9000
-    padding_body: 1rem
+RichTextEditor:
+  behavior: {}
+  carbon:
+    component: "TextArea"
+    rows: "rows={8}"
+    max_rows: "maxLength={10000}"
+    label: "labelText={Rich text}"
+    helper: "helperText={Enter content}"
+    invalid: "invalid"
+    disabled: "disabled"
 
-  Dropdown:
-    width: 12rem
-    background: "#ffffff"
-    border_radius: 0px
-    box_shadow: "0 0 0 1px #393939"
-    z_index: 7000
-    padding_item: "1rem 1.5rem"
-    font_size_item: 14px
+Select:
+  behavior: {}
+  carbon:
+    component: "Select"
+    label: "labelText={Select}"
+    items: "items={itemList}"
+    helper: "helperText={Helper text}"
+    invalid: "invalid invalidText={Error}"
+    disabled: "disabled"
+    inline: "inline"
+    light: "light"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
+    placeholder: "placeholderText={Choose}"
 
-  Tooltip:
-    background_dark: "#333333"
-    text_color_dark: "#ffffff"
-    border_radius: 0px
-    padding: "0.5rem 1rem"
-    font_size: 13px
-    z_index: 9000
+Slider:
+  behavior: {}
+  carbon:
+    component: "Slider"
+    label: "label={Slider label}"
+    min: "min={0}"
+    max: "max={100}"
+    step: "step={1}"
+    step_feel: "stepFeel={snap}"
+    disabled: "disabled"
+    show_read_only: "readOnly"
+    light: "light"
+    range: "SliderDouble"
 
-  Container:
-    max_width_xs: 728px
-    max_width_sm: 968px
-    max_width_md: 1208px
-    max_width_lg: 1448px
-    max_width_xl: 1768px
-    padding: "0 1rem"
+Switch:
+  behavior: {}
+  carbon:
+    component: "Toggle"
+    toggled: "toggled={value}"
+    label: "labelText={Toggle label}"
+    aria_label: "ariaLabel={toggle}"
+    disabled: "disabled"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
 
-  FacetedSearch:
-    sidebar_width: 280px
-    card_min_width: 280px
+Textarea:
+  behavior: {}
+  carbon:
+    component: "TextArea"
+    label: "labelText={Textarea label}"
+    placeholder: "placeholder={Enter text}"
+    rows: "rows={4}"
+    max_rows: "maxLength={500}"
+    invalid: "invalid invalidText={Error}"
+    helper: "helperText={Hint}"
+    disabled: "disabled"
+    light: "light"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
 
-  ProductList:
-    sidebar_width: 280px
-    container_max_width: 1200px
+Alert:
+  behavior: {}
+  carbon:
+    component: "Alert"
+    info: "kind={info}"
+    success: "kind={success}"
+    warning: "kind={warning}"
+    error: "kind={error}"
+    notice: "kind={notice}"
+    toast: "toast"
+    low_contrast: "lowContrast"
+    title: "title={Alert title}"
+    icon_description: "iconDescription={close}"
+    closeable: "onClick={handleClose}"
 
-  ProductDetail:
-    container_max_width: 1200px
+CircularProgress:
+  behavior: {}
+  carbon:
+    component: "ProgressIndicator"
+    label: "label={Loading...}"
+    size: "size={default}"
+    with_border: "withBorder"
 
-  ConsentBanner:
-    position: fixed
-    bottom: 0
-    z_index: 9000
-    background: "#ffffff"
+Dialog:
+  behavior:
+    close_on_backdrop: true
+    show_cancel: true
+    default_width: "md"
+  carbon:
+    component: "Dialog"
+    heading: "heading={Dialog title}"
+    description: "description={Dialog body}"
+    buttons: "buttons={[Cancel, Confirm]}"
+    close_icon_description: "closeIconDescription={close}"
+    has_scrolling_content: "hasScrollingContent"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
 
-  ApprovalTimeline:
-    container_max_width: 1200px
+ErrorBoundary:
+  behavior: {}
+  carbon:
+    component: "InlineNotification"
+    kind: "kind={error}"
+    title: "title={Error occurred}"
+    message: "message={Error details}"
+    action_button: "action={Retry}"
+    low_contrast: "lowContrast"
 
-  BulkDashboard:
-    container_max_width: 1400px
+LinearProgress:
+  behavior: {}
+  carbon:
+    component: "ProgressIndicator"
+    bars: "ProgressIndicatorBar label={Step} value={25} max={100}"
+    active: "active"
+    completed: "completed"
+    with_border: "withBorder"
 
-  RateLimitDashboard:
-    container_max_width: 1400px
+Modal:
+  behavior:
+    close_on_backdrop: true
+    show_cancel: true
+    default_width: "lg"
+  carbon:
+    component: "Modal"
+    primary_button_text: "primaryButtonText={Confirm}"
+    secondary_button_text: "secondaryButtonText={Cancel}"
+    has_scrolling_content: "hasScrollingContent"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
+    danger: "danger dangerPrimaryButtonDanger"
+    pass_focus: "passFocusOnClose"
 
-  TransactionDashboard:
-    container_max_width: 1200px
+ProgressBar:
+  behavior: {}
+  carbon:
+    component: "ProgressBar"
+    label: "label={Progress}"
+    value: "value={50}"
+    max: "max={100}"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
+    status_default: "status={default}"
+    status_success: "status={success}"
+    status_error: "status={error}"
 
-  ChatWindow:
-    container_max_width: 1200px
+Skeleton:
+  behavior: {}
+  carbon:
+    component: "SkeletonPlaceholder"
+    line: "SkeletonText"
+    circle: "SkeletonAvatar"
+    text: "SkeletonText width={['50%', '100%']}"
+    paragraph: "SkeletonText width={['50%', '100%']}"
+    button: "SkeletonButton"
+    avatar: "SkeletonAvatar"
+    heading: "SkeletonText width={50%}"
 
-  WebhookDashboard:
-    container_max_width: 1200px
+Snackbar:
+  behavior: {}
+  carbon:
+    component: "ToastNotification"
+    kind_success: "kind={success}"
+    kind_error: "kind={error}"
+    kind_info: "kind={info}"
+    kind_warning: "kind={warning}"
+    title: "title={Notification}"
+    subtitle: "subtitle={Details}"
+    icon_description: "iconDescription={close}"
+    duration: "liveRegion={assertive}"
 
-  RetentionDashboard:
-    container_max_width: 1200px
+Spinner:
+  behavior: {}
+  carbon:
+    component: "Loading"
+    active: "active"
+    with_overlay: "withOverlay"
+    small: "small"
+    description: "description={Loading}"
 
-# Angular
-angular:
-  Sidebar:
-    width: 280px
-    width_antd: 220px
-    width_carbon: 280px
-    background: "#373737"
-    header_height: 48px
+Toast:
+  behavior: {}
+  carbon:
+    component: "Notification"
+    kind_success: "kind={success}"
+    kind_error: "kind={error}"
+    kind_info: "kind={info}"
+    kind_warning: "kind={warning}"
+    title: "title={Toast title}"
+    caption: "caption={Time}"
+    subtitle: "subtitle={Message}"
 
-  Navbar:
-    height_antd: 64px
-    height_carbon: 48px
-    background: "#373737"
-    z_index: 8000
+Box:
+  behavior: {}
+  carbon:
+    component: "Box"
+    padding: "padding={3}"
+    margin: "margin={3}"
+    display: "display={flex}"
+    centered: "display={flex} alignItems={center} justifyContent={center}"
 
-  Dialog:
-    width_antd: 416px
-    width_carbon: 672px
-    background: "#ffffff"
-    border_radius: 0px
-    z_index: 9000
+Column:
+  behavior: {}
+  carbon:
+    component: "Box"
+    flex: "display={flex} flexDirection={column}"
+    gap: "gap={2}"
+    center: "alignItems={center}"
 
-  Toast:
-    min_width_bootstrap: 300px
-    min_width_antd: 336px
-    min_width_carbon: 340px
-    z_index: 9000
+Container:
+  behavior: {}
+  carbon:
+    xs: "max={576}"
+    sm: "max={768}"
+    md: "max={992}"
+    lg: "max={1200}"
+    xl: "max={1600}"
+    padding: "paddingX={3}"
 
-  Pagination:
-    btn_size_antd: 32px
-    btn_size_carbon: 28px
+Divider:
+  behavior: {}
+  carbon:
+    component: "Divider"
+    expanding: "expanding"
+    inline: "inline"
+    size_sm: "size={1}"
+    size_lg: "size={2}"
 
-  DesignTokens:
-    font_size_base: 0.875rem
-    font_size_sm: 13px
-    control_height: 2rem
-    z_index_image: 10000
-    color_blue_500: "#0f62fe"
+Flex:
+  behavior: {}
+  carbon:
+    component: "FlexGrid"
+    gap: "gap={sm}"
+    wrap: "wrap={true}"
+    center: "alignItems={center}"
+    between: "justifyContent={space-between}"
 
-  FacetedSearch:
-    sidebar_width: 280px
+Grid:
+  behavior: {}
+  carbon:
+    container: "Grid"
+    cols_1: "Column lg={16} md={8} sm={4}"
+    cols_2: "Column lg={8} md={8} sm={4}"
+    cols_3: "Column lg={5} md={4} sm={4}"
+    cols_4: "Column lg={4} md={4} sm={4}"
+    cols_6: "Column lg={2} md={4} sm={4}"
 
-  ComplianceDashboard:
-    container_max_width: 1200px
+Row:
+  behavior: {}
+  carbon:
+    component: "FlexGrid"
+    gap: "gap={md}"
+    center: "alignItems={center}"
+    between: "justifyContent={space-between}"
 
-  PaymentHistory:
-    container_max_width: 1200px
+Spacer:
+  behavior: {}
+  carbon:
+    xs: "mt={1}"
+    sm: "mt={2}"
+    md: "mt={3}"
+    lg: "mt={5}"
+    xl: "mt={7}"
 
-  PaymentDashboard:
-    container_max_width: 1200px
+Breadcrumbs:
+  behavior: {}
+  carbon:
+    component: "Breadcrumb"
+    item: "BreadcrumbItem"
+    is_last: "isLast={true}"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
+    no_truncation: "noTruncate"
 
-  RateLimitDashboard:
-    container_max_width: 1400px
+Menu:
+  behavior: {}
+  carbon:
+    component: "OverflowMenu"
+    item: "OverflowMenuItem"
+    divider: "isDivider"
+    danger: "hasDanger"
+    primary_focus: "primaryFocus"
+    flipped: "flipped"
+    icon: "itemIcon"
 
-  QuotaStatus:
-    container_max_width: 1400px
+Navbar:
+  behavior: {}
+  carbon:
+    component: "Header"
+    is_preview: "isSlimPreview={true}"
+    aria_label: "ariaLabel={App}"
+    global: "HeaderGlobalAction"
+    menu: "HeaderMenu"
+    nav: "HeaderNav"
+    item: "HeaderNavItem"
+    side_nav: "SideNav"
 
-  BulkDashboard:
-    container_max_width: 1400px
+Pagination:
+  behavior:
+    paginated: true
+    page_size: 20
+  carbon:
+    component: "Pagination"
+    page: "page={1}"
+    page_size: "pageSize={20}"
+    total_items: "totalItems={100}"
+    is_last_page: "isLastPage={false}"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
+    backward_text: "backwardText={Previous}"
+    forward_text: "forwardText={Next}"
+    items_per_page_text: "itemsPerPageText={Items per page}"
+    page_text: "pageText={1 of 5}"
 
-  BulkJobDetails:
-    container_max_width: 1200px
-    dialog_width: 600px
+Sidebar:
+  behavior: {}
+  carbon:
+    component: "SideNav"
+    expanded: "isExpanded={true}"
+    fixed: "isFixedHeader"
+    icon_size: "iconSize={20}"
+    item: "SideNavItems SideNavLink"
+    group: "SideNavItems title={Group}"
+    collapsed: "isChildOfCollapsedNavigation"
+    width: "width={256}"
 
-  RetentionPolicy:
-    dialog_width: 520px
+Stepper:
+  behavior: {}
+  carbon:
+    component: "Stepper"
+    container: "Stepper"
+    horizontal: "orientation={horizontal}"
+    vertical: "orientation={vertical}"
+    step: "Step"
+    step_label: "StepButton"
+    content: "StepContent"
+    active: "active"
+    completed: "completed"
+    size_sm: "size={sm}"
+    size_lg: "size={lg}"
 
-  RetentionErasure:
-    dialog_width: 600px
+Tabs:
+  behavior: {}
+  carbon:
+    component: "TabList"
+    container: "Tabs"
+    active: "selected={index}"
+    container_width: "container={true}"
+    activation_auto: "activation={automatic}"
+    activation_manual: "activation={manual}"
+    border: "accordion={false}"
+    tab: "Tab"
+    panel: "TabPanel"
 
-  NotificationPreference:
-    dialog_width: 600px
+TreeView:
+  behavior: {}
+  carbon:
+    component: "ComposedStructuredList"
+    expandable: "Expandable"
+    item: "StructuredListRow"
+    content: "StructuredListRow"
+    expanded: "expanded={true}"
+    selected: "selected"
 
-  ConsentBanner:
-    border_radius: 0px
-    padding: "1rem"
+Accordion:
+  behavior: {}
+  carbon:
+    component: "Accordion"
+    container: "Accordion"
+    item: "AccordionItem"
+    title: "AccordionItem title={Label}"
+    rendered: "rendered"
+    allow_multiple: "allowAllClosed allowMultiple"
+    heading_size_sm: "heading={Heading is: 40 as const}"
+    heading_size_lg: "heading={Heading is: 30 as const}"
+    reinverted: "reinvertHeading"
 
-  ProductList:
-    container_max_width: 1200px
+Drawer:
+  behavior: {}
+  carbon:
+    component: "SideNav"
+    container: "SideNav isPersistentOnAllBreakpoints"
+    header: "SideNavItems SideNavLink"
+    body: "SideNavItems"
+    width: "width={256}"
 
-  ProductDetail:
-    container_max_width: 1200px
+ExpansionPanel:
+  behavior: {}
+  carbon:
+    component: "Accordion"
+    item: "AccordionItem title={Title}"
+    body: "AccordionItem children"
+
+BadgeButton:
+  behavior: {}
+  carbon:
+    component: "Button"
+    badge: "Badge"
+    count: "children={count}"
+    kind: "kind={outline}"
+
+Button:
+  behavior: {}
+  carbon:
+    component: "Button"
+    primary: "kind={primary}"
+    secondary: "kind={secondary}"
+    danger: "kind={danger}"
+    tertiary: "kind={tertiary}"
+    ghost: "kind={ghost}"
+    disabled: "kind={disabled}"
+    sm: "size={sm}"
+    lg: "size={lg}"
+    disabled: "disabled"
+    render_icon: "renderIcon={Icon}"
+    tooltip: "tooltipPosition={top}"
+    width_full: "width={100%}"
+    slug: "slug"
+    skeleton: "skeleton"
+
+IconButton:
+  behavior: {}
+  carbon:
+    component: "Button"
+    kind: "kind={ghost}"
+    render_icon: "renderIcon={Icon}"
+    sm: "size={sm}"
+    lg: "size={lg}"
+    tooltip: "tooltipPosition={top}"
+
+Image:
+  behavior: {}
+  carbon:
+    component: "ImageLoadingCard"
+    loading: "isSkeleton"
+    figcaption: "ImageLoadingCard.Figure"
+    fallback: "src={fallbackUrl}"
+
+ThemeProvider:
+  behavior:
+    dark_mode: false
+  carbon:
+    component: "Theme"
+    light: "theme={white}"
+    dark: "theme={g100}"
+    g100: "theme={g100}"
+    g10: "theme={g10}"
+    custom: "theme={customTheme}"
+
+# ============================================================================
+# Dashboard components (legacy — keep for backward compat)
+# ============================================================================
+
+FacetedSearch:
+  behavior: {}
+  carbon:
+    sidebar: "aside w-70 bg-gray-100 p-4"
+    card: "Card min-w-[280px]"
+
+ProductList:
+  behavior: {}
+  carbon:
+    sidebar: "aside w-70"
+    container: "max-w-[1200px] mx-auto"
+
+ProductDetail:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"
+
+ConsentBanner:
+  behavior: {}
+  carbon:
+    container: "fixed bottom-0 left-0 right-0 z-50 bg-white border-t p-4"
+
+ApprovalTimeline:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"
+
+BulkDashboard:
+  behavior: {}
+  carbon:
+    container: "max-w-[1400px] mx-auto"
+
+RateLimitDashboard:
+  behavior: {}
+  carbon:
+    container: "max-w-[1400px] mx-auto"
+
+TransactionDashboard:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"
+
+ChatWindow:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto flex flex-col h-[600px]"
+    messages: "flex-1 overflow-y-auto p-4"
+    input: "border-t p-4"
+
+WebhookDashboard:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"
+
+RetentionDashboard:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"
+
+ComplianceDashboard:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"
+
+PaymentHistory:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"
+
+PaymentDashboard:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"
+
+QuotaStatus:
+  behavior: {}
+  carbon:
+    container: "max-w-[1400px] mx-auto"
+
+BulkJobDetails:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"
+
+RetentionPolicy:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"
+
+RetentionErasure:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"
+
+NotificationPreference:
+  behavior: {}
+  carbon:
+    container: "max-w-[1200px] mx-auto"

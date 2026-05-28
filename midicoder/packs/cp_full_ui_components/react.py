@@ -262,4 +262,55 @@ class ReactUIEmitter:
         )
 
 
+# ============================================================
+# Jinja2 bridge functions for RenderContextSpec
+# ============================================================
+
+def rc_component(
+    render_context: Any,
+    component_name: str,
+) -> Any:
+    """
+    Lookup component override từ RenderContextSpec.
+
+    Dùng trong Jinja2 template:
+        {% set dt = rc_component(rc, "DataTable") %}
+        {{ dt.behavior.sortable }}
+        {{ dt.tokens.tailwind.container }}
+
+    Args:
+        render_context: RenderContextSpec hoặc dict
+        component_name: Tên component (DataTable, Dialog, ...)
+
+    Returns:
+        dict: {behavior: {...}, tokens: {...}} hoặc empty dict
+    """
+    if hasattr(render_context, "get_component"):
+        override = render_context.get_component(component_name)
+        b = {}
+        for attr in ["sortable", "paginated", "page_size", "selectable",
+                      "filterable", "searchable", "editable", "virtual_scroll",
+                      "close_on_backdrop", "show_cancel", "default_width"]:
+            v = getattr(override.behavior, attr, None)
+            if v is not None:
+                b[attr] = v
+        tokens = override.tokens.get_for_framework("tailwind")
+        return {"behavior": b, "tokens": tokens}
+    elif isinstance(render_context, dict):
+        return render_context.get("components", {}).get(component_name.lower(), {})
+    return {}
+
+
+def rc_behavior(render_context: Any, component_name: str, key: str, default=None):
+    """Get behavior prop: {{ rc_behavior(rc, 'DataTable', 'sortable', true) }}"""
+    comp = rc_component(render_context, component_name)
+    return comp.get("behavior", {}).get(key, default)
+
+
+def rc_token(render_context: Any, component_name: str, key: str, default=""):
+    """Get CSS token: {{ rc_token(rc, 'DataTable', 'container') }}"""
+    comp = rc_component(render_context, component_name)
+    return comp.get("tokens", {}).get(key, default)
+
+
 __all__ = ["ReactUIEmitter", "GeneratedFile"]

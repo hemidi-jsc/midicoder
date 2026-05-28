@@ -25,6 +25,7 @@ E00: Installation & Setup
 """
 
 import json
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -32,6 +33,19 @@ from typing import Any, Optional
 import yaml
 
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+# EU-0.4: Import typed models (with fallback for import safety)
+try:
+    from midicoder.packs.models import (
+        PresetType,
+        RenderContextSpec,
+        StackType,
+        StyleResolverV2,
+    )
+
+    _MODELS_AVAILABLE = True
+except ImportError:
+    _MODELS_AVAILABLE = False
 
 # Đường dẫn cấu hình global
 GLOBAL_CONFIG_DIR = Path.home() / ".midicoder"
@@ -512,22 +526,86 @@ def load_user_config(project_root: Path) -> dict:
 
 
 def resolve_render_context(
+    stack: "StackType",
+    preset: "PresetType",
+    config_yml: Optional[dict[str, Any]] = None,
+    dsl_context: Optional[dict[str, Any]] = None,
+    entity_name: Optional[str] = None,
+    project_root: Optional[Path] = None,
+) -> "RenderContextSpec":
+    """
+    Resolve RenderContextSpec từ 4 layers bằng StyleResolverV2.
+
+    4-layer merge (thấp → cao):
+    0. Preset YAML
+    1. midicoder.config.yml render.defaults
+    2. midicoder.config.yml render.per_entity.{Name}
+    3. DSL render_context (cao nhất)
+
+    EU-0.4: Trả về RenderContextSpec typed object (không còn flat dict).
+
+    Args:
+        stack: StackType (react, angular, fastapi, nestjs, infrastructure)
+        preset: PresetType (material, tailwind, bootstrap, antd, carbon)
+        config_yml: Dict từ midicoder.config.yml
+        dsl_context: Render context từ DSL entity spec
+        entity_name: Tên entity (để lookup per_entity config)
+        project_root: Đường dẫn project root (default: hiện tại)
+
+    Returns:
+        RenderContextSpec: Typed object (dùng .to_dict() cho backward compat)
+    """
+    if _MODELS_AVAILABLE:
+        presets_dir = Path(project_root or ".") / "midicoder" / "presets"
+        resolver = StyleResolverV2(presets_dir)
+        render_section: dict[str, Any] = {}
+        if config_yml:
+            render_section = config_yml.get("render", {})
+        return resolver.resolve(
+            stack_type=stack,
+            preset_type=preset,
+            entity_rc=dsl_context,
+            user_defaults=render_section.get("defaults", {}),
+            user_per_entity=render_section.get("per_entity", {}),
+            entity_name=entity_name,
+        )
+    else:
+        # Fallback: trả về flat dict từ V1 khi models không available
+        warnings.warn(
+            "RenderContextSpec models not available; falling back to resolve_render_context_v1()",
+            UserWarning,
+            stacklevel=2,
+        )
+        # Caller sẽ receive dict, không phải RenderContextSpec
+        return resolve_render_context_v1(  # type: ignore[return-value]
+            entity_id=entity_name or "",
+            entity_rc=dsl_context or {},
+            user_config=config_yml or {},
+            stack=stack.value if hasattr(stack, "value") else str(stack),
+            ui_framework=preset.value if hasattr(preset, "value") else str(preset),
+        )
+
+
+def resolve_render_context_v1(
     entity_id: str,
     entity_rc: dict,
     user_config: dict,
-    stack: str = "",        # EU-0.3: "react", "angular", "fastapi", "nestjs"
-    ui_framework: str = "",  # EU-0.3: "material", "tailwind", "bootstrap", "antd", "carbon"
+    stack: str = "",
+    ui_framework: str = "",
 ) -> dict:
     """
-    Resolve render_context theo 3-layer priority + StyleResolver (EU-0.3):
+    [DEPRECATED] Resolve render_context theo 3-layer priority + StyleResolver.
+
+    EU-0.4 Deprecated: Sử dụng resolve_render_context() mới trả về RenderContextSpec.
+    Giữ lại cho backward compat với file_contributions_loader expand_* methods.
+
+    3-layer merge:
     1. entity.render_context (DSL-level — CAO NHẤT)
     2. midicoder.config.yml render.per_entity.{EntityName}
     3. midicoder.config.yml render.defaults (THẤP NHẤT)
 
     EU-0.3: Nếu stack + ui_framework được cung cấp, thêm ``styles`` dict
-    vào result qua StyleResolver (4-layer: preset → defaults → per_entity → DSL).
-
-    Template hardcoded default is layer 0 (thấp nhất, handled by template engine).
+    vào result qua StyleResolver.
 
     Args:
         entity_id: ID của entity (vd: "Product")
@@ -539,6 +617,12 @@ def resolve_render_context(
     Returns:
         dict: Merged render_context (bao gồm ``styles`` nếu applicable)
     """
+    warnings.warn(
+        "resolve_render_context_v1 is deprecated; use resolve_render_context() which returns RenderContextSpec",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     from midicoder.pipeline.styles_resolver import StyleResolver  # avoid circular
 
     merged: dict[str, Any] = {}

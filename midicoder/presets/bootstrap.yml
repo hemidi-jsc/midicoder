@@ -1,298 +1,704 @@
-# Bootstrap preset
+# ============================================================================
+# Bootstrap 5 Preset v2 — Component behavior + tokens
+# ============================================================================
 
-react:
-  Sidebar:
-    width: 280px
-    width_collapsed: 60px
-    background: "#ffffff"
-    border_right: "1px solid #dee2e6"
-    display: flex
-    flex_direction: column
-    position: fixed
+DataTable:
+  behavior:
+    sortable: true
+    paginated: true
+    page_size: 20
+    selectable: false
+    filterable: true
+    searchable: true
+    editable: false
+    virtual_scroll: false
+  bootstrap:
+    container: "table-responsive"
+    table: "table table-hover table-striped"
+    header: "thead-light"
+    header_cell: "th"
+    body: "tbody"
+    row: "tr"
+    cell: "td py-3"
+    pagination: "d-flex justify-content-between align-items-center px-3 py-2"
+    empty: "text-center py-5 text-muted"
 
-  Navbar:
-    height: 56px
-    background: "#ffffff"
-    position: sticky
-    border_bottom: "1px solid #dee2e6"
-    z_index: 1030
-    box_shadow: "0 1px 2px rgba(0,0,0,0.05)"
+Card:
+  behavior: {}
+  bootstrap:
+    container: "card shadow-sm"
+    header: "card-header"
+    body: "card-body"
+    footer: "card-footer bg-light"
+    title: "card-title"
+    text: "card-text"
 
-  Modal:
-    width_sm: 300px
-    width_md: 500px
-    width_lg: 800px
-    width_xl: 1140px
-    background: "#ffffff"
-    border_radius: 4px
-    z_index: 1050
+CardList:
+  behavior: {}
+  bootstrap:
+    container: "row g-3"
+    item: "col-12 col-md-6 col-lg-4"
 
-  Dialog:
-    width_sm: 416px
-    width_md: 520px
-    width_lg: 672px
-    background: "#ffffff"
-    border_radius: 4px
-    z_index: 1050
+Avatar:
+  behavior: {}
+  bootstrap:
+    container: "d-flex align-items-center gap-2"
+    img: "rounded-circle object-fit-cover"
+    fallback: "rounded-circle d-flex align-items-center justify-content font-medium bg-primary-light text-primary"
+    name: "small fw-medium"
+    xs: "w-24 h-24"
+    sm: "w-32 h-32"
+    md: "w-40 h-40"
+    lg: "w-48 h-48"
 
-  Card:
-    background: "#ffffff"
-    border_radius: 0.375rem
-    border: "1px solid rgba(0,0,0,0.125)"
-    padding: 20px
-    overflow: hidden
+Badge:
+  behavior: {}
+  bootstrap:
+    container: "badge rounded-pill"
+    info: "bg-info text-bg-info"
+    success: "bg-success text-bg-success"
+    warning: "bg-warning text-bg-warning text-dark"
+    error: "bg-danger text-bg-danger"
+    neutral: "bg-secondary text-bg-secondary"
+    dot: "badge rounded-circle"
 
-  DataTable:
-    background_header: "#ffffff"
-    background_body: "#ffffff"
-    background_hover: rgba(0, 0, 0, 0.075)
-    border: "1px solid #dee2e6"
-    padding_cell: "0.75rem"
-    overflow_x: auto
+Chip:
+  behavior: {}
+  bootstrap:
+    container: "badge rounded-pill d-inline-flex align-items-center gap-1 px-3 py-1"
+    removable: "text-nowrap"
+    icon: "me-1"
+    outline: "badge bg-light text-dark border"
+    filled: "badge bg-primary text-white"
 
-  Button:
-    padding_sm: "0.25rem 0.5rem"
-    padding_md: "0.375rem 0.75rem"
-    padding_lg: "0.5rem 1rem"
-    font_size_sm: 12px
-    font_size_md: 14px
-    font_size_lg: 16px
-    font_weight: 400
-    border_radius: 0.25rem
+DescriptionList:
+  behavior: {}
+  bootstrap:
+    container: "row row-cols-auto g-3 border-top"
+    term: "col dt-text fw-medium text-muted"
+    detail: "col dt-text"
+    horizontal: "row row-cols-1 row-cols-md-2"
 
-  Input:
-    width: "100%"
-    padding: "0.375rem 0.75rem"
-    border: "1px solid #ced4da"
-    border_radius: 0.25rem
-    font_size: 1rem
+List:
+  behavior: {}
+  bootstrap:
+    container: "list-group"
+    item: "list-group-item"
+    dense: "list-group-item py-2 px-3"
+    flush: "list-group-flush"
+    horizontal: "list-group-horizontal"
 
-  Select:
-    width: "100%"
-    padding: "0.375rem 0.75rem"
-    border: "1px solid #ced4da"
-    border_radius: 0.25rem
-    font_size: 1rem
+Popover:
+  behavior: {}
+  bootstrap:
+    trigger: "data-bs-toggle='popover'"
+    content: "popover"
+    header: "popover-header"
+    body: "popover-body"
 
-  Badge:
-    border_radius: 0.25rem
-    font_size: 75%
-    padding: "0.25em 0.4em"
+Timeline:
+  behavior: {}
+  bootstrap:
+    container: "timeline"
+    item: "timeline-item position-relative ps-4 pb-4 border-start border-2"
+    dot: "timeline-dot position-absolute start-0 translate-middle rounded-circle bg-primary"
+    content: "timeline-content"
+    label: "small text-muted"
 
-  Avatar:
-    size_xs: 24px
-    size_sm: 32px
-    size_md: 40px
-    size_lg: 64px
-    border_radius: "50%"
-    background: "#6c757d"
-    text_color: "#ffffff"
+Tooltip:
+  behavior: {}
+  bootstrap:
+    trigger: "data-bs-toggle='tooltip'"
+    placement: "data-bs-placement='top'"
+    content: "tooltip"
 
-  Chip:
-    border_radius: 0.25rem
-    padding: "0.25em 0.4em"
-    font_size: 0.875rem
+Autocomplete:
+  behavior:
+    filterable: true
+    searchable: true
+  bootstrap:
+    container: "position-relative"
+    input: "form-control"
+    dropdown: "dropdown-menu w-100 show"
+    option: "dropdown-item"
+    option_selected: "dropdown-item active"
 
-  Toast:
-    position: fixed
-    z_index: 1090
-    min_width: 300px
-    border_radius: 0.25rem
-    box_shadow: "0 0.125rem 0.25rem rgba(0,0,0,0.075)"
-    padding: "0.75rem 0.75rem"
+Checkbox:
+  behavior: {}
+  bootstrap:
+    input: "form-check-input"
+    label: "form-check-label"
+    switch: "form-switch"
+    inline: "form-check form-check-inline"
 
-  Spinner:
-    size: 24px
-    border_width: 0.2em
-    border_color_track: "transparent"
-    border_color_primary: "#0d6efd"
+ColorPicker:
+  behavior: {}
+  bootstrap:
+    container: "d-flex align-items-center gap-2"
+    input: "form-control form-control-color w-auto"
+    swatch: "rounded border"
 
-  ProgressBar:
-    height: 0.5rem
-    background_track: "#e9ecef"
-    background_primary: "#0d6efd"
-    background_success: "#198754"
-    background_error: "#dc3545"
-    border_radius: 0.25rem
+DatePicker:
+  behavior: {}
+  bootstrap:
+    container: "input-group"
+    input: "form-control"
+    addon: "input-group-text"
+    calendar: "datepicker-dropdown"
+    day: "day"
+    day_selected: "active"
+    day_disabled: "disabled"
 
-  Pagination:
-    font_size: 1rem
-    padding_btn: "0.375rem 0.75rem"
-    border_radius: 0.25rem
+DateTimePicker:
+  behavior: {}
+  bootstrap:
+    container: "input-group"
+    input: "form-control"
+    addon: "input-group-text"
 
-  Tabs:
-    padding_tab: "1rem"
-    font_size: 1rem
-    font_weight: 400
-    padding_content: 12px
+FileUpload:
+  behavior: {}
+  bootstrap:
+    container: "border-2 border-dashed rounded-3 p-4 text-center"
+    drop: "border-primary bg-primary-subtle"
+    input: "form-control form-control-sm"
+    button: "btn btn-primary btn-sm"
+    file_list: "list-group mt-3"
+    file_item: "list-group-item d-flex justify-content-between"
 
-  Accordion:
-    border: "1px solid rgba(0,0,0,0.125)"
-    border_radius: 0.25rem
-    padding_header: "1rem 1.25rem"
-    padding_body: "1rem 1.25rem"
+FormBuilder:
+  behavior:
+    form_layout: "single_column"
+    validation_mode: "on_submit"
+    conditional_enabled: false
+  bootstrap:
+    form: "row g-3"
+    field: "col-12"
+    two_column: "col-md-6"
+    error_summary: "alert alert-danger"
+    wizard_step: "card border-bottom"
 
-  Alert:
-    border_radius: 0.25rem
-    padding: "1rem 1rem"
-    font_size: 1rem
+FormField:
+  behavior:
+    conditional_enabled: false
+  bootstrap:
+    container: "mb-3"
+    label: "form-label"
+    hint: "form-text"
+    error: "invalid-feedback"
 
-  Skeleton:
-    background: "#dee2e6"
-    border_radius_rect: 0.25rem
-    default_height: 16px
+Input:
+  behavior:
+    conditional_enabled: false
+  bootstrap:
+    container: "mb-3"
+    input: "form-control"
+    label: "form-label"
+    error: "is-invalid"
+    disabled: "form-control-plaintext"
+    readonly: "form-control-plaintext"
+    placeholder: "placeholder={hint}"
+    sm: "form-control-sm"
+    lg: "form-control-lg"
 
-  Breadcrumbs:
-    font_size: 1rem
+Radio:
+  behavior: {}
+  bootstrap:
+    input: "form-check-input"
+    label: "form-check-label"
+    group: "d-flex flex-column gap-2"
+    inline: "form-check form-check-inline"
 
-  Drawer:
-    width: 320px
-    background: "#ffffff"
-    z_index: 1050
-    padding_body: 16px
+RichTextEditor:
+  behavior: {}
+  bootstrap:
+    container: "card"
+    toolbar: "card-header d-flex gap-1"
+    button: "btn btn-sm btn-outline-secondary"
+    content: "card-body min-vh-25"
 
-  Dropdown:
-    width: 10rem
-    background: "#ffffff"
-    border_radius: 0.25rem
-    box_shadow: "0 0.5rem 1rem rgba(0,0,0,0.15)"
-    z_index: 1000
-    padding_item: "0.25rem 1.5rem"
-    font_size_item: 1rem
+Select:
+  behavior: {}
+  bootstrap:
+    container: "mb-3"
+    select: "form-select"
+    label: "form-label"
+    multiple: "form-select multiple"
+    sm: "form-select-sm"
+    lg: "form-select-lg"
 
-  Tooltip:
-    background_dark: "#000000"
-    text_color_dark: "#ffffff"
-    border_radius: 0.25rem
-    padding: "0.25rem 0.5rem"
-    font_size: 0.875rem
-    z_index: 1080
+Slider:
+  behavior: {}
+  bootstrap:
+    input: "form-range"
+    label: "form-label"
+    value: "badge bg-primary"
 
-  Container:
-    max_width_xs: 540px
-    max_width_sm: 720px
-    max_width_md: 960px
-    max_width_lg: 1140px
-    max_width_xl: 1320px
-    padding: 15px
+Switch:
+  behavior: {}
+  bootstrap:
+    container: "form-check form-switch d-flex align-items-center gap-2"
+    input: "form-check-input"
+    label: "form-check-label"
 
-  FacetedSearch:
-    sidebar_width: 240px
-    card_min_width: 280px
+Textarea:
+  behavior: {}
+  bootstrap:
+    container: "mb-3"
+    textarea: "form-control"
+    label: "form-label"
+    error: "is-invalid"
+    rows: "rows={4}"
 
-  ProductList:
-    sidebar_width: 260px
-    container_max_width: 1200px
+Alert:
+  behavior: {}
+  bootstrap:
+    container: "alert"
+    info: "alert-info"
+    success: "alert-success"
+    warning: "alert-warning"
+    error: "alert-danger"
+    dismissible: "alert-dismissible fade show"
+    dismiss: "btn-close"
 
-  ProductDetail:
-    container_max_width: 1200px
+CircularProgress:
+  behavior: {}
+  bootstrap:
+    container: "d-flex justify-content-center"
+    spinner: "spinner-border text-primary"
+    sm: "spinner-border-sm"
 
-  ConsentBanner:
-    position: fixed
-    bottom: 0
-    z_index: 1050
-    background: "#ffffff"
+Dialog:
+  behavior:
+    close_on_backdrop: true
+    show_cancel: true
+    default_width: "md"
+  bootstrap:
+    overlay: "modal fade"
+    container: "modal-dialog"
+    header: "modal-header"
+    body: "modal-body"
+    footer: "modal-footer"
+    sm: "modal-dialog modal-sm"
+    md: "modal-dialog"
+    lg: "modal-dialog modal-lg"
+    xl: "modal-dialog modal-xl"
+    full_screen: "modal-dialog modal-fullscreen"
 
-  ApprovalTimeline:
-    container_max_width: 1200px
+ErrorBoundary:
+  behavior: {}
+  bootstrap:
+    container: "d-flex flex-column align-items-center justify-content-center p-5 text-center"
+    icon: "text-danger display-4"
+    title: "h5 fw-bold text-dark"
+    message: "small text-muted mt-2"
+    retry: "btn btn-primary mt-3"
 
-  BulkDashboard:
-    container_max_width: 1400px
+LinearProgress:
+  behavior: {}
+  bootstrap:
+    container: "progress"
+    bar: "progress-bar"
+    indeterminate: "progress-bar-animated"
+    primary: "bg-primary"
+    success: "bg-success"
+    error: "bg-danger"
+    label: "progress-bar-label"
+    height_sm: "progress-sm"
+    height_lg: "progress-lg"
 
-  RateLimitDashboard:
-    container_max_width: 1400px
+Modal:
+  behavior:
+    close_on_backdrop: true
+    show_cancel: true
+    default_width: "lg"
+  bootstrap:
+    overlay: "modal fade"
+    container: "modal-dialog modal-lg"
+    header: "modal-header"
+    body: "modal-body"
+    footer: "modal-footer justify-content-end"
+    sm: "modal-dialog modal-sm"
+    md: "modal-dialog"
+    lg: "modal-dialog modal-lg"
+    xl: "modal-dialog modal-xl"
 
-  TransactionDashboard:
-    container_max_width: 1200px
+ProgressBar:
+  behavior: {}
+  bootstrap:
+    container: "progress"
+    bar: "progress-bar"
+    primary: "bg-primary"
+    success: "bg-success"
+    error: "bg-danger"
+    label: "progress-bar-label"
+    height: "height-2"
 
-  ChatWindow:
-    container_max_width: 1200px
+Skeleton:
+  behavior: {}
+  bootstrap:
+    container: "skeleton-shimmer"
+    text: "placeholder bg-secondary w-100"
+    circle: "placeholder bg-secondary rounded-circle"
+    rect: "placeholder bg-secondary rounded"
+    animation: "placeholder-glow"
 
-  WebhookDashboard:
-    container_max_width: 1200px
+Snackbar:
+  behavior: {}
+  bootstrap:
+    container: "position-fixed bottom-0 end-0 p-3 z-50"
+    success: "alert alert-success"
+    error: "alert alert-danger"
+    info: "alert alert-info"
+    warning: "alert alert-warning"
+    body: "alert-body"
 
-  RetentionDashboard:
-    container_max_width: 1200px
+Spinner:
+  behavior: {}
+  bootstrap:
+    container: "d-flex justify-content-center"
+    spinner: "spinner-border text-primary"
+    grow: "spinner-grow text-primary"
+    sm: "spinner-border-sm"
 
-# Angular
-angular:
-  Sidebar:
-    width: 280px
-    width_antd: 220px
-    width_carbon: 280px
-    background: "#ffffff"
-    header_height: 56px
+Toast:
+  behavior: {}
+  bootstrap:
+    container: "toast position-fixed top-0 end-0 p-3"
+    header: "toast-header"
+    body: "toast-body"
+    success: "text-bg-success"
+    error: "text-bg-danger"
+    info: "text-bg-info"
+    warning: "text-bg-warning"
 
-  Navbar:
-    height_antd: 64px
-    height_carbon: 48px
-    background: "#ffffff"
-    z_index: 1030
+Box:
+  behavior: {}
+  bootstrap:
+    container: ""
+    padding: "p-3"
+    margin: "m-3"
+    centered: "d-flex align-items-center justify-content-center"
 
-  Dialog:
-    width_antd: 416px
-    width_carbon: 672px
-    background: "#ffffff"
-    border_radius: 4px
-    z_index: 1050
+Column:
+  behavior: {}
+  bootstrap:
+    container: "d-flex flex-column"
+    gap: "gap-3"
+    center: "align-items-center"
 
-  Toast:
-    min_width_bootstrap: 300px
-    min_width_antd: 336px
-    min_width_carbon: 340px
-    z_index: 1090
+Container:
+  behavior: {}
+  bootstrap:
+    xs: "container"
+    sm: "container-sm"
+    md: "container-md"
+    lg: "container-lg"
+    xl: "container-xl"
+    fluid: "container-fluid"
 
-  Pagination:
-    btn_size_antd: 32px
-    btn_size_carbon: 28px
+Divider:
+  behavior: {}
+  bootstrap:
+    horizontal: "hr"
+    vertical: "vr"
+    soft: "hr opacity-50"
+    thick: "hr opacity-100"
 
-  DesignTokens:
-    font_size_base: 1rem
-    font_size_sm: 0.875rem
-    control_height: 1.5rem
-    z_index_image: 1050
-    color_blue_500: "#0d6efd"
+Flex:
+  behavior: {}
+  bootstrap:
+    container: "d-flex"
+    row: "flex-row"
+    col: "flex-column"
+    wrap: "flex-wrap"
+    center: "align-items-center justify-content-center"
+    between: "justify-content-between"
+    gap: "gap-3"
 
-  FacetedSearch:
-    sidebar_width: 240px
+Grid:
+  behavior: {}
+  bootstrap:
+    container: "row g-3"
+    cols_1: "col-12"
+    cols_2: "col-6"
+    cols_3: "col-md-4"
+    cols_4: "col-md-3"
+    cols_6: "col-md-2"
 
-  ComplianceDashboard:
-    container_max_width: 1200px
+Row:
+  behavior: {}
+  bootstrap:
+    container: "d-flex flex-row"
+    gap: "gap-3"
+    center: "align-items-center"
+    between: "justify-content-between"
 
-  PaymentHistory:
-    container_max_width: 1200px
+Spacer:
+  behavior: {}
+  bootstrap:
+    xs: "my-1"
+    sm: "my-2"
+    md: "my-3"
+    lg: "my-4"
+    xl: "my-5"
 
-  PaymentDashboard:
-    container_max_width: 1200px
+Breadcrumbs:
+  behavior: {}
+  bootstrap:
+    container: "breadcrumb"
+    item: "breadcrumb-item"
+    current: "breadcrumb-item active"
+    separator: "/"
 
-  RateLimitDashboard:
-    container_max_width: 1400px
+Menu:
+  behavior: {}
+  bootstrap:
+    container: "dropdown-menu"
+    item: "dropdown-item"
+    item_disabled: "dropdown-item disabled"
+    divider: "dropdown-divider"
+    header: "dropdown-header"
+    end: "dropdown-menu-end"
 
-  QuotaStatus:
-    container_max_width: 1400px
+Navbar:
+  behavior: {}
+  bootstrap:
+    container: "navbar navbar-expand-lg bg-white border-bottom px-4 py-2 d-flex align-items-center justify-content-between"
+    brand: "navbar-brand fw-bold"
+    nav: "navbar-nav d-flex gap-2"
+    item: "nav-link"
+    toggler: "navbar-toggler"
+    collapse: "collapse navbar-collapse"
 
-  BulkDashboard:
-    container_max_width: 1400px
+Pagination:
+  behavior:
+    paginated: true
+    page_size: 20
+  bootstrap:
+    container: "d-flex justify-content-between align-items-center px-3 py-2"
+    info: "small text-muted"
+    buttons: "pagination mb-0"
+    button: "page-link"
+    button_active: "page-item active"
+    button_disabled: "page-item disabled"
+    size_sm: "pagination-sm"
+    size_lg: "pagination-lg"
 
-  BulkJobDetails:
-    container_max_width: 1200px
-    dialog_width: 600px
+Sidebar:
+  behavior: {}
+  bootstrap:
+    container: "col-auto col-md-4 col-xl-3 px-sm-2 px-0 bg-white border-end d-flex flex-column h-100"
+    item: "list-group-item-action d-flex align-items-center px-3 py-2 text-sm"
+    item_active: "active"
+    group_header: "list-group-item text-uppercase small fw-bold text-muted px-3 py-1"
+    nav: "nav nav-pills flex-column"
+    collapsed: "col-auto"
 
-  RetentionPolicy:
-    dialog_width: 520px
+Stepper:
+  behavior: {}
+  bootstrap:
+    container: "d-flex align-items-center"
+    step: "d-flex align-items-center"
+    step_completed: "text-success"
+    step_active: "text-primary"
+    step_inactive: "text-muted"
+    connector: "flex-grow-1 border-top border-secondary"
+    circle: "rounded-circle d-flex align-items-center justify-content fw-medium"
 
-  RetentionErasure:
-    dialog_width: 600px
+Tabs:
+  behavior: {}
+  bootstrap:
+    container: ""
+    nav: "nav nav-tabs border-bottom"
+    tab: "nav-link"
+    tab_active: "nav-link active"
+    panel: "tab-content p-3"
+    pills: "nav nav-pills"
 
-  NotificationPreference:
-    dialog_width: 600px
+TreeView:
+  behavior: {}
+  bootstrap:
+    container: "small"
+    node: "d-flex align-items-center px-2 py-1 rounded cursor-pointer"
+    node_selected: "bg-primary-subtle text-primary"
+    children: "ms-3 ps-3 border-start border-secondary"
+    toggle: "me-1"
 
-  ConsentBanner:
-    border_radius: 0.25rem
-    padding: "0.75rem 1rem"
+Accordion:
+  behavior: {}
+  bootstrap:
+    container: "accordion"
+    item: "accordion-item"
+    header: "accordion-header"
+    button: "accordion-button"
+    body: "accordion-body"
+    collapsed: "accordion-button collapsed"
 
-  ProductList:
-    container_max_width: 1200px
+Drawer:
+  behavior: {}
+  bootstrap:
+    overlay: "offcanvas-backdrop show"
+    container: "offcanvas offcanvas-end"
+    header: "offcanvas-header"
+    body: "offcanvas-body"
+    width_sm: "offcanvas-end w-50"
+    width_lg: "offcanvas-end w-75"
 
-  ProductDetail:
-    container_max_width: 1200px
+ExpansionPanel:
+  behavior: {}
+  bootstrap:
+    container: "accordion-item"
+    header: "accordion-header"
+    button: "accordion-button"
+    body: "accordion-body"
+    collapsed: "accordion-button collapsed"
+
+BadgeButton:
+  behavior: {}
+  bootstrap:
+    container: "btn position-relative"
+    badge: "position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+
+Button:
+  behavior: {}
+  bootstrap:
+    primary: "btn btn-primary"
+    secondary: "btn btn-secondary"
+    danger: "btn btn-danger"
+    outline: "btn btn-outline-primary"
+    link: "btn btn-link"
+    ghost: "btn btn-light"
+    sm: "btn-sm"
+    lg: "btn-lg"
+    disabled: "disabled"
+    block: "w-100"
+    icon: "btn btn-icon"
+
+IconButton:
+  behavior: {}
+  bootstrap:
+    container: "btn btn-outline-secondary d-inline-flex align-items-center justify-content-center"
+    sm: "btn-sm p-1"
+    md: "btn p-2"
+    lg: "btn-lg p-2"
+
+Image:
+  behavior: {}
+  bootstrap:
+    container: "overflow-hidden"
+    img: "img-fluid"
+    thumbnail: "img-thumbnail"
+    rounded: "rounded-3"
+    fallback: "bg-light d-flex align-items-center justify-content text-muted"
+
+ThemeProvider:
+  behavior:
+    dark_mode: false
+  bootstrap:
+    light: "bg-white text-dark"
+    dark: "bg-dark text-light"
+    data_theme: "data-bs-theme='dark'"
+
+# ============================================================================
+# Dashboard components (legacy — keep for backward compat)
+# ============================================================================
+
+FacetedSearch:
+  behavior: {}
+  bootstrap:
+    sidebar: "col-3 border-end p-3 bg-light"
+    card: "card shadow-sm min-w-[280px]"
+
+ProductList:
+  behavior: {}
+  bootstrap:
+    sidebar: "col-3"
+    container: "container-lg"
+
+ProductDetail:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"
+
+ConsentBanner:
+  behavior: {}
+  bootstrap:
+    container: "fixed-bottom bg-white border-top p-3 shadow-lg"
+
+ApprovalTimeline:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"
+
+BulkDashboard:
+  behavior: {}
+  bootstrap:
+    container: "container-fluid px-4"
+
+RateLimitDashboard:
+  behavior: {}
+  bootstrap:
+    container: "container-fluid px-4"
+
+TransactionDashboard:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"
+
+ChatWindow:
+  behavior: {}
+  bootstrap:
+    container: "container-lg d-flex flex-column h-[600px]"
+    messages: "flex-grow-1 overflow-auto p-3"
+    input: "border-top p-3"
+
+WebhookDashboard:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"
+
+RetentionDashboard:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"
+
+ComplianceDashboard:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"
+
+PaymentHistory:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"
+
+PaymentDashboard:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"
+
+QuotaStatus:
+  behavior: {}
+  bootstrap:
+    container: "container-fluid px-4"
+
+BulkJobDetails:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"
+
+RetentionPolicy:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"
+
+RetentionErasure:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"
+
+NotificationPreference:
+  behavior: {}
+  bootstrap:
+    container: "container-lg"

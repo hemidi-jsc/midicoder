@@ -1,316 +1,651 @@
-# Tailwind CSS preset
+# ============================================================================
+# Tailwind CSS Preset v2 — Component behavior + tokens
+# ============================================================================
 
-react:
-  Sidebar:
-    width: 256px            # w-64
-    width_collapsed: 60px
-    background: "#ffffff"    # bg-white
-    border_right: "1px solid #e5e7eb"  # border-r border-gray-200
-    display: flex
-    flex_direction: column
+DataTable:
+  behavior:
+    sortable: true
+    paginated: true
+    page_size: 20
+    selectable: false
+    filterable: true
+    searchable: true
+    editable: false
+    virtual_scroll: false
+  tailwind:
+    container: "w-full bg-white rounded-lg shadow overflow-x-auto"
+    header_row: "bg-gray-100 text-gray-700 font-semibold text-xs uppercase"
+    header_cell: "px-4 py-3 text-left"
+    body_row: "border-b border-gray-200 hover:bg-gray-50"
+    cell: "px-4 py-3 text-sm"
+    pagination: "flex justify-between items-center px-4 py-3"
+    empty: "text-center py-8 text-gray-400"
 
-  Navbar:
-    height: 64px            # h-16
-    background: "#ffffff"    # bg-white
-    position: sticky
-    border_bottom: "1px solid #e5e7eb"  # border-b border-gray-200
-    z_index: 50
-    box_shadow: "0 1px 2px rgba(0,0,0,0.05)"  # shadow-sm
+Card:
+  behavior: {}
+  tailwind:
+    container: "bg-white rounded-lg shadow overflow-hidden"
+    header: "px-6 py-4 border-b border-gray-200"
+    body: "px-6 py-4"
+    footer: "px-6 py-4 border-t border-gray-200 bg-gray-50"
 
-  Modal:
-    width_sm: 384px         # max-w-sm
-    width_md: 448px         # max-w-md
-    width_lg: 512px         # max-w-lg
-    width_xl: 896px         # max-w-4xl
-    background: "#ffffff"    # bg-white
-    border_radius: 12px     # rounded-xl
-    max_height: "90vh"
-    z_index: 50
+CardList:
+  behavior: {}
+  tailwind:
+    container: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
 
-  Dialog:
-    width_sm: 416px
-    width_md: 520px
-    width_lg: 672px
-    background: "#ffffff"
-    border_radius: 12px
-    z_index: 50
+Avatar:
+  behavior: {}
+  tailwind:
+    container: "flex items-center gap-3"
+    img: "w-10 h-10 rounded-full object-cover"
+    fallback: "w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-medium"
+    name: "text-sm font-medium"
+    xs: "w-6 h-6"
+    sm: "w-8 h-8"
+    md: "w-10 h-10"
+    lg: "w-12 h-12"
 
-  Card:
-    background: "#ffffff"
-    border_radius: 8px      # rounded-lg
-    border: "1px solid #e5e7eb"  # border border-gray-200
-    box_shadow: "0 4px 6px rgba(0,0,0,0.1)"  # shadow-md
-    padding: 20px           # p-5
-    overflow: hidden
+Badge:
+  behavior: {}
+  tailwind:
+    container: "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+    info: "bg-blue-100 text-blue-800"
+    success: "bg-green-100 text-green-800"
+    warning: "bg-yellow-100 text-yellow-800"
+    error: "bg-red-100 text-red-800"
+    neutral: "bg-gray-100 text-gray-800"
 
-  DataTable:
-    background_header: "#f9fafb"  # bg-gray-50
-    background_body: "#ffffff"
-    background_hover: "#f9fafb"   # hover:bg-gray-50
-    border: "1px solid #e5e7eb"
-    border_radius: 8px
-    padding_cell: "12px 24px"
-    font_size_header: 12px        # text-xs
-    text_transform_header: uppercase
-    overflow_x: auto
+Chip:
+  behavior: {}
+  tailwind:
+    container: "inline-flex items-center px-3 py-1 rounded-full text-sm font-medium"
+    removable: "gap-1"
+    icon: "w-4 h-4"
+    outline: "border border-gray-300"
+    filled: "bg-indigo-100 text-indigo-800"
 
-  Button:
-    padding_sm: "6px 12px"
-    padding_md: "8px 16px"
-    padding_lg: "12px 24px"
-    font_size_sm: 14px
-    font_size_md: 14px
-    font_size_lg: 16px
-    font_weight: 500          # font-medium
-    border_radius: 8px        # rounded-lg
+DescriptionList:
+  behavior: {}
+  tailwind:
+    container: "divide-y divide-gray-200"
+    term: "text-sm font-medium text-gray-500 py-2"
+    detail: "text-sm text-gray-900 pb-2"
+    horizontal: "grid grid-cols-3 gap-4"
 
-  Input:
-    width: "100%"
-    padding: "8px 12px"       # px-3 py-2
-    border: "1px solid #d1d5db"  # border border-gray-300
-    border_radius: 6px        # rounded-md
-    font_size: 14px
+List:
+  behavior: {}
+  tailwind:
+    container: "divide-y divide-gray-200"
+    item: "px-4 py-3 hover:bg-gray-50"
+    item_dense: "px-4 py-2"
 
-  Select:
-    width: "100%"
-    padding: "8px 12px"
-    border: "1px solid #d1d5db"
-    border_radius: 6px
-    font_size: 14px
+Popover:
+  behavior: {}
+  tailwind:
+    container: "absolute z-50 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200"
+    content: "p-4"
 
-  Badge:
-    border_radius: 9999px     # rounded-full
-    font_size_sm: 12px        # text-xs
-    font_size_md: 14px        # text-sm
-    padding_sm: "2px 8px"     # px-2 py-0.5
-    padding_md: "2px 10px"    # px-2.5 py-0.5
+Timeline:
+  behavior: {}
+  tailwind:
+    container: "relative pl-8 border-l-2 border-gray-200"
+    dot: "absolute -left-2.5 w-5 h-5 rounded-full bg-indigo-600 border-2 border-white"
+    content: "mb-6"
+    label: "text-sm text-gray-500"
 
-  Avatar:
-    size_xs: 24px             # h-6 w-6
-    size_sm: 32px             # h-8 w-8
-    size_md: 40px             # h-10 w-10
-    size_lg: 48px             # h-12 w-12
-    border_radius: "50%"
-    background: "#9ca3af"     # bg-gray-400
-    text_color: "#ffffff"
+Tooltip:
+  behavior: {}
+  tailwind:
+    container: "relative group"
+    tip: "absolute invisible group-hover:visible z-50 px-2 py-1 text-xs bg-gray-900 text-white rounded whitespace-nowrap"
 
-  Chip:
-    border_radius: 9999px
-    padding: "4px 12px"       # px-3 py-1
-    font_size: 14px           # text-sm
-    font_weight: 500
+Autocomplete:
+  behavior:
+    filterable: true
+    searchable: true
+  tailwind:
+    container: "relative"
+    input: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+    dropdown: "absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto"
+    option: "px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"
+    option_selected: "bg-indigo-50 text-indigo-700"
 
-  Toast:
-    position: fixed
-    z_index: 50
-    min_width: 300px
-    border_radius: 8px        # rounded-lg
-    box_shadow: "0 10px 15px rgba(0,0,0,0.1)"  # shadow-lg
-    padding: "12px 16px"      # px-4 py-3
-    text_color: "#ffffff"
+Checkbox:
+  behavior: {}
+  tailwind:
+    input: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+    label: "ml-2 text-sm text-gray-700"
 
-  Spinner:
-    size: 24px
-    border_width: 2px         # border-2
-    border_color_track: "#e5e7eb"  # border-gray-200
-    border_color_primary: "#3b82f6"  # border-blue-500
+ColorPicker:
+  behavior: {}
+  tailwind:
+    container: "flex items-center gap-2"
+    swatch: "w-8 h-8 rounded border border-gray-300"
+    input: "w-24 px-2 py-1 text-sm border border-gray-300 rounded"
 
-  ProgressBar:
-    height: 8px               # h-2
-    background_track: "#e5e7eb"   # bg-gray-200
-    background_primary: "#2563eb" # bg-blue-600
-    background_success: "#16a34a" # bg-green-600
-    background_error: "#dc2626"   # bg-red-600
-    border_radius: 9999px     # rounded-full
+DatePicker:
+  behavior: {}
+  tailwind:
+    container: "relative"
+    input: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+    calendar: "absolute z-50 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2"
+    day: "w-8 h-8 flex items-center justify-center text-sm rounded hover:bg-gray-100"
+    day_selected: "bg-indigo-600 text-white"
+    day_disabled: "text-gray-300"
 
-  Pagination:
-    font_size: 14px           # text-sm
-    padding_btn: "8px 16px"
-    border_radius: 4px
-    font_weight_active: 600   # font-semibold
+DateTimePicker:
+  behavior: {}
+  tailwind:
+    container: "relative"
+    input: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+    picker: "absolute z-50 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2"
+    time: "flex items-center gap-2"
 
-  Tabs:
-    padding_tab: "16px 4px"   # py-4 px-1
-    font_size: 14px           # text-sm
-    font_weight: 500
-    padding_content: 16px     # p-4
-    border_bottom: "1px solid #e5e7eb"
+FileUpload:
+  behavior: {}
+  tailwind:
+    container: "border-2 border-dashed border-gray-300 rounded-lg p-6 text-center"
+    drop: "border-indigo-500 bg-indigo-50"
+    button: "bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+    file_list: "mt-4 space-y-2"
+    file_item: "flex items-center justify-between px-3 py-2 bg-gray-50 rounded"
 
-  Accordion:
-    border: "1px solid #e5e7eb"
-    border_radius: 8px
-    padding_header: "12px 16px"
-    padding_body: "12px 16px"
-    background_expanded: "#f3f4f6"  # bg-gray-100
-    background_collapsed: "#ffffff"
+FormBuilder:
+  behavior:
+    form_layout: "single_column"
+    validation_mode: "on_submit"
+    conditional_enabled: false
+  tailwind:
+    form: "space-y-4"
+    field: "flex flex-col gap-1"
+    two_column: "grid grid-cols-2 gap-4"
+    error_summary: "bg-red-50 border border-red-200 rounded-lg p-4 text-red-700"
+    wizard_step: "border-b border-gray-200 pb-4 mb-4"
 
-  Alert:
-    border_radius: 8px
-    padding: "12px 16px"
-    font_size: 14px
+FormField:
+  behavior:
+    conditional_enabled: false
+  tailwind:
+    container: "flex flex-col gap-1"
+    label: "text-sm font-medium text-gray-700"
+    hint: "text-xs text-gray-500"
+    error: "text-red-500 text-xs mt-1"
 
-  Skeleton:
-    background: "#d1d5db"     # bg-gray-300
-    border_radius_rect: 4px   # 0.25rem
-    border_radius_rounded: 8px  # 0.5rem
-    default_height: 16px
+Input:
+  behavior:
+    conditional_enabled: false
+  tailwind:
+    container: "flex flex-col gap-1"
+    input: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+    label: "text-sm font-medium text-gray-700"
+    error: "text-red-500 text-xs mt-1"
+    disabled: "bg-gray-100 text-gray-500 cursor-not-allowed"
 
-  Breadcrumbs:
-    font_size: 14px
-    font_weight_active: 500
+Radio:
+  behavior: {}
+  tailwind:
+    input: "h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500"
+    label: "ml-2 text-sm text-gray-700"
+    group: "flex flex-col gap-2"
 
-  Drawer:
-    width: 320px              # w-80
-    background: "#ffffff"
-    position: fixed
-    z_index: 50
-    box_shadow: "0 20px 25px rgba(0,0,0,0.1)"  # shadow-xl
-    padding_body: 24px
+RichTextEditor:
+  behavior: {}
+  tailwind:
+    container: "border border-gray-300 rounded-lg overflow-hidden"
+    toolbar: "flex items-center gap-1 px-2 py-1 bg-gray-50 border-b border-gray-200"
+    button: "px-2 py-1 text-sm rounded hover:bg-gray-200"
+    content: "min-h-[200px] p-3 focus:outline-none"
 
-  Dropdown:
-    width: 224px              # w-56
-    background: "#ffffff"
-    border_radius: 6px        # rounded-md
-    box_shadow: "0 10px 15px rgba(0,0,0,0.1)"  # shadow-lg
-    z_index: 10
-    padding_item: "8px 16px"
-    font_size_item: 14px
+Select:
+  behavior: {}
+  tailwind:
+    container: "flex flex-col gap-1"
+    select: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+    label: "text-sm font-medium text-gray-700"
+    multi: "flex flex-wrap gap-1"
+    chip: "bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded text-sm"
 
-  Tooltip:
-    background_dark: "#111827"  # bg-gray-900
-    background_light: "#ffffff"
-    text_color_dark: "#ffffff"
-    text_color_light: "#111827"
-    border_radius: 4px        # rounded
-    padding: "6px 12px"       # px-3 py-1.5
-    font_size: 14px
-    z_index: 50
+Slider:
+  behavior: {}
+  tailwind:
+    track: "w-full h-2 bg-gray-200 rounded-full"
+    fill: "h-2 bg-indigo-600 rounded-full"
+    thumb: "w-4 h-4 bg-white border-2 border-indigo-600 rounded-full -mt-1.5"
 
-  Container:
-    max_width_xs: 576px       # max-w-xl
-    max_width_sm: 672px       # max-w-2xl
-    max_width_md: 896px       # max-w-4xl
-    max_width_lg: 1280px      # max-w-7xl
-    max_width_xl: 1536px      # max-w-screen-2xl
-    padding: 16px             # px-4
+Switch:
+  behavior: {}
+  tailwind:
+    container: "flex items-center gap-2"
+    track: "w-10 h-6 rounded-full bg-gray-300 relative"
+    track_checked: "bg-indigo-600"
+    thumb: "w-5 h-5 rounded-full bg-white absolute top-0.5 left-0.5 transition"
+    thumb_checked: "left-4.5"
 
-  FacetedSearch:
-    sidebar_width: 240px
-    card_min_width: 280px
+Textarea:
+  behavior: {}
+  tailwind:
+    container: "flex flex-col gap-1"
+    textarea: "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
+    label: "text-sm font-medium text-gray-700"
+    error: "text-red-500 text-xs mt-1"
 
-  ProductList:
-    sidebar_width: 260px
-    container_max_width: 1200px
+Alert:
+  behavior: {}
+  tailwind:
+    container: "p-4 rounded-lg"
+    info: "bg-blue-50 text-blue-800 border border-blue-200"
+    success: "bg-green-50 text-green-800 border border-green-200"
+    warning: "bg-yellow-50 text-yellow-800 border border-yellow-200"
+    error: "bg-red-50 text-red-800 border border-red-200"
+    dismiss: "ml-auto cursor-pointer"
 
-  ProductDetail:
-    container_max_width: 1200px
+CircularProgress:
+  behavior: {}
+  tailwind:
+    container: "flex items-center justify-center"
+    circle: "w-8 h-8 animate-spin"
 
-  ConsentBanner:
-    position: fixed
-    bottom: 0
-    z_index: 50
-    background: "#ffffff"
+Dialog:
+  behavior:
+    close_on_backdrop: true
+    show_cancel: true
+    default_width: "md"
+  tailwind:
+    overlay: "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+    container: "bg-white rounded-lg shadow-xl"
+    header: "flex items-center justify-between px-6 py-4 border-b border-gray-200"
+    body: "px-6 py-4"
+    footer: "flex justify-end gap-3 px-6 py-4 border-t border-gray-200"
 
-  ApprovalTimeline:
-    container_max_width: 1200px
+ErrorBoundary:
+  behavior: {}
+  tailwind:
+    container: "flex flex-col items-center justify-center p-8 text-center"
+    icon: "text-red-500 w-12 h-12"
+    title: "text-lg font-semibold text-gray-900"
+    message: "text-sm text-gray-500 mt-2"
+    retry: "bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 mt-4"
 
-  BulkDashboard:
-    container_max_width: 1400px
+LinearProgress:
+  behavior: {}
+  tailwind:
+    container: "w-full h-2 bg-gray-200 rounded-full overflow-hidden"
+    bar: "h-full bg-indigo-600 transition-all duration-300"
+    indeterminate: "animate-pulse"
 
-  RateLimitDashboard:
-    container_max_width: 1400px
+Modal:
+  behavior:
+    close_on_backdrop: true
+    show_cancel: true
+    default_width: "lg"
+  tailwind:
+    overlay: "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+    container: "bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4"
+    header: "flex items-center justify-between px-6 py-4 border-b border-gray-200"
+    body: "px-6 py-4"
+    footer: "flex justify-end gap-3 px-6 py-4 border-t border-gray-200"
+    sm: "max-w-sm"
+    md: "max-w-md"
+    lg: "max-w-2xl"
+    xl: "max-w-4xl"
 
-  TransactionDashboard:
-    container_max_width: 1200px
+ProgressBar:
+  behavior: {}
+  tailwind:
+    container: "w-full h-2 bg-gray-200 rounded-full overflow-hidden"
+    bar: "h-full rounded-full transition-all"
+    primary: "bg-indigo-600"
+    success: "bg-green-600"
+    error: "bg-red-600"
+    label: "text-xs text-gray-500 mt-1"
 
-  ChatWindow:
-    container_max_width: 1200px
+Skeleton:
+  behavior: {}
+  tailwind:
+    container: "animate-pulse bg-gray-200 rounded"
+    text: "h-4 w-full"
+    circle: "rounded-full"
+    rect: "rounded"
 
-  WebhookDashboard:
-    container_max_width: 1200px
+Snackbar:
+  behavior: {}
+  tailwind:
+    container: "fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg"
+    success: "bg-green-600 text-white"
+    error: "bg-red-600 text-white"
+    info: "bg-blue-600 text-white"
+    warning: "bg-yellow-600 text-white"
 
-  RetentionDashboard:
-    container_max_width: 1200px
+Spinner:
+  behavior: {}
+  tailwind:
+    container: "flex items-center justify-center"
+    spinner: "animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"
+    sm: "h-4 w-4"
+    md: "h-8 w-8"
+    lg: "h-12 w-12"
 
-# Angular
-angular:
-  Sidebar:
-    width: 256px
-    width_antd: 220px
-    width_carbon: 280px
-    background: "#ffffff"
-    header_height: 64px
+Toast:
+  behavior: {}
+  tailwind:
+    container: "fixed top-4 right-4 z-50 min-w-[300px] max-w-sm rounded-lg shadow-lg"
+    success: "bg-green-600 text-white"
+    error: "bg-red-600 text-white"
+    info: "bg-blue-600 text-white"
+    warning: "bg-yellow-600 text-white"
+    body: "px-4 py-3"
 
-  Navbar:
-    height_antd: 64px
-    height_carbon: 48px
-    background: "#ffffff"
-    z_index: 50
+Box:
+  behavior: {}
+  tailwind:
+    container: ""
+    padding: "p-4"
+    margin: "m-4"
+    centered: "flex items-center justify-center"
 
-  Dialog:
-    width_antd: 416px
-    width_carbon: 672px
-    background: "#ffffff"
-    border_radius: 12px
-    z_index: 50
+Column:
+  behavior: {}
+  tailwind:
+    container: "flex flex-col"
+    gap: "gap-4"
+    center: "items-center"
 
-  Toast:
-    min_width_bootstrap: 300px
-    min_width_antd: 336px
-    min_width_carbon: 340px
-    z_index: 50
+Container:
+  behavior: {}
+  tailwind:
+    xs: "max-w-xl mx-auto px-4"
+    sm: "max-w-2xl mx-auto px-4"
+    md: "max-w-4xl mx-auto px-4"
+    lg: "max-w-7xl mx-auto px-4"
+    xl: "max-w-screen-2xl mx-auto px-4"
 
-  Pagination:
-    btn_size_antd: 32px
-    btn_size_carbon: 28px
+Divider:
+  behavior: {}
+  tailwind:
+    horizontal: "border-t border-gray-200 my-4"
+    vertical: "w-px h-full bg-gray-200"
 
-  DesignTokens:
-    font_size_base: 1rem
-    font_size_sm: 14px
-    control_height: 32px
-    z_index_image: 1050
-    color_blue_500: "#4f46e5"
+Flex:
+  behavior: {}
+  tailwind:
+    container: "flex"
+    row: "flex-row"
+    col: "flex-col"
+    wrap: "flex-wrap"
+    center: "items-center justify-center"
+    between: "justify-between"
+    gap: "gap-4"
 
-  FacetedSearch:
-    sidebar_width: 240px
+Grid:
+  behavior: {}
+  tailwind:
+    container: "grid gap-4"
+    cols_1: "grid-cols-1"
+    cols_2: "grid-cols-2"
+    cols_3: "grid-cols-3"
+    cols_4: "grid-cols-4"
+    cols_6: "grid-cols-6"
 
-  ComplianceDashboard:
-    container_max_width: 1200px
+Row:
+  behavior: {}
+  tailwind:
+    container: "flex flex-row"
+    gap: "gap-4"
+    center: "items-center"
+    between: "justify-between"
 
-  PaymentHistory:
-    container_max_width: 1200px
+Spacer:
+  behavior: {}
+  tailwind:
+    xs: "h-1"
+    sm: "h-2"
+    md: "h-4"
+    lg: "h-8"
+    xl: "h-16"
 
-  PaymentDashboard:
-    container_max_width: 1200px
+Breadcrumbs:
+  behavior: {}
+  tailwind:
+    container: "flex items-center gap-2 text-sm"
+    item: "text-gray-500 hover:text-gray-700"
+    current: "text-gray-900 font-medium"
+    separator: "text-gray-400"
 
-  RateLimitDashboard:
-    container_max_width: 1400px
+Menu:
+  behavior: {}
+  tailwind:
+    container: "absolute z-50 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1"
+    item: "px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
+    item_disabled: "text-gray-400 cursor-not-allowed"
+    divider: "border-t border-gray-200 my-1"
+    header: "px-4 py-2 text-xs font-semibold text-gray-500 uppercase"
 
-  QuotaStatus:
-    container_max_width: 1400px
+Navbar:
+  behavior: {}
+  tailwind:
+    container: "bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between"
+    brand: "text-lg font-bold text-gray-900"
+    nav: "flex items-center gap-4"
+    item: "text-sm text-gray-600 hover:text-gray-900"
+    mobile_menu: "lg:hidden"
 
-  BulkDashboard:
-    container_max_width: 1400px
+Pagination:
+  behavior:
+    paginated: true
+    page_size: 20
+  tailwind:
+    container: "flex items-center justify-between px-4 py-3"
+    info: "text-sm text-gray-700"
+    buttons: "flex items-center gap-2"
+    button: "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+    button_active: "bg-indigo-600 text-white border-indigo-600"
+    button_disabled: "text-gray-400 cursor-not-allowed"
 
-  BulkJobDetails:
-    container_max_width: 1200px
-    dialog_width: 600px
+Sidebar:
+  behavior: {}
+  tailwind:
+    container: "w-64 bg-white border-r border-gray-200 h-full"
+    item: "flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
+    item_active: "bg-indigo-50 text-indigo-600 border-r-2 border-indigo-600"
+    group_header: "px-4 py-2 text-xs font-semibold text-gray-500 uppercase"
+    collapsed: "w-16"
 
-  RetentionPolicy:
-    dialog_width: 520px
+Stepper:
+  behavior: {}
+  tailwind:
+    container: "flex items-center"
+    step: "flex items-center"
+    step_completed: "text-green-600"
+    step_active: "text-indigo-600"
+    step_inactive: "text-gray-400"
+    connector: "flex-1 h-0.5 bg-gray-300"
+    circle: "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
 
-  RetentionErasure:
-    dialog_width: 600px
+Tabs:
+  behavior: {}
+  tailwind:
+    container: "w-full"
+    nav: "flex border-b border-gray-200"
+    tab: "px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 border-b-2 border-transparent cursor-pointer"
+    tab_active: "text-indigo-600 border-indigo-600"
+    panel: "py-4"
 
-  NotificationPreference:
-    dialog_width: 600px
+TreeView:
+  behavior: {}
+  tailwind:
+    container: "text-sm"
+    node: "flex items-center px-2 py-1 hover:bg-gray-100 rounded cursor-pointer"
+    node_selected: "bg-indigo-50 text-indigo-700"
+    children: "ml-4 pl-4 border-l border-gray-200"
+    toggle: "w-5 h-5 flex items-center justify-center mr-1"
 
-  ConsentBanner:
-    border_radius: 8px
-    padding: "12px 16px"
+Accordion:
+  behavior: {}
+  tailwind:
+    container: "border border-gray-200 rounded-lg overflow-hidden"
+    header: "flex items-center justify-between px-4 py-3 bg-gray-50 cursor-pointer hover:bg-gray-100"
+    body: "px-4 py-3"
+    icon: "text-gray-500 transition-transform"
+    icon_open: "rotate-180"
 
-  ProductList:
-    container_max_width: 1200px
+Drawer:
+  behavior: {}
+  tailwind:
+    overlay: "fixed inset-0 bg-black bg-opacity-50 z-50"
+    container: "fixed top-0 right-0 h-full w-80 bg-white shadow-xl z-50"
+    header: "flex items-center justify-between px-6 py-4 border-b border-gray-200"
+    body: "px-6 py-4 overflow-auto h-full"
 
-  ProductDetail:
-    container_max_width: 1200px
+ExpansionPanel:
+  behavior: {}
+  tailwind:
+    container: "border-b border-gray-200"
+    header: "flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50"
+    body: "px-4 py-3"
+    icon: "text-gray-500 transition-transform"
+    icon_open: "rotate-180"
+
+BadgeButton:
+  behavior: {}
+  tailwind:
+    container: "relative inline-flex items-center"
+    badge: "absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center"
+
+Button:
+  behavior: {}
+  tailwind:
+    primary: "bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-medium"
+    secondary: "bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 font-medium"
+    danger: "bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 font-medium"
+    outline: "border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 font-medium"
+    link: "text-indigo-600 hover:text-indigo-800 underline"
+    sm: "px-3 py-1 text-xs"
+    lg: "px-6 py-3 text-lg"
+    disabled: "opacity-50 cursor-not-allowed"
+
+IconButton:
+  behavior: {}
+  tailwind:
+    container: "inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100"
+    sm: "w-8 h-8"
+    lg: "w-12 h-12"
+
+Image:
+  behavior: {}
+  tailwind:
+    container: "overflow-hidden"
+    img: "w-full h-full object-cover"
+    fallback: "bg-gray-100 flex items-center justify-center text-gray-400"
+    rounded: "rounded-lg"
+
+ThemeProvider:
+  behavior:
+    dark_mode: false
+  tailwind:
+    light: "bg-white text-gray-900"
+    dark: "bg-gray-900 text-gray-100"
+    transition: "transition-colors duration-200"
+
+# ============================================================================
+# Dashboard components (legacy — keep for backward compat)
+# ============================================================================
+
+FacetedSearch:
+  behavior: {}
+  tailwind:
+    sidebar: "w-60 bg-gray-50 border-r border-gray-200 p-4"
+    card: "min-w-[280px] bg-white rounded-lg shadow"
+
+ProductList:
+  behavior: {}
+  tailwind:
+    sidebar: "w-64"
+    container: "max-w-[1200px] mx-auto"
+
+ProductDetail:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"
+
+ConsentBanner:
+  behavior: {}
+  tailwind:
+    container: "fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 p-4 shadow-lg"
+
+ApprovalTimeline:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"
+
+BulkDashboard:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1400px] mx-auto"
+
+RateLimitDashboard:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1400px] mx-auto"
+
+TransactionDashboard:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"
+
+ChatWindow:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto flex flex-col h-[600px]"
+    messages: "flex-1 overflow-y-auto p-4"
+    input: "border-t border-gray-200 p-4"
+
+WebhookDashboard:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"
+
+RetentionDashboard:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"
+
+ComplianceDashboard:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"
+
+PaymentHistory:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"
+
+PaymentDashboard:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"
+
+QuotaStatus:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1400px] mx-auto"
+
+BulkJobDetails:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"
+
+RetentionPolicy:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"
+
+RetentionErasure:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"
+
+NotificationPreference:
+  behavior: {}
+  tailwind:
+    container: "max-w-[1200px] mx-auto"

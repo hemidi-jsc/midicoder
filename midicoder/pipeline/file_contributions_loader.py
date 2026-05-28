@@ -38,7 +38,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
@@ -50,7 +50,20 @@ from midicoder.contracts.registry import (
     FRONTEND_STACKS,
     INFRA_STACK,
 )
-from midicoder.pipeline.config import resolve_render_context
+from midicoder.pipeline.config import resolve_render_context, resolve_render_context_v1
+
+# EU-0.4: Import typed models (with fallback for import safety)
+try:
+    from midicoder.packs.models import (
+        PresetType,
+        RenderContextSpec,
+        StackType,
+        StyleResolverV2,
+    )
+
+    _MODELS_AVAILABLE = True
+except ImportError:
+    _MODELS_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +167,8 @@ class FileContributions:
     per_ui_component: list[PerUIComponentFile] = field(default_factory=list)
     per_widget: list[PerWidgetFile] = field(default_factory=list)
     status: str = "stable"
+    # EU-0.4: typed render context
+    render_context: Optional[RenderContextSpec] = None
 
     @property
     def is_empty(self) -> bool:
@@ -165,6 +180,13 @@ class FileContributions:
             or self.per_ui_component
             or self.per_widget
         )
+
+    @property
+    def render_context_dict(self) -> dict[str, Any]:
+        """Trả về render_context làm flat dict cho backward compat."""
+        if self.render_context:
+            return self.render_context.to_dict()
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +370,46 @@ class FileContributionsLoader:
             if not fc.is_empty:
                 contributions.append(fc)
         return contributions
+
+    # ------------------------------------------------------------------
+    # EU-0.4: RenderContextSpec resolution
+    # ------------------------------------------------------------------
+
+    def resolve_render_context(
+        self,
+        stack_type: StackType = StackType.REACT,
+        preset_type: PresetType = PresetType.TAILWIND,
+        config_yml: Optional[dict] = None,
+        dsl_context: Optional[dict] = None,
+        entity_name: Optional[str] = None,
+    ) -> RenderContextSpec:
+        """Resolve RenderContextSpec từ 4 layers bằng StyleResolverV2.
+
+        Args:
+            stack_type: StackType (react, angular, fastapi, ...)
+            preset_type: PresetType (material, tailwind, ...)
+            config_yml: Dict từ midicoder.config.yml
+            dsl_context: Render context từ DSL entity spec
+            entity_name: Tên entity (để lookup per_entity config)
+
+        Returns:
+            RenderContextSpec: Typed render context object
+        """
+        if _MODELS_AVAILABLE:
+            presets_dir = Path(__file__).resolve().parent.parent / "presets"
+            resolver = StyleResolverV2(presets_dir)
+            render_section = (config_yml or {}).get("render", {})
+            return resolver.resolve(
+                stack_type=stack_type,
+                preset_type=preset_type,
+                entity_rc=dsl_context,
+                user_defaults=render_section.get("defaults", {}),
+                user_per_entity=render_section.get("per_entity", {}),
+                entity_name=entity_name,
+            )
+        else:
+            # Fallback: trả về RenderContextSpec rỗng
+            return RenderContextSpec()
 
     # ------------------------------------------------------------------
     # Expansion helpers — produce file plan dicts for code.py
