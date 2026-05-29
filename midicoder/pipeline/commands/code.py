@@ -149,7 +149,12 @@ def plan(target: str, verbose: bool, status_filter: str | None):
     default=None,
     help="Chỉ include packs có status tương ứng (mặc định: tất cả)"
 )
-def gen(target: str, dry_run: bool, status_filter: str | None):
+@click.option(
+    "--verify", "-V",
+    is_flag=True,
+    help="Kiểm tra compile/syntax sau khi generate code"
+)
+def gen(target: str, dry_run: bool, status_filter: str | None, verify: bool):
     """
     Generate code từ plan.
 
@@ -160,13 +165,15 @@ def gen(target: str, dry_run: bool, status_filter: str | None):
       --target, -t       Target để generate (backend|frontend|all, mặc định: all)
       --dry-run          Generate nhưng không lưu files
       --status-filter, -s Chỉ include packs có status tương ứng
+      --verify, -V       Kiểm tra compile/syntax sau khi generate
 
     EXAMPLES:
       midicoder code gen
       midicoder code gen --target backend
+      midicoder code gen --verify
       midicoder code gen --status-filter stable
     """
-    _execute_gen(target=target, dry_run=dry_run, status_filter=status_filter)
+    _execute_gen(target=target, dry_run=dry_run, status_filter=status_filter, verify=verify)
 
 
 @code.command()
@@ -745,7 +752,7 @@ def _plan_infra_files(status_filter: str | None = None, user_config: dict | None
     ]
 
 
-def _execute_gen(target: str = "all", dry_run: bool = False, status_filter: str | None = None) -> None:
+def _execute_gen(target: str = "all", dry_run: bool = False, status_filter: str | None = None, verify: bool = False) -> None:
     """
     Thực thi code gen command.
 
@@ -754,15 +761,16 @@ def _execute_gen(target: str = "all", dry_run: bool = False, status_filter: str 
     2. Generate code cho mỗi file trong plan
     3. Generate Docker Compose từ MIR
     4. Lưu vào .midicoder/versions/{active_version}/src/
-    5. Hiển thị summary
+    5. (Optional) Kiểm tra compile/syntax cho file đã generate
+    6. Hiển thị summary + verification report
 
     Args:
         target: Target để generate (backend|frontend|all)
         dry_run: Generate nhưng không lưu files
-        status_filter: If set, only include packs with matching status.
-                       (Note: gen reads from pre-built plan, so this filter
-                        is primarily for compatibility; the real filtering
-                        happens in `code plan`.)
+        status_filter: Nếu set, chỉ include packs có status tương ứng
+                       (Lưu ý: gen đọc từ plan đã build sẵn, filter thực sự
+                        xảy ra ở `code plan`.)
+        verify: Nếu True, chạy CodeVerifier cho từng file sau khi generate
     """
     if status_filter:
         click.echo(f"🔨 Đang generate code (status_filter={status_filter})...")
@@ -821,13 +829,37 @@ def _execute_gen(target: str = "all", dry_run: bool = False, status_filter: str 
                 files_generated.append(generated)
     
     click.echo(f"   ✓ Generated {len(files_generated)} files")
-    
+
     if dry_run:
         click.echo(f"   ℹ️  Dry run - files trong: {output_dir}")
     else:
         click.echo(f"   ✓ Files đã lưu vào: {output_dir}")
-    
-    # Bước 4: Log vào artifacts (metadata)
+
+    # Bước 5: Verify compile/syntax (nếu --verify được bật)
+    verification_report = None
+    if verify and files_generated:
+        click.echo("")
+        click.echo("🔍 Đang kiểm tra compile/syntax...")
+        from midicoder.pipeline.code_verifier import CodeVerifier
+
+        verifier = CodeVerifier()
+        file_paths = [output_dir / f.path for f in files_generated]
+        verification_report = verifier.verify_batch(file_paths, check_imports=True)
+
+        click.echo("")
+        click.echo(f"   ✓ Passed: {verification_report.passed}")
+        click.echo(f"   ✗ Failed: {verification_report.failed}")
+
+        if verification_report.failed > 0:
+            click.echo("")
+            click.echo("❌ Files bị lỗi:")
+            for r in verification_report.results:
+                if not r.success:
+                    click.echo(f"  - {r.file_path}")
+                    for err in r.errors:
+                        click.echo(f"    → {err}")
+
+    # Bước 6: Log vào artifacts (metadata)
     try:
         artifacts_manager = ArtifactsManager()
         artifacts_manager.init()
@@ -842,13 +874,21 @@ def _execute_gen(target: str = "all", dry_run: bool = False, status_filter: str 
                 "files_count": len(files_generated),
                 "files": [f.path for f in files_generated],
                 "dry_run": dry_run,
+                "verified": verify,
+                "verification_passed": verification_report.passed if verification_report else None,
+                "verification_failed": verification_report.failed if verification_report else None,
             },
         )
         click.echo(f"   ✓ Generated code metadata đã lưu vào artifacts")
     except Exception as e:
         click.echo(f"⚠️  Không thể log vào artifacts: {e}")
-    
+
     click.echo("")
+    if verify and verification_report and verification_report.failed > 0:
+        click.echo(f"⚠️  Code generation hoàn tất nhưng có {verification_report.failed} files bị lỗi compile")
+        # Raise exit code để CI/CD detect failure
+        raise SystemExit(1)
+
     click.echo("✅ Code generation hoàn tất!")
     click.echo("")
     click.echo("Tiếp theo:")
