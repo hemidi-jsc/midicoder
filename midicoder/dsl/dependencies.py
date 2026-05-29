@@ -563,8 +563,6 @@ class DependencyBuilder:
             self._extract_plugin_slot_dependencies(node)
         elif node.kind == NodeKind.CALENDAR_SCHEDULE:
             self._extract_calendar_schedule_dependencies(node)
-        elif node.kind in (NodeKind.GENERAL_LEDGER, NodeKind.FINANCIAL_INSTRUMENT, NodeKind.CURRENCY_EXCHANGE):
-            self._extract_finance_dependencies(node)
         elif node.kind in (NodeKind.REPORT, NodeKind.DASHBOARD, NodeKind.EXPORT):
             self._extract_report_dependencies(node)
         elif node.kind == NodeKind.GEO_SEARCH_INDEX:
@@ -575,10 +573,8 @@ class DependencyBuilder:
             self._extract_localization_dependencies(node)
         elif node.kind == NodeKind.API_VERSION:
             self._extract_api_version_dependencies(node)
-        elif node.kind == NodeKind.PAYMENT_GATEWAY:
-            self._extract_payment_gateway_dependencies(node)
-        elif node.kind in (NodeKind.PRODUCT_CATALOG, NodeKind.FACETED_SEARCH_INDEX):
-            self._extract_catalog_dependencies(node)
+        elif node.kind == NodeKind.FACETED_SEARCH_INDEX:
+            pass  # catalog dependencies removed; implement when needed
         # CP32/CP37: State Machine & Feature Flag dependency extraction
         elif node.kind == NodeKind.STATE_MACHINE:
             self._extract_state_machine_dependencies(node)
@@ -679,27 +675,6 @@ class DependencyBuilder:
                 target=wf,
                 dep_type=DependencyType.CALENDAR_WORKFLOW_DEPENDENCY,
                 field="workflow",
-            )
-
-    def _extract_finance_dependencies(self, node: ProjectionNode) -> None:
-        """
-        P2-15c: CP33 GENERAL_LEDGER, FINANCIAL_INSTRUMENT, CURRENCY_EXCHANGE —
-        depends on ENTITY, CP08.
-        """
-        entity_id = node.params.get("entity_id")
-        if entity_id:
-            self.graph.add_edge(
-                source=node.id,
-                target=entity_id,
-                dep_type=DependencyType.FINANCE_ENTITY_DEPENDENCY,
-                field="entity_id",
-            )
-        for eid in node.params.get("entities", []):
-            self.graph.add_edge(
-                source=node.id,
-                target=eid,
-                dep_type=DependencyType.FINANCE_ENTITY_DEPENDENCY,
-                field="entities",
             )
 
     def _extract_report_dependencies(self, node: ProjectionNode) -> None:
@@ -803,58 +778,6 @@ class DependencyBuilder:
                 target=eid,
                 dep_type=DependencyType.API_VERSION_ENTITY_DEPENDENCY,
                 field="entities",
-            )
-
-    def _extract_payment_gateway_dependencies(self, node: ProjectionNode) -> None:
-        """
-        P2-15i: CP45 PAYMENT_GATEWAY — depends on CP33 (Currency), CP40 (Webhook).
-        """
-        for currency in node.params.get("currencies", []):
-            self.graph.add_edge(
-                source=node.id,
-                target=currency,
-                dep_type=DependencyType.PAYMENT_ENTITY_DEPENDENCY,
-                field="currencies",
-            )
-        webhook = node.params.get("webhook_id")
-        if webhook:
-            self.graph.add_edge(
-                source=node.id,
-                target=webhook,
-                dep_type=DependencyType.PAYMENT_ENTITY_DEPENDENCY,
-                field="webhook_id",
-            )
-
-    def _extract_catalog_dependencies(self, node: ProjectionNode) -> None:
-        """
-        P2-15j: CP50 PRODUCT_CATALOG, FACETED_SEARCH_INDEX — depends on CP08, CP10.
-        """
-        # Product catalog may reference entities for products
-        for product_id in node.params.get("products", []):
-            if isinstance(product_id, str):
-                self.graph.add_edge(
-                    source=node.id,
-                    target=product_id,
-                    dep_type=DependencyType.CATALOG_ENTITY_DEPENDENCY,
-                    field="products",
-                )
-        # Search index dependency
-        index_id = node.params.get("search_index_id")
-        if index_id:
-            self.graph.add_edge(
-                source=node.id,
-                target=index_id,
-                dep_type=DependencyType.CATALOG_ENTITY_DEPENDENCY,
-                field="search_index_id",
-            )
-        # Entity reference
-        entity_id = node.params.get("entity_id")
-        if entity_id:
-            self.graph.add_edge(
-                source=node.id,
-                target=entity_id,
-                dep_type=DependencyType.CATALOG_ENTITY_DEPENDENCY,
-                field="entity_id",
             )
 
     def _extract_state_machine_dependencies(self, node: ProjectionNode) -> None:

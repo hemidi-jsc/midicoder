@@ -122,37 +122,7 @@ from midicoder.dsl.projection import (
     APIVersionParams,
     DeprecationNoticeParams,
     PaginationSpecParams,
-    
-    # P2: E-commerce
-    OrderFulfillmentParams,
-    PaymentGatewayParams,
-    ProductCatalogParams,
-    ShoppingCartParams,
-    
-    # P2: Finance
-    CurrencyExchangeParams,
-    FinancialInstrumentParams,
-    GeneralLedgerParams,
-    TaxRuleParams,
-    
-    # P2: Healthcare
-    ClinicalWorkflowParams,
-    MedicationParams,
-    PatientRecordParams,
-    
-    # P2: Education
-    CourseParams,
-    GradebookParams,
-    
-    # P2: Trading
-    FIXProtocolParams,
-    OrderBookParams,
-    TradingSessionParams,
-    
-    # P2: Logistics
-    RouteOptimizationParams,
-    WarehouseZoneParams,
-    
+
     # P2: Advanced
     BatchJobParams,
     CacheStrategyParams,
@@ -170,17 +140,13 @@ from midicoder.dsl.projection import (
     RuleScoringParams,
     
     # P2/P3: Enhanced Integration
-    DeviceIntegrationParams,
-    FIXMessageTypesParams,
     HL7FHIRSchemaParams,
     VideoConferencingIntegrationParams,
-    
+
     # P3: Advanced
     CalendarScheduleParams,
     CircuitBreakerParams,
-    ExternalServiceParams,
     LocalizationParams,
-    SubledgerParams,
 
     # CP18: Frontend Framework
     FrontendAppParams,
@@ -298,37 +264,7 @@ __all__ = [
     "PaginationSpecParams",
     "APIVersionParams",
     "DeprecationNoticeParams",
-    
-    # P2: E-commerce Params
-    "ShoppingCartParams",
-    "ProductCatalogParams",
-    "PaymentGatewayParams",
-    "OrderFulfillmentParams",
-    
-    # P2: Finance Params
-    "GeneralLedgerParams",
-    "FinancialInstrumentParams",
-    "CurrencyExchangeParams",
-    "TaxRuleParams",
-    
-    # P2: Healthcare Params
-    "PatientRecordParams",
-    "ClinicalWorkflowParams",
-    "MedicationParams",
-    
-    # P2: Education Params
-    "CourseParams",
-    "GradebookParams",
-    
-    # P2: Trading Params
-    "OrderBookParams",
-    "TradingSessionParams",
-    "FIXProtocolParams",
-    
-    # P2: Logistics Params
-    "WarehouseZoneParams",
-    "RouteOptimizationParams",
-    
+
     # P2: Advanced Params
     "CacheStrategyParams",
     "RateLimiterParams",
@@ -346,17 +282,13 @@ __all__ = [
     "RuleMatcherParams",
     
     # P2/P3: Enhanced Integration Params
-    "DeviceIntegrationParams",
     "HL7FHIRSchemaParams",
-    "FIXMessageTypesParams",
     "VideoConferencingIntegrationParams",
-    
+
     # P3: Advanced Params
-    "ExternalServiceParams",
     "LocalizationParams",
     "CircuitBreakerParams",
     "CalendarScheduleParams",
-    "SubledgerParams",
 
     # CP18: Frontend Framework Params
     "FrontendAppParams",

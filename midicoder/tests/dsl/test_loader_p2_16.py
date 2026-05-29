@@ -15,13 +15,10 @@ from midicoder.dsl.projection import NodeKind
 from midicoder.dsl.loader import (
     _load_plugins,
     _load_schedules,
-    _load_financial,
     _load_reports,
     _load_etl,
     _load_localization,
     _load_versioning,
-    _load_payment,
-    _load_catalog,
     load_projection_tree,
     disable_yaml_caching,
     enable_yaml_caching,
@@ -130,97 +127,6 @@ schedules:
         path = _write_yaml(tmp_path, "schedules.yaml", "{}")
         nodes = _load_schedules(path)
         assert len(nodes) == 0
-
-
-# ===========================================================================
-# P2-16c: _load_financial
-# ===========================================================================
-
-class TestP2_16cLoadFinancial:
-    """CP33: _load_financial — load ledgers, instruments, exchange, tax, subledgers."""
-
-    def test_load_ledgers(self, tmp_path: Path) -> None:
-        path = _write_yaml(tmp_path, "financial.yaml", """
-ledgers:
-  - id: ledger1
-    currency: USD
-    entity_id: Transaction
-""")
-        nodes = _load_financial(path)
-        assert len(nodes) == 1
-        assert nodes[0].kind == NodeKind.GENERAL_LEDGER
-
-    def test_load_instruments(self, tmp_path: Path) -> None:
-        path = _write_yaml(tmp_path, "financial.yaml", """
-instruments:
-  - id: fi1
-    symbol: AAPL
-    type: stock
-""")
-        nodes = _load_financial(path)
-        assert len(nodes) == 1
-        assert nodes[0].kind == NodeKind.FINANCIAL_INSTRUMENT
-        assert nodes[0].params["symbol"] == "AAPL"
-
-    def test_load_currency_exchanges(self, tmp_path: Path) -> None:
-        path = _write_yaml(tmp_path, "financial.yaml", """
-currency_exchanges:
-  - id: fx1
-    base_currency: USD
-    quote_currency: EUR
-    exchange_rate: 1.1
-""")
-        nodes = _load_financial(path)
-        assert len(nodes) == 1
-        assert nodes[0].kind == NodeKind.CURRENCY_EXCHANGE
-
-    def test_load_tax_rules(self, tmp_path: Path) -> None:
-        path = _write_yaml(tmp_path, "financial.yaml", """
-tax_rules:
-  - id: tax1
-    tax_type: vat
-    rate: 10
-    jurisdiction: VN
-""")
-        nodes = _load_financial(path)
-        assert len(nodes) == 1
-        assert nodes[0].kind == NodeKind.TAX_RULE
-
-    def test_load_subledgers(self, tmp_path: Path) -> None:
-        path = _write_yaml(tmp_path, "financial.yaml", """
-subledgers:
-  - id: sub1
-    ledger_type: accounts_receivable
-    parent_ledger_id: ledger1
-""")
-        nodes = _load_financial(path)
-        assert len(nodes) == 1
-        assert nodes[0].kind == NodeKind.SUBLEDGER
-
-    def test_load_all_finance_types(self, tmp_path: Path) -> None:
-        path = _write_yaml(tmp_path, "financial.yaml", """
-ledgers:
-  - id: ledger1
-    currency: USD
-instruments:
-  - id: fi1
-    symbol: AAPL
-    type: stock
-currency_exchanges:
-  - id: fx1
-    base_currency: USD
-    quote_currency: EUR
-tax_rules:
-  - id: tax1
-    tax_type: vat
-    rate: 10
-    jurisdiction: VN
-subledgers:
-  - id: sub1
-    ledger_type: accounts_receivable
-""")
-        nodes = _load_financial(path)
-        assert len(nodes) == 5
 
 
 # ===========================================================================
@@ -420,75 +326,6 @@ pagination_specs:
 
 
 # ===========================================================================
-# P2-16h: _load_payment
-# ===========================================================================
-
-class TestP2_16hLoadPayment:
-    """CP45: _load_payment — load payment gateways."""
-
-    def test_load_payment_gateway(self, tmp_path: Path) -> None:
-        path = _write_yaml(tmp_path, "payment.yaml", """
-payment_gateways:
-  - id: pg1
-    provider: stripe
-    currencies: [USD, EUR]
-    webhook_url: https://example.com/hook
-""")
-        nodes = _load_payment(path)
-        assert len(nodes) == 1
-        assert nodes[0].kind == NodeKind.PAYMENT_GATEWAY
-        assert "EUR" in nodes[0].params["currencies"]
-
-    def test_empty_payment(self, tmp_path: Path) -> None:
-        path = _write_yaml(tmp_path, "payment.yaml", "{}")
-        nodes = _load_payment(path)
-        assert len(nodes) == 0
-
-
-# ===========================================================================
-# P2-16i: _load_catalog
-# ===========================================================================
-
-class TestP2_16iLoadCatalog:
-    """CP50: _load_catalog — load product catalogs and faceted search indexes."""
-
-    def test_load_product_catalog(self, tmp_path: Path) -> None:
-        path = _write_yaml(tmp_path, "catalog.yaml", """
-catalogs:
-  - id: cat1
-    entity_id: Product
-    inventory_tracking: true
-""")
-        nodes = _load_catalog(path)
-        assert len(nodes) == 1
-        assert nodes[0].kind == NodeKind.PRODUCT_CATALOG
-
-    def test_load_faceted_search(self, tmp_path: Path) -> None:
-        path = _write_yaml(tmp_path, "catalog.yaml", """
-faceted_search:
-  - id: fs1
-    entity_id: Product
-    facets: [color, size]
-""")
-        nodes = _load_catalog(path)
-        assert len(nodes) == 1
-        assert nodes[0].kind == NodeKind.FACETED_SEARCH_INDEX
-
-    def test_load_both(self, tmp_path: Path) -> None:
-        path = _write_yaml(tmp_path, "catalog.yaml", """
-catalogs:
-  - id: cat1
-    entity_id: Product
-faceted_search:
-  - id: fs1
-    entity_id: Product
-    facets: [color]
-""")
-        nodes = _load_catalog(path)
-        assert len(nodes) == 2
-
-
-# ===========================================================================
 # P2-16j: Integration — load_projection_tree calls new loaders
 # ===========================================================================
 
@@ -512,15 +349,6 @@ schedules:
 """)
         tree = load_projection_tree(tmp_path)
         assert tree.get_node("cal1") is not None
-
-    def test_load_financial_from_directory(self, tmp_path: Path) -> None:
-        _write_yaml(tmp_path, "financial.yaml", """
-ledgers:
-  - id: ledger1
-    currency: USD
-""")
-        tree = load_projection_tree(tmp_path)
-        assert tree.get_node("ledger1") is not None
 
     def test_load_reports_from_directory(self, tmp_path: Path) -> None:
         _write_yaml(tmp_path, "reports.yaml", """
@@ -562,26 +390,8 @@ api_versions:
         tree = load_projection_tree(tmp_path)
         assert tree.get_node("av1") is not None
 
-    def test_load_payment_from_directory(self, tmp_path: Path) -> None:
-        _write_yaml(tmp_path, "payment.yaml", """
-payment_gateways:
-  - id: pg1
-    provider: stripe
-""")
-        tree = load_projection_tree(tmp_path)
-        assert tree.get_node("pg1") is not None
-
-    def test_load_catalog_from_directory(self, tmp_path: Path) -> None:
-        _write_yaml(tmp_path, "catalog.yaml", """
-catalogs:
-  - id: cat1
-    entity_id: Product
-""")
-        tree = load_projection_tree(tmp_path)
-        assert tree.get_node("cat1") is not None
-
     def test_load_all_new_loaders_together(self, tmp_path: Path) -> None:
-        """Test all 9 new loaders work together in one tree."""
+        """Test all 6 new loaders work together in one tree."""
         _write_yaml(tmp_path, "plugins.yaml", """
 slots:
   - id: slot1
@@ -591,11 +401,6 @@ slots:
 schedules:
   - id: cal1
     calendar_type: academic
-""")
-        _write_yaml(tmp_path, "financial.yaml", """
-ledgers:
-  - id: ledger1
-    currency: USD
 """)
         _write_yaml(tmp_path, "reports.yaml", """
 reports:
@@ -621,18 +426,8 @@ api_versions:
     version: "1.0.0"
     api_id: api1
 """)
-        _write_yaml(tmp_path, "payment.yaml", """
-payment_gateways:
-  - id: pg1
-    provider: stripe
-""")
-        _write_yaml(tmp_path, "catalog.yaml", """
-catalogs:
-  - id: cat1
-    entity_id: Product
-""")
         tree = load_projection_tree(tmp_path)
-        expected_ids = {"slot1", "cal1", "ledger1", "r1", "m1", "l1", "av1", "pg1", "cat1"}
+        expected_ids = {"slot1", "cal1", "r1", "m1", "l1", "av1"}
         actual_ids = set(tree.nodes.keys())
         assert expected_ids.issubset(actual_ids), f"Missing: {expected_ids - actual_ids}"
 

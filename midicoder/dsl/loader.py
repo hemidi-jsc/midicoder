@@ -572,10 +572,6 @@ def load_projection_tree(dsl_path: Path) -> ProjectionTree:
     if schedules_file.exists():
         add_nodes(_load_schedules(schedules_file))
 
-    financial_file = dsl_path / "financial.yaml"
-    if financial_file.exists():
-        add_nodes(_load_financial(financial_file))
-
     reports_file = dsl_path / "reports.yaml"
     if reports_file.exists():
         add_nodes(_load_reports(reports_file))
@@ -591,14 +587,6 @@ def load_projection_tree(dsl_path: Path) -> ProjectionTree:
     versioning_file = dsl_path / "versioning.yaml"
     if versioning_file.exists():
         add_nodes(_load_versioning(versioning_file))
-
-    payment_file = dsl_path / "payment.yaml"
-    if payment_file.exists():
-        add_nodes(_load_payment(payment_file))
-
-    catalog_file = dsl_path / "catalog.yaml"
-    if catalog_file.exists():
-        add_nodes(_load_catalog(catalog_file))
 
     # CP32: Load state machines
     state_machines_file = dsl_path / "state_machines.yaml"
@@ -2034,159 +2022,8 @@ def _load_schedules(path: Path) -> list[ProjectionNode]:
 
 
 def _load_financial(path: Path) -> list[ProjectionNode]:
-    """Load financial.yaml vào ProjectionNodes (CP33 — Financial Engine).
-
-    Parse general ledger, financial instruments, currency exchange, tax rules,
-    và subledgers từ YAML.
-
-    Args:
-        path: Đường dẫn đến financial.yaml
-
-    Returns:
-        Danh sách ProjectionNodes cho finance nodes
-    """
-    data, _ = load_yaml(path)
-    nodes = []
-
-    # General ledgers
-    if "ledgers" in data:
-        for ledger in data["ledgers"]:
-            
-            rc = ledger.get("render_context") or {}
-            if not isinstance(rc, dict):
-                raise EM.raise_error(
-                    ErrorCode.DSL_INVALID_NODE_KIND,
-                    node_id=ledger.get("id", "unknown"),
-                    detail="render_context phải là dict"
-                )
-            node = ProjectionNode(
-                id=ledger.get("id", ""),
-                kind=NodeKind.GENERAL_LEDGER,
-                params={
-                    "id": ledger.get("id"),
-                    "description": ledger.get("description"),
-                    "chart_of_accounts": ledger.get("chart_of_accounts", []),
-                    "fiscal_year_start": ledger.get("fiscal_year_start"),
-                    "currency": ledger.get("currency"),
-                    "accounting_standard": ledger.get("accounting_standard"),
-                    "entity_id": ledger.get("entity_id"),
-                    "entities": ledger.get("entities", []),
-                    "entries": ledger.get("entries", []),
-                    "tags": ledger.get("tags", []),
-                    "source": "financial.yaml",
-                    "render_context": rc,  
-                },
-            )
-            nodes.append(node)
-
-    # Financial instruments
-    if "instruments" in data:
-        for instrument in data["instruments"]:
-            
-            rc = instrument.get("render_context") or {}
-            if not isinstance(rc, dict):
-                raise EM.raise_error(
-                    ErrorCode.DSL_INVALID_NODE_KIND,
-                    node_id=instrument.get("id", "unknown"),
-                    detail="render_context phải là dict"
-                )
-            node = ProjectionNode(
-                id=instrument.get("id", ""),
-                kind=NodeKind.FINANCIAL_INSTRUMENT,
-                params={
-                    "id": instrument.get("id"),
-                    "symbol": instrument.get("symbol"),
-                    "type": instrument.get("type"),
-                    "entity_id": instrument.get("entity_id"),
-                    "entities": instrument.get("entities", []),
-                    "tags": instrument.get("tags", []),
-                    "source": "financial.yaml",
-                    "render_context": rc,  
-                },
-            )
-            nodes.append(node)
-
-    # Currency exchange
-    if "currency_exchanges" in data:
-        for exchange in data["currency_exchanges"]:
-            
-            rc = exchange.get("render_context") or {}
-            if not isinstance(rc, dict):
-                raise EM.raise_error(
-                    ErrorCode.DSL_INVALID_NODE_KIND,
-                    node_id=exchange.get("id", "unknown"),
-                    detail="render_context phải là dict"
-                )
-            node = ProjectionNode(
-                id=exchange.get("id", ""),
-                kind=NodeKind.CURRENCY_EXCHANGE,
-                params={
-                    "id": exchange.get("id"),
-                    "base_currency": exchange.get("base_currency"),
-                    "quote_currency": exchange.get("quote_currency"),
-                    "exchange_rate": exchange.get("exchange_rate"),
-                    "entity_id": exchange.get("entity_id"),
-                    "tags": exchange.get("tags", []),
-                    "source": "financial.yaml",
-                    "render_context": rc,  
-                },
-            )
-            nodes.append(node)
-
-    # Tax rules
-    if "tax_rules" in data:
-        for rule in data["tax_rules"]:
-            
-            rc = rule.get("render_context") or {}
-            if not isinstance(rc, dict):
-                raise EM.raise_error(
-                    ErrorCode.DSL_INVALID_NODE_KIND,
-                    node_id=rule.get("id", "unknown"),
-                    detail="render_context phải là dict"
-                )
-            node = ProjectionNode(
-                id=rule.get("id", ""),
-                kind=NodeKind.TAX_RULE,
-                params={
-                    "id": rule.get("id"),
-                    "tax_type": rule.get("tax_type"),
-                    "rate": rule.get("rate"),
-                    "jurisdiction": rule.get("jurisdiction"),
-                    "applicable_items": rule.get("applicable_items", []),
-                    "tags": rule.get("tags", []),
-                    "source": "financial.yaml",
-                    "render_context": rc,  
-                },
-            )
-            nodes.append(node)
-
-    # Subledgers
-    if "subledgers" in data:
-        for subledger in data["subledgers"]:
-            
-            rc = subledger.get("render_context") or {}
-            if not isinstance(rc, dict):
-                raise EM.raise_error(
-                    ErrorCode.DSL_INVALID_NODE_KIND,
-                    node_id=subledger.get("id", "unknown"),
-                    detail="render_context phải là dict"
-                )
-            node = ProjectionNode(
-                id=subledger.get("id", ""),
-                kind=NodeKind.SUBLEDGER,
-                params={
-                    "id": subledger.get("id"),
-                    "ledger_type": subledger.get("ledger_type"),
-                    "parent_ledger_id": subledger.get("parent_ledger_id"),
-                    "entries": subledger.get("entries", []),
-                    "tags": subledger.get("tags", []),
-                    "source": "financial.yaml",
-                    "render_context": rc,  
-                },
-            )
-            nodes.append(node)
-
-    return nodes
+    """Tải tài nguyên financial (không hoạt động — NodeKind đã xóa)."""
+    return []
 
 
 def _load_reports(path: Path) -> list[ProjectionNode]:
@@ -2545,122 +2382,13 @@ def _load_versioning(path: Path) -> list[ProjectionNode]:
 
 
 def _load_payment(path: Path) -> list[ProjectionNode]:
-    """Load payment.yaml vào ProjectionNodes (CP45 — Payment Processing).
-
-    Parse payment gateways từ YAML.
-
-    Args:
-        path: Đường dẫn đến payment.yaml
-
-    Returns:
-        Danh sách ProjectionNodes cho payment nodes
-    """
-    data, _ = load_yaml(path)
-    nodes = []
-
-    if "payment_gateways" in data:
-        for gateway in data["payment_gateways"]:
-            
-            rc = gateway.get("render_context") or {}
-            if not isinstance(rc, dict):
-                raise EM.raise_error(
-                    ErrorCode.DSL_INVALID_NODE_KIND,
-                    node_id=gateway.get("id", "unknown"),
-                    detail="render_context phải là dict"
-                )
-            node = ProjectionNode(
-                id=gateway.get("id", ""),
-                kind=NodeKind.PAYMENT_GATEWAY,
-                params={
-                    "id": gateway.get("id"),
-                    "description": gateway.get("description"),
-                    "provider": gateway.get("provider"),
-                    "supported_methods": gateway.get("supported_methods", []),
-                    "currencies": gateway.get("currencies", []),
-                    "webhook_url": gateway.get("webhook_url"),
-                    "webhook_id": gateway.get("webhook_id"),
-                    "sandbox_mode": gateway.get("sandbox_mode", False),
-                    "tags": gateway.get("tags", []),
-                    "source": "payment.yaml",
-                    "render_context": rc,  
-                },
-            )
-            nodes.append(node)
-
-    return nodes
+    """Tải tài nguyên payment (không hoạt động — NodeKind đã xóa)."""
+    return []
 
 
 def _load_catalog(path: Path) -> list[ProjectionNode]:
-    """Load catalog.yaml vào ProjectionNodes (CP50 — Product Catalog & Taxonomy).
-
-    Parse product catalogs và faceted search indexes từ YAML.
-
-    Args:
-        path: Đường dẫn đến catalog.yaml
-
-    Returns:
-        Danh sách ProjectionNodes cho catalog nodes
-    """
-    data, _ = load_yaml(path)
-    nodes = []
-
-    # Product catalogs
-    if "catalogs" in data:
-        for catalog in data["catalogs"]:
-            
-            rc = catalog.get("render_context") or {}
-            if not isinstance(rc, dict):
-                raise EM.raise_error(
-                    ErrorCode.DSL_INVALID_NODE_KIND,
-                    node_id=catalog.get("id", "unknown"),
-                    detail="render_context phải là dict"
-                )
-            node = ProjectionNode(
-                id=catalog.get("id", ""),
-                kind=NodeKind.PRODUCT_CATALOG,
-                params={
-                    "id": catalog.get("id"),
-                    "description": catalog.get("description"),
-                    "categories": catalog.get("categories", []),
-                    "products": catalog.get("products", []),
-                    "inventory_tracking": catalog.get("inventory_tracking", False),
-                    "entity_id": catalog.get("entity_id"),
-                    "search_index_id": catalog.get("search_index_id"),
-                    "tags": catalog.get("tags", []),
-                    "source": "catalog.yaml",
-                    "render_context": rc,  
-                },
-            )
-            nodes.append(node)
-
-    # Faceted search indexes
-    if "faceted_search" in data:
-        for search in data["faceted_search"]:
-            
-            rc = search.get("render_context") or {}
-            if not isinstance(rc, dict):
-                raise EM.raise_error(
-                    ErrorCode.DSL_INVALID_NODE_KIND,
-                    node_id=search.get("id", "unknown"),
-                    detail="render_context phải là dict"
-                )
-            node = ProjectionNode(
-                id=search.get("id", ""),
-                kind=NodeKind.FACETED_SEARCH_INDEX,
-                params={
-                    "id": search.get("id"),
-                    "description": search.get("description"),
-                    "entity_id": search.get("entity_id"),
-                    "columns": search.get("columns", []),
-                    "facets": search.get("facets", []),
-                    "tags": search.get("tags", []),
-                    "source": "catalog.yaml",
-                    "render_context": rc,  
-                },
-            )
-            nodes.append(node)
-
-    return nodes
+    """Tải tài nguyên catalog (không hoạt động — NodeKind đã xóa)."""
+    return []
 
 
 # ============================================================================

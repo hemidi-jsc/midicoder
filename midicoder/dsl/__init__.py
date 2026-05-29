@@ -204,30 +204,6 @@ from .projection import (
     DeprecationNoticeParams,
     # Aggregate (bonus node type)
     AggregateParams,
-    # P2: E-commerce Domain Params
-    ShoppingCartParams,
-    ProductCatalogParams,
-    PaymentGatewayParams,
-    OrderFulfillmentParams,
-    # P2: Finance Domain Params
-    GeneralLedgerParams,
-    FinancialInstrumentParams,
-    CurrencyExchangeParams,
-    TaxRuleParams,
-    # P2: Healthcare Domain Params
-    PatientRecordParams,
-    ClinicalWorkflowParams,
-    MedicationParams,
-    # P2: Education Domain Params
-    CourseParams,
-    GradebookParams,
-    # P2: Trading Domain Params
-    OrderBookParams,
-    TradingSessionParams,
-    FIXProtocolParams,
-    # P2: Logistics Domain Params
-    WarehouseZoneParams,
-    RouteOptimizationParams,
     # P2: Advanced - Caching & Performance Params
     CacheStrategyParams,
     RateLimiterParams,
@@ -247,16 +223,11 @@ from .projection import (
     RuleScoringParams,
     RuleMatcherParams,
     # P2/P3: Enhanced Integration & Protocol Params
-    DeviceIntegrationParams,
     HL7FHIRSchemaParams,
-    FIXMessageTypesParams,
-    VideoConferencingIntegrationParams,
     # P3: Advanced Pattern Params
-    ExternalServiceParams,
     LocalizationParams,
     CircuitBreakerParams,
     CalendarScheduleParams,
-    SubledgerParams,
     # CP06: Kong Gateway Params
     KongGatewayParams,
     KongServiceParams,

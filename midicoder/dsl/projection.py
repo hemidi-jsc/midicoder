@@ -2447,69 +2447,7 @@ class ShoppingCartParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
-    render_context: dict[str, Any]  
-
-
-class ProductCatalogParams(TypedDict, total=False):
-    """
-    Tham số cho ProductCatalog nodes.
-
-    ProductCatalog định nghĩa product catalog management.
-    Bao gồm categories, products, và inventory.
-
-    Fields:
-        id: Định danh của catalog
-        description: Mô tả
-        categories: Danh sách categories
-        products: Danh sách product IDs
-        inventory_tracking: Có track inventory không
-        multi_warehouse: Có multi-warehouse không
-        tags: Danh sách tags
-        tenant_scope: Phạm vi multi-tenancy
-        source: Nguồn định nghĩa
-    """
-
-    id: str
-    description: str
-    categories: list[dict[str, Any]]
-    products: list[str]
-    inventory_tracking: bool
-    multi_warehouse: bool
-    tags: list[str]
-    tenant_scope: str
-    source: str
-    render_context: dict[str, Any]  
-
-
-class PaymentGatewayParams(TypedDict, total=False):
-    """
-    Tham số cho PaymentGateway nodes.
-
-    PaymentGateway định nghĩa payment processing integrations.
-    Bao gồm provider, supported methods, và currencies.
-
-    Fields:
-        id: Định danh của gateway
-        description: Mô tả
-        provider: Provider name (stripe, paypal, midtrans)
-        supported_methods: Danh sách payment methods
-        currencies: Danh sách supported currencies
-        webhook_url: Webhook URL cho callbacks
-        sandbox_mode: Có sandbox mode không
-        tags: Danh sách tags
-        source: Nguồn định nghĩa
-    """
-
-    id: str
-    description: str
-    provider: str
-    supported_methods: list[str]
-    currencies: list[str]
-    webhook_url: str
-    sandbox_mode: bool
-    tags: list[str]
-    source: str
-    render_context: dict[str, Any]  
+    render_context: dict[str, Any]
 
 
 class OrderFulfillmentParams(TypedDict, total=False):
@@ -2542,136 +2480,7 @@ class OrderFulfillmentParams(TypedDict, total=False):
     tags: list[str]
     tenant_scope: str
     source: str
-    render_context: dict[str, Any]  
-
-
-# ============================================================================
-# P2: Domain-Specific Patterns - Finance
-# ============================================================================
-
-
-class GeneralLedgerParams(TypedDict, total=False):
-    """
-    Tham số cho GeneralLedger nodes.
-
-    GeneralLedger định nghĩa general ledger cho accounting.
-    Bao gồm chart of accounts, fiscal year, và accounting standard.
-
-    Fields:
-        id: Định danh của ledger
-        description: Mô tả
-        chart_of_accounts: Danh sách account IDs
-        fiscal_year_start: Ngày bắt đầu năm tài chính
-        currency: Base currency
-        accounting_standard: Chuẩn kế toán (IFRS, GAAP, VAS)
-        tags: Danh sách tags
-        tenant_scope: Phạm vi multi-tenancy
-        source: Nguồn định nghĩa
-    """
-
-    id: str
-    description: str
-    chart_of_accounts: list[str]
-    fiscal_year_start: str
-    currency: str
-    accounting_standard: str
-    tags: list[str]
-    tenant_scope: str
-    source: str
-    render_context: dict[str, Any]  
-
-
-class FinancialInstrumentParams(TypedDict, total=False):
-    """
-    Tham số cho FinancialInstrument nodes.
-
-    FinancialInstrument định nghĩa các financial instruments.
-    Bao gồm symbol, type, và exchange.
-
-    Fields:
-        id: Định danh của instrument
-        description: Mô tả
-        symbol: Trading symbol
-        type: Loại instrument (stock, bond, derivative)
-        exchange: Exchange name
-        currency: Trading currency
-        lot_size: Lot size
-        tags: Danh sách tags
-        source: Nguồn định nghĩa
-    """
-
-    id: str
-    description: str
-    symbol: str
-    type: str
-    exchange: str
-    currency: str
-    lot_size: float
-    tags: list[str]
-    source: str
-    render_context: dict[str, Any]  
-
-
-class CurrencyExchangeParams(TypedDict, total=False):
-    """
-    Tham số cho CurrencyExchange nodes.
-
-    CurrencyExchange định nghĩa currency exchange rates.
-    Bao gồm base/quote currencies và effective dates.
-
-    Fields:
-        id: Định danh của exchange rate
-        description: Mô tả
-        base_currency: Base currency code
-        quote_currency: Quote currency code
-        exchange_rate: Tỷ giá hối đoái
-        effective_date: Ngày có hiệu lực
-        source_type: Nguồn rate (manual, api, manual)
-        tags: Danh sách tags
-        source: Nguồn định nghĩa
-    """
-
-    id: str
-    description: str
-    base_currency: str
-    quote_currency: str
-    exchange_rate: float
-    effective_date: str
-    source_type: str
-    tags: list[str]
-    source: str
-    render_context: dict[str, Any]  
-
-
-class TaxRuleParams(TypedDict, total=False):
-    """
-    Tham số cho TaxRule nodes.
-
-    TaxRule định nghĩa tax calculation rules.
-    Bao gồm tax type, rate, và jurisdiction.
-
-    Fields:
-        id: Định danh của rule
-        description: Mô tả
-        tax_type: Loại tax (VAT, sales_tax, income_tax)
-        rate: Tax rate
-        jurisdiction: Jurisdiction áp dụng
-        applicable_items: Danh sách applicable items
-        effective_date: Ngày có hiệu lực
-        tags: Danh sách tags
-        source: Nguồn định nghĩa
-    """
-
-    id: str
-    description: str
-    tax_type: str
-    rate: float
-    jurisdiction: str
-    applicable_items: list[str]
-    effective_date: str
-    tags: list[str]
-    source: str
-    render_context: dict[str, Any]  
+    render_context: dict[str, Any]
 
 
 # ============================================================================
@@ -3389,47 +3198,12 @@ class RuleMatcherParams(TypedDict, total=False):
     negation: bool
     tags: list[str]
     source: str
-    render_context: dict[str, Any]  
+    render_context: dict[str, Any]
 
 
 # ============================================================================
 # P2/P3: Enhanced Integration & Protocol Params
 # ============================================================================
-
-
-class DeviceIntegrationParams(TypedDict, total=False):
-    """
-    Tham số cho DeviceIntegration nodes (barcode, RFID, instruments).
-
-    DeviceIntegration định nghĩa hardware device integrations.
-    Bao gồm device type, protocol, và polling configurations.
-
-    Fields:
-        id: Định danh của integration
-        description: Mô tả
-        name: Tên integration
-        device_type: Loại device (barcode_scanner, rfid_reader, medical_instrument)
-        protocol: Communication protocol (usb, bluetooth, rs232, http)
-        connection_type: Connection type (direct, gateway, cloud)
-        poll_interval: Polling interval
-        data_mapping: Data mapping configuration
-        calibration: Calibration settings
-        tags: Danh sách tags
-        source: Nguồn định nghĩa
-    """
-
-    id: str
-    description: str
-    name: str
-    device_type: str
-    protocol: str
-    connection_type: str
-    poll_interval: str
-    data_mapping: dict[str, Any]
-    calibration: dict[str, Any]
-    tags: str
-    source: str
-    render_context: dict[str, Any]  
 
 
 class HL7FHIRSchemaParams(TypedDict, total=False):
@@ -3462,38 +3236,7 @@ class HL7FHIRSchemaParams(TypedDict, total=False):
     mapping_rules: list[dict[str, Any]]
     tags: list[str]
     source: str
-    render_context: dict[str, Any]  
-
-
-class FIXMessageTypesParams(TypedDict, total=False):
-    """
-    Tham số cho FIXMessageTypes nodes (trading protocol messages).
-
-    FIXMessageTypes định nghĩa FIX message type specifications.
-    Bao gồm version, message types, và tag definitions.
-
-    Fields:
-        id: Định danh của message type spec
-        description: Mô tả
-        name: Tên spec
-        fix_version: FIX version (4.4, 5.0)
-        message_types: Danh sách message types (NewOrderSingle, ExecutionReport)
-        tag_definitions: Danh sách tag definitions
-        validation_rules: Danh sách validation rules
-        tags: Danh sách tags
-        source: Nguồn định nghĩa
-    """
-
-    id: str
-    description: str
-    name: str
-    fix_version: str
-    message_types: list[str]
-    tag_definitions: list[dict[str, Any]]
-    validation_rules: list[dict[str, Any]]
-    tags: list[str]
-    source: str
-    render_context: dict[str, Any]  
+    render_context: dict[str, Any]
 
 
 class VideoConferencingIntegrationParams(TypedDict, total=False):
@@ -3528,51 +3271,12 @@ class VideoConferencingIntegrationParams(TypedDict, total=False):
     max_participants: int
     tags: list[str]
     source: str
-    render_context: dict[str, Any]  
+    render_context: dict[str, Any]
 
 
 # ============================================================================
 # P3: Advanced Pattern Params
 # ============================================================================
-
-
-class ExternalServiceParams(TypedDict, total=False):
-    """
-    Tham số cho ExternalService nodes (ML/AI services).
-
-    ExternalService định nghĩa external service integrations.
-    Bao gồm service type, endpoints, và retry policies.
-
-    Fields:
-        id: Định danh của service
-        description: Mô tả
-        name: Tên service
-        service_type: Loại service (ml_inference, ai_api, third_party_api)
-        endpoint: Service endpoint URL
-        auth_type: Authentication type
-        request_schema: Request schema
-        response_schema: Response schema
-        timeout_ms: Timeout milliseconds
-        retry_policy: Retry configuration
-        fallback: Fallback action
-        tags: Danh sách tags
-        source: Nguồn định nghĩa
-    """
-
-    id: str
-    description: str
-    name: str
-    service_type: str
-    endpoint: str
-    auth_type: str
-    request_schema: dict[str, Any]
-    response_schema: dict[str, Any]
-    timeout_ms: int
-    retry_policy: dict[str, Any]
-    fallback: str
-    tags: list[str]
-    source: str
-    render_context: dict[str, Any]  
 
 
 class LocalizationParams(TypedDict, total=False):
@@ -3671,40 +3375,7 @@ class CalendarScheduleParams(TypedDict, total=False):
     timezone: str
     tags: list[str]
     source: str
-    render_context: dict[str, Any]  
-
-
-class SubledgerParams(TypedDict, total=False):
-    """
-    Tham số cho Subledger nodes (complex accounting patterns).
-
-    Subledger định nghĩa subledger structures.
-    Bao gồm ledger type, parent ledger, và reconciliation rules.
-
-    Fields:
-        id: Định danh của subledger
-        description: Mô tả
-        name: Tên subledger
-        ledger_type: Loại subledger (accounts_receivable, accounts_payable, inventory)
-        parent_ledger_id: ID của parent general ledger
-        account_mapping: Account mapping configuration
-        reconciliation_rules: Danh sách reconciliation rules
-        posting_schedule: Posting schedule (real_time, daily, monthly)
-        tags: Danh sách tags
-        source: Nguồn định nghĩa
-    """
-
-    id: str
-    description: str
-    name: str
-    ledger_type: str
-    parent_ledger_id: str
-    account_mapping: dict[str, Any]
-    reconciliation_rules: list[dict[str, Any]]
-    posting_schedule: str
-    tags: list[str]
-    source: str
-    render_context: dict[str, Any]  
+    render_context: dict[str, Any]
 
 
 # ============================================================================
@@ -5463,14 +5134,7 @@ NodeParams = (
     | DeprecationNoticeParams
     # P2: E-commerce Domain
     | ShoppingCartParams
-    | ProductCatalogParams
-    | PaymentGatewayParams
     | OrderFulfillmentParams
-    # P2: Finance Domain
-    | GeneralLedgerParams
-    | FinancialInstrumentParams
-    | CurrencyExchangeParams
-    | TaxRuleParams
     # P2: Healthcare Domain
     | PatientRecordParams
     | ClinicalWorkflowParams
@@ -5504,16 +5168,12 @@ NodeParams = (
     | RuleScoringParams
     | RuleMatcherParams
     # P2/P3: Enhanced Integration & Protocol
-    | DeviceIntegrationParams
     | HL7FHIRSchemaParams
-    | FIXMessageTypesParams
     | VideoConferencingIntegrationParams
     # P3: Advanced Patterns
-    | ExternalServiceParams
     | LocalizationParams
     | CircuitBreakerParams
     | CalendarScheduleParams
-    | SubledgerParams
     # CP18: Frontend Framework
     | FrontendAppParams
     | FrontendRouteParams
@@ -5996,20 +5656,10 @@ class NodeKind(Enum):
     DEPRECATION_NOTICE = "api.deprecation"
 
     # =========================================================================
-    # P2: Domain-Specific - E-commerce (4 loại)
+    # P2: Domain-Specific - E-commerce (2 loại)
     # =========================================================================
     SHOPPING_CART = "ecommerce.cart"
-    PRODUCT_CATALOG = "ecommerce.catalog"
-    PAYMENT_GATEWAY = "ecommerce.payment"
     ORDER_FULFILLMENT = "ecommerce.fulfillment"
-
-    # =========================================================================
-    # P2: Domain-Specific - Finance (4 loại)
-    # =========================================================================
-    GENERAL_LEDGER = "finance.ledger"
-    FINANCIAL_INSTRUMENT = "finance.instrument"
-    CURRENCY_EXCHANGE = "finance.exchange"
-    TAX_RULE = "finance.tax"
 
     # =========================================================================
     # P2: Domain-Specific - Healthcare (3 loại)
@@ -6074,21 +5724,17 @@ class NodeKind(Enum):
     RULE_MATCHER = "rule.matcher"
 
     # =========================================================================
-    # P2/P3: Enhanced Integration & Protocol (4 loại)
+    # P2/P3: Enhanced Integration & Protocol (2 loại)
     # =========================================================================
-    DEVICE_INTEGRATION = "integration.device"  # GAP-P2-03, P3-03 (Barcode/RFID)
     HL7_FHIR_SCHEMA = "integration.hl7fhir"  # GAP-P2-01 (Healthcare HL7/FHIR)
-    FIX_MESSAGE_TYPES = "trading.fix_messages"  # GAP-P2-02 (FIX protocol messages)
     VIDEO_CONFERENCING = "integration.video"  # GAP-P2-04 (Telehealth video)
 
     # =========================================================================
-    # P3: Advanced Patterns (5 loại) - GAP-P3-04 đến P3-08
+    # P3: Advanced Patterns (3 loại) - GAP-P3-04 đến P3-08
     # =========================================================================
-    EXTERNAL_SERVICE = "advanced.external"  # GAP-P3-04 (ML/AI services)
     LOCALIZATION = "advanced.localization"  # GAP-P3-07 (Multi-language)
     CIRCUIT_BREAKER = "advanced.circuit"  # GAP-P3-08 (Resilience patterns)
     CALENDAR_SCHEDULE = "advanced.calendar"  # GAP-P1-02 (Academic calendar)
-    SUBLEDGER = "finance.subledger"  # GAP-P3-06 (Complex accounting)
 
     # =========================================================================
     # CP18: Frontend Framework (3 loại)
@@ -6572,17 +6218,7 @@ class ProjectionNode:
             # P2: E-commerce Domain
             # =========================================================================
             NodeKind.SHOPPING_CART: ["id", "customer_id"],
-            NodeKind.PRODUCT_CATALOG: ["id"],
-            NodeKind.PAYMENT_GATEWAY: ["id", "provider"],
             NodeKind.ORDER_FULFILLMENT: ["id", "order_id"],
-
-            # =========================================================================
-            # P2: Finance Domain
-            # =========================================================================
-            NodeKind.GENERAL_LEDGER: ["id"],
-            NodeKind.FINANCIAL_INSTRUMENT: ["id", "symbol", "type"],
-            NodeKind.CURRENCY_EXCHANGE: ["id", "base_currency", "quote_currency"],
-            NodeKind.TAX_RULE: ["id", "tax_type", "rate"],
 
             # =========================================================================
             # P2: Healthcare Domain
@@ -6649,19 +6285,15 @@ class ProjectionNode:
             # =========================================================================
             # P2/P3: Enhanced Integration & Protocol
             # =========================================================================
-            NodeKind.DEVICE_INTEGRATION: ["id", "device_type", "protocol"],  # GAP-P2-03, P3-03
             NodeKind.HL7_FHIR_SCHEMA: ["id", "standard", "resource_type"],  # GAP-P2-01
-            NodeKind.FIX_MESSAGE_TYPES: ["id", "fix_version"],  # GAP-P2-02
             NodeKind.VIDEO_CONFERENCING: ["id", "provider"],  # GAP-P2-04
 
             # =========================================================================
-            # P3: Advanced Patterns (GAP-P3-04 đến P3-08)
+            # P3: Advanced Patterns
             # =========================================================================
-            NodeKind.EXTERNAL_SERVICE: ["id", "service_type", "endpoint"],  # GAP-P3-04
             NodeKind.LOCALIZATION: ["id", "entity_id", "locales"],  # GAP-P3-07
             NodeKind.CIRCUIT_BREAKER: ["id", "target_service"],  # GAP-P3-08
             NodeKind.CALENDAR_SCHEDULE: ["id", "calendar_type"],  # GAP-P1-02
-            NodeKind.SUBLEDGER: ["id", "ledger_type"],  # GAP-P3-06
 
             # =========================================================================
             # CP18: Frontend Framework
@@ -7270,37 +6902,9 @@ class ProjectionTree:
         """Lấy tất cả shopping cart nodes."""
         return self.get_nodes_by_kind(NodeKind.SHOPPING_CART)
 
-    def get_product_catalogs(self) -> list[ProjectionNode]:
-        """Lấy tất cả product catalog nodes."""
-        return self.get_nodes_by_kind(NodeKind.PRODUCT_CATALOG)
-
-    def get_payment_gateways(self) -> list[ProjectionNode]:
-        """Lấy tất cả payment gateway nodes."""
-        return self.get_nodes_by_kind(NodeKind.PAYMENT_GATEWAY)
-
     def get_order_fulfillments(self) -> list[ProjectionNode]:
         """Lấy tất cả order fulfillment nodes."""
         return self.get_nodes_by_kind(NodeKind.ORDER_FULFILLMENT)
-
-    # =========================================================================
-    # P2: Finance Domain Getters
-    # =========================================================================
-
-    def get_general_ledgers(self) -> list[ProjectionNode]:
-        """Lấy tất cả general ledger nodes."""
-        return self.get_nodes_by_kind(NodeKind.GENERAL_LEDGER)
-
-    def get_financial_instruments(self) -> list[ProjectionNode]:
-        """Lấy tất cả financial instrument nodes."""
-        return self.get_nodes_by_kind(NodeKind.FINANCIAL_INSTRUMENT)
-
-    def get_currency_exchanges(self) -> list[ProjectionNode]:
-        """Lấy tất cả currency exchange nodes."""
-        return self.get_nodes_by_kind(NodeKind.CURRENCY_EXCHANGE)
-
-    def get_tax_rules(self) -> list[ProjectionNode]:
-        """Lấy tất cả tax rule nodes."""
-        return self.get_nodes_by_kind(NodeKind.TAX_RULE)
 
     # =========================================================================
     # P2: Healthcare Domain Getters

@@ -95,44 +95,6 @@ class TestP2_15bCalendarScheduleDependencies:
 
 
 # ===========================================================================
-# P2-15c: Finance entities dependency
-# ===========================================================================
-
-class TestP2_15cFinanceDependencies:
-    """CP33: GENERAL_LEDGER, FINANCIAL_INSTRUMENT, CURRENCY_EXCHANGE — depends on ENTITY."""
-
-    def test_general_ledger_with_entity_id(self) -> None:
-        tree = ProjectionTree()
-        tree.add_node(ProjectionNode(
-            id="ledger1", kind=NodeKind.GENERAL_LEDGER,
-            params={"id": "ledger1", "entity_id": "Transaction"},
-        ))
-        graph = DependencyBuilder(tree=tree).build()
-        deps = graph.get_dependencies("ledger1")
-        assert "Transaction" in deps
-
-    def test_financial_instrument_with_entities(self) -> None:
-        tree = ProjectionTree()
-        tree.add_node(ProjectionNode(
-            id="fi1", kind=NodeKind.FINANCIAL_INSTRUMENT,
-            params={"id": "fi1", "symbol": "AAPL", "type": "stock", "entities": ["Company"]},
-        ))
-        graph = DependencyBuilder(tree=tree).build()
-        deps = graph.get_dependencies("fi1")
-        assert "Company" in deps
-
-    def test_currency_exchange_with_entity(self) -> None:
-        tree = ProjectionTree()
-        tree.add_node(ProjectionNode(
-            id="fx1", kind=NodeKind.CURRENCY_EXCHANGE,
-            params={"id": "fx1", "base_currency": "USD", "quote_currency": "EUR", "entity_id": "Rate"},
-        ))
-        graph = DependencyBuilder(tree=tree).build()
-        deps = graph.get_dependencies("fx1")
-        assert "Rate" in deps
-
-
-# ===========================================================================
 # P2-15d: Report dependencies on entities
 # ===========================================================================
 
@@ -290,87 +252,6 @@ class TestP2_15hAPIVersionDependencies:
 
 
 # ===========================================================================
-# P2-15i: PAYMENT_GATEWAY dependency on Currency/Webhook
-# ===========================================================================
-
-class TestP2_15iPaymentGatewayDependencies:
-    """CP45: PAYMENT_GATEWAY — depends on CP33 (Currency), CP40 (Webhook)."""
-
-    def test_payment_gateway_with_currencies(self) -> None:
-        tree = ProjectionTree()
-        tree.add_node(ProjectionNode(
-            id="pg1", kind=NodeKind.PAYMENT_GATEWAY,
-            params={"id": "pg1", "provider": "stripe", "currencies": ["USD", "EUR"]},
-        ))
-        graph = DependencyBuilder(tree=tree).build()
-        deps = graph.get_dependencies("pg1")
-        assert "USD" in deps
-        assert "EUR" in deps
-
-    def test_payment_gateway_with_webhook(self) -> None:
-        tree = ProjectionTree()
-        tree.add_node(ProjectionNode(
-            id="pg1", kind=NodeKind.PAYMENT_GATEWAY,
-            params={"id": "pg1", "provider": "stripe", "webhook_id": "wh1"},
-        ))
-        graph = DependencyBuilder(tree=tree).build()
-        deps = graph.get_dependencies("pg1")
-        assert "wh1" in deps
-
-
-# ===========================================================================
-# P2-15j: PRODUCT_CATALOG dependency on CP08/CP10
-# ===========================================================================
-
-class TestP2_15jCatalogDependencies:
-    """CP50: PRODUCT_CATALOG, FACETED_SEARCH_INDEX — depends on CP08, CP10."""
-
-    def test_product_catalog_with_string_products(self) -> None:
-        tree = ProjectionTree()
-        tree.add_node(ProjectionNode(
-            id="cat1", kind=NodeKind.PRODUCT_CATALOG,
-            params={"id": "cat1", "products": ["prod1", "prod2"]},
-        ))
-        graph = DependencyBuilder(tree=tree).build()
-        deps = graph.get_dependencies("cat1")
-        assert "prod1" in deps
-        assert "prod2" in deps
-
-    def test_product_catalog_with_entity_id(self) -> None:
-        tree = ProjectionTree()
-        tree.add_node(ProjectionNode(
-            id="cat1", kind=NodeKind.PRODUCT_CATALOG,
-            params={"id": "cat1", "entity_id": "Product"},
-        ))
-        graph = DependencyBuilder(tree=tree).build()
-        deps = graph.get_dependencies("cat1")
-        assert "Product" in deps
-
-    def test_product_catalog_with_search_index(self) -> None:
-        tree = ProjectionTree()
-        tree.add_node(ProjectionNode(
-            id="cat1", kind=NodeKind.PRODUCT_CATALOG,
-            params={"id": "cat1", "search_index_id": "search1"},
-        ))
-        graph = DependencyBuilder(tree=tree).build()
-        deps = graph.get_dependencies("cat1")
-        assert "search1" in deps
-
-    def test_product_catalog_skips_dict_products(self) -> None:
-        """Products as dicts (with sku/category) should not create edges."""
-        tree = ProjectionTree()
-        tree.add_node(ProjectionNode(
-            id="cat1", kind=NodeKind.PRODUCT_CATALOG,
-            params={"id": "cat1", "products": [
-                {"sku": "ABC-001", "category": "electronics"},
-            ]},
-        ))
-        graph = DependencyBuilder(tree=tree).build()
-        deps = graph.get_dependencies("cat1")
-        assert len(deps) == 0
-
-
-# ===========================================================================
 # Integration: New dependency types are registered
 # ===========================================================================
 
@@ -381,14 +262,11 @@ class TestP2_15DependencyTypes:
         expected = {
             "PLUGIN_SLOT_DEPENDENCY",
             "CALENDAR_WORKFLOW_DEPENDENCY",
-            "FINANCE_ENTITY_DEPENDENCY",
             "REPORT_ENTITY_DEPENDENCY",
             "GEO_ENTITY_DEPENDENCY",
             "ETL_ENTITY_DEPENDENCY",
             "LOCALIZATION_ENTITY_DEPENDENCY",
             "API_VERSION_ENTITY_DEPENDENCY",
-            "PAYMENT_ENTITY_DEPENDENCY",
-            "CATALOG_ENTITY_DEPENDENCY",
         }
         actual = {e.name for e in DependencyType}
         assert expected.issubset(actual), f"Missing: {expected - actual}"

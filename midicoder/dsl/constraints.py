@@ -1861,82 +1861,6 @@ class SearchIndexEngineValid(BaseConstraint):
 
 
 # ============================================================================
-# P2: Domain-Specific Constraints
-# ============================================================================
-
-class PaymentGatewayProviderValid(BaseConstraint):
-    """
-    C045: Payment gateway must have valid provider.
-    """
-    id = "C045"
-    description = "Payment gateway provider must be valid"
-    level = ConstraintLevel.ERROR
-
-    VALID_PROVIDERS = {"stripe", "paypal", "midtrans", "adyen", "square"}
-
-    def validate(
-        self,
-        node: ProjectionNode,
-        tree: ProjectionTree,
-        ctx: ValidationContext
-    ) -> list[ConstraintResult]:
-        if node.kind != NodeKind.PAYMENT_GATEWAY:
-            return []
-
-        results = []
-        provider = node.params.get("provider")
-
-        if provider and provider not in self.VALID_PROVIDERS:
-            results.append(ConstraintResult(
-                constraint_id=self.id,
-                level=self.level,
-                message=f"Invalid payment provider '{provider}'",
-                node_id=node.id,
-                field="provider",
-                expected=", ".join(sorted(self.VALID_PROVIDERS)),
-                actual=provider,
-            ))
-
-        return results
-
-
-class FinancialInstrumentTypeValid(BaseConstraint):
-    """
-    C046: Financial instrument must have valid type.
-    """
-    id = "C046"
-    description = "Financial instrument type must be valid"
-    level = ConstraintLevel.ERROR
-
-    VALID_INSTRUMENT_TYPES = {"stock", "bond", "derivative", "forex", "commodity"}
-
-    def validate(
-        self,
-        node: ProjectionNode,
-        tree: ProjectionTree,
-        ctx: ValidationContext
-    ) -> list[ConstraintResult]:
-        if node.kind != NodeKind.FINANCIAL_INSTRUMENT:
-            return []
-
-        results = []
-        inst_type = node.params.get("type")
-
-        if inst_type and inst_type not in self.VALID_INSTRUMENT_TYPES:
-            results.append(ConstraintResult(
-                constraint_id=self.id,
-                level=self.level,
-                message=f"Invalid instrument type '{inst_type}'",
-                node_id=node.id,
-                field="type",
-                expected=", ".join(sorted(self.VALID_INSTRUMENT_TYPES)),
-                actual=inst_type,
-            ))
-
-        return results
-
-
-# ============================================================================
 # P2: Advanced Patterns Constraints
 # ============================================================================
 
@@ -2225,48 +2149,6 @@ class CalendarScheduleCronValid(BaseConstraint):
         return results
 
 
-class GeneralLedgerDoubleEntryValid(BaseConstraint):
-    """
-    C053: General ledger entries must balance (double-entry bookkeeping).
-
-    CP33: GENERAL_LEDGER, FINANCIAL_INSTRUMENT, CURRENCY_EXCHANGE, TAX_RULE,
-    SUBLEDGER — the sum of debit amounts must equal the sum of credit amounts
-    within each ledger entry.
-    """
-    id = "C053"
-    description = "General ledger entries must balance (double-entry)"
-    level = ConstraintLevel.ERROR
-
-    def validate(
-        self,
-        node: ProjectionNode,
-        tree: ProjectionTree,
-        ctx: ValidationContext
-    ) -> list[ConstraintResult]:
-        if node.kind not in (NodeKind.GENERAL_LEDGER, NodeKind.SUBLEDGER):
-            return []
-
-        results = []
-        entries = node.params.get("entries", [])
-
-        for entry in entries:
-            debits = sum(float(e.get("amount", 0)) for e in entry.get("debits", []))
-            credits = sum(float(e.get("amount", 0)) for e in entry.get("credits", []))
-
-            if abs(debits - credits) > 1e-9 and debits > 0:
-                results.append(ConstraintResult(
-                    constraint_id=self.id,
-                    level=self.level,
-                    message=f"Ledger entry '{entry.get('id')}' does not balance: debits={debits}, credits={credits}",
-                    node_id=node.id,
-                    field="entries",
-                    expected="debits == credits",
-                    actual=f"{debits} != {credits}",
-                ))
-
-        return results
-
-
 class ReportEntityReferenceExists(BaseConstraint):
     """
     C054: Report data sources must reference existing entities.
@@ -2515,96 +2397,6 @@ class APIVersionSemanticVersion(BaseConstraint):
                 expected="MAJOR.MINOR.PATCH (e.g. 1.0.0)",
                 actual=version,
             ))
-
-        return results
-
-
-class PaymentGatewayEndpointsValid(BaseConstraint):
-    """
-    C059: Payment gateway configuration must have valid endpoint URLs.
-
-    CP45: PAYMENT_GATEWAY — ``webhook_url`` (if present) must be a valid
-    HTTP(S) URL.
-    """
-    id = "C059"
-    description = "Payment gateway must have valid endpoint URLs"
-    level = ConstraintLevel.ERROR
-
-    _URL_PATTERN = re.compile(r"^https?://[^\s/$.?#]+\.?[^\s]*")
-
-    def validate(
-        self,
-        node: ProjectionNode,
-        tree: ProjectionTree,
-        ctx: ValidationContext
-    ) -> list[ConstraintResult]:
-        if node.kind != NodeKind.PAYMENT_GATEWAY:
-            return []
-
-        results = []
-        webhook_url = node.params.get("webhook_url")
-
-        if webhook_url and not self._URL_PATTERN.match(webhook_url):
-            results.append(ConstraintResult(
-                constraint_id=self.id,
-                level=self.level,
-                message=f"Invalid webhook URL '{webhook_url}'",
-                node_id=node.id,
-                field="webhook_url",
-                expected="valid HTTP(S) URL",
-                actual=webhook_url,
-            ))
-
-        return results
-
-
-class ProductCatalogUniqueSKU(BaseConstraint):
-    """
-    C060: Product catalog must have unique SKU within each category.
-
-    CP50: PRODUCT_CATALOG, FACETED_SEARCH_INDEX — every product in the
-    same category must have a distinct SKU.
-    """
-    id = "C060"
-    description = "Product catalog SKUs must be unique per category"
-    level = ConstraintLevel.ERROR
-
-    def validate(
-        self,
-        node: ProjectionNode,
-        tree: ProjectionTree,
-        ctx: ValidationContext
-    ) -> list[ConstraintResult]:
-        if node.kind != NodeKind.PRODUCT_CATALOG:
-            return []
-
-        results = []
-        products = node.params.get("products", [])
-
-        # Group by category, then check SKU uniqueness within each group
-        category_skus: dict[str, list[str]] = {}
-        for product in products:
-            if not isinstance(product, dict):
-                continue
-            category = product.get("category", "default")
-            sku = product.get("sku")
-            if sku:
-                category_skus.setdefault(category, []).append(sku)
-
-        for category, skus in category_skus.items():
-            seen = set()
-            for sku in skus:
-                if sku in seen:
-                    results.append(ConstraintResult(
-                        constraint_id=self.id,
-                        level=self.level,
-                        message=f"Duplicate SKU '{sku}' in category '{category}'",
-                        node_id=node.id,
-                        field="products.sku",
-                        expected="unique SKU per category",
-                        actual=f"{sku} (category: {category})",
-                    ))
-                seen.add(sku)
 
         return results
 
@@ -4055,14 +3847,11 @@ for cls in [
     # Advanced C051-C060
     PluginSlotIdUnique,
     CalendarScheduleCronValid,
-    GeneralLedgerDoubleEntryValid,
     ReportEntityReferenceExists,
     GeofenceCoordinateRangeValid,
     ETLStepHasExtractAndLoad,
     LocalizationLocaleBCP47,
     APIVersionSemanticVersion,
-    PaymentGatewayEndpointsValid,
-    ProductCatalogUniqueSKU,
     # CP32: State Machine Engine C061-C062
     StateMachineTransitionValid,
     StateMachineInitialStateExists,

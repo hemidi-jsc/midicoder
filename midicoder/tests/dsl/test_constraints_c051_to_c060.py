@@ -14,13 +14,10 @@ from midicoder.dsl.constraints import (
     APIVersionSemanticVersion,
     CalendarScheduleCronValid,
     ETLStepHasExtractAndLoad,
-    GeneralLedgerDoubleEntryValid,
     GeofenceCoordinateRangeValid,
     PluginSlotIdUnique,
-    ProductCatalogUniqueSKU,
     ReportEntityReferenceExists,
     LocalizationLocaleBCP47,
-    PaymentGatewayEndpointsValid,
     ConstraintLevel,
     ConstraintResult,
     get_registry,
@@ -114,83 +111,6 @@ class TestC052CalendarScheduleCronValid:
         results = constraint(node, tree, _ctx())
 
         assert len(results) == 0
-
-
-# ===========================================================================
-# C053: GeneralLedgerDoubleEntryValid
-# ===========================================================================
-
-class TestC053GeneralLedgerDoubleEntryValid:
-    """Test C053 — General ledger double-entry balance check."""
-
-    def test_balanced_entry(self) -> None:
-        tree = ProjectionTree()
-        node = ProjectionNode(
-            id="ledger1",
-            kind=NodeKind.GENERAL_LEDGER,
-            params={
-                "id": "ledger1",
-                "entries": [
-                    {
-                        "id": "e1",
-                        "debits": [{"account": "A", "amount": 100}],
-                        "credits": [{"account": "B", "amount": 100}],
-                    }
-                ],
-            },
-        )
-
-        constraint = GeneralLedgerDoubleEntryValid()
-        results = constraint(node, tree, _ctx())
-
-        assert len(results) == 0
-
-    def test_unbalanced_entry_fails(self) -> None:
-        tree = ProjectionTree()
-        node = ProjectionNode(
-            id="ledger1",
-            kind=NodeKind.GENERAL_LEDGER,
-            params={
-                "id": "ledger1",
-                "entries": [
-                    {
-                        "id": "e1",
-                        "debits": [{"account": "A", "amount": 100}],
-                        "credits": [{"account": "B", "amount": 50}],
-                    }
-                ],
-            },
-        )
-
-        constraint = GeneralLedgerDoubleEntryValid()
-        results = constraint(node, tree, _ctx())
-
-        assert len(results) == 1
-        assert results[0].constraint_id == "C053"
-        assert "does not balance" in results[0].message
-
-    def test_subledger_also_validated(self) -> None:
-        tree = ProjectionTree()
-        node = ProjectionNode(
-            id="sub1",
-            kind=NodeKind.SUBLEDGER,
-            params={
-                "id": "sub1",
-                "ledger_type": "accounts_receivable",
-                "entries": [
-                    {
-                        "id": "e1",
-                        "debits": [{"account": "A", "amount": 200}],
-                        "credits": [{"account": "B", "amount": 100}],
-                    }
-                ],
-            },
-        )
-
-        constraint = GeneralLedgerDoubleEntryValid()
-        results = constraint(node, tree, _ctx())
-
-        assert len(results) == 1
 
 
 # ===========================================================================
@@ -470,102 +390,6 @@ class TestC058APIVersionSemanticVersion:
 
 
 # ===========================================================================
-# C059: PaymentGatewayEndpointsValid
-# ===========================================================================
-
-class TestC059PaymentGatewayEndpointsValid:
-    """Test C059 — Payment gateway config has valid endpoints."""
-
-    def test_valid_webhook_url(self) -> None:
-        tree = ProjectionTree()
-        node = ProjectionNode(
-            id="pg1",
-            kind=NodeKind.PAYMENT_GATEWAY,
-            params={"id": "pg1", "provider": "stripe", "webhook_url": "https://example.com/webhooks/stripe"},
-        )
-
-        constraint = PaymentGatewayEndpointsValid()
-        results = constraint(node, tree, _ctx())
-
-        assert len(results) == 0
-
-    def test_invalid_webhook_url(self) -> None:
-        tree = ProjectionTree()
-        node = ProjectionNode(
-            id="pg1",
-            kind=NodeKind.PAYMENT_GATEWAY,
-            params={"id": "pg1", "provider": "stripe", "webhook_url": "not-a-url"},
-        )
-
-        constraint = PaymentGatewayEndpointsValid()
-        results = constraint(node, tree, _ctx())
-
-        assert len(results) == 1
-        assert results[0].constraint_id == "C059"
-
-    def test_http_url_also_valid(self) -> None:
-        tree = ProjectionTree()
-        node = ProjectionNode(
-            id="pg1",
-            kind=NodeKind.PAYMENT_GATEWAY,
-            params={"id": "pg1", "provider": "stripe", "webhook_url": "http://localhost:8080/hook"},
-        )
-
-        constraint = PaymentGatewayEndpointsValid()
-        results = constraint(node, tree, _ctx())
-
-        assert len(results) == 0
-
-
-# ===========================================================================
-# C060: ProductCatalogUniqueSKU
-# ===========================================================================
-
-class TestC060ProductCatalogUniqueSKU:
-    """Test C060 — Product catalog unique SKU within same category."""
-
-    def test_unique_skus_across_categories(self) -> None:
-        tree = ProjectionTree()
-        node = ProjectionNode(
-            id="cat1",
-            kind=NodeKind.PRODUCT_CATALOG,
-            params={
-                "id": "cat1",
-                "products": [
-                    {"sku": "ABC-001", "category": "electronics"},
-                    {"sku": "ABC-001", "category": "clothing"},  # same SKU, diff category — OK
-                ],
-            },
-        )
-
-        constraint = ProductCatalogUniqueSKU()
-        results = constraint(node, tree, _ctx())
-
-        assert len(results) == 0
-
-    def test_duplicate_sku_in_same_category(self) -> None:
-        tree = ProjectionTree()
-        node = ProjectionNode(
-            id="cat1",
-            kind=NodeKind.PRODUCT_CATALOG,
-            params={
-                "id": "cat1",
-                "products": [
-                    {"sku": "ABC-001", "category": "electronics"},
-                    {"sku": "ABC-001", "category": "electronics"},
-                ],
-            },
-        )
-
-        constraint = ProductCatalogUniqueSKU()
-        results = constraint(node, tree, _ctx())
-
-        assert len(results) == 1
-        assert results[0].constraint_id == "C060"
-        assert "Duplicate SKU" in results[0].message
-
-
-# ===========================================================================
 # Integration: Registry includes all C051-C060
 # ===========================================================================
 
@@ -576,13 +400,13 @@ class TestC051ToC060Registry:
         registry = get_registry()
         all_ids = {c.id for c in registry.get_all()}
 
-        expected = {"C051", "C052", "C053", "C054", "C055", "C056", "C057", "C058", "C059", "C060"}
+        expected = {"C051", "C052", "C054", "C055", "C056", "C057", "C058"}
         assert expected.issubset(all_ids), f"Missing constraints: {expected - all_ids}"
 
     def test_all_constraints_are_error_level(self) -> None:
         registry = get_registry()
         for c in registry.get_all():
-            if c.id in {"C051", "C052", "C053", "C054", "C055", "C056", "C057", "C058", "C059", "C060"}:
+            if c.id in {"C051", "C052", "C054", "C055", "C056", "C057", "C058"}:
                 assert c.level == ConstraintLevel.ERROR, f"{c.id} should be ERROR level"
 
 
