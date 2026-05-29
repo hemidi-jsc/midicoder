@@ -130,7 +130,7 @@ def gen(force, interactive):
       midicoder contract gen --interactive
     """
     from midicoder.pipeline.commands.contract import generate_contracts
-    generate_contracts(force=force, interactive=interactive)
+    generate_contracts(force=force)
 
 
 @contract.command()

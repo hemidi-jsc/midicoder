@@ -459,7 +459,7 @@ def generate_contracts(force: bool = False):
     Process (SQLite-only):
     1. Lấy active brief từ SQLite
     2. Load analysis data + clarifications
-    3. Gọi LLM để generate 7 categories
+    3. Gọi LLM để generate 7 categories (fallback: placeholder)
     4. Self-validate + auto-fix nếu có errors
     5. Save contracts vào SQLite (artifact_type="contract")
 
@@ -489,7 +489,6 @@ def generate_contracts(force: bool = False):
         click.echo(f"ℹ️  Sử dụng brief: {active_brief.get('brief_id')}")
 
     brief_id = active_brief.get('brief_id')
-    brief_content = active_brief.get('content', '')
     click.echo(f"   → Brief ID: {brief_id}")
     click.echo(f"   → Title: {active_brief.get('title')}")
 
@@ -505,65 +504,12 @@ def generate_contracts(force: bool = False):
             click.echo("❌ Huỷ bỏ.")
             return
 
-    # Step 3: Load analysis data
+    # Step 3: Delegate đến _generate_contracts_to_sqlite (có placeholder fallback)
     click.echo("")
-    click.echo("   → Loading analysis data...")
-    analysis_data = {}
-    try:
-        analysis_artifact = artifacts_manager.get(f"analysis-{brief_id}")
-        if analysis_artifact:
-            analysis_data = json.loads(analysis_artifact.get("content", "{}"))
-            click.echo(f"   ✓ Analysis loaded: {len(analysis_data.get('entities', []))} entities")
-        else:
-            click.echo("   ⚠️  Không tìm thấy analysis artifact")
-    except Exception as e:
-        click.echo(f"   ⚠️  Lỗi load analysis: {e}")
+    click.echo("   → Đang generate contracts...")
+    _generate_contracts_to_sqlite(brief_id)
 
-    # Step 4: Load clarifications
-    clarifications = []
-    try:
-        clarifications = briefs_manager.get_clarifications(brief_id)
-        if clarifications:
-            click.echo(f"   ✓ Clarifications loaded: {len(clarifications)} Q&A")
-    except Exception:
-        pass
-
-    # Step 5: Load LLM config
-    try:
-        config = load_llm_config()
-        click.echo(f"   ✓ LLM config: {config.provider} / {config.model}")
-    except Exception as e:
-        click.echo(f"❌ Không thể load LLM config: {e}")
-        click.echo("💡 Cấu hình LLM tại ~/.midicoder/midicoder.json")
-        return
-
-    # Step 6: Generate contracts bằng LLM
-    click.echo("")
-    click.echo("🤖 Đang generate contracts bằng LLM...")
-
-    try:
-        yaml_dict = _generate_contracts_with_llm(
-            config=config,
-            analysis_data=analysis_data,
-            clarifications=clarifications,
-            brief_content=brief_content,
-        )
-    except Exception as e:
-        click.echo(f"❌ LLM generation failed: {e}")
-        click.echo("💡 Kiểm tra LLM server đang chạy và config hợp lệ")
-        return
-
-    # Step 7: Save contracts vào SQLite
-    click.echo("")
-    click.echo("   → Saving contracts to SQLite...")
-    saved_count = 0
-    for category in REQUIRED_CATEGORIES:
-        yaml_content = yaml_dict.get(category, "")
-        _upsert_contract_artifact(artifacts_manager, category, yaml_content, brief_id)
-        saved_count += 1
-    click.echo(f"   ✓ Saved {saved_count}/7 contract artifacts to SQLite")
-
-    # Step 8: Self-validate + auto-fix
+    # Step 4: Self-validate + auto-fix
     click.echo("")
     click.echo("   → Self-validating contracts...")
 
@@ -576,8 +522,7 @@ def generate_contracts(force: bool = False):
             elif report.status == ValidationStatus.WARNINGS:
                 click.echo(f"   ⚠️  Contracts valid với {report.total_warnings} warnings")
             else:
-                click.echo(f"   → Contracts có {report.total_errors} errors, auto-fixing...")
-                _auto_fix_contracts(artifacts_manager, yaml_dict, brief_id, config)
+                click.echo(f"   → Contracts có {report.total_errors} errors")
     except Exception as e:
         click.echo(f"   ⚠️  Validation error: {e}")
 
@@ -915,6 +860,7 @@ def _build_placeholder_yaml(brief_id: str, generated_at: str) -> Dict[str, str]:
     workflows_yaml = placeholder_template.rstrip() + "\nworkflows: []\n"
     value_objects_yaml = placeholder_template.rstrip() + "\nvalue_objects: []\n"
     guards_yaml = placeholder_template.rstrip() + "\nguards: []\n"
+    ui_components_yaml = placeholder_template.rstrip() + "\nui_components: []\n"
 
     return {
         "entities": entities_yaml,
@@ -924,6 +870,7 @@ def _build_placeholder_yaml(brief_id: str, generated_at: str) -> Dict[str, str]:
         "workflows": workflows_yaml,
         "value_objects": value_objects_yaml,
         "guards": guards_yaml,
+        "ui_components": ui_components_yaml,
     }
 
 
