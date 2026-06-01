@@ -1,10 +1,12 @@
 /**
  * Store cho Pipeline state
  * Quản lý trạng thái của các phases trong pipeline
+ * Dùng ApiService để kết nối với backend FastAPI thực
  */
 
-import { Injectable, signal, computed } from '@angular/core';
-import { MockApiService, PipelineStatus } from './mock-api.service';
+import { Injectable, signal, computed, inject } from '@angular/core';
+import { ApiService } from './api.service';
+import { PipelineStatus } from './mock-api.service';
 
 export type PhaseStatus = 'pending' | 'in_progress' | 'complete' | 'error';
 
@@ -19,6 +21,8 @@ export interface PhaseState {
   providedIn: 'root',
 })
 export class PipelineStore {
+  private api = inject(ApiService);
+
   /**
    * States cho từng phase của pipeline
    */
@@ -89,27 +93,68 @@ export class PipelineStore {
     );
   });
 
-  constructor(private mockApi: MockApiService) {}
-
   /**
-   * Load pipeline status từ API
+   * Load pipeline status từ backend FastAPI
+   * Fallback sang mock data nếu backend chưa sẵn sàng
    */
   async loadStatus(): Promise<void> {
     this.isLoading.set(true);
     try {
-      const result = await this.mockApi.getStatus();
+      const result = await this.api.getSystemStatus();
       if (result.success && result.data) {
-        this.updateFromApi(result.data);
+        this.updateFromBackend(result.data);
+      } else {
+        this.setFallbackStatus();
       }
     } catch (error) {
-      console.error('Failed to load pipeline status:', error);
+      console.warn('Backend not available, using fallback status:', error);
+      this.setFallbackStatus();
     } finally {
       this.isLoading.set(false);
     }
   }
 
   /**
-   * Update states từ API response
+   * Update states từ backend response
+   */
+  private updateFromBackend(data: any): void {
+    this.projectName.set(data.project_name || data.cwd || '');
+    this.activeVersion.set(data.active_version || 'v1.0.0');
+
+    const progress = data.pipeline_progress || {};
+
+    this.initPhaseState.set({
+      status: (progress.init as PhaseStatus) || 'pending',
+    });
+    this.briefPhaseState.set({
+      status: (progress.brief as PhaseStatus) || 'pending',
+    });
+    this.contractPhaseState.set({
+      status: (progress.contract as PhaseStatus) || 'pending',
+    });
+    this.irPhaseState.set({
+      status: (progress.ir as PhaseStatus) || 'pending',
+    });
+    this.codePhaseState.set({
+      status: (progress.code as PhaseStatus) || 'pending',
+      currentStep: progress.code_step,
+    });
+  }
+
+  /**
+   * Fallback status khi backend không available
+   */
+  private setFallbackStatus(): void {
+    this.initPhaseState.set({ status: 'complete', completedAt: new Date().toISOString() });
+    this.briefPhaseState.set({ status: 'pending' });
+    this.contractPhaseState.set({ status: 'pending' });
+    this.irPhaseState.set({ status: 'pending' });
+    this.codePhaseState.set({ status: 'pending' });
+    this.previewPhaseState.set({ status: 'pending' });
+  }
+
+  /**
+   * Update states từ API response (deprecated - giữ để backward compat)
    */
   private updateFromApi(status: PipelineStatus): void {
     this.projectName.set(status.project.name);
@@ -141,7 +186,7 @@ export class PipelineStore {
     });
 
     this.previewPhaseState.set({
-      status: 'pending', // Default, will be updated separately
+      status: 'pending',
     });
   }
 
@@ -187,6 +232,22 @@ export class PipelineStore {
   /**
    * Setters
    */
+  setInitPhaseStatus(status: PhaseStatus): void {
+    this.initPhaseState.set({ status });
+  }
+
+  setBriefPhaseStatus(status: PhaseStatus): void {
+    this.briefPhaseState.set({ status });
+  }
+
+  setContractPhaseStatus(status: PhaseStatus): void {
+    this.contractPhaseState.set({ status });
+  }
+
+  setIRPhaseStatus(status: PhaseStatus): void {
+    this.irPhaseState.set({ status });
+  }
+
   setCodePhaseStatus(status: PhaseStatus, currentStep?: string): void {
     this.codePhaseState.update((current) => ({
       ...current,
@@ -197,5 +258,136 @@ export class PipelineStore {
 
   setPreviewPhaseStatus(status: PhaseStatus): void {
     this.previewPhaseState.set({ status });
+  }
+
+  /**
+   * Pipeline actions - gọi API thực
+   */
+  async runBriefAnalyze(): Promise<boolean> {
+    this.briefPhaseState.set({ status: 'in_progress' });
+    try {
+      const result = await this.api.analyzeBrief({ brief_content: '' });
+      if (result.success) {
+        this.briefPhaseState.set({ status: 'complete', completedAt: new Date().toISOString() });
+        return true;
+      } else {
+        this.briefPhaseState.set({ status: 'error', errorMessage: result.message || 'Brief analyze failed' });
+        return false;
+      }
+    } catch (error) {
+      this.briefPhaseState.set({ status: 'error', errorMessage: String(error) });
+      return false;
+    }
+  }
+
+  async runContractGen(): Promise<boolean> {
+    this.contractPhaseState.set({ status: 'in_progress' });
+    try {
+      const result = await this.api.generateContract();
+      if (result.success) {
+        this.contractPhaseState.set({ status: 'complete', completedAt: new Date().toISOString() });
+        return true;
+      } else {
+        this.contractPhaseState.set({ status: 'error', errorMessage: result.message || 'Contract gen failed' });
+        return false;
+      }
+    } catch (error) {
+      this.contractPhaseState.set({ status: 'error', errorMessage: String(error) });
+      return false;
+    }
+  }
+
+  async runContractCheck(): Promise<boolean> {
+    try {
+      const result = await this.api.checkContract();
+      return result.success;
+    } catch (error) {
+      console.error('Contract check failed:', error);
+      return false;
+    }
+  }
+
+  async runIRBuild(): Promise<boolean> {
+    this.irPhaseState.set({ status: 'in_progress' });
+    try {
+      const result = await this.api.buildIR();
+      if (result.success) {
+        this.irPhaseState.set({ status: 'complete', completedAt: new Date().toISOString() });
+        return true;
+      } else {
+        this.irPhaseState.set({ status: 'error', errorMessage: result.message || 'IR build failed' });
+        return false;
+      }
+    } catch (error) {
+      this.irPhaseState.set({ status: 'error', errorMessage: String(error) });
+      return false;
+    }
+  }
+
+  async runCodeBuild(): Promise<boolean> {
+    this.codePhaseState.set({ status: 'in_progress', currentStep: 'building' });
+    try {
+      const result = await this.api.buildCodePlan();
+      if (result.success) {
+        this.codePhaseState.set({ status: 'complete', completedAt: new Date().toISOString() });
+        return true;
+      } else {
+        this.codePhaseState.set({ status: 'error', errorMessage: result.message || 'Code build failed' });
+        return false;
+      }
+    } catch (error) {
+      this.codePhaseState.set({ status: 'error', errorMessage: String(error) });
+      return false;
+    }
+  }
+
+  async runCodeGen(): Promise<boolean> {
+    this.codePhaseState.set({ status: 'in_progress', currentStep: 'generating' });
+    try {
+      const result = await this.api.generateCode();
+      if (result.success) {
+        return true;
+      } else {
+        this.codePhaseState.set({ status: 'error', errorMessage: result.message || 'Code gen failed' });
+        return false;
+      }
+    } catch (error) {
+      this.codePhaseState.set({ status: 'error', errorMessage: String(error) });
+      return false;
+    }
+  }
+
+  async runCodeApply(): Promise<boolean> {
+    this.codePhaseState.set({ status: 'in_progress', currentStep: 'applying' });
+    try {
+      const result = await this.api.applyCode();
+      if (result.success) {
+        this.codePhaseState.set({ status: 'complete', completedAt: new Date().toISOString() });
+        return true;
+      } else {
+        this.codePhaseState.set({ status: 'error', errorMessage: result.message || 'Code apply failed' });
+        return false;
+      }
+    } catch (error) {
+      this.codePhaseState.set({ status: 'error', errorMessage: String(error) });
+      return false;
+    }
+  }
+
+  async runRuntimeTest(): Promise<boolean> {
+    this.previewPhaseState.set({ status: 'in_progress' });
+    try {
+      const result = await this.api.testRuntime();
+      if (result.success) {
+        this.previewPhaseState.set({ status: 'complete', completedAt: new Date().toISOString() });
+        return true;
+      } else {
+        this.previewPhaseState.set({ status: 'error', errorMessage: result.message || 'Runtime test failed' });
+        return false;
+      }
+    } catch (error) {
+      this.previewPhaseState.set({ status: 'error', errorMessage: String(error) });
+      return false;
+    }
   }
 }

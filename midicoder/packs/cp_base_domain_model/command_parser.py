@@ -220,13 +220,38 @@ class CommandParser:
         Raises:
             MidicoderError: Nếu validation failed
         """
-        # Command phải có writes_to hoặc reads_from
+        # Command phải có writes_to, TRỪ KHI command chỉ có side-effect effects
         if not command.writes_to:
-            EM.raise_error(
-                ErrorCode.B01_COMMAND_NOT_FOUND,
-                command_id=command.id,
-                reason="Command must have at least one 'writes_to' entity",
-            )
+            # Check if command has side-effect only effects (no DB writes)
+            # OR has entity-targeting effects (create/update/delete/upsert) that imply writes
+            side_effect_types = {
+                "send_email", "call_external_api", "send_sms", "webhook",
+                "write_audit_log", "record_metric", "publish_event",
+                "check_compliance", "mask_pii",
+            }
+            entity_write_types = {
+                "create_record", "update_record", "delete_record", "upsert_record",
+            }
+            has_side_effect = False
+            has_entity_write = False
+            for e in command.effects:
+                if isinstance(e, dict):
+                    # DSL YAML uses 'type' key; parsed CommandEffect uses 'effect_type'
+                    effect_val = e.get("effect_type", e.get("type", ""))
+                else:
+                    effect_val = getattr(e, "effect_type", "")
+                    if hasattr(effect_val, "value"):
+                        effect_val = effect_val.value
+                if effect_val in side_effect_types:
+                    has_side_effect = True
+                if effect_val in entity_write_types:
+                    has_entity_write = True
+            if not has_side_effect and not has_entity_write:
+                EM.raise_error(
+                    ErrorCode.B01_COMMAND_NOT_FOUND,
+                    command_id=command.id,
+                    reason="Command must have at least one 'writes_to' entity",
+                )
 
 
 # ============================================================================

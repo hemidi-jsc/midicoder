@@ -3,12 +3,12 @@
  * Cho phép người dùng gửi feedback
  */
 
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
-import { MockApiService } from '../../core/mock-api.service';
+import { ApiService } from '../../core/api.service';
 
 @Component({
   selector: 'app-feedback',
@@ -140,6 +140,8 @@ import { MockApiService } from '../../core/mock-api.service';
   styles: [],
 })
 export class FeedbackComponent {
+  private api = inject(ApiService);
+
   feedbackType: 'bug' | 'enhancement' | 'clarification' = 'bug';
   feedbackText = '';
   autoApply = true;
@@ -147,8 +149,6 @@ export class FeedbackComponent {
   successMessage = '';
   isPipelineTriggered = false;
   pipelineProgress: any = null;
-
-  constructor(private mockApi: MockApiService) {}
 
   async handleSubmit(): Promise<void> {
     if (!this.feedbackText.trim()) {
@@ -158,7 +158,7 @@ export class FeedbackComponent {
     this.isSubmitting = true;
     this.successMessage = '';
 
-    const result = await this.mockApi.submitFeedback({
+    const result = await this.api.submitFeedback({
       version: 'v1.0.0',
       type: this.feedbackType,
       feedback: this.feedbackText,

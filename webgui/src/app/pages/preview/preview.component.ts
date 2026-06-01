@@ -3,11 +3,11 @@
  * Quản lý preview của project
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 
-import { MockApiService } from '../../core/mock-api.service';
+import { ApiService } from '../../core/api.service';
 
 @Component({
   selector: 'app-preview',
@@ -144,19 +144,19 @@ import { MockApiService } from '../../core/mock-api.service';
   styles: [],
 })
 export class PreviewComponent implements OnInit {
+  private api = inject(ApiService);
+
   previewStatus: any = null;
   previewUrls: any = null;
   isProcessing = false;
   successMessage = '';
-
-  constructor(private mockApi: MockApiService) {}
 
   async ngOnInit(): Promise<void> {
     await this.loadStatus();
   }
 
   async loadStatus(): Promise<void> {
-    const result = await this.mockApi.getPreviewStatus();
+    const result = await this.api.getPreviewStatus();
     if (result.success && result.data) {
       this.previewStatus = result.data;
       if (result.data.status === 'running') {
@@ -172,25 +172,25 @@ export class PreviewComponent implements OnInit {
     this.isProcessing = true;
     this.successMessage = '';
 
-    const result = await this.mockApi.startPreview({ version: 'v1.0.0' });
-    
+    const result = await this.api.startPreview({ version: 'v1.0.0' });
+
     if (result.success && result.data) {
       this.previewUrls = result.data.urls;
     }
-    
+
     await this.loadStatus();
-    
+
     this.isProcessing = false;
   }
 
   async handleStop(): Promise<void> {
     this.isProcessing = true;
-    
-    await this.mockApi.stopPreview();
-    
+
+    await this.api.stopPreview();
+
     this.previewUrls = null;
     await this.loadStatus();
-    
+
     this.successMessage = 'Preview stopped';
     this.isProcessing = false;
   }

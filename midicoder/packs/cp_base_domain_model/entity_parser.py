@@ -235,23 +235,30 @@ class EntityParser:
         """
         rel_type_str = rel_def.get("type", "one-to-many")
         rel_type = self._parse_relationship_type(rel_type_str)
-        
+
+        # Detect self-referencing before target validation
+        is_self_ref = rel_type == RelationshipType.SELF_REFERENCING
+        is_polymorphic = bool(rel_def.get("polymorphic", False))
+        if is_polymorphic:
+            rel_type = RelationshipType.POLYMORPHIC
+
         target = rel_def.get("target", "")
+        # For self-referencing relationships, default target to entity's own ID
+        if not target and is_self_ref:
+            target = entity_id
+        # For polymorphic relationships, target is optional (may reference multiple types)
+        if not target and is_polymorphic:
+            target = entity_id
         if not target:
             EM.raise_error(
                 ErrorCode.B01_ENTITY_INVALID_RELATIONSHIP,
                 reason="Relationship 'target' is required",
             )
-        
-        # Detect self-referencing
-        is_self_ref = target.lower() == entity_id.lower()
+
+        # Re-detect self-referencing from target value
+        is_self_ref = is_self_ref or target.lower() == entity_id.lower()
         if is_self_ref:
             rel_type = RelationshipType.SELF_REFERENCING
-        
-        # Detect polymorphic
-        is_polymorphic = bool(rel_def.get("polymorphic", False))
-        if is_polymorphic:
-            rel_type = RelationshipType.POLYMORPHIC
         
         return Relationship(
             rel_type=rel_type,

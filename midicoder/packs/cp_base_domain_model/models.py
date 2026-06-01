@@ -174,7 +174,7 @@ class Relationship:
         ... )
     """
     rel_type: RelationshipType
-    target: str
+    target: str = ""
     local_field: str | None = None
     foreign_field: str | None = None
     back_populates: str | None = None
@@ -2051,7 +2051,7 @@ class Query:
         input_fields = [
             QueryField(
                 name=f["name"],
-                field_type=f["field_type"],
+                field_type=f.get("field_type", f.get("type", "string")),
                 required=f.get("required", False),
                 description=f.get("description", ""),
                 default=f.get("default"),

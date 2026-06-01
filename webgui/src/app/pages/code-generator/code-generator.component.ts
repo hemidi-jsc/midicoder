@@ -3,12 +3,13 @@
  * Xem và quản lý code đã tạo
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
-import { MockApiService } from '../../core/mock-api.service';
+import { ApiService } from '../../core/api.service';
+import { CodeFile } from '../../core/mock-api.service';
 
 @Component({
   selector: 'app-code-generator',
@@ -109,22 +110,23 @@ import { MockApiService } from '../../core/mock-api.service';
   styles: [],
 })
 export class CodeGeneratorComponent implements OnInit {
+  private readonly api = inject(ApiService);
+
   selectedTarget: 'backend' | 'frontend' | 'all' = 'all';
-  codeFiles: any[] = [];
+  codeFiles: CodeFile[] = [];
   codeSummary: any = null;
   isProcessing = false;
   successMessage = '';
-
-  constructor(private mockApi: MockApiService) {}
 
   async ngOnInit(): Promise<void> {
     await this.loadCodeFiles();
   }
 
   async loadCodeFiles(): Promise<void> {
-    const result = await this.mockApi.getCodeFiles();
+    const result = await this.api.getCodeFiles();
     if (result.success && result.data) {
-      this.codeFiles = result.data;
+      // Backend trả về { files: [...], count: N }
+      this.codeFiles = result.data.files || result.data;
     }
   }
 
@@ -132,8 +134,8 @@ export class CodeGeneratorComponent implements OnInit {
     this.isProcessing = true;
     this.successMessage = '';
 
-    await this.mockApi.planCode({ version: 'v1.0.0', target: this.selectedTarget });
-    
+    await this.api.buildCodePlan();
+
     this.successMessage = 'Tạo kế hoạch thành công';
     this.isProcessing = false;
   }
@@ -142,14 +144,14 @@ export class CodeGeneratorComponent implements OnInit {
     this.isProcessing = true;
     this.successMessage = '';
 
-    const result = await this.mockApi.generateCode({ version: 'v1.0.0', target: this.selectedTarget });
-    
+    const result = await this.api.generateCode({ runtime: false });
+
     if (result.success && result.data) {
       this.codeSummary = result.data.summary;
     }
-    
+
     await this.loadCodeFiles();
-    
+
     this.successMessage = 'Tạo mã thành công';
     this.isProcessing = false;
   }
@@ -158,8 +160,8 @@ export class CodeGeneratorComponent implements OnInit {
     this.isProcessing = true;
     this.successMessage = '';
 
-    await this.mockApi.applyCode({ version: 'v1.0.0', target_dir: './src', backup: true });
-    
+    await this.api.applyCode({ force: false, dry_run: false });
+
     this.successMessage = 'Áp dụng mã thành công';
     this.isProcessing = false;
   }

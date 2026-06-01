@@ -2,8 +2,13 @@
 Router cho các commands về code
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
+from app.artifact import (
+    get_generated_code_files,
+    get_generated_file_content,
+    get_plan_lowering,
+)
 from app.cli_wrapper import cli_wrapper
 from app.i18n import i18n
 from app.models import ApiResponse, CodeGenRequest, CodeApplyRequest
@@ -137,7 +142,7 @@ async def apply_code(request_data: CodeApplyRequest = None, request: Request = N
         request_data = CodeApplyRequest()
     
     language = i18n.get_language_from_request(request) if request else "vi"
-    
+
     # Gọi CLI wrapper để apply code
     result = await cli_wrapper.code_apply(
         force=request_data.force,
@@ -145,7 +150,7 @@ async def apply_code(request_data: CodeApplyRequest = None, request: Request = N
         no_reindex=request_data.no_reindex,
         patches_subdir=request_data.patches_subdir,
     )
-    
+
     if result["success"]:
         return ApiResponse(
             success=True,
@@ -156,10 +161,51 @@ async def apply_code(request_data: CodeApplyRequest = None, request: Request = N
             message=i18n.translate("code.apply_success", language),
             language=language,
         )
-    
+
     return ApiResponse(
         success=False,
         data=None,
         message=result.get("stderr", "Unknown error"),
         language=language,
     )
+
+
+# ============================================================================
+# GET endpoints — đọc artifact files từ disk
+# ============================================================================
+
+@router.get("/files", response_model=ApiResponse)
+async def list_code_files(version: str = Query(None), request: Request = None):
+    """
+    List generated code files.
+    Reads .midicoder/versions/{version}/code/generated/
+    """
+    language = i18n.get_language_from_request(request)
+    files = get_generated_code_files(version)
+    return ApiResponse(success=True, data={"files": files, "count": len(files)}, language=language)
+
+
+@router.get("/file/{file_path:path}", response_model=ApiResponse)
+async def get_code_file(file_path: str, version: str = Query(None), request: Request = None):
+    """
+    Lấy nội dung file code đã generate.
+    Reads .midicoder/versions/{version}/code/generated/{file_path}
+    """
+    language = i18n.get_language_from_request(request)
+    content = get_generated_file_content(version, file_path)
+    if content is None:
+        return ApiResponse(success=False, data=None, message=f"File not found: {file_path}", language=language)
+    return ApiResponse(success=True, data={"path": file_path, "content": content}, language=language)
+
+
+@router.get("/plan", response_model=ApiResponse)
+async def get_code_plan(version: str = Query(None), request: Request = None):
+    """
+    Lấy lowering plan JSON.
+    Reads .midicoder/versions/{version}/plan/lowering.json
+    """
+    language = i18n.get_language_from_request(request)
+    data = get_plan_lowering(version)
+    if data is None:
+        return ApiResponse(success=False, data=None, message="Code plan not found", language=language)
+    return ApiResponse(success=True, data=data, language=language)

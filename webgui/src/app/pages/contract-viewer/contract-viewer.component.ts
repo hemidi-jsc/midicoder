@@ -3,11 +3,11 @@
  * Hiển thị DSL contracts dưới dạng tree view
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 
-import { MockApiService } from '../../core/mock-api.service';
+import { ApiService } from '../../core/api.service';
 
 @Component({
   selector: 'app-contract-viewer',
@@ -171,14 +171,14 @@ export class ContractViewerComponent implements OnInit {
   isValidating = false;
   successMessage = '';
 
-  constructor(private mockApi: MockApiService) {}
+  private readonly api = inject(ApiService);
 
   async ngOnInit(): Promise<void> {
     await this.loadContractIR();
   }
 
   async loadContractIR(): Promise<void> {
-    const result = await this.mockApi.getContractIR();
+    const result = await this.api.getContractIR();
     if (result.success && result.data) {
       this.contractIR = result.data;
     }
@@ -188,7 +188,7 @@ export class ContractViewerComponent implements OnInit {
     this.isGenerating = true;
     this.successMessage = '';
 
-    const result = await this.mockApi.generateContract({ version: 'v1.0.0' });
+    const result = await this.api.generateContract({ version: 'v1.0.0' });
     
     if (result.success && result.data) {
       this.contractSummary = result.data.summary;
@@ -202,7 +202,7 @@ export class ContractViewerComponent implements OnInit {
   async handleValidate(): Promise<void> {
     this.isValidating = true;
     
-    await this.mockApi.checkContract({ version: 'v1.0.0', auto_fix: true });
+    await this.api.checkContract({ version: 'v1.0.0', auto_fix: true });
     
     this.isValidating = false;
     this.successMessage = 'Contract validation passed';

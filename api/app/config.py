@@ -97,3 +97,23 @@ def get_project_cwd() -> str:
 # Load global config khi khởi động
 _global_config = load_global_config()
 _project_cwd = get_project_cwd()
+
+
+def get_active_version() -> str | None:
+    """Lấy active version từ config."""
+    try:
+        cwd = Path(get_project_cwd())
+        active_file = cwd / ".midicoder" / "config" / "active_version.txt"
+        if active_file.exists():
+            return active_file.read_text().strip()
+    except Exception:
+        pass
+    return None
+
+
+def get_version_dir(version: str | None = None) -> Path:
+    """Lấy path đến version directory."""
+    v = version or get_active_version()
+    if not v:
+        v = "v1.0.0"  # fallback
+    return Path(get_project_cwd()) / ".midicoder" / "versions" / v

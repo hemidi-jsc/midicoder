@@ -44,8 +44,8 @@ import { SidebarComponent } from './components/sidebar/sidebar.component';
           <div class="flex items-center space-x-4">
             <img src="logo.png" alt="Midicoder" class="logo-header">
             <div class="version-selector">
-              <select 
-                [(ngModel)]="activeVersion" 
+              <select
+                [(ngModel)]="activeVersion"
                 (change)="switchVersion($event)"
                 class="version-select"
               >
@@ -67,11 +67,15 @@ import { SidebarComponent } from './components/sidebar/sidebar.component';
 
         <!-- Sidebar -->
         <app-sidebar *ngIf="isAuthenticated && !isLoginPage"></app-sidebar>
+      }
 
-        <!-- Main Content -->
+      <!-- Main Content - router-outlet luôn render (bao gồm login) -->
+      @if (isAuthenticated && !isLoginPage) {
         <main class="main-content">
           <router-outlet />
         </main>
+      } @else {
+        <router-outlet />
       }
     </div>
   `,

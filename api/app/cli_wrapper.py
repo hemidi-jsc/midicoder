@@ -43,8 +43,8 @@ class CLIWrapper:
         Returns:
             Danh sách đối số cho CLI
         """
-        cmd_args = ["python", "-m", "midicoder"]
-        
+        cmd_args = [sys.executable, str(Path(__file__).parent / "run_cli.py")]
+
         # Thêm command
         cmd_args.append(command)
         
@@ -101,19 +101,25 @@ class CLIWrapper:
         
         # Thiết lập môi trường
         env = os.environ.copy()
-        
+
+        # Force UTF-8 encoding on Windows
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+
         # Thiết lập thư mục làm việc từ global config
         cwd = get_project_cwd()
         
         try:
-            # Tạo subprocess
-            process = await asyncio.create_subprocess_exec(
-                *cmd_args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-                env=env,
-            )
+            # Tạo subprocess (stdin=PIPE để questionary không crash khi không có console)
+            subprocess_kwargs: Dict[str, Any] = {
+                "stdin": asyncio.subprocess.PIPE,
+                "stdout": asyncio.subprocess.PIPE,
+                "stderr": asyncio.subprocess.PIPE,
+                "cwd": cwd,
+                "env": env,
+            }
+
+            process = await asyncio.create_subprocess_exec(*cmd_args, **subprocess_kwargs)
             
             # Đọc output với timeout
             try:

@@ -2,14 +2,13 @@
  * Component trang đăng nhập
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Observable } from 'rxjs';
 
 import { AuthService } from '../../core/auth.service';
-import { MockApiService, ApiResponse } from '../../core/mock-api.service';
 
 @Component({
   selector: 'app-login',
@@ -108,10 +107,8 @@ export class LoginComponent implements OnInit {
   isLoading$: Observable<boolean> = new Observable();
   errorMessage$: Observable<string | null> = new Observable();
 
-  constructor(
-    private authService: AuthService,
-    private router: Router,
-  ) {}
+  private authService = inject(AuthService);
+  private router = inject(Router);
 
   ngOnInit(): void {
     this.isLoading$ = this.authService.isLoading$;

@@ -208,6 +208,226 @@ from midicoder.pipeline.commands.index import index_command
 cli.add_command(index_command)
 
 
+# ============================================================================
+# WebGUI Command Group
+# ============================================================================
+
+@cli.group()
+def webgui():
+    """
+    Quản lý WebGUI (FastAPI backend + Angular frontend).
+
+    Commands:
+      start   Khởi động WebGUI
+      stop    Dừng WebGUI
+      status  Kiểm tra trạng thái WebGUI
+    """
+    pass
+
+
+@webgui.command()
+@click.option("--force", is_flag=True, help="Rebuild Angular trước khi start")
+def start(force):
+    """
+    Khởi động WebGUI.
+
+    Start FastAPI backend (port 6868) và Angular frontend (port 7272).
+    Tự động mở browser đến frontend.
+
+    EXAMPLES:
+      midicoder webgui start
+      midicoder webgui start --force
+    """
+    from midicoder.pipeline.commands.init import (
+        _start_webgui,
+        _get_pid_from_file,
+        _is_process_running,
+        WEBGUI_BACKEND_PORT,
+        WEBGUI_FRONTEND_PORT,
+    )
+    from midicoder.pipeline.config import get_config
+    from pathlib import Path
+    import click
+
+    workspace_dir = Path.cwd() / ".midicoder"
+    runtime_dir = workspace_dir / "runtime"
+
+    backend_pid_file = runtime_dir / "backend.pid"
+    frontend_pid_file = runtime_dir / "frontend.pid"
+
+    backend_pid = _get_pid_from_file(backend_pid_file)
+    frontend_pid = _get_pid_from_file(frontend_pid_file)
+
+    # Check if already running
+    if backend_pid and _is_process_running(backend_pid):
+        click.echo(f"ℹ️  Backend đã đang chạy (PID: {backend_pid})")
+    if frontend_pid and _is_process_running(frontend_pid):
+        click.echo(f"ℹ️  Frontend đã đang chạy (PID: {frontend_pid})")
+
+    if (backend_pid and _is_process_running(backend_pid) and
+        frontend_pid and _is_process_running(frontend_pid)):
+        click.echo(f"\n🌐 WebGUI đang chạy:")
+        click.echo(f"  - Backend: http://localhost:{WEBGUI_BACKEND_PORT}")
+        click.echo(f"  - Frontend: http://localhost:{WEBGUI_FRONTEND_PORT}")
+        return
+
+    click.echo("\n🚀 Đang khởi động WebGUI...")
+    _start_webgui(workspace_dir)
+
+
+@webgui.command()
+def stop():
+    """
+    Dừng WebGUI.
+
+    Dừng cả FastAPI backend (port 6868) và Angular frontend (port 7272).
+
+    EXAMPLES:
+      midicoder webgui stop
+    """
+    from midicoder.pipeline.commands.init import (
+        _get_pid_from_file,
+        _is_process_running,
+    )
+    from pathlib import Path
+    import click
+    import os
+    import subprocess
+    import sys
+
+    runtime_dir = Path.cwd() / ".midicoder" / "runtime"
+    backend_pid_file = runtime_dir / "backend.pid"
+    frontend_pid_file = runtime_dir / "frontend.pid"
+
+    stopped = 0
+
+    # Stop backend
+    backend_pid = _get_pid_from_file(backend_pid_file)
+    if backend_pid and _is_process_running(backend_pid):
+        try:
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(backend_pid)],
+                    capture_output=True, timeout=5
+                )
+            else:
+                os.kill(backend_pid, 9)
+            click.echo(f"✓ Backend stopped (PID: {backend_pid})")
+            stopped += 1
+        except Exception as e:
+            click.echo(f"⚠️  Failed to stop backend (PID: {backend_pid}): {e}")
+    elif backend_pid:
+        click.echo("ℹ️  Backend không đang chạy (stale PID)")
+    else:
+        click.echo("ℹ️  Backend không chạy")
+
+    # Stop frontend
+    frontend_pid = _get_pid_from_file(frontend_pid_file)
+    if frontend_pid and _is_process_running(frontend_pid):
+        try:
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(frontend_pid)],
+                    capture_output=True, timeout=5
+                )
+            else:
+                os.kill(frontend_pid, 9)
+            click.echo(f"✓ Frontend stopped (PID: {frontend_pid})")
+            stopped += 1
+        except Exception as e:
+            click.echo(f"⚠️  Failed to stop frontend (PID: {frontend_pid}): {e}")
+    elif frontend_pid:
+        click.echo("ℹ️  Frontend không đang chạy (stale PID)")
+    else:
+        click.echo("ℹ️  Frontend không chạy")
+
+    # Clean up PID files
+    for pid_file in [backend_pid_file, frontend_pid_file]:
+        if pid_file.exists():
+            try:
+                pid_file.unlink()
+            except Exception:
+                pass
+
+    if stopped > 0:
+        click.echo(f"\n✓ WebGUI stopped ({stopped} processes)")
+    else:
+        click.echo("\nℹ️  No running WebGUI processes found")
+
+
+@webgui.command()
+def status():
+    """
+    Kiểm tra trạng thái WebGUI.
+
+    EXAMPLES:
+      midicoder webgui status
+    """
+    from midicoder.pipeline.commands.init import (
+        _get_pid_from_file,
+        _is_process_running,
+        WEBGUI_BACKEND_PORT,
+        WEBGUI_FRONTEND_PORT,
+    )
+    from pathlib import Path
+    import click
+    import socket
+
+    runtime_dir = Path.cwd() / ".midicoder" / "runtime"
+    backend_pid_file = runtime_dir / "backend.pid"
+    frontend_pid_file = runtime_dir / "frontend.pid"
+
+    # Check backend
+    backend_pid = _get_pid_from_file(backend_pid_file)
+    backend_running = False
+    backend_port_open = False
+    if backend_pid:
+        backend_running = _is_process_running(backend_pid)
+    # Check port
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1)
+        s.connect(("localhost", WEBGUI_BACKEND_PORT))
+        s.close()
+        backend_port_open = True
+    except Exception:
+        pass
+
+    # Check frontend
+    frontend_pid = _get_pid_from_file(frontend_pid_file)
+    frontend_running = False
+    frontend_port_open = False
+    if frontend_pid:
+        frontend_running = _is_process_running(frontend_pid)
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1)
+        s.connect(("localhost", WEBGUI_FRONTEND_PORT))
+        s.close()
+        frontend_port_open = True
+    except Exception:
+        pass
+
+    click.echo("\n🌐 WebGUI Status:")
+    click.echo(f"  Backend (port {WEBGUI_BACKEND_PORT}):")
+    if backend_port_open:
+        pid_str = f" PID: {backend_pid}" if backend_pid else ""
+        click.echo(f"    ✓ Running{pid_str}")
+    else:
+        click.echo(f"    ✗ Not running")
+
+    click.echo(f"  Frontend (port {WEBGUI_FRONTEND_PORT}):")
+    if frontend_port_open:
+        pid_str = f" PID: {frontend_pid}" if frontend_pid else ""
+        click.echo(f"    ✓ Running{pid_str}")
+    else:
+        click.echo(f"    ✗ Not running")
+
+
+# ============================================================================
+# Config Command Group
+# ============================================================================
+
 @cli.group()
 def config():
     """

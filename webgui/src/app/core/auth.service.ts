@@ -1,11 +1,13 @@
 /**
  * Dịch vụ Authentication
  * Quản lý trạng thái đăng nhập, token, và user info
+ * Dùng ApiService để kết nối với backend (auth hiện tại local/mock)
  */
 
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { MockApiService, ApiResponse, LoginRequest, LoginResponse, UserResponse } from './mock-api.service';
+import { ApiService } from './api.service';
+import { ApiResponse, LoginRequest, LoginResponse, UserResponse } from './mock-api.service';
 
 export interface User {
   id: string;
@@ -32,8 +34,7 @@ export class AuthService {
   readonly isLoading$ = this.isLoadingSubject.asObservable();
   readonly errorMessage$ = this.errorMessageSubject.asObservable();
 
-  constructor(private mockApi: MockApiService) {
-    // Kiểm tra token trong localStorage khi khởi động
+  constructor(private api: ApiService) {
     this.checkExistingSession();
   }
 
@@ -52,15 +53,14 @@ export class AuthService {
   }
 
   /**
-   * Mock login - Bypass midicoder.com authentication for testing
-   * Cho phép đăng nhập nhanh với email/password bất kỳ (không cần server)
+   * Đăng nhập - hiện tại dùng local mock (backend chưa có auth endpoint)
+   * Cho phép đăng nhập với email/password bất kỳ
    */
-  async mockLogin(email: string, password: string): Promise<ApiResponse<LoginResponse>> {
+  async login(email: string, password: string, _setMockMode: boolean = true): Promise<ApiResponse<LoginResponse>> {
     this.isLoadingSubject.next(true);
     this.errorMessageSubject.next(null);
 
     try {
-      // Accept any non-empty email and password for testing
       if (!email || !password) {
         this.errorMessageSubject.next('Vui lòng nhập email và mật khẩu');
         return {
@@ -70,8 +70,8 @@ export class AuthService {
         };
       }
 
-      // Generate mock token and user
-      const mockToken = `mock_token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // Generate token và user
+      const mockToken = `token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const mockUser: User = {
         id: `user_${Date.now()}`,
         email: email,
@@ -81,7 +81,7 @@ export class AuthService {
       const mockResponse: LoginResponse = {
         token: mockToken,
         user: mockUser,
-        expires_in: 86400, // 24 hours
+        expires_in: 86400,
       };
 
       // Lưu token và user info
@@ -89,7 +89,6 @@ export class AuthService {
       this.userSubject.next(mockUser);
       this.isAuthenticatedSubject.next(true);
 
-      // Lưu vào localStorage
       localStorage.setItem('midicoder_token', mockToken);
       localStorage.setItem('midicoder_user', JSON.stringify(mockUser));
 
@@ -111,86 +110,44 @@ export class AuthService {
   }
 
   /**
-   * Đăng nhập (có thể use mock hoặc real API)
-   * setMockMode = true để bypass midicoder.com
-   */
-  async login(email: string, password: string, setMockMode: boolean = true): Promise<ApiResponse<LoginResponse>> {
-    // Nếu bật mock mode, dùng mock login
-    if (setMockMode) {
-      return this.mockLogin(email, password);
-    }
-
-    this.isLoadingSubject.next(true);
-    this.errorMessageSubject.next(null);
-
-    try {
-      // Generate device fingerprint
-      const deviceFingerprint = this.generateDeviceFingerprint();
-
-      const request: LoginRequest = {
-        email,
-        password,
-        device_fingerprint: deviceFingerprint,
-      };
-
-      const result = await this.mockApi.login(request);
-
-      if (result.success && result.data) {
-        // Lưu token và user info
-        this.tokenSubject.next(result.data.token);
-        this.userSubject.next(result.data.user);
-        this.isAuthenticatedSubject.next(true);
-
-        // Lưu vào localStorage
-        localStorage.setItem('midicoder_token', result.data.token);
-        localStorage.setItem('midicoder_user', JSON.stringify(result.data.user));
-      } else {
-        this.errorMessageSubject.next(result.error?.message || 'Đăng nhập thất bại');
-      }
-
-      return result;
-    } catch (error) {
-      this.errorMessageSubject.next('Lỗi kết nối');
-      return {
-        success: false,
-        error: { code: 'NETWORK_ERROR', message: 'Lỗi kết nối' },
-        timestamp: new Date().toISOString(),
-      };
-    } finally {
-      this.isLoadingSubject.next(false);
-    }
-  }
-
-  /**
    * Đăng xuất
    */
   async logout(): Promise<ApiResponse> {
-    // Xóa session trước
     this.tokenSubject.next(null);
     this.userSubject.next(null);
     this.isAuthenticatedSubject.next(false);
 
-    // Xóa localStorage
     localStorage.removeItem('midicoder_token');
     localStorage.removeItem('midicoder_user');
 
-    // Gọi API logout (optional, just for logging)
-    const result = await this.mockApi.logout();
-    return result;
+    return {
+      success: true,
+      message: 'Đăng xuất thành công',
+      timestamp: new Date().toISOString(),
+    };
   }
 
   /**
-   * Refresh token
+   * Refresh token (placeholder - backend chưa có auth endpoint)
    */
   async refreshToken(): Promise<ApiResponse<LoginResponse>> {
-    const result = await this.mockApi.refresh();
-
-    if (result.success && result.data) {
-      this.tokenSubject.next(result.data.token);
-      localStorage.setItem('midicoder_token', result.data.token);
+    const token = this.getToken();
+    if (token) {
+      return {
+        success: true,
+        data: {
+          token: token,
+          user: this.getCurrentUser()!,
+          expires_in: 86400,
+        },
+        timestamp: new Date().toISOString(),
+      };
     }
-
-    return result;
+    return {
+      success: false,
+      error: { code: 'NO_TOKEN', message: 'Không có token để refresh' },
+      timestamp: new Date().toISOString(),
+    };
   }
 
   /**
@@ -212,27 +169,5 @@ export class AuthService {
    */
   isAuthenticated(): boolean {
     return this.isAuthenticatedSubject.getValue();
-  }
-
-  /**
-   * Generate device fingerprint
-   */
-  private generateDeviceFingerprint(): string {
-    const factors = [
-      navigator.userAgent,
-      screen.width + 'x' + screen.height,
-      navigator.language,
-      new Date().getTimezoneOffset(),
-      navigator.hardwareConcurrency || 'unknown',
-    ];
-    // Simple hash function
-    let hash = 0;
-    const str = factors.join('|');
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
-    return Math.abs(hash).toString(16);
   }
 }

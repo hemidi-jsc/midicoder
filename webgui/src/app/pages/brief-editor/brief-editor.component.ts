@@ -3,12 +3,13 @@
  * Cho phép viết và phân tích brief
  */
 
-import { Component } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink, Router } from '@angular/router';
 
-import { MockApiService } from '../../core/mock-api.service';
+import { ApiService } from '../../core/api.service';
+import { ApiResponse, BriefAnalyzeResponse } from '../../core/mock-api.service';
 
 @Component({
   selector: 'app-brief-editor',
@@ -59,7 +60,7 @@ import { MockApiService } from '../../core/mock-api.service';
       @if (analysisResult) {
         <div class="card mt-6">
           <h2 class="text-lg font-semibold mb-4">Kết quả phân tích</h2>
-          
+
           <!-- Intent -->
           <div class="mb-4">
             <h3 class="font-medium text-accent-primary mb-2">Intent</h3>
@@ -108,7 +109,7 @@ import { MockApiService } from '../../core/mock-api.service';
   `,
   styles: [],
 })
-export class BriefEditorComponent {
+export class BriefEditorComponent implements OnInit {
   briefContent = '';
   isAnalyzing = false;
   isSaving = false;
@@ -116,10 +117,33 @@ export class BriefEditorComponent {
   errorMessage = '';
   analysisResult: any = null;
 
-  constructor(
-    private mockApi: MockApiService,
-    private router: Router,
-  ) {}
+  private api = inject(ApiService);
+  private router = inject(Router);
+
+  async ngOnInit(): Promise<void> {
+    // Load existing brief from disk (raw brief.md first, then master-brief.md)
+    await this.loadBrief();
+  }
+
+  async loadBrief(): Promise<void> {
+    // Try master brief first
+    let result = await this.api.getMasterBrief();
+    if (result.success && result.data?.content) {
+      this.briefContent = result.data.content;
+      return;
+    }
+    // Fallback to raw brief.md
+    result = await this.api.getRawBrief();
+    if (result.success && result.data?.content) {
+      this.briefContent = result.data.content;
+      return;
+    }
+    // Fallback to working brief
+    result = await this.api.getWorkingBrief();
+    if (result.success && result.data?.content) {
+      this.briefContent = result.data.content;
+    }
+  }
 
   async handleAnalyze(): Promise<void> {
     if (!this.briefContent.trim()) {
@@ -132,7 +156,7 @@ export class BriefEditorComponent {
     this.errorMessage = '';
 
     try {
-      const result = await this.mockApi.analyzeBrief({
+      const result = await this.api.analyzeBrief({
         brief_content: this.briefContent,
         version: 'v1.0.0',
       });
@@ -159,10 +183,12 @@ export class BriefEditorComponent {
     this.errorMessage = '';
 
     try {
-      const result = await this.mockApi.saveBrief({
+      // Send brief_content in POST body — backend writes to disk
+      const result = await this.api.saveBrief({
         name: 'my-brief',
         tags: ['draft'],
         version: 'v1.0.0',
+        brief_content: this.briefContent,
       });
 
       if (result.success) {

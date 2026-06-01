@@ -3,12 +3,12 @@
  * Q&A interface cho clarification flow
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink, Router } from '@angular/router';
 
-import { MockApiService } from '../../core/mock-api.service';
+import { ApiService } from '../../core/api.service';
 
 @Component({
   selector: 'app-clarification',
@@ -107,6 +107,9 @@ import { MockApiService } from '../../core/mock-api.service';
   styles: [],
 })
 export class ClarificationComponent implements OnInit {
+  private api = inject(ApiService);
+  private router = inject(Router);
+
   questions: any[] = [];
   answers: Record<string, string | string[]> = {};
   notes: Record<string, string> = {};
@@ -115,14 +118,9 @@ export class ClarificationComponent implements OnInit {
   progress = 33;
   isSubmitting = false;
 
-  constructor(
-    private mockApi: MockApiService,
-    private router: Router,
-  ) {}
-
   async ngOnInit(): Promise<void> {
-    // Load questions from mock
-    const result = await this.mockApi.startClarification({ version: 'v1.0.0' });
+    // Load questions from API
+    const result = await this.api.startClarification({ version: 'v1.0.0' });
     if (result.success && result.data && result.data.questions) {
       this.questions = result.data.questions;
     }

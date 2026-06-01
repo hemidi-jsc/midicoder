@@ -3,11 +3,11 @@
  * Hiển thị MIR và Symbol Table
  */
 
-import { Component, OnInit } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 
-import { MockApiService } from '../../core/mock-api.service';
+import { ApiService } from '../../core/api.service';
 
 @Component({
   selector: 'app-ir-explorer',
@@ -79,57 +79,38 @@ import { MockApiService } from '../../core/mock-api.service';
           <!-- Symbol Table -->
           <div class="card">
             <h2 class="font-semibold mb-4 text-accent-primary">Bảng ký hiệu</h2>
-            
-            <div class="space-y-3">
-              <!-- Product Entity -->
-              <div class="p-3 bg-bg-secondary rounded">
-                <div class="font-medium text-accent-primary mb-2">Product</div>
-                <div class="space-y-1 text-sm">
-                  <div class="flex justify-between">
-                    <span class="text-text-tertiary">id</span>
-                    <span class="text-text-secondary">uuid</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-text-tertiary">sku</span>
-                    <span class="text-text-secondary">string</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-text-tertiary">name</span>
-                    <span class="text-text-secondary">string</span>
-                  </div>
-                </div>
-              </div>
 
-              <!-- Order Entity -->
-              <div class="p-3 bg-bg-secondary rounded">
-                <div class="font-medium text-accent-primary mb-2">Order</div>
-                <div class="space-y-1 text-sm">
-                  <div class="flex justify-between">
-                    <span class="text-text-tertiary">id</span>
-                    <span class="text-text-secondary">uuid</span>
+            @if (symbolTable.length > 0) {
+              <div class="space-y-3">
+                @for (entity of symbolTable; track entity.name || entity.id || entity) {
+                  <div class="p-3 bg-bg-secondary rounded">
+                    <div class="font-medium text-accent-primary mb-2">{{ entity.name || entity.id || entity }}</div>
+                    @if (entity.fields) {
+                      <div class="space-y-1 text-sm">
+                        @for (field of entity.fields; track field.name || field) {
+                          <div class="flex justify-between">
+                            <span class="text-text-tertiary">{{ field.name || field.field || field }}</span>
+                            <span class="text-text-secondary">{{ field.type || field.field_type || '' }}</span>
+                          </div>
+                        }
+                      </div>
+                    }
+                    @if (entity.properties) {
+                      <div class="space-y-1 text-sm">
+                        @for (prop of entity.properties; track $index) {
+                          <div class="flex justify-between">
+                            <span class="text-text-tertiary">{{ prop.name || prop }}</span>
+                            <span class="text-text-secondary">{{ prop.type || '' }}</span>
+                          </div>
+                        }
+                      </div>
+                    }
                   </div>
-                  <div class="flex justify-between">
-                    <span class="text-text-tertiary">order_number</span>
-                    <span class="text-text-secondary">string</span>
-                  </div>
-                </div>
+                }
               </div>
-
-              <!-- Tenant Entity -->
-              <div class="p-3 bg-bg-secondary rounded">
-                <div class="font-medium text-accent-primary mb-2">Tenant</div>
-                <div class="space-y-1 text-sm">
-                  <div class="flex justify-between">
-                    <span class="text-text-tertiary">id</span>
-                    <span class="text-text-secondary">uuid</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-text-tertiary">name</span>
-                    <span class="text-text-secondary">string</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            } @else {
+              <p class="text-text-tertiary text-sm">Chưa có symbol table. Hãy build IR trước.</p>
+            }
           </div>
         </div>
       }
@@ -146,19 +127,29 @@ import { MockApiService } from '../../core/mock-api.service';
 })
 export class IRExplorerComponent implements OnInit {
   mirData: any = null;
+  symbolTable: any[] = [];
   isBuilding = false;
   successMessage = '';
 
-  constructor(private mockApi: MockApiService) {}
+  private api = inject(ApiService);
 
   async ngOnInit(): Promise<void> {
     await this.loadMIR();
+    await this.loadSymbolTable();
   }
 
   async loadMIR(): Promise<void> {
-    const result = await this.mockApi.getMIR();
+    const result = await this.api.getMIR();
     if (result.success && result.data) {
       this.mirData = result.data;
+    }
+  }
+
+  async loadSymbolTable(): Promise<void> {
+    const result = await this.api.getSymbolTable();
+    if (result.success && result.data) {
+      // Symbol table có thể là array hoặc object { symbols: [...] }
+      this.symbolTable = Array.isArray(result.data) ? result.data : (result.data.symbols || result.data.entities || Object.keys(result.data).map(k => ({ name: k, ...result.data[k] })));
     }
   }
 
@@ -166,10 +157,11 @@ export class IRExplorerComponent implements OnInit {
     this.isBuilding = true;
     this.successMessage = '';
 
-    await this.mockApi.buildIR({ version: 'v1.0.0' });
-    
+    await this.api.buildIR({ skip_diagrams: false });
+
     await this.loadMIR();
-    
+    await this.loadSymbolTable();
+
     this.successMessage = 'Build IR thành công';
     this.isBuilding = false;
   }

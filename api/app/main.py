@@ -19,7 +19,7 @@ if str(midicoder_path) not in sys.path:
 from app.config import settings
 from app.i18n import i18n
 from app.models import ApiResponse, ErrorResponse
-from app.routers import health, config, index, version, brief, contract, ir, code, runtime
+from app.routers import health, config, index, version, brief, contract, ir, code, runtime, websocket, pipeline, patches
 
 
 # Tạo FastAPI application
@@ -128,6 +128,15 @@ app.include_router(code.router, prefix="/api")
 
 # Runtime
 app.include_router(runtime.router, prefix="/api")
+
+# WebSocket (no prefix - WebSocket paths are absolute)
+app.include_router(websocket.router, prefix="/api")
+
+# Pipeline status
+app.include_router(pipeline.router, prefix="/api")
+
+# Patches
+app.include_router(patches.router, prefix="/api")
 
 
 # Endpoint để lấy OpenAPI schema với prefix /api
