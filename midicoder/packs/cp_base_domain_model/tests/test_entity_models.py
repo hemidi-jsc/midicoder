@@ -19,7 +19,7 @@ Version: 1.0.0
 
 import pytest
 
-from midicoder.packs.cp01_domain_model.models import (
+from midicoder.packs.cp_base_domain_model.models import (
     Entity,
     EntityField as Field,
     EntityFieldType as FieldType,

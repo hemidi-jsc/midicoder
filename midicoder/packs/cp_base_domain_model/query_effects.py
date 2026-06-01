@@ -92,7 +92,7 @@ class QueryEffects:
             effect: QueryEffect với effect_type=RECORD_METRIC
             context: Execution context với metric_name, metric_value
         """
-        from midicoder.packs.cp15_observability.metrics import MetricRegistry
+        from midicoder.packs.cp_core_observability.metrics import MetricRegistry
 
         metric_name = getattr(effect, "metric_name", "query.duration")
         metric_value = float(getattr(effect, "metric_value", 1) or 1)

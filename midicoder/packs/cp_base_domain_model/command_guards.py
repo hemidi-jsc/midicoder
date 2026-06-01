@@ -162,7 +162,7 @@ class CommandGuards:
         """
         if tenant_id is None:
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_TENANT_MISSING,
+                ErrorCode.B01_GUARD_TENANT_MISSING,
             )
 
         mode = guard.mode or "tenant_isolated"
@@ -176,7 +176,7 @@ class CommandGuards:
                 )
                 if not is_belong:
                     EM.raise_error(
-                        ErrorCode.MDC-B01_GUARD_TENANT_VIOLATION,
+                        ErrorCode.B01_GUARD_TENANT_VIOLATION,
                         tenant_id=tenant_id,
                     )
             # Fallback: Generated code will have tenant check in effects
@@ -220,7 +220,7 @@ class CommandGuards:
             )
             if is_limited:
                 EM.raise_error(
-                    ErrorCode.MDC-B01_GUARD_RATE_LIMIT_EXCEEDED,
+                    ErrorCode.B01_GUARD_RATE_LIMIT_EXCEEDED,
                     limit=limit,
                     window=window,
                     user_id=user_id,
@@ -244,7 +244,7 @@ class CommandGuards:
         """
         if user_id is None:
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_USER_NOT_AUTHENTICATED,
+                ErrorCode.B01_GUARD_USER_NOT_AUTHENTICATED,
             )
 
         if self._compliance_service:
@@ -253,7 +253,7 @@ class CommandGuards:
             )
             if not is_kyc_verified:
                 EM.raise_error(
-                    ErrorCode.MDC-B01_GUARD_KYC_NOT_VERIFIED,
+                    ErrorCode.B01_GUARD_KYC_NOT_VERIFIED,
                     user_id=user_id,
                 )
 
@@ -276,7 +276,7 @@ class CommandGuards:
         """
         if user_id is None:
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_USER_NOT_AUTHENTICATED,
+                ErrorCode.B01_GUARD_USER_NOT_AUTHENTICATED,
             )
 
         if self._compliance_service:
@@ -286,7 +286,7 @@ class CommandGuards:
             )
             if not is_aml_clear:
                 EM.raise_error(
-                    ErrorCode.MDC-B01_GUARD_AML_SCREENING_FAILED,
+                    ErrorCode.B01_GUARD_AML_SCREENING_FAILED,
                     user_id=user_id,
                 )
 
@@ -311,7 +311,7 @@ class CommandGuards:
         """
         if user_id is None:
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_USER_NOT_AUTHENTICATED,
+                ErrorCode.B01_GUARD_USER_NOT_AUTHENTICATED,
             )
 
         if self._compliance_service:
@@ -323,7 +323,7 @@ class CommandGuards:
             )
             if not has_hipaa_clearance:
                 EM.raise_error(
-                    ErrorCode.MDC-B01_GUARD_HIPAA_NO_CLEARANCE,
+                    ErrorCode.B01_GUARD_HIPAA_NO_CLEARANCE,
                     user_id=user_id,
                     tenant_id=tenant_id,
                 )
@@ -374,7 +374,7 @@ class CommandGuards:
         except Exception as e:
             # Log warning but don't fail the check
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_COMPLIANCE_LOG_FAILED,
+                ErrorCode.B01_GUARD_COMPLIANCE_LOG_FAILED,
                 guard_type=guard_type.value,
                 user_id=user_id,
                 tenant_id=tenant_id,
@@ -409,7 +409,7 @@ class CommandGuards:
                 GuardType.KYC_CHECK, user_id, tenant_id, "failed",
                 {"reason": "user_not_authenticated"}
             )
-            EM.raise_error(ErrorCode.MDC-B01_GUARD_USER_NOT_AUTHENTICATED)
+            EM.raise_error(ErrorCode.B01_GUARD_USER_NOT_AUTHENTICATED)
 
         if self._compliance_service is None:
             await self._log_compliance_check(
@@ -429,7 +429,7 @@ class CommandGuards:
                 {"reason": "kyc_not_verified"}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_KYC_NOT_VERIFIED,
+                ErrorCode.B01_GUARD_KYC_NOT_VERIFIED,
                 user_id=user_id,
                 tenant_id=tenant_id,
             )
@@ -465,7 +465,7 @@ class CommandGuards:
                 GuardType.AML_SCREENING, user_id, tenant_id, "failed",
                 {"reason": "user_not_authenticated"}
             )
-            EM.raise_error(ErrorCode.MDC-B01_GUARD_USER_NOT_AUTHENTICATED)
+            EM.raise_error(ErrorCode.B01_GUARD_USER_NOT_AUTHENTICATED)
 
         if self._compliance_service is None:
             await self._log_compliance_check(
@@ -486,7 +486,7 @@ class CommandGuards:
                 {"reason": "aml_screening_failed"}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_AML_SCREENING_FAILED,
+                ErrorCode.B01_GUARD_AML_SCREENING_FAILED,
                 user_id=user_id,
                 tenant_id=tenant_id,
             )
@@ -520,7 +520,7 @@ class CommandGuards:
                 GuardType.HIPAA_ACCESS, user_id, tenant_id, "failed",
                 {"reason": "user_not_authenticated"}
             )
-            EM.raise_error(ErrorCode.MDC-B01_GUARD_USER_NOT_AUTHENTICATED)
+            EM.raise_error(ErrorCode.B01_GUARD_USER_NOT_AUTHENTICATED)
 
         if self._compliance_service is None:
             await self._log_compliance_check(
@@ -540,7 +540,7 @@ class CommandGuards:
                 {"reason": "no_hipaa_clearance"}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_HIPAA_NO_CLEARANCE,
+                ErrorCode.B01_GUARD_HIPAA_NO_CLEARANCE,
                 user_id=user_id,
                 tenant_id=tenant_id,
             )
@@ -586,7 +586,7 @@ class CommandGuards:
                 GuardType.FRAUD_DETECTION, user_id, tenant_id, "failed",
                 {"reason": "user_not_authenticated"}
             )
-            EM.raise_error(ErrorCode.MDC-B01_GUARD_USER_NOT_AUTHENTICATED)
+            EM.raise_error(ErrorCode.B01_GUARD_USER_NOT_AUTHENTICATED)
 
         if self._compliance_service is None:
             await self._log_compliance_check(
@@ -612,7 +612,7 @@ class CommandGuards:
                 {"reason": "velocity_exceeded", "threshold": velocity_threshold}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_FRAUD_VELOCITY_EXCEEDED,
+                ErrorCode.B01_GUARD_FRAUD_VELOCITY_EXCEEDED,
                 user_id=user_id,
                 tenant_id=tenant_id,
                 threshold=velocity_threshold,
@@ -631,7 +631,7 @@ class CommandGuards:
                         {"reason": "amount_threshold_exceeded", "amount": amount}
                     )
                     EM.raise_error(
-                        ErrorCode.MDC-B01_GUARD_FRAUD_AMOUNT_THRESHOLD,
+                        ErrorCode.B01_GUARD_FRAUD_AMOUNT_THRESHOLD,
                         user_id=user_id,
                         tenant_id=tenant_id,
                         amount=amount,
@@ -653,7 +653,7 @@ class CommandGuards:
                 {"reason": "pattern_anomaly_detected"}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_FRAUD_PATTERN_ANOMALY,
+                ErrorCode.B01_GUARD_FRAUD_PATTERN_ANOMALY,
                 user_id=user_id,
                 tenant_id=tenant_id,
             )
@@ -673,7 +673,7 @@ class CommandGuards:
                     {"reason": "external_fraud_blocked"}
                 )
                 EM.raise_error(
-                    ErrorCode.MDC-B01_GUARD_FRAUD_EXTERNAL_BLOCKED,
+                    ErrorCode.B01_GUARD_FRAUD_EXTERNAL_BLOCKED,
                     user_id=user_id,
                     tenant_id=tenant_id,
                     reason=external_result.get("reason", "Unknown"),
@@ -727,7 +727,7 @@ class CommandGuards:
                 GuardType.SAFETY_CHECK, user_id, tenant_id, "failed",
                 {"reason": "user_not_authenticated"}
             )
-            EM.raise_error(ErrorCode.MDC-B01_GUARD_USER_NOT_AUTHENTICATED)
+            EM.raise_error(ErrorCode.B01_GUARD_USER_NOT_AUTHENTICATED)
 
         if self._compliance_service is None:
             await self._log_compliance_check(
@@ -750,7 +750,7 @@ class CommandGuards:
                     {"reason": "equipment_unsafe", "equipment_id": equipment_id}
                 )
                 EM.raise_error(
-                    ErrorCode.MDC-B01_GUARD_SAFETY_EQUIPMENT_UNSAFE,
+                    ErrorCode.B01_GUARD_SAFETY_EQUIPMENT_UNSAFE,
                     user_id=user_id,
                     tenant_id=tenant_id,
                     equipment_id=equipment_id,
@@ -769,7 +769,7 @@ class CommandGuards:
                 {"reason": "personnel_not_certified"}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_SAFETY_PERSONNEL_UNCERTIFIED,
+                ErrorCode.B01_GUARD_SAFETY_PERSONNEL_UNCERTIFIED,
                 user_id=user_id,
                 tenant_id=tenant_id,
                 operation_type=data.get("operation_type"),
@@ -788,7 +788,7 @@ class CommandGuards:
                 {"reason": "process_non_compliant"}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_SAFETY_PROCESS_NON_COMPLIANT,
+                ErrorCode.B01_GUARD_SAFETY_PROCESS_NON_COMPLIANT,
                 user_id=user_id,
                 tenant_id=tenant_id,
                 operation_type=data.get("operation_type"),
@@ -806,7 +806,7 @@ class CommandGuards:
                 {"reason": "hazards_detected", "hazards": hazards}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_SAFETY_HAZARD_DETECTED,
+                ErrorCode.B01_GUARD_SAFETY_HAZARD_DETECTED,
                 user_id=user_id,
                 tenant_id=tenant_id,
                 hazards=hazards,
@@ -853,7 +853,7 @@ class CommandGuards:
                 GuardType.CLAIMS_VALIDATION, user_id, tenant_id, "failed",
                 {"reason": "user_not_authenticated"}
             )
-            EM.raise_error(ErrorCode.MDC-B01_GUARD_USER_NOT_AUTHENTICATED)
+            EM.raise_error(ErrorCode.B01_GUARD_USER_NOT_AUTHENTICATED)
 
         if self._compliance_service is None:
             await self._log_compliance_check(
@@ -869,7 +869,7 @@ class CommandGuards:
                 {"reason": "missing_policy_id"}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_CLAIMS_NOT_COVERED,
+                ErrorCode.B01_GUARD_CLAIMS_NOT_COVERED,
                 user_id=user_id,
                 tenant_id=tenant_id,
                 reason="missing_policy_id",
@@ -889,7 +889,7 @@ class CommandGuards:
                 {"reason": "claim_not_covered", "claim_type": claim_type}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_CLAIMS_NOT_COVERED,
+                ErrorCode.B01_GUARD_CLAIMS_NOT_COVERED,
                 user_id=user_id,
                 tenant_id=tenant_id,
                 policy_id=policy_id,
@@ -910,7 +910,7 @@ class CommandGuards:
                 {"reason": "outside_coverage_period", "incident_date": incident_date}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_CLAIMS_OUTSIDE_PERIOD,
+                ErrorCode.B01_GUARD_CLAIMS_OUTSIDE_PERIOD,
                 user_id=user_id,
                 tenant_id=tenant_id,
                 policy_id=policy_id,
@@ -931,7 +931,7 @@ class CommandGuards:
                 {"reason": "exceeds_limit", "amount": claim_amount}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_CLAIMS_EXCEEDS_LIMIT,
+                ErrorCode.B01_GUARD_CLAIMS_EXCEEDS_LIMIT,
                 user_id=user_id,
                 tenant_id=tenant_id,
                 policy_id=policy_id,
@@ -952,7 +952,7 @@ class CommandGuards:
                 {"reason": "claim_excluded"}
             )
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_CLAIMS_EXCLUDED,
+                ErrorCode.B01_GUARD_CLAIMS_EXCLUDED,
                 user_id=user_id,
                 tenant_id=tenant_id,
                 policy_id=policy_id,

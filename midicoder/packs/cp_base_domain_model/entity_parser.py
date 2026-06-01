@@ -77,7 +77,7 @@ class EntityParser:
         
         if not data or "entities" not in data:
             EM.raise_error(
-                ErrorCode.MDC-B01_ENTITY_NOT_FOUND,
+                ErrorCode.B01_ENTITY_NOT_FOUND,
                 reason="Missing 'entities' key in YAML",
             )
         
@@ -100,7 +100,7 @@ class EntityParser:
         """
         if not entity_def.get("id"):
             EM.raise_error(
-                ErrorCode.MDC-B01_ENTITY_NOT_FOUND,
+                ErrorCode.B01_ENTITY_NOT_FOUND,
                 reason="Entity 'id' is required",
             )
         
@@ -156,7 +156,7 @@ class EntityParser:
         """
         if not field_def.get("name"):
             EM.raise_error(
-                ErrorCode.MDC-B01_ENTITY_INVALID_FIELD,
+                ErrorCode.B01_ENTITY_INVALID_FIELD,
                 reason="Field 'name' is required",
             )
         
@@ -211,7 +211,7 @@ class EntityParser:
         type_lower = type_str.lower()
         if type_lower not in type_mapping:
             EM.raise_error(
-                ErrorCode.MDC-B01_INVALID_FIELD_TYPE,
+                ErrorCode.B01_INVALID_FIELD_TYPE,
                 field_type=type_str,
                 supported_types=list(type_mapping.keys()),
             )
@@ -239,7 +239,7 @@ class EntityParser:
         target = rel_def.get("target", "")
         if not target:
             EM.raise_error(
-                ErrorCode.MDC-B01_ENTITY_INVALID_RELATIONSHIP,
+                ErrorCode.B01_ENTITY_INVALID_RELATIONSHIP,
                 reason="Relationship 'target' is required",
             )
         
@@ -290,7 +290,7 @@ class EntityParser:
         type_lower = type_str.lower()
         if type_lower not in type_mapping:
             EM.raise_error(
-                ErrorCode.MDC-B01_ENTITY_INVALID_RELATIONSHIP,
+                ErrorCode.B01_ENTITY_INVALID_RELATIONSHIP,
                 rel_type=type_str,
                 supported_types=list(type_mapping.keys()),
             )
@@ -338,7 +338,7 @@ class EntityParser:
         type_lower = type_str.lower()
         if type_lower not in type_mapping:
             EM.raise_error(
-                ErrorCode.MDC-B01_ENTITY_INVALID_CONSTRAINT,
+                ErrorCode.B01_ENTITY_INVALID_CONSTRAINT,
                 constraint_type=type_str,
                 supported_types=list(type_mapping.keys()),
             )
@@ -397,7 +397,7 @@ class EntityParser:
             event = event_mapping.get(event_str.lower())
             if not event:
                 EM.raise_error(
-                    ErrorCode.MDC-B01_ENTITY_INVALID_LIFECYCLE,
+                    ErrorCode.B01_ENTITY_INVALID_LIFECYCLE,
                     event_name=event_str,
                     valid_events=list(event_mapping.keys()),
                 )
@@ -437,7 +437,7 @@ class EntityParser:
         # Check for at least one field
         if not entity.fields:
             EM.raise_error(
-                ErrorCode.MDC-B01_ENTITY_INVALID_FIELD,
+                ErrorCode.B01_ENTITY_INVALID_FIELD,
                 entity_id=entity.id,
                 reason="Entity must have at least one field",
             )
@@ -446,7 +446,7 @@ class EntityParser:
         has_pk = any(f.primary_key for f in entity.fields)
         if not has_pk:
             EM.raise_error(
-                ErrorCode.MDC-B01_ENTITY_INVALID_FIELD,
+                ErrorCode.B01_ENTITY_INVALID_FIELD,
                 entity_id=entity.id,
                 reason="Entity must have a primary key field",
             )
@@ -456,7 +456,7 @@ class EntityParser:
             if constraint.constraint_type == ConstraintType.CHECK:
                 if not constraint.condition:
                     EM.raise_error(
-                        ErrorCode.MDC-B01_ENTITY_INVALID_CONSTRAINT,
+                        ErrorCode.B01_ENTITY_INVALID_CONSTRAINT,
                         entity_id=entity.id,
                         reason="Check constraint must have 'condition'",
                     )
@@ -464,7 +464,7 @@ class EntityParser:
             if constraint.constraint_type == ConstraintType.UNIQUE:
                 if not constraint.fields:
                     EM.raise_error(
-                        ErrorCode.MDC-B01_ENTITY_INVALID_CONSTRAINT,
+                        ErrorCode.B01_ENTITY_INVALID_CONSTRAINT,
                         entity_id=entity.id,
                         reason="Unique constraint must have 'fields'",
                     )
@@ -474,7 +474,7 @@ class EntityParser:
             if rel.rel_type == RelationshipType.MANY_TO_MANY:
                 if not rel.secondary:
                     EM.raise_error(
-                        ErrorCode.MDC-B01_ENTITY_INVALID_RELATIONSHIP,
+                        ErrorCode.B01_ENTITY_INVALID_RELATIONSHIP,
                         entity_id=entity.id,
                         target=rel.target,
                         reason="Many-to-many relationship requires 'secondary' table",

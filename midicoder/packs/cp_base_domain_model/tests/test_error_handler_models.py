@@ -15,7 +15,7 @@ CP01: Domain Model - Error Handler
 
 import pytest
 
-from midicoder.packs.cp01_domain_model.error_handler_models import (
+from midicoder.packs.cp_base_domain_model.error_handler_models import (
     ErrorHandlingStrategy,
     ErrorLevel,
     ErrorLoggingConfig,
@@ -493,14 +493,14 @@ class TestFastAPIErrorHandlerEmitter:
     """Tests cho FastAPIErrorHandlerEmitter."""
 
     def test_emitter_import(self):
-        from midicoder.packs.cp01_domain_model.error_handler_fastapi import (
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
             FastAPIErrorHandlerEmitter,
         )
         assert FastAPIErrorHandlerEmitter is not None
 
     def test_emitter_init(self):
         from pathlib import Path
-        from midicoder.packs.cp01_domain_model.error_handler_fastapi import (
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
             FastAPIErrorHandlerEmitter,
         )
         emitter = FastAPIErrorHandlerEmitter(stack_dir=Path("/tmp"))
@@ -508,7 +508,7 @@ class TestFastAPIErrorHandlerEmitter:
 
     def test_emit_with_minimal_handler(self):
         from pathlib import Path
-        from midicoder.packs.cp01_domain_model.error_handler_fastapi import (
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
             FastAPIErrorHandlerEmitter,
         )
         handler = GlobalErrorHandler(
@@ -522,7 +522,7 @@ class TestFastAPIErrorHandlerEmitter:
 
     def test_emit_with_mappers(self):
         from pathlib import Path
-        from midicoder.packs.cp01_domain_model.error_handler_fastapi import (
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
             FastAPIErrorHandlerEmitter,
         )
         handler = GlobalErrorHandler(
@@ -542,7 +542,7 @@ class TestFastAPIErrorHandlerEmitter:
 
     def test_emit_includes_all_configs(self):
         from pathlib import Path
-        from midicoder.packs.cp01_domain_model.error_handler_fastapi import (
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
             FastAPIErrorHandlerEmitter,
         )
         handler = GlobalErrorHandler(
@@ -568,7 +568,7 @@ class TestFastAPIErrorHandlerEmitter:
 
     def test_fallback_middleware_has_error_handling(self):
         from pathlib import Path
-        from midicoder.packs.cp01_domain_model.error_handler_fastapi import (
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
             FastAPIErrorHandlerEmitter,
         )
         handler = GlobalErrorHandler(
@@ -584,7 +584,7 @@ class TestFastAPIErrorHandlerEmitter:
 
     def test_fallback_responses_has_models(self):
         from pathlib import Path
-        from midicoder.packs.cp01_domain_model.error_handler_fastapi import (
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
             FastAPIErrorHandlerEmitter,
         )
         handler = GlobalErrorHandler(
@@ -656,3 +656,102 @@ class TestErrorHandlerIntegration:
         assert isinstance(ErrorMapper.from_dict(mapper.to_dict()), ErrorMapper)
         assert isinstance(ErrorLoggingConfig.from_dict(logging.to_dict()), ErrorLoggingConfig)
         assert isinstance(ErrorNotificationConfig.from_dict(notif.to_dict()), ErrorNotificationConfig)
+
+
+# ===========================================================================
+# Gap-Filling Tests: error_handler_fastapi.py uncovered lines (83% -> ≥99%)
+# ===========================================================================
+
+
+class TestFastAPIErrorHandlerEmitter_RenderSuccess:
+    """Tests cho _render() — line 182 (success template render path)."""
+
+    def test_render_with_real_template(self, tmp_path):
+        """Test: _render() render template thật từ disk — line 182."""
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
+            FastAPIErrorHandlerEmitter,
+        )
+
+        # Create a real Jinja2 template on disk
+        (tmp_path / "error_handler_middleware.py.jinja2").write_text(
+            "# handler: {{ handler_name }}", encoding="utf-8"
+        )
+        emitter = FastAPIErrorHandlerEmitter(stack_dir=tmp_path)
+
+        context = {
+            "handler_name": "TestHandler",
+        }
+        result = emitter._render("error_handler_middleware.py.jinja2", context)
+
+        assert result == "# handler: TestHandler"
+
+
+class TestFastAPIErrorHandlerEmitter_RenderFallbackUnknown:
+    """Tests cho _render() — line 189 (unknown template fallback)."""
+
+    def test_render_unknown_template_returns_not_found(self, tmp_path):
+        """Test: _render() trả về fallback string cho template không phải middleware/responses — line 189."""
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
+            FastAPIErrorHandlerEmitter,
+        )
+
+        emitter = FastAPIErrorHandlerEmitter(stack_dir=tmp_path)
+        result = emitter._render("unknown_template.py.jinja2", {})
+
+        assert "Template unknown_template.py.jinja2 not found" in result
+
+
+class TestFastAPIErrorHandlerEmitter_WriteFiles:
+    """Tests cho write_files() — lines 438-442."""
+
+    def test_write_files_creates_output_dir(self, tmp_path):
+        """Test: write_files tạo output directory nếu chưa tồn tại."""
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
+            FastAPIErrorHandlerEmitter,
+        )
+
+        emitter = FastAPIErrorHandlerEmitter(stack_dir=tmp_path)
+        output = tmp_path / "nested" / "output"
+
+        emitter.write_files(
+            {"test.py": "# content"},
+            output,
+        )
+
+        assert output.exists()
+        assert (output / "test.py").read_text(encoding="utf-8") == "# content"
+
+    def test_write_files_writes_multiple_files(self, tmp_path):
+        """Test: write_files ghi nhiều files."""
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
+            FastAPIErrorHandlerEmitter,
+        )
+
+        emitter = FastAPIErrorHandlerEmitter(stack_dir=tmp_path)
+
+        emitter.write_files(
+            {
+                "error_handler_middleware.py": "# middleware",
+                "error_responses.py": "# responses",
+            },
+            tmp_path,
+        )
+
+        assert (tmp_path / "error_handler_middleware.py").read_text() == "# middleware"
+        assert (tmp_path / "error_responses.py").read_text() == "# responses"
+
+    def test_write_files_utf8_encoding(self, tmp_path):
+        """Test: write_files ghi UTF-8 encoding."""
+        from midicoder.packs.cp_base_domain_model.error_handler_fastapi import (
+            FastAPIErrorHandlerEmitter,
+        )
+
+        emitter = FastAPIErrorHandlerEmitter(stack_dir=tmp_path)
+
+        emitter.write_files(
+            {"test.py": "# nội dung tiếng Việt"},
+            tmp_path,
+        )
+
+        content = (tmp_path / "test.py").read_text(encoding="utf-8")
+        assert "tiếng Việt" in content

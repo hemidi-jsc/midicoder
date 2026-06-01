@@ -139,7 +139,7 @@ class QueryGuards:
         # Check tenant_id is defined
         if tenant_id is None:
             EM.raise_error(
-                ErrorCode.MDC-B01_GUARD_TENANT_MISSING,
+                ErrorCode.B01_GUARD_TENANT_MISSING,
             )
 
         # Check tenant isolation mode

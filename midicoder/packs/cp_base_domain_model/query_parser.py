@@ -78,7 +78,7 @@ def parse_filters(filters: dict[str, Any]) -> list[FilterExpression]:
         for operator, value in conditions.items():
             if operator not in VALID_OPERATORS:
                 EM.raise_error(
-                    ErrorCode.MDC-B01_QUERY_INVALID_FILTER,
+                    ErrorCode.B01_QUERY_INVALID_FILTER,
                     field=field,
                     operator=operator,
                     valid_operators=list(VALID_OPERATORS),
@@ -120,7 +120,7 @@ def parse_pagination(pagination: dict[str, Any]) -> PaginationConfig:
     
     if ptype not in ("offset", "cursor"):
         EM.raise_error(
-            ErrorCode.MDC-B01_QUERY_INVALID_PAGINATION,
+            ErrorCode.B01_QUERY_INVALID_PAGINATION,
             pagination_type=ptype,
         )
     
@@ -128,7 +128,7 @@ def parse_pagination(pagination: dict[str, Any]) -> PaginationConfig:
         page_size = pagination.get("page_size", 20)
         if page_size < 0:
             EM.raise_error(
-                ErrorCode.MDC-B01_QUERY_INVALID_PAGINATION,
+                ErrorCode.B01_QUERY_INVALID_PAGINATION,
                 page_size=page_size,
             )
         
@@ -146,7 +146,7 @@ def parse_pagination(pagination: dict[str, Any]) -> PaginationConfig:
         limit = pagination.get("limit", 20)
         if limit < 0:
             EM.raise_error(
-                ErrorCode.MDC-B01_QUERY_INVALID_PAGINATION,
+                ErrorCode.B01_QUERY_INVALID_PAGINATION,
                 limit=limit,
             )
         

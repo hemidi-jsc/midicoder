@@ -18,7 +18,7 @@ from pathlib import Path
 from decimal import Decimal
 from typing import Any
 
-from midicoder.packs.cp01_domain_model import (
+from midicoder.packs.cp_base_domain_model import (
     FastAPIValueObjectEmitter,
     EmittedValueObject,
 )
@@ -518,7 +518,7 @@ class TestFastAPIEmitterIntegration:
         with pytest.raises(MidicoderError) as exc_info:
             emitter.emit_all(vo_map, output_dir=vo_dir)
 
-        assert exc_info.value.code.value == "MDC-CP01-011"
+        assert exc_info.value.code.value == "MDC-B01-010"
 
 
 # ============================================================================
@@ -572,8 +572,122 @@ class TestFastAPIEmitterTypes:
 
 
 # ============================================================================
-# Summary
+# Coverage 100% — vo_fastapi.py: 101, 181, 193, 260->262, 481
 # ============================================================================
+
+
+class TestFastAPIEmitterCoverage100:
+    """Push vo_fastapi.py to 100% coverage."""
+
+    def setup_method(self):
+        self.tmp_path = Path(__file__).parent.parent.parent / "tmp_test"
+        self.tmp_path.mkdir(exist_ok=True)
+        self.emitter = FastAPIValueObjectEmitter(stack_dir=self.tmp_path)
+
+    def test_render_value_object_except_fallback(self):
+        """Test: render_value_object() except block line 101 — template fails, fallback used.
+
+        Line 101: `return self._generate_code_fallback(vo)` in the except block of
+        render_value_object().
+        """
+        vo_params: ExtendedValueObjectParams = {
+            "id": "FallbackVO",
+            "fields": [
+                {"name": "amount", "type": "decimal", "required": True},
+            ],
+        }
+        emitted_vo = self.emitter.emit(vo_params)
+        # render_value_object tries get_template("value_object.py.jinja2") which fails
+        # → falls to _generate_code_fallback
+        code = self.emitter.render_value_object(emitted_vo)
+        # Fallback generates @dataclass with vo.name (PascalCase of id)
+        assert "Fallbackvo" in code or "FallbackVO" in code
+        # Fallback code should contain dataclass
+        assert "@dataclass" in code
+
+    def test_collect_imports_enum_field(self):
+        """Test: _collect_imports() enum branch line 181 — has_enum = True.
+
+        Line 181: `has_enum = True` when a field has type 'enum'.
+        Directly call _collect_imports to cover the enum branch.
+        """
+        vo_params: ExtendedValueObjectParams = {
+            "id": "EnumVO",
+            "fields": [
+                {"name": "status", "type": "enum", "required": True},
+            ],
+        }
+        emitted_vo = self.emitter.emit(vo_params)
+        # Call _collect_imports directly to cover the enum branch
+        imports = self.emitter._collect_imports(emitted_vo)
+        assert "from enum import Enum" in imports["standard"]
+
+    def test_collect_imports_uuid_field(self):
+        """Test: _collect_imports() uuid branch line 193 — has_uuid = True → UUID import.
+
+        Line 193: `if has_uuid: imports["standard"].append("from uuid import UUID")`.
+        """
+        vo_params: ExtendedValueObjectParams = {
+            "id": "UuidVO",
+            "fields": [
+                {"name": "id", "type": "uuid", "required": True},
+            ],
+        }
+        emitted_vo = self.emitter.emit(vo_params)
+        imports = self.emitter._collect_imports(emitted_vo)
+        assert "from uuid import UUID" in imports["standard"]
+
+    def test_nested_object_required_field_no_default(self):
+        """Test: _generate_nested_object_class() branch 260->262 — required=True, no default.
+
+        Lines 260->262: `if not nested_field.get("required"):` is False (field IS required),
+        so `default` remains "" (no " = None" appended).
+        """
+        vo_params: ExtendedValueObjectParams = {
+            "id": "NestedRequired",
+            "fields": [
+                {
+                    "name": "point",
+                    "type": "object",
+                    "fields": [
+                        {"name": "x", "type": "integer", "required": True},
+                        {"name": "y", "type": "integer", "required": True},
+                    ],
+                },
+            ],
+        }
+        emitted_vo = self.emitter.emit(vo_params)
+        # Call _generate_nested_classes directly to cover the required=True branch
+        nested = self.emitter._generate_nested_classes(emitted_vo)
+        assert len(nested) == 1
+        # Required fields should NOT have "= None"
+        nested_code = nested[0]
+        assert "x: int" in nested_code
+        assert "x: int = None" not in nested_code
+
+    def test_emit_all_no_cycles_success(self, tmp_path):
+        """Test: emit_all() success path line 481 — no cycles, files written.
+
+        Line 481 area: the emit_all loop after cycle check passes (cycles is empty).
+        """
+        vo_dir = tmp_path / "vos"
+        vo_dir.mkdir()
+
+        emitter = FastAPIValueObjectEmitter(stack_dir=tmp_path)
+
+        vo_map: dict[str, ExtendedValueObjectParams] = {
+            "SingleVO": {
+                "id": "SingleVO",
+                "fields": [
+                    {"name": "value", "type": "string", "required": True},
+                ],
+            },
+        }
+
+        files = emitter.emit_all(vo_map, output_dir=vo_dir)
+        assert len(files) == 1
+        assert (vo_dir / "singlevo.py").exists()
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

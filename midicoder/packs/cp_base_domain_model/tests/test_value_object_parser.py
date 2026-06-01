@@ -15,12 +15,12 @@ Version: 1.0.0
 
 import pytest
 
-from midicoder.packs.cp01_domain_model.models import (
+from midicoder.packs.cp_base_domain_model.models import (
     ValueObject,
     VOField,
     VOFieldType,
 )
-from midicoder.packs.cp01_domain_model.vo_parser import ValueObjectParser
+from midicoder.packs.cp_base_domain_model.vo_parser import ValueObjectParser
 
 
 # ============================================================================
@@ -350,10 +350,113 @@ class TestValueObjectModel:
 
 
 # ============================================================================
+# VO Emitter Gap Coverage Tests
+# ============================================================================
+
+class TestVOEmitterGapCoverage:
+    """Gap coverage tests cho vo_emitter.py — push ≥99%."""
+
+    def setup_method(self):
+        """Setup trước mỗi test."""
+        from pathlib import Path
+        from midicoder.packs.cp_base_domain_model.vo_fastapi import FastAPIValueObjectEmitter
+        self.emitter = FastAPIValueObjectEmitter(stack_dir=Path("/tmp"))
+
+    def test_emit_validation_rule(self):
+        """Test _emit_validation_rule() (lines 353-355)."""
+        rule = {
+            "name": "amount_positive",
+            "condition": "self.amount > 0",
+            "error_code": "MDC-B01-999",
+            "error_message": "Số tiền phải dương",
+        }
+        emitted = self.emitter._emit_validation_rule(rule)
+        assert emitted.name == "amount_positive"
+        assert emitted.error_message == "Số tiền phải dương"
+
+    def test_build_method_params_empty(self):
+        """Test _build_method_params() với empty params (line 427)."""
+        result = self.emitter._build_method_params([])
+        assert result == "self"
+
+    def test_get_nested_classes(self):
+        """Test get_nested_classes() (line 479)."""
+        nested = self.emitter.get_nested_classes()
+        assert isinstance(nested, dict)
+        assert len(nested) == 0
+
+    def test_emit_field_with_nested_class_object_type(self):
+        """Test _emit_field() with object type (nested class branch)."""
+        from midicoder.dsl.projection import FieldDefinition
+        fd: FieldDefinition = {"name": "config", "type": "object", "required": False}
+        ef = self.emitter._emit_field(fd)
+        assert ef.nested_class is not None
+
+    def test_emit_field_with_nested_class_array_type(self):
+        """Test _emit_field() with array type (nested class branch)."""
+        from midicoder.dsl.projection import FieldDefinition
+        fd: FieldDefinition = {"name": "items", "type": "array", "required": False}
+        ef = self.emitter._emit_field(fd)
+        assert ef.nested_class is not None
+
+    def test_emit_raises_when_parent_not_found(self):
+        """Test emit() raises B01_VALUE_OBJECT_NOT_FOUND when parent missing (line 246)."""
+        from midicoder.errors import MidicoderError
+        vo_params = {
+            "id": "ChildVO",
+            "extends": "MissingParent",
+            "fields": [],
+        }
+        # non-empty dict so `if inherits_from and parent_vo_map` is True
+        parent_map = {"OtherParent": {"id": "OtherParent", "fields": []}}
+        with pytest.raises(MidicoderError):
+            self.emitter.emit(vo_params, parent_vo_map=parent_map)
+
+
+# ============================================================================
+# VO Parser Gap Coverage Tests
+# ============================================================================
+
+class TestVOParserGapCoverage:
+    """Gap coverage tests cho vo_parser.py — push ≥99%."""
+
+    def setup_method(self):
+        """Setup trước mỗi test."""
+        self.parser = ValueObjectParser()
+
+    def test_parse_vo_without_fields_key(self):
+        """Test parse VO khi không có key 'fields' (line 118->122 branch)."""
+        yaml_content = """
+value_objects:
+  - id: MarkerVO
+    description: "VO không có fields"
+"""
+        vos = self.parser.parse(yaml_content)
+        assert len(vos) == 1
+        assert vos[0].id == "MarkerVO"
+        assert len(vos[0].fields) == 0
+
+    def test_parse_field_missing_name(self):
+        """Test parse field khi thiếu 'name' (line 151 branch)."""
+        yaml_content = """
+value_objects:
+  - id: BadFieldVO
+    fields:
+      - type: string
+"""
+        with pytest.raises(Exception) as exc_info:
+            self.parser.parse(yaml_content)
+
+        assert "name" in str(exc_info.value).lower() or "invalid" in str(exc_info.value).lower() or "field" in str(exc_info.value).lower()
+
+
+# ============================================================================
 # Exports
 # ============================================================================
 
 __all__ = [
     "TestValueObjectParser",
     "TestValueObjectModel",
+    "TestVOEmitterGapCoverage",
+    "TestVOParserGapCoverage",
 ]

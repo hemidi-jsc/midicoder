@@ -15,15 +15,15 @@ from decimal import Decimal
 
 import pytest
 
-from midicoder.packs.cp01_domain_model import (
+from midicoder.packs.cp_base_domain_model import (
     ValueObject,
     VOField,
     VOFieldType,
 )
-from midicoder.packs.cp01_domain_model.vo_fastapi import (
+from midicoder.packs.cp_base_domain_model.vo_fastapi import (
     FastAPIValueObjectEmitter,
 )
-from midicoder.packs.cp01_domain_model.vo_nestjs import (
+from midicoder.packs.cp_base_domain_model.vo_nestjs import (
     NestJSValueObjectEmitter,
 )
 

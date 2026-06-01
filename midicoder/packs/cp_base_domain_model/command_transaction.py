@@ -134,7 +134,7 @@ class TransactionManagerSQL:
         current_tx = self._current_transaction.get()
         
         if current_tx is None or not current_tx.is_active:
-            EM.raise_error(ErrorCode.MDC-B01_TRANSACTION_NOT_ACTIVE)
+            EM.raise_error(ErrorCode.B01_TRANSACTION_NOT_ACTIVE)
         
         session = self._session_stack[-1]
         
@@ -162,7 +162,7 @@ class TransactionManagerSQL:
             # Rollback nếu commit fail
             await self.rollback_transaction()
             EM.raise_error(
-                ErrorCode.MDC-B01_TRANSACTION_COMMIT_FAILED,
+                ErrorCode.B01_TRANSACTION_COMMIT_FAILED,
                 transaction_id=current_tx.transaction_id,
                 original_error=str(e),
             )
@@ -177,7 +177,7 @@ class TransactionManagerSQL:
         current_tx = self._current_transaction.get()
         
         if current_tx is None or not current_tx.is_active:
-            EM.raise_error(ErrorCode.MDC-B01_TRANSACTION_NOT_ACTIVE)
+            EM.raise_error(ErrorCode.B01_TRANSACTION_NOT_ACTIVE)
         
         session = self._session_stack[-1]
         
@@ -203,7 +203,7 @@ class TransactionManagerSQL:
             
         except Exception as e:
             EM.raise_error(
-                ErrorCode.MDC-B01_TRANSACTION_ROLLBACK_FAILED,
+                ErrorCode.B01_TRANSACTION_ROLLBACK_FAILED,
                 transaction_id=current_tx.transaction_id,
                 original_error=str(e),
             )

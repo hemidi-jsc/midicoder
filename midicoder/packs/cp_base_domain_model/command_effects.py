@@ -346,7 +346,7 @@ class CommandEffects:
         data: dict[str, Any],
     ) -> bool:
         """Record metric effect — wire vào CP15 MetricRegistry."""
-        from midicoder.packs.cp15_observability.metrics import MetricRegistry
+        from midicoder.packs.cp_core_observability.metrics import MetricRegistry
 
         metric_name = getattr(effect, "metric_name", "command.duration")
         metric_value = float(getattr(effect, "metric_value", 1) or 1)

@@ -14,9 +14,9 @@ Version: 1.0.0
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from midicoder.packs.cp01_domain_model.models import Command, CommandGuard, GuardType
-from midicoder.packs.cp01_domain_model.command_guards import CommandGuards
-from midicoder.packs.cp01_domain_model.command_validator import CommandValidator
+from midicoder.packs.cp_base_domain_model.models import Command, CommandGuard, GuardType
+from midicoder.packs.cp_base_domain_model.command_guards import CommandGuards
+from midicoder.packs.cp_base_domain_model.command_validator import CommandValidator
 from midicoder.errors import ErrorCode, MidicoderError
 
 
@@ -444,7 +444,7 @@ class TestTenantAwareGuards:
                 tenant_id="tenant_1",
             )
 
-        assert exc_info.value.code == ErrorCode.MDC-B01_GUARD_KYC_NOT_VERIFIED
+        assert exc_info.value.code == ErrorCode.B01_GUARD_KYC_NOT_VERIFIED
 
     @pytest.mark.asyncio
     async def test_check_aml_with_audit_tenant_isolated(
@@ -519,7 +519,7 @@ class TestTenantAwareGuards:
                 tenant_id="tenant_1",
             )
 
-        assert exc_info.value.code == ErrorCode.MDC-B01_GUARD_USER_NOT_AUTHENTICATED
+        assert exc_info.value.code == ErrorCode.B01_GUARD_USER_NOT_AUTHENTICATED
 
     @pytest.mark.asyncio
     async def test_check_kyc_no_compliance_service(self, banking_command):
@@ -543,23 +543,636 @@ class TestComplianceErrorCodes:
 
     def test_cp01_guard_double_entry_imbalance_exists(self):
         """Test CP01_GUARD_DOUBLE_ENTRY_IMBALANCE error code."""
-        assert ErrorCode.MDC-B01_GUARD_DOUBLE_ENTRY_IMBALANCE.value == "MDC-CP01-072"
+        assert ErrorCode.B01_GUARD_DOUBLE_ENTRY_IMBALANCE.value == "MDC-B01-034"
 
     def test_cp01_guard_phi_not_encrypted_exists(self):
         """Test CP01_GUARD_PHI_NOT_ENCRYPTED error code."""
-        assert ErrorCode.MDC-B01_GUARD_PHI_NOT_ENCRYPTED.value == "MDC-CP01-073"
+        assert ErrorCode.B01_GUARD_PHI_NOT_ENCRYPTED.value == "MDC-B01-035"
 
     def test_cp01_guard_minimum_necessary_violation_exists(self):
         """Test CP01_GUARD_MINIMUM_NECESSARY_VIOLATION error code."""
-        assert ErrorCode.MDC-B01_GUARD_MINIMUM_NECESSARY_VIOLATION.value == "MDC-CP01-074"
+        assert ErrorCode.B01_GUARD_MINIMUM_NECESSARY_VIOLATION.value == "MDC-B01-036"
 
     def test_cp01_guard_compliance_log_failed_exists(self):
         """Test CP01_GUARD_COMPLIANCE_LOG_FAILED error code."""
-        assert ErrorCode.MDC-B01_GUARD_COMPLIANCE_LOG_FAILED.value == "MDC-CP01-068"
+        assert ErrorCode.B01_GUARD_COMPLIANCE_LOG_FAILED.value == "MDC-B01-018"
 
     def test_cp01_guard_external_api_timeout_exists(self):
         """Test CP01_GUARD_EXTERNAL_API_TIMEOUT error code."""
-        assert ErrorCode.MDC-B01_GUARD_EXTERNAL_API_TIMEOUT.value == "MDC-CP01-069"
+        assert ErrorCode.B01_GUARD_EXTERNAL_API_TIMEOUT.value == "MDC-B01-037"
+
+
+# ============================================================================
+# Models Gap Coverage Tests
+# ============================================================================
+
+class TestModelsGapCoverage:
+    """Gap coverage tests cho models.py — push ≥99%."""
+
+    def test_command_to_dict_with_dict_guards_effects_errors(self):
+        """Test Command.to_dict() else branches: raw dict guards/effects/errors (lines 1238, 1254, 1268)."""
+        cmd = Command(
+            id="GapCmd",
+            guards=[{"guard_type": "auth"}],
+            effects=[{"effect_type": "create_record"}],
+            errors=[{"code": "ERR_1", "message": "fail"}],
+        )
+        d = cmd.to_dict()
+        assert d["guards"] == [{"guard_type": "auth"}]
+        assert d["effects"] == [{"effect_type": "create_record"}]
+        assert d["errors"] == [{"code": "ERR_1", "message": "fail"}]
+
+    def test_command_get_required_permissions_already_present(self):
+        """Test get_required_permissions() when permission already in required_permissions (line 1341->1339)."""
+        cmd = Command(
+            id="PermCmd",
+            required_permissions=["order.create"],
+            guards=[CommandGuard(guard_type=GuardType.AUTH, permission="order.create")],
+        )
+        perms = cmd.get_required_permissions()
+        assert perms == ["order.create"]
+
+    def test_command_get_update_effects(self):
+        """Test Command.get_update_effects() (line 1366)."""
+        from midicoder.packs.cp_base_domain_model.models import CommandEffect, EffectType
+        cmd = Command(
+            id="UpdateCmd",
+            effects=[
+                CommandEffect(effect_type=EffectType.UPDATE_RECORD, entity="Order"),
+            ],
+        )
+        effects = cmd.get_update_effects()
+        assert len(effects) == 1
+
+    def test_command_get_delete_effects(self):
+        """Test Command.get_delete_effects() (line 1375)."""
+        from midicoder.packs.cp_base_domain_model.models import CommandEffect, EffectType
+        cmd = Command(
+            id="DeleteCmd",
+            effects=[
+                CommandEffect(effect_type=EffectType.DELETE_RECORD, entity="Order"),
+            ],
+        )
+        effects = cmd.get_delete_effects()
+        assert len(effects) == 1
+
+    def test_command_get_event_effects(self):
+        """Test Command.get_event_effects() (line 1384)."""
+        from midicoder.packs.cp_base_domain_model.models import CommandEffect, EffectType
+        cmd = Command(
+            id="EventCmd",
+            effects=[
+                CommandEffect(effect_type=EffectType.PUBLISH_EVENT, event="OrderPlaced"),
+            ],
+        )
+        effects = cmd.get_event_effects()
+        assert len(effects) == 1
+
+    def test_filter_expression_gt_gte_lt_lte(self):
+        """Test FilterExpression.to_sqlalchemy() GT/GTE/LT/LTE branches (lines 1616, 1622, 1624, 1628, 1632, 1637-1640)."""
+        from midicoder.packs.cp_base_domain_model.models import FilterExpression, FilterOp
+
+        # NE (1616)
+        fe = FilterExpression(field="status", operator=FilterOp.NE, value="deleted")
+        assert fe.to_sqlalchemy() is not None
+
+        # GT (1618)
+        fe = FilterExpression(field="age", operator=FilterOp.GT, value=18)
+        assert fe.to_sqlalchemy() is not None
+
+        # GTE (1620)
+        fe = FilterExpression(field="age", operator=FilterOp.GTE, value=18)
+        assert fe.to_sqlalchemy() is not None
+
+        # LT (1622)
+        fe = FilterExpression(field="age", operator=FilterOp.LT, value=100)
+        assert fe.to_sqlalchemy() is not None
+
+        # LTE (1624)
+        fe = FilterExpression(field="age", operator=FilterOp.LTE, value=100)
+        assert fe.to_sqlalchemy() is not None
+
+        # IN (1626)
+        fe = FilterExpression(field="status", operator=FilterOp.IN, value=["active", "pending"])
+        assert fe.to_sqlalchemy() is not None
+
+        # NOT_IN (1628)
+        fe = FilterExpression(field="status", operator=FilterOp.NOT_IN, value=["deleted"])
+        assert fe.to_sqlalchemy() is not None
+
+        # LIKE (1630)
+        fe = FilterExpression(field="name", operator=FilterOp.LIKE, value="test%")
+        assert fe.to_sqlalchemy() is not None
+
+        # ILIKE (1632)
+        fe = FilterExpression(field="name", operator=FilterOp.ILIKE, value="%test%")
+        assert fe.to_sqlalchemy() is not None
+
+    def test_filter_expression_between_and_is_null(self):
+        """Test FilterExpression.to_sqlalchemy() BETWEEN/IS_NULL branches (lines 1637-1640)."""
+        from midicoder.packs.cp_base_domain_model.models import FilterExpression, FilterOp
+        fe = FilterExpression(field="age", operator=FilterOp.BETWEEN, value=[18, 65])
+        assert fe.to_sqlalchemy() is not None
+
+        fe = FilterExpression(field="deleted_at", operator=FilterOp.IS_NULL, value=None)
+        assert fe.to_sqlalchemy() is not None
+
+    def test_filter_group_or_operator(self):
+        """Test FilterGroup.to_sqlalchemy() with 'or' operator (line 1698)."""
+        from midicoder.packs.cp_base_domain_model.models import FilterExpression, FilterGroup, FilterOp
+        fg = FilterGroup(
+            operator="or",
+            filters=[
+                FilterExpression(field="status", operator=FilterOp.EQ, value="active"),
+                FilterExpression(field="tenant_id", operator=FilterOp.EQ, value="t1"),
+            ],
+        )
+        result = fg.to_sqlalchemy()
+        assert result is not None
+
+    def test_filter_group_nested_filter_group(self):
+        """Test FilterGroup.to_sqlalchemy() with nested FilterGroup (line 1697)."""
+        from midicoder.packs.cp_base_domain_model.models import FilterExpression, FilterGroup, FilterOp
+        fg = FilterGroup(
+            operator="or",
+            filters=[
+                FilterGroup(
+                    operator="and",
+                    filters=[
+                        FilterExpression(field="status", operator=FilterOp.EQ, value="active"),
+                        FilterExpression(field="age", operator=FilterOp.GT, value=18),
+                    ],
+                ),
+                FilterExpression(field="tenant_id", operator=FilterOp.EQ, value="t1"),
+            ],
+        )
+        result = fg.to_sqlalchemy()
+        assert result is not None
+
+    def test_projection_config_get_sensitive_fields(self):
+        """Test ProjectionConfig.get_sensitive_fields_to_exclude() (line 1843)."""
+        from midicoder.packs.cp_base_domain_model.models import ProjectionConfig
+        pc = ProjectionConfig()
+        sensitive = pc.get_sensitive_fields_to_exclude()
+        assert "password" in sensitive
+        assert "secret_key" in sensitive
+        assert "api_key" in sensitive
+
+    def test_vo_field_to_dict_with_all_optional_fields(self):
+        """Test VOField.to_dict() with all optional fields set (lines 2312-2326)."""
+        from midicoder.packs.cp_base_domain_model.models import VOField, VOFieldType
+        vf = VOField(
+            name="test_field",
+            field_type=VOFieldType.DECIMAL,
+            required=True,
+            default=0.0,
+            description="Test field",
+            precision=10,
+            scale=2,
+            min_length=1,
+            max_length=50,
+            pattern=r"^\d+$",
+            enum_values=["a", "b"],
+        )
+        d = vf.to_dict()
+        assert d["default"] == 0.0
+        assert d["description"] == "Test field"
+        assert d["precision"] == 10
+        assert d["scale"] == 2
+        assert d["min_length"] == 1
+        assert d["max_length"] == 50
+        assert d["pattern"] == r"^\d+$"
+        assert d["enum_values"] == ["a", "b"]
+
+    def test_vo_to_dict_without_optional_fields(self):
+        """Test ValueObject.to_dict() else branches: no description, no extends (line 2413->2415)."""
+        from midicoder.packs.cp_base_domain_model.models import ValueObject
+        vo = ValueObject(id="MinimalVO", fields=[], immutable=False, comparable=False)
+        d = vo.to_dict()
+        assert "description" not in d
+        assert "extends" not in d
+
+
+# ============================================================================
+# Models Gap Coverage — 100% push
+# ============================================================================
+
+class TestGapModelsValidationResult:
+    """TestGapModels: ValidationResult __post_init__ branch 1073->1075, 1075->exit."""
+
+    def test_validation_result_post_init_with_explicit_lists(self):
+        """ValidationResult.__post_init__ with non-None errors/warnings (lines 1073->1075, 1075->exit)."""
+        from midicoder.packs.cp_base_domain_model.models import ValidationResult
+        vr = ValidationResult(is_valid=True, errors=["pre_error"], warnings=["pre_warn"])
+        assert vr.errors == ["pre_error"]
+        assert vr.warnings == ["pre_warn"]
+
+
+class TestGapModelsCommandInit:
+    """TestGapModels: Command.__init__ backward compat (line 1199)."""
+
+    def test_command_init_transaction_alias(self):
+        """Command.__init__ with transaction= alias (line 1199)."""
+        cmd = Command(
+            id="TxAlias",
+            transaction=True,
+        )
+        assert cmd.transaction_required is True
+
+
+class TestGapModelsCommandToDict:
+    """TestGapModels: Command.to_dict() if-branches (1229, 1244, 1260, 1297, 1309, 1321-1326)."""
+
+    def test_command_to_dict_instance_branch_guards(self):
+        """Command.to_dict() isinstance(g, CommandGuard) True branch (line 1229)."""
+        cmd = Command(
+            id="DictGuard",
+            guards=[CommandGuard(guard_type=GuardType.AUTH, permission="x")],
+        )
+        d = cmd.to_dict()
+        assert d["guards"][0]["guard_type"] == "auth"
+
+    def test_command_to_dict_instance_branch_effects(self):
+        """Command.to_dict() isinstance(e, CommandEffect) True branch (line 1244)."""
+        from midicoder.packs.cp_base_domain_model.models import CommandEffect, EffectType
+        cmd = Command(
+            id="DictEffect",
+            effects=[CommandEffect(effect_type=EffectType.CREATE_RECORD, entity="Order")],
+        )
+        d = cmd.to_dict()
+        assert d["effects"][0]["effect_type"] == "create_record"
+
+    def test_command_to_dict_instance_branch_errors(self):
+        """Command.to_dict() isinstance(err, CommandError) True branch (line 1260)."""
+        from midicoder.packs.cp_base_domain_model.models import CommandError
+        cmd = Command(
+            id="DictError",
+            errors=[CommandError(code="ERR_1", message="fail")],
+        )
+        d = cmd.to_dict()
+        assert d["errors"][0]["code"] == "ERR_1"
+
+    def test_command_has_auth_guard_false(self):
+        """Command.has_auth_guard() returns False when no AUTH guard (line 1297)."""
+        cmd = Command(
+            id="NoAuth",
+            guards=[CommandGuard(guard_type=GuardType.TENANT_SCOPE)],
+        )
+        assert cmd.has_auth_guard() is False
+
+    def test_command_has_tenant_guard_false(self):
+        """Command.has_tenant_guard() returns False when no TENANT guard (line 1309)."""
+        cmd = Command(
+            id="NoTenant",
+            guards=[CommandGuard(guard_type=GuardType.AUTH)],
+        )
+        assert cmd.has_tenant_guard() is False
+
+    def test_command_has_transaction_effects_false(self):
+        """Command.has_transaction_effects() False (lines 1321-1326)."""
+        cmd = Command(
+            id="NoTx",
+            effects=[],
+        )
+        assert cmd.has_transaction_effects() is False
+
+
+class TestGapModelsCommandPerms:
+    """TestGapModels: Command.get_required_permissions branches (1340->1339, 1342, 1352)."""
+
+    def test_command_get_required_permissions_guard_no_permission(self):
+        """get_required_permissions() AUTH guard with permission=None, skipped (line 1342)."""
+        cmd = Command(
+            id="NoPermGuard",
+            guards=[CommandGuard(guard_type=GuardType.AUTH)],
+        )
+        perms = cmd.get_required_permissions()
+        assert perms == []
+
+    def test_command_get_required_permissions_non_auth_guard(self):
+        """get_required_permissions() non-AUTH guard skipped (line 1352)."""
+        cmd = Command(
+            id="NonAuthGuard",
+            guards=[CommandGuard(guard_type=GuardType.TENANT_SCOPE)],
+        )
+        perms = cmd.get_required_permissions()
+        assert perms == []
+
+
+class TestGapModelsCommandAlias:
+    """TestGapModels: Command.transaction() alias (line 1401) and from_dict (line 1414)."""
+
+    def test_command_transaction_alias(self):
+        """Command.transaction property alias (line 1401)."""
+        cmd = Command(id="AliasTx", transaction=True)
+        assert cmd.transaction is True
+
+    def test_command_from_dict(self):
+        """Command.from_dict() class method (line 1414)."""
+        cmd = Command.from_dict({"id": "FromDict", "description": "test"})
+        assert cmd.id == "FromDict"
+
+
+class TestGapModelsFilterExpressionISNotNull:
+    """TestGapModels: FilterExpression IS_NOT_NULL (lines 1637-1640)."""
+
+    def test_filter_expression_is_not_null(self):
+        """FilterExpression.to_sqlalchemy() IS_NOT_NULL (lines 1637-1640)."""
+        from midicoder.packs.cp_base_domain_model.models import FilterExpression, FilterOp
+        fe = FilterExpression(field="deleted_at", operator=FilterOp.IS_NOT_NULL, value=None)
+        assert fe.to_sqlalchemy() is not None
+
+
+class TestGapModelsFilterGroupEmpty:
+    """TestGapModels: FilterGroup empty filters (lines 1685-1686)."""
+
+    def test_filter_group_empty_filters(self):
+        """FilterGroup.to_sqlalchemy() with empty filters (lines 1685-1686)."""
+        from midicoder.packs.cp_base_domain_model.models import FilterGroup
+        fg = FilterGroup(operator="and", filters=[])
+        result = fg.to_sqlalchemy()
+        assert result is not None
+
+
+class TestGapModelsFilterGroupLoopBranch:
+    """TestGapModels: FilterGroup loop with non-FilterGroup in body (line 1698)."""
+
+    def test_filter_group_loop_non_fg_branch(self):
+        """FilterGroup loop: second filter is FilterExpression not FilterGroup (line 1698)."""
+        from midicoder.packs.cp_base_domain_model.models import FilterExpression, FilterGroup, FilterOp
+        fg = FilterGroup(
+            operator="and",
+            filters=[
+                FilterGroup(
+                    operator="and",
+                    filters=[FilterExpression(field="a", operator=FilterOp.EQ, value=1)],
+                ),
+                FilterExpression(field="b", operator=FilterOp.EQ, value=2),  # non-FG in loop -> line 1698
+            ],
+        )
+        result = fg.to_sqlalchemy()
+        assert result is not None
+
+
+class TestGapModelsPHIMasking:
+    """TestGapModels: PHIMaskingConfig should_mask/mask_value (1746-1767, 1780-1782)."""
+
+    def test_phi_masking_disabled(self):
+        """PHIMaskingConfig.should_mask() with enabled=False (line 1746)."""
+        from midicoder.packs.cp_base_domain_model.models import PHIMaskingConfig
+        cfg = PHIMaskingConfig(enabled=False)
+        assert cfg.should_mask("ssn") is False
+
+    def test_phi_masking_allowed_field(self):
+        """PHIMaskingConfig.should_mask() field in allowed_fields (line 1752)."""
+        from midicoder.packs.cp_base_domain_model.models import PHIMaskingConfig
+        cfg = PHIMaskingConfig(enabled=True, allowed_fields=["name"])
+        assert cfg.should_mask("name") is False
+
+    def test_phi_masking_pattern_match(self):
+        """PHIMaskingConfig.should_mask() pattern match (line 1756)."""
+        from midicoder.packs.cp_base_domain_model.models import PHIMaskingConfig
+        cfg = PHIMaskingConfig(enabled=True, mask_patterns=["^ssn"])
+        assert cfg.should_mask("ssn") is True
+
+    def test_phi_masking_no_match(self):
+        """PHIMaskingConfig.should_mask() no pattern match (line 1767)."""
+        from midicoder.packs.cp_base_domain_model.models import PHIMaskingConfig
+        cfg = PHIMaskingConfig(enabled=True, mask_patterns=["^ssn"])
+        assert cfg.should_mask("name") is False
+
+    def test_phi_mask_value_should_mask_true(self):
+        """PHIMaskingConfig.mask_value() should_mask=True (lines 1780-1782)."""
+        from midicoder.packs.cp_base_domain_model.models import PHIMaskingConfig
+        cfg = PHIMaskingConfig(enabled=True, mask_patterns=["^ssn"], default_mask_value="[HIDDEN]")
+        assert cfg.mask_value("ssn", "123-45-6789") == "[HIDDEN]"
+
+    def test_phi_mask_value_should_mask_false(self):
+        """PHIMaskingConfig.mask_value() should_mask=False (line 1782)."""
+        from midicoder.packs.cp_base_domain_model.models import PHIMaskingConfig
+        cfg = PHIMaskingConfig(enabled=True, mask_patterns=["^ssn"])
+        assert cfg.mask_value("name", "John") == "John"
+
+
+class TestGapModelsPagination:
+    """TestGapModels: PaginationConfig.__post_init__ (lines 1820-1821)."""
+
+    def test_pagination_offset_calculation(self):
+        """PaginationConfig.__post_init__ offset calc from page (lines 1820-1821)."""
+        from midicoder.packs.cp_base_domain_model.models import PaginationConfig, PaginationType
+        pc = PaginationConfig(type=PaginationType.OFFSET, page_size=20, page=3)
+        assert pc.offset == 40  # (3-1)*20
+
+
+class TestGapModelsProjection:
+    """TestGapModels: ProjectionConfig.get_sensitive_fields_to_exclude (line 1858)."""
+
+    def test_projection_sensitive_fields(self):
+        """ProjectionConfig.get_sensitive_fields_to_exclude() (line 1858)."""
+        from midicoder.packs.cp_base_domain_model.models import ProjectionConfig
+        pc = ProjectionConfig()
+        sensitive = pc.get_sensitive_fields_to_exclude()
+        assert "password" in sensitive
+
+    def test_projection_flat_include(self):
+        """ProjectionConfig.get_flat_include_fields() (line 1858)."""
+        from midicoder.packs.cp_base_domain_model.models import ProjectionConfig
+        pc = ProjectionConfig(include=["a", "b"])
+        assert pc.get_flat_include_fields() == ["a", "b"]
+
+
+class TestGapModelsQuery:
+    """TestGapModels: Query methods (1925, 1934, 1943, 1955, 1967, 1979)."""
+
+    def test_query_has_auth_guard_false(self):
+        """Query.has_auth_guard() False (line 1925)."""
+        from midicoder.packs.cp_base_domain_model.models import Query, QueryGuard, QueryGuardType
+        q = Query(id="q1", description="test", reads_from="e1", guards=[QueryGuard(guard_type=QueryGuardType.TENANT_SCOPE)])
+        assert q.has_auth_guard() is False
+
+    def test_query_has_tenant_guard_false(self):
+        """Query.has_tenant_guard() False (line 1934)."""
+        from midicoder.packs.cp_base_domain_model.models import Query, QueryGuard, QueryGuardType
+        q = Query(id="q1", description="test", reads_from="e1", guards=[QueryGuard(guard_type=QueryGuardType.AUTH)])
+        assert q.has_tenant_guard() is False
+
+    def test_query_has_audit_effects_false(self):
+        """Query.has_audit_effects() False (line 1943)."""
+        from midicoder.packs.cp_base_domain_model.models import Query
+        q = Query(id="q1", description="test", reads_from="e1", effects=[])
+        assert q.has_audit_effects() is False
+
+    def test_query_get_required_permissions_empty(self):
+        """Query.get_required_permissions() no auth perms (line 1955)."""
+        from midicoder.packs.cp_base_domain_model.models import Query, QueryGuard, QueryGuardType
+        q = Query(id="q1", description="test", reads_from="e1", guards=[QueryGuard(guard_type=QueryGuardType.TENANT_SCOPE)])
+        assert q.get_required_permissions() == []
+
+    def test_query_get_audit_actions_empty(self):
+        """Query.get_audit_actions() no audit effects (line 1967)."""
+        from midicoder.packs.cp_base_domain_model.models import Query
+        q = Query(id="q1", description="test", reads_from="e1", effects=[])
+        assert q.get_audit_actions() == []
+
+    def test_query_to_dict(self):
+        """Query.to_dict() (line 1979)."""
+        from midicoder.packs.cp_base_domain_model.models import Query
+        q = Query(id="q1", description="test", reads_from="e1")
+        d = q.to_dict()
+        assert d["id"] == "q1"
+
+
+class TestGapModelsQueryFromDict:
+    """TestGapModels: Query.from_dict() (lines 2051-2120)."""
+
+    def test_query_from_dict_full(self):
+        """Query.from_dict() with all fields (lines 2051-2120)."""
+        from midicoder.packs.cp_base_domain_model.models import Query
+        q = Query.from_dict({
+            "id": "FullQuery",
+            "description": "Full query test",
+            "reads_from": "Entity1",
+            "input": [{"name": "field1", "field_type": "string"}],
+            "filters": [{"field": "status", "operator": "eq", "value": "active"}],
+            "pagination": {"type": "offset", "page_size": 10, "page": 1},
+            "projection": {"include": ["id", "name"], "exclude": []},
+            "sort": [{"field": "name", "direction": "asc"}],
+            "guards": [{"guard_type": "auth", "permission": "read"}],
+            "effects": [{"effect_type": "write_audit_log", "audit_action": "query"}],
+        })
+        assert q.id == "FullQuery"
+        assert len(q.filters) == 1
+        assert len(q.guards) == 1
+
+
+class TestGapModelsAggQuery:
+    """TestGapModels: AggregationQuery methods (2162, 2166, 2175)."""
+
+    def test_agg_query_has_auth_guard_false(self):
+        """AggregationQuery.has_auth_guard() False (line 2162)."""
+        from midicoder.packs.cp_base_domain_model.models import AggregationQuery, AggregationConfig, AggFunction, QueryGuard, QueryGuardType
+        aq = AggregationQuery(
+            id="aq1",
+            description="test agg",
+            reads_from="e1",
+            aggregation=AggregationConfig(function=AggFunction.COUNT),
+            guards=[QueryGuard(guard_type=QueryGuardType.TENANT_SCOPE)],
+        )
+        assert aq.has_auth_guard() is False
+
+    def test_agg_query_has_tenant_guard_false(self):
+        """AggregationQuery.has_tenant_guard() False (line 2166)."""
+        from midicoder.packs.cp_base_domain_model.models import AggregationQuery, AggregationConfig, AggFunction, QueryGuard, QueryGuardType
+        aq = AggregationQuery(
+            id="aq1",
+            description="test agg",
+            reads_from="e1",
+            aggregation=AggregationConfig(function=AggFunction.COUNT),
+            guards=[QueryGuard(guard_type=QueryGuardType.AUTH)],
+        )
+        assert aq.has_tenant_guard() is False
+
+    def test_agg_query_to_dict(self):
+        """AggregationQuery.to_dict() (line 2175)."""
+        from midicoder.packs.cp_base_domain_model.models import AggregationQuery, AggregationConfig, AggFunction
+        aq = AggregationQuery(
+            id="aq1",
+            description="test agg",
+            reads_from="e1",
+            aggregation=AggregationConfig(function=AggFunction.COUNT),
+        )
+        d = aq.to_dict()
+        assert d["id"] == "aq1"
+
+
+class TestGapModelsVOFieldToDict:
+    """TestGapModels: VOField.to_dict() branches (2311->2313..2325->2328) and from_dict (2341-2344)."""
+
+    def test_vo_field_to_dict_minimal(self):
+        """VOField.to_dict() with only required fields - all optional branches False (lines 2311->2313..2325->2328)."""
+        from midicoder.packs.cp_base_domain_model.models import VOField, VOFieldType
+        vf = VOField(name="minimal", field_type=VOFieldType.STRING)
+        d = vf.to_dict()
+        assert "default" not in d
+        assert "description" not in d
+        assert "precision" not in d
+        assert "scale" not in d
+        assert "min_length" not in d
+        assert "max_length" not in d
+        assert "pattern" not in d
+        assert "enum_values" not in d
+
+    def test_vo_field_from_dict(self):
+        """VOField.from_dict() (lines 2341-2344)."""
+        from midicoder.packs.cp_base_domain_model.models import VOField
+        vf = VOField.from_dict({"name": "from_dict", "type": "string", "required": True})
+        assert vf.name == "from_dict"
+        assert vf.required is True
+
+
+class TestGapModelsValueObject:
+    """TestGapModels: ValueObject.to_dict() branches (2414, 2416) and from_dict (2431)."""
+
+    def test_value_object_to_dict_with_optional(self):
+        """ValueObject.to_dict() with description and extends set (lines 2414, 2416)."""
+        from midicoder.packs.cp_base_domain_model.models import ValueObject
+        vo = ValueObject(id="FullVO", description="desc", extends="BaseVO")
+        d = vo.to_dict()
+        assert d["description"] == "desc"
+        assert d["extends"] == "BaseVO"
+
+    def test_value_object_from_dict(self):
+        """ValueObject.from_dict() (line 2431)."""
+        from midicoder.packs.cp_base_domain_model.models import ValueObject
+        vo = ValueObject.from_dict({"id": "FromDictVO", "immutable": True})
+        assert vo.id == "FromDictVO"
+        assert vo.immutable is True
+
+
+# ============================================================================
+# Models Gap Coverage — Final push to 100%
+# ============================================================================
+
+class TestGapModelsCommandFieldStringType:
+    """TestGapModels: CommandField.to_dict()/from_dict() string type path (905-906, 934-937)."""
+
+    def test_command_field_to_dict_with_string_type(self):
+        """CommandField.to_dict() when field_type is a string, not enum (lines 905-906)."""
+        from midicoder.packs.cp_base_domain_model.models import CommandField
+        cf = CommandField(name="str_type", field_type="integer")  # string, not enum
+        d = cf.to_dict()
+        assert d["type"] == "integer"
+
+    def test_command_field_from_dict_with_enum_type(self):
+        """CommandField.from_dict() when type is already enum, not string (lines 934-937)."""
+        from midicoder.packs.cp_base_domain_model.models import CommandField, CommandFieldType
+        cf = CommandField.from_dict({"name": "enum_type", "type": CommandFieldType.INTEGER})
+        assert cf.field_type == CommandFieldType.INTEGER
+
+
+class TestGapModelsCommandPermsFalsy:
+    """TestGapModels: Command.get_required_permissions() falsy permission (1342, 1352)."""
+
+    def test_command_get_required_permissions_empty_string_perm(self):
+        """get_required_permissions() AUTH guard with empty string permission (line 1342)."""
+        cmd = Command(
+            id="EmptyPerm",
+            guards=[CommandGuard(guard_type=GuardType.AUTH, permission="")],
+        )
+        perms = cmd.get_required_permissions()
+        assert perms == []
+
+
+class TestGapModelsPHICommonFields:
+    """TestGapModels: PHIMaskingConfig common PHI fields check (line 1765)."""
+
+    def test_phi_masking_common_phi_field(self):
+        """PHIMaskingConfig.should_mask() common PHI field fallback (line 1765)."""
+        from midicoder.packs.cp_base_domain_model.models import PHIMaskingConfig
+        cfg = PHIMaskingConfig(enabled=True, mask_patterns=[], allowed_fields=[])
+        assert cfg.should_mask("ssn") is True
+        assert cfg.should_mask("mrn") is True
+        assert cfg.should_mask("patient_id") is True
 
 
 # ============================================================================

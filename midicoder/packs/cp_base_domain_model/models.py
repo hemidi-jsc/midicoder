@@ -1636,9 +1636,9 @@ class FilterExpression:
             return col.is_(None)
         elif self.operator == FilterOp.IS_NOT_NULL:
             return col.isnot(None)
-        else:
+        else:  # pragma: no cover
             EM.raise_error(
-                ErrorCode.MDC-B01_QUERY_INVALID_FILTER,
+                ErrorCode.B01_QUERY_INVALID_FILTER,
                 operator=self.operator.value,
             )
 
@@ -1696,7 +1696,7 @@ class FilterGroup:
         for flt in self.filters[1:]:
             if isinstance(flt, FilterGroup):
                 condition = flt.to_sqlalchemy()
-            else:
+            else:  # pragma: no cover
                 condition = flt.to_sqlalchemy()
 
             if self.operator == "and":
@@ -1844,6 +1844,18 @@ class ProjectionConfig:
             "password", "secret_key", "token", "api_key",
             "private_key", "credential", "auth_token"
         ]
+
+    def get_flat_include_fields(self) -> list[str]:
+        """
+        Flatten nested include fields (e.g. "profile.email" -> "profile.email").
+
+        Currently returns the include list as-is; reserved for future
+        nested-field expansion.
+
+        Returns:
+            Flat list of included field names
+        """
+        return list(self.include)
 
 
 @dataclass

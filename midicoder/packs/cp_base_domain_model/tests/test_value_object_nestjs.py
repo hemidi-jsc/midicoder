@@ -17,7 +17,7 @@ import pytest
 from pathlib import Path
 from decimal import Decimal
 
-from midicoder.packs.cp01_domain_model import (
+from midicoder.packs.cp_base_domain_model import (
     NestJSValueObjectEmitter,
     EmittedValueObject,
 )
@@ -588,12 +588,109 @@ class TestNestJSEmitterIntegration:
         with pytest.raises(MidicoderError) as exc_info:
             emitter.emit_all(vo_map, output_dir=vo_dir)
 
-        assert exc_info.value.code.value == "MDC-CP01-011"
+        assert exc_info.value.code.value == "MDC-B01-010"
 
 
 # ============================================================================
-# Summary
+# Coverage 100% — vo_nestjs.py: 101, 196, 228, 509
 # ============================================================================
+
+
+class TestNestJSEmitterCoverage100:
+    """Push vo_nestjs.py to 100% coverage."""
+
+    def setup_method(self):
+        self.tmp_path = Path(__file__).parent.parent.parent / "tmp_test"
+        self.tmp_path.mkdir(exist_ok=True)
+        self.emitter = NestJSValueObjectEmitter(stack_dir=self.tmp_path)
+
+    def test_render_value_object_except_fallback(self):
+        """Test: render_value_object() except block line 101 — template fails, fallback used.
+
+        Line 101: `return self._generate_code_fallback(vo)` in the except block of
+        render_value_object().
+        """
+        vo_params: ExtendedValueObjectParams = {
+            "id": "NestJSFallback",
+            "fields": [
+                {"name": "value", "type": "string", "required": True},
+            ],
+        }
+        emitted_vo = self.emitter.emit(vo_params)
+        # render_value_object tries get_template("value-object.ts.jinja2") which fails
+        # → falls to _generate_code_fallback
+        code = self.emitter.render_value_object(emitted_vo)
+        # Fallback uses vo.name (PascalCase) for class name
+        assert "Nestjsfallback" in code or "NestJSFallback" in code
+        # Fallback generates TypeScript class
+        assert "export class" in code
+
+    def test_collect_imports_enum_field(self):
+        """Test: _collect_imports() enum branch line 196 — has_is_enum = True.
+
+        Line 196: `has_is_enum = True` when a field has type 'enum'.
+        Directly call _collect_imports to cover the enum branch.
+        """
+        vo_params: ExtendedValueObjectParams = {
+            "id": "NestJSEnum",
+            "fields": [
+                {"name": "status", "type": "enum", "required": True},
+            ],
+        }
+        emitted_vo = self.emitter.emit(vo_params)
+        # Call _collect_imports directly to cover the enum branch
+        imports = self.emitter._collect_imports(emitted_vo)
+        # The validator import line should contain IsEnum
+        assert any("IsEnum" in v for v in imports["validator"])
+
+    def test_collect_imports_enum_validator(self):
+        """Test: _collect_imports() IsEnum validator line 228 — IsEnum added to import.
+
+        Line 228: `if has_is_enum: validators.append('IsEnum')` — adds IsEnum to
+        the validator import list when there's an enum field.
+        """
+        vo_params: ExtendedValueObjectParams = {
+            "id": "EnumValidatorVO",
+            "fields": [
+                {"name": "level", "type": "enum", "required": True},
+            ],
+        }
+        emitted_vo = self.emitter.emit(vo_params)
+        imports = self.emitter._collect_imports(emitted_vo)
+        # IsEnum should be in the validator import
+        validator_import = imports["validator"][0]
+        assert "IsEnum" in validator_import
+
+    def test_emit_all_with_circular_inheritance(self, tmp_path):
+        """Test: emit_all() cycle detection line 509 — raises error on circular inheritance.
+
+        Line 509: `EM.raise_error(...)` when cycles are detected in emit_all().
+        """
+        vo_dir = tmp_path / "vos"
+        vo_dir.mkdir()
+
+        emitter = NestJSValueObjectEmitter(stack_dir=tmp_path)
+
+        vo_map: dict[str, ExtendedValueObjectParams] = {
+            "CycleA": {
+                "id": "CycleA",
+                "extends": "CycleB",
+                "fields": [],
+            },
+            "CycleB": {
+                "id": "CycleB",
+                "extends": "CycleA",
+                "fields": [],
+            },
+        }
+
+        from midicoder.errors import MidicoderError
+
+        with pytest.raises(MidicoderError) as exc_info:
+            emitter.emit_all(vo_map, output_dir=vo_dir)
+
+        assert exc_info.value.code.value == "MDC-B01-010"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

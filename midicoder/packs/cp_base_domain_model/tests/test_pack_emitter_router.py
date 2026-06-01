@@ -23,7 +23,7 @@ from midicoder.pipeline.pack_emitter_router import (
     _fallback_placeholder,
     _resolve_stack_dir,
 )
-from midicoder.packs.cp01_domain_model.models import (
+from midicoder.packs.cp_base_domain_model.models import (
     Entity,
     EntityField,
     EntityFieldType,
@@ -64,7 +64,7 @@ class TestEmitterRegistry:
 
     def test_entity_fastapi_parser_key(self) -> None:
         entry = EMITTER_REGISTRY["cp01.entity.fastapi"]
-        assert entry[2] == "cp01_entity"  # parser_key
+        assert entry[2] == "cp_base_domain_model_entity"  # parser_key
 
     def test_vo_fastapi_no_parser(self) -> None:
         entry = EMITTER_REGISTRY["cp01.vo.fastapi"]
@@ -75,7 +75,7 @@ class TestParserRegistry:
     """PARSER_REGISTRY can convert MIR dict → Entity dataclass."""
 
     def test_cp01_entity_parser_registered(self) -> None:
-        assert "cp01_entity" in PARSER_REGISTRY
+        assert "cp_base_domain_model_entity" in PARSER_REGISTRY
 
     def test_parse_minimal_entity(self) -> None:
         raw = {
@@ -191,7 +191,7 @@ class TestPackEmitterRouter:
         file_plan = {
             "path": "app/models/user.py",
             "type": "model",
-            "template": "cp01_domain_model/entity.py.jinja2",
+            "template": "cp_base_domain_model/entity.py.jinja2",
             "context": {
                 "entity": {
                     "id": "User",
@@ -218,7 +218,7 @@ class TestPackEmitterRouter:
         file_plan = {
             "path": "app/models/order.py",
             "type": "model",
-            "template": "cp01_domain_model/entity.py.jinja2",
+            "template": "cp_base_domain_model/entity.py.jinja2",
             "context": {
                 "entity": {
                     "id": "Order",
@@ -243,7 +243,7 @@ class TestPackEmitterRouter:
         file_plan = {
             "path": "app/schemas/user.py",
             "type": "schema",
-            "template": "cp01_domain_model/entity.py.jinja2",
+            "template": "cp_base_domain_model/entity.py.jinja2",
             "context": {
                 "entity": {
                     "id": "User",

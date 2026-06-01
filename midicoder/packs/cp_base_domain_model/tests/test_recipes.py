@@ -9,7 +9,7 @@ CP01: Domain Model - Recipes
 
 import pytest
 
-from midicoder.packs.cp01_domain_model import (
+from midicoder.packs.cp_base_domain_model import (
     # Pattern models
     Entity, EntityField, EntityFieldType,
     Command, CommandField, CommandFieldType, CommandGuard, CommandEffect, GuardType, EffectType,
@@ -531,7 +531,7 @@ class TestRecipeIntegration:
 
     def test_all_10_recipes_importable(self):
         """Tất cả 10 recipes phải importable từ __init__."""
-        from midicoder.packs.cp01_domain_model import (
+        from midicoder.packs.cp_base_domain_model import (
             SimpleEntityRecipe, AggregateRootRecipe, TemporalEntityRecipe,
             CQRSCommandRecipe, CQRSQueryRecipe, EventSourcedAggregateRecipe,
             SagaRecipe, PolymorphicEntityRecipe, ProjectionRecipe, ValueObjectRecipe,
@@ -546,3 +546,170 @@ class TestRecipeIntegration:
         assert PolymorphicEntityRecipe is not None
         assert ProjectionRecipe is not None
         assert ValueObjectRecipe is not None
+
+
+# ===========================================================================
+# Gap-Filling Tests: recipes.py uncovered lines
+# ===========================================================================
+
+
+class TestAuditFieldsHelper:
+    """Tests cho _audit_fields() — line 143."""
+
+    def test_audit_fields_returns_three_fields(self):
+        """Test: _audit_fields trả về 3 fields: tenant_id, created_at, updated_at."""
+        from midicoder.packs.cp_base_domain_model.recipes import _audit_fields
+
+        fields = _audit_fields()
+        assert len(fields) == 3
+        names = [f.name for f in fields]
+        assert "tenant_id" in names
+        assert "created_at" in names
+        assert "updated_at" in names
+
+
+class TestCQRSCommandRecipeCustomCategory:
+    """Tests cho CQRSCommandRecipe — branch 395→398 (custom category, no effect_type match)."""
+
+    def test_custom_category_no_record_effect(self):
+        """Test: category='custom' không tạo create/update/delete effect."""
+        c = CQRSCommandRecipe("CustomAction", entity="Order", category="custom")
+        # No create/update/delete effect should be added for custom category
+        record_effects = [e for e in c.effects if e.effect_type in ("create_record", "update_record", "delete_record")]
+        assert len(record_effects) == 0
+        assert c.category == "custom"
+
+
+class TestPolymorphicEntityRecipeWithBaseFields:
+    """Tests cho PolymorphicEntityRecipe — line 621 (if base_fields branch)."""
+
+    def test_with_base_fields(self):
+        """Test: PolymorphicEntityRecipe với base_fields — field được extend."""
+        p = PolymorphicEntityRecipe(
+            "Payment",
+            base_fields=[
+                EntityField(name="amount", field_type=EntityFieldType.DECIMAL, nullable=False),
+            ],
+            subtypes=[],
+        )
+        base_field_names = [f.name for f in p.base_fields]
+        assert "id" in base_field_names
+        assert "amount" in base_field_names
+        assert "payment_type" in base_field_names  # discriminator
+
+
+class TestGlobalErrorHandlerRecipe:
+    """Tests cho GlobalErrorHandlerRecipe — lines 775-860 (entire function)."""
+
+    def test_minimal_recipe(self):
+        """Test: GlobalErrorHandlerRecipe với params tối thiểu."""
+        from midicoder.packs.cp_base_domain_model import GlobalErrorHandlerRecipe
+
+        result = GlobalErrorHandlerRecipe("AppHandler")
+
+        assert "handler" in result
+        assert "mappers" in result
+        assert "logging_config" in result
+        assert "notification_config" in result
+
+    def test_handler_defaults(self):
+        """Test: Handler có đúng defaults."""
+        from midicoder.packs.cp_base_domain_model import GlobalErrorHandlerRecipe
+        from midicoder.packs.cp_base_domain_model.error_handler_models import (
+            ErrorHandlingStrategy,
+            ErrorLevel,
+        )
+
+        result = GlobalErrorHandlerRecipe("TestHandler")
+        h = result["handler"]
+
+        assert h.id == "testhandler"
+        assert h.name == "TestHandler"
+        assert h.strategy == ErrorHandlingStrategy.FALLBACK
+        assert h.log_level == ErrorLevel.ERROR
+        assert h.include_stack_trace is False
+
+    def test_common_mappers_included(self):
+        """Test: common_mappers=True tạo 6 mappers phổ biến."""
+        from midicoder.packs.cp_base_domain_model import GlobalErrorHandlerRecipe
+
+        result = GlobalErrorHandlerRecipe("TestHandler", common_mappers=True)
+        mappers = result["mappers"]
+
+        assert len(mappers) == 6
+        exc_types = [m.exception_type for m in mappers]
+        assert "ValueError" in exc_types
+        assert "KeyError" in exc_types
+        assert "PermissionError" in exc_types
+        assert "TypeError" in exc_types
+        assert "ConnectionError" in exc_types
+        assert "TimeoutError" in exc_types
+
+    def test_no_common_mappers(self):
+        """Test: common_mappers=False không tạo mappers."""
+        from midicoder.packs.cp_base_domain_model import GlobalErrorHandlerRecipe
+
+        result = GlobalErrorHandlerRecipe("TestHandler", common_mappers=False)
+        assert len(result["mappers"]) == 0
+
+    def test_with_logging_true(self):
+        """Test: with_logging=True tạo ErrorLoggingConfig."""
+        from midicoder.packs.cp_base_domain_model import GlobalErrorHandlerRecipe
+
+        result = GlobalErrorHandlerRecipe("TestHandler", with_logging=True)
+        assert result["logging_config"] is not None
+        assert result["logging_config"].log_format == "structured"
+        assert "password" in result["logging_config"].redact_fields
+
+    def test_with_logging_false(self):
+        """Test: with_logging=False không tạo logging config."""
+        from midicoder.packs.cp_base_domain_model import GlobalErrorHandlerRecipe
+
+        result = GlobalErrorHandlerRecipe("TestHandler", with_logging=False)
+        assert result["logging_config"] is None
+
+    def test_with_notification_true(self):
+        """Test: with_notification=True tạo ErrorNotificationConfig."""
+        from midicoder.packs.cp_base_domain_model import GlobalErrorHandlerRecipe
+
+        result = GlobalErrorHandlerRecipe(
+            "TestHandler",
+            with_notification=True,
+            sentry_dsn="https://key@sentry.io/1",
+        )
+        assert result["notification_config"] is not None
+        assert result["notification_config"].include_sentry_integration is True
+
+    def test_with_notification_false(self):
+        """Test: with_notification=False không tạo notification config."""
+        from midicoder.packs.cp_base_domain_model import GlobalErrorHandlerRecipe
+
+        result = GlobalErrorHandlerRecipe("TestHandler", with_notification=False)
+        assert result["notification_config"] is None
+
+    def test_custom_error_pages(self):
+        """Test: custom_error_pages được forward đúng."""
+        from midicoder.packs.cp_base_domain_model import GlobalErrorHandlerRecipe
+
+        result = GlobalErrorHandlerRecipe(
+            "TestHandler",
+            custom_error_pages={404: "/404", 500: "/500"},
+        )
+        assert result["handler"].custom_error_pages[404] == "/404"
+        assert result["handler"].custom_error_pages[500] == "/500"
+
+    def test_custom_strategy_and_level(self):
+        """Test: Custom strategy và log_level."""
+        from midicoder.packs.cp_base_domain_model import GlobalErrorHandlerRecipe
+        from midicoder.packs.cp_base_domain_model.error_handler_models import (
+            ErrorHandlingStrategy,
+            ErrorLevel,
+        )
+
+        result = GlobalErrorHandlerRecipe(
+            "TestHandler",
+            strategy=ErrorHandlingStrategy.CIRCUIT_BREAKER,
+            log_level=ErrorLevel.CRITICAL,
+        )
+        assert result["handler"].strategy == ErrorHandlingStrategy.CIRCUIT_BREAKER
+        assert result["handler"].log_level == ErrorLevel.CRITICAL

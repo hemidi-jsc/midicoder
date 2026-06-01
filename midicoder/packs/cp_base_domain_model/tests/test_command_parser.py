@@ -16,12 +16,12 @@ import pytest
 from dataclasses import dataclass, field
 
 # Import models trực tiếp từ models module
-from midicoder.packs.cp01_domain_model.models import (
+from midicoder.packs.cp_base_domain_model.models import (
     Command,
     CommandField,
     CommandFieldType,
 )
-from midicoder.packs.cp01_domain_model.command_parser import CommandParser
+from midicoder.packs.cp_base_domain_model.command_parser import CommandParser
 
 # Alias cho tests
 Field = CommandField
@@ -381,6 +381,82 @@ class TestCommandModel:
         assert data["tenant_scope"] == "tenant_isolated"
         assert len(data["input"]) == 1
         assert data["writes_to"] == ["Test"]
+
+
+# ============================================================================
+# Gap Coverage Tests — command_parser lines 117->121, 164, 225
+# ============================================================================
+
+class TestCommandParserGapCoverage:
+    """Gap coverage: line 117->121 (no input/returns), 164 (field missing name), 225 (no writes_to)."""
+
+    def setup_method(self):
+        """Setup trước mỗi test."""
+        self.parser = CommandParser()
+
+    def test_command_without_input_key_skips_input_parsing(self):
+        """Line 117->121: cmd_def has no 'input' key — skip input parsing, jump to returns."""
+        yaml_content = """
+commands:
+  - id: NoInputCommand
+    writes_to:
+      - SomeEntity
+    category: custom
+"""
+        commands = self.parser.parse(yaml_content)
+
+        assert len(commands) == 1
+        assert commands[0].input == []
+
+    def test_command_without_returns_key_skips_returns_parsing(self):
+        """Line 121->125: cmd_def has no 'returns' key — skip returns parsing."""
+        yaml_content = """
+commands:
+  - id: NoReturnsCommand
+    input:
+      - name: data
+        type: string
+    writes_to:
+      - SomeEntity
+    category: custom
+"""
+        commands = self.parser.parse(yaml_content)
+
+        assert len(commands) == 1
+        assert commands[0].returns == []
+
+    def test_field_without_name_raises_error(self):
+        """Line 164: field_def has no 'name' — raise B01_INVALID_FIELD_TYPE."""
+        yaml_content = """
+commands:
+  - id: BadFieldCommand
+    input:
+      - type: string
+    writes_to:
+      - SomeEntity
+    category: custom
+"""
+        with pytest.raises(Exception) as exc_info:
+            self.parser.parse(yaml_content)
+
+        # The error message should mention field/name
+        assert "name" in str(exc_info.value).lower() or "field" in str(exc_info.value).lower()
+
+    def test_command_without_writes_to_raises_error(self):
+        """Line 225: Command has no writes_to — raise B01_COMMAND_NOT_FOUND."""
+        yaml_content = """
+commands:
+  - id: NoWritesCommand
+    input:
+      - name: data
+        type: string
+    category: custom
+"""
+        with pytest.raises(Exception) as exc_info:
+            self.parser.parse(yaml_content)
+
+        # Error should mention writes_to
+        assert "writes_to" in str(exc_info.value).lower() or "command" in str(exc_info.value).lower()
 
 
 # ============================================================================

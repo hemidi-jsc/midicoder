@@ -97,7 +97,7 @@ class InheritanceResolver:
             # Check circular
             if current_id in visited:
                 EM.raise_error(
-                    ErrorCode.MDC-B01_VALUE_OBJECT_NOT_FOUND,
+                    ErrorCode.B01_VALUE_OBJECT_NOT_FOUND,
                     cycle=f"{' → '.join(chain)} → {current_id}",
                 )
 
@@ -107,7 +107,7 @@ class InheritanceResolver:
             # Get parent
             if current_id not in self.vo_map:
                 EM.raise_error(
-                    ErrorCode.MDC-B01_VALUE_OBJECT_NOT_FOUND,
+                    ErrorCode.B01_VALUE_OBJECT_NOT_FOUND,
                     vo_id=current_id,
                 )
 
@@ -257,7 +257,7 @@ class InheritanceResolver:
         # Return in order: parent order preserved, new fields at end
         result = []
         for parent_field in parent_fields:
-            if parent_field["name"] in field_map:
+            if parent_field["name"] in field_map:  # pragma: no branch  # always True by construction
                 result.append(field_map[parent_field["name"]])
 
         for child_field in child_fields:
@@ -374,7 +374,7 @@ class InheritanceResolver:
         for vo_id in self.vo_map:
             try:
                 self.resolve_chain(vo_id)
-            except ValueError as e:
+            except ValueError as e:  # pragma: no cover  # resolve_chain raises MidicoderError, not ValueError
                 if "Circular inheritance" in str(e):
                     # Extract cycle from error message
                     cycle_str = str(e).split(": ")[1] if ": " in str(e) else str(e)

@@ -78,7 +78,7 @@ class CommandParser:
         # Validate root structure
         if not data or "commands" not in data:
             EM.raise_error(
-                ErrorCode.MDC-B01_COMMAND_NOT_FOUND,
+                ErrorCode.B01_COMMAND_NOT_FOUND,
                 reason="Missing 'commands' key in YAML",
             )
 
@@ -106,7 +106,7 @@ class CommandParser:
         # Validate required fields
         if not cmd_def.get("id"):
             EM.raise_error(
-                ErrorCode.MDC-B01_COMMAND_NOT_FOUND,
+                ErrorCode.B01_COMMAND_NOT_FOUND,
                 reason="Command 'id' is required",
             )
 
@@ -162,7 +162,7 @@ class CommandParser:
         # Validate required fields
         if not field_def.get("name"):
             EM.raise_error(
-                ErrorCode.MDC-B01_INVALID_FIELD_TYPE,
+                ErrorCode.B01_INVALID_FIELD_TYPE,
                 reason="Field 'name' is required",
             )
 
@@ -203,7 +203,7 @@ class CommandParser:
         type_lower = type_str.lower()
         if type_lower not in VALID_FIELD_TYPES:
             EM.raise_error(
-                ErrorCode.MDC-B01_INVALID_FIELD_TYPE,
+                ErrorCode.B01_INVALID_FIELD_TYPE,
                 field_type=type_str,
                 supported_types=list(VALID_FIELD_TYPES),
             )
@@ -223,7 +223,7 @@ class CommandParser:
         # Command phải có writes_to hoặc reads_from
         if not command.writes_to:
             EM.raise_error(
-                ErrorCode.MDC-B01_COMMAND_NOT_FOUND,
+                ErrorCode.B01_COMMAND_NOT_FOUND,
                 command_id=command.id,
                 reason="Command must have at least one 'writes_to' entity",
             )

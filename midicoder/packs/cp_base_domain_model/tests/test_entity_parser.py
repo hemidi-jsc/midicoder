@@ -10,8 +10,8 @@ CP01: Domain Model - Entity Parser
 import pytest
 import yaml
 
-from midicoder.packs.cp01_domain_model.entity_parser import EntityParser
-from midicoder.packs.cp01_domain_model.models import (
+from midicoder.packs.cp_base_domain_model.entity_parser import EntityParser
+from midicoder.packs.cp_base_domain_model.models import (
     EntityField,
     EntityFieldType,
     Relationship,
@@ -426,7 +426,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_INVALID_FIELD_TYPE
+        assert exc_info.value.code == ErrorCode.B01_INVALID_FIELD_TYPE
 
 
 # ===========================================================================
@@ -541,7 +541,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_INVALID_RELATIONSHIP
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_INVALID_RELATIONSHIP
 
     def test_relationship_without_target_raises_error(self):
         yaml_content = """
@@ -557,7 +557,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_INVALID_RELATIONSHIP
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_INVALID_RELATIONSHIP
 
     def test_invalid_relationship_type_raises_error(self):
         yaml_content = """
@@ -573,7 +573,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_INVALID_RELATIONSHIP
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_INVALID_RELATIONSHIP
 
 
 # ===========================================================================
@@ -659,7 +659,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_INVALID_CONSTRAINT
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_INVALID_CONSTRAINT
 
     def test_unique_constraint_without_fields_raises_error(self):
         yaml_content = """
@@ -675,7 +675,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_INVALID_CONSTRAINT
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_INVALID_CONSTRAINT
 
     def test_invalid_constraint_type_raises_error(self):
         yaml_content = """
@@ -692,7 +692,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_INVALID_CONSTRAINT
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_INVALID_CONSTRAINT
 
 
 # ===========================================================================
@@ -794,7 +794,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_INVALID_LIFECYCLE
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_INVALID_LIFECYCLE
 
 
 # ===========================================================================
@@ -815,7 +815,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_NOT_FOUND
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_NOT_FOUND
 
     def test_missing_entities_key_raises_error(self):
         yaml_content = """
@@ -828,7 +828,7 @@ models:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_NOT_FOUND
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_NOT_FOUND
 
     def test_field_without_name_raises_error(self):
         yaml_content = """
@@ -842,7 +842,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_INVALID_FIELD
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_INVALID_FIELD
 
     def test_entity_without_fields_raises_error(self):
         yaml_content = """
@@ -851,7 +851,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_INVALID_FIELD
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_INVALID_FIELD
 
     def test_entity_without_primary_key_raises_error(self):
         yaml_content = """
@@ -863,7 +863,7 @@ entities:
 """
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_INVALID_FIELD
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_INVALID_FIELD
 
     def test_invalid_yaml_syntax_raises_error(self):
         yaml_content = """
@@ -883,10 +883,65 @@ entities:
         yaml_content = ""
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_NOT_FOUND
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_NOT_FOUND
 
     def test_null_yaml_raises_error(self):
         yaml_content = "---\n"
         with pytest.raises(MidicoderError) as exc_info:
             EntityParser().parse(yaml_content)
-        assert exc_info.value.code == ErrorCode.MDC-B01_ENTITY_NOT_FOUND
+        assert exc_info.value.code == ErrorCode.B01_ENTITY_NOT_FOUND
+
+
+# ===========================================================================
+# Gap Coverage Tests — entity_parser lines 414, 417
+# ===========================================================================
+
+class TestEntityParserGapCoverage:
+    """Gap coverage: lines 414 (non-str/non-dict hook_def) and 417 (empty hook_name from dict)."""
+
+    def test_hook_def_non_string_non_dict_is_skipped(self):
+        """Line 414: hook_def is neither str nor dict (e.g. integer) — should be skipped via continue."""
+        yaml_content = """
+entities:
+  - id: GapEntity
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+    lifecycle:
+      before_insert:
+        - set_defaults
+        - 42
+        - some_other_hook
+"""
+        entities = EntityParser().parse(yaml_content)
+        hooks = entities[0].lifecycle_hooks
+        # integer 42 is skipped, only string hooks survive
+        assert len(hooks) == 2
+        assert hooks[0].hook_name == "set_defaults"
+        assert hooks[1].hook_name == "some_other_hook"
+
+    def test_hook_dict_with_empty_name_is_skipped(self):
+        """Line 417: hook_def is a dict with no 'hook'/'name' key — should be skipped via continue."""
+        yaml_content = """
+entities:
+  - id: GapEntity
+    fields:
+      - name: id
+        type: uuid
+        primary_key: true
+    lifecycle:
+      after_insert:
+        - hook: real_hook
+          params:
+            key: value
+        - params:
+            key: value
+        - another_hook
+"""
+        entities = EntityParser().parse(yaml_content)
+        hooks = entities[0].lifecycle_hooks
+        # dict without hook/name is skipped
+        assert len(hooks) == 2
+        assert hooks[0].hook_name == "real_hook"
+        assert hooks[1].hook_name == "another_hook"

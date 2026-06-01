@@ -244,7 +244,7 @@ class ValueObjectEmitter(ABC):
                 parent_fields = parent_params.get("fields", [])
             else:
                 EM.raise_error(
-                    ErrorCode.MDC-B01_VALUE_OBJECT_NOT_FOUND,
+                    ErrorCode.B01_VALUE_OBJECT_NOT_FOUND,
                     vo_id=inherits_from,
                 )
 

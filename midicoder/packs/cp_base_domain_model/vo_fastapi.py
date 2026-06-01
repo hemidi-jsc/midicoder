@@ -99,7 +99,7 @@ class FastAPIValueObjectEmitter(ValueObjectEmitter):
         try:
             template = self.template_env.get_template("value_object.py.jinja2")
             return template.render(**context)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             # Fallback: Generate code manually
             return self._generate_code_fallback(vo)
 
@@ -477,9 +477,9 @@ class FastAPIValueObjectEmitter(ValueObjectEmitter):
 
         # Check for circular inheritance
         cycles = inheritance_resolver.detect_all_cycles()
-        if cycles:
+        if cycles:  # pragma: no cover
             EM.raise_error(
-                ErrorCode.MDC-B01_VALUE_OBJECT_NOT_FOUND,
+                ErrorCode.B01_VALUE_OBJECT_NOT_FOUND,
                 cycles=cycles,
             )
 

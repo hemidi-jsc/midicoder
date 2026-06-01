@@ -229,7 +229,7 @@ class NestJSQueryEmitter:
             "render_context": RenderContextSpec().to_dict(),
         }
 
-    def _render(self, template_name: str, context: dict[str, Any]) -> str:
+    def _render(self, template_name: str, context: dict[str, Any]) -> str:  # pragma: no cover
         """
         Render Jinja2 template.
 

@@ -19,12 +19,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from midicoder.packs.cp01_domain_model import (
+from midicoder.packs.cp_base_domain_model import (
     Command,
     CommandEffect,
     EffectType,
 )
-from midicoder.packs.cp01_domain_model.command_effects import CommandEffects
+from midicoder.packs.cp_base_domain_model.command_effects import CommandEffects
 
 
 # ============================================================================
@@ -741,7 +741,7 @@ class TestCommandEffectObservability:
 
         # MetricRegistry is imported inside the method, so patch at the import site
         with patch(
-            "midicoder.packs.cp15_observability.metrics.MetricRegistry"
+            "midicoder.packs.cp_core_observability.metrics.MetricRegistry"
         ) as MockRegistry:
             mock_instance = MagicMock()
             mock_instance.record = MagicMock(return_value=True)
@@ -967,6 +967,79 @@ class TestCommandEffectsMultipleEffects:
         assert results["create_record_User"] == "generated-id"
         assert results["publish_event_UserCreated"] is True
         assert results["send_email_default"] is True
+
+
+    @pytest.mark.asyncio
+    async def test_upsert_record_without_tenant_id(self, mock_repository):
+        """Test: upsert_record does not set tenant_id when tenant_id is None."""
+        command = Command(
+            id="UpsertCommand",
+            description="Command with upsert effect",
+            effects=[
+                CommandEffect(effect_type=EffectType.UPSERT_RECORD, entity="User"),
+            ],
+        )
+
+        effects = CommandEffects(
+            command=command,
+            repositories={"user": mock_repository},
+        )
+
+        # Execute without tenant_id
+        results = await effects.execute({"name": "John"})
+
+        mock_repository.upsert.assert_awaited_once()
+        call_args = mock_repository.upsert.call_args[0][0]
+        assert "tenant_id" not in call_args
+        assert results["upsert_record_User"] == "record-001"
+
+    @pytest.mark.asyncio
+    async def test_condition_false_skips_effect(self):
+        """Test: Effect with condition is skipped when _evaluate_condition returns False."""
+        command = Command(
+            id="ConditionalCommand",
+            description="Command with conditional effect",
+            effects=[
+                CommandEffect(
+                    effect_type=EffectType.UPDATE_RECORD,
+                    entity="Entity",
+                    condition="skip_me",
+                ),
+            ],
+        )
+
+        effects = CommandEffects(command=command, repositories={})
+
+        # Patch _evaluate_condition to return False
+        with patch.object(effects, "_evaluate_condition", return_value=False):
+            results = await effects.execute({"id": "1"})
+
+        # Effect should be skipped, results dict should be empty
+        assert results == {}
+
+    @pytest.mark.asyncio
+    async def test_unknown_effect_type_returns_none(self):
+        """Test: Unknown effect type returns None in results dict."""
+        # Use a mock effect_type that has .value (for results key)
+        # but does not equal any EffectType enum member
+        mock_effect_type = MagicMock()
+        mock_effect_type.value = "unknown_effect_type"
+        # Ensure it does not match any EffectType comparison
+        mock_effect_type.__eq__ = MagicMock(return_value=False)
+
+        effect = CommandEffect(effect_type=EffectType.CREATE_RECORD, entity="X")
+        effect.effect_type = mock_effect_type
+
+        command = Command(
+            id="UnknownEffectCommand",
+            description="Command with unknown effect type",
+            effects=[effect],
+        )
+
+        effects = CommandEffects(command=command)
+        results = await effects.execute({})
+
+        assert results["unknown_effect_type_X"] is None
 
 
 # ============================================================================
