@@ -250,6 +250,40 @@ export class ApiService {
   }
 
   // ============================================================================
+  // LLM CONFIG ENDPOINTS
+  // ============================================================================
+
+  /**
+   * GET /config/llm - Get LLM config
+   */
+  async getLlmConfig(): Promise<ApiResponse<{ llm: any; providers: string[] }>> {
+    return this.get('/config/llm');
+  }
+
+  /**
+   * POST /config/llm - Set LLM config
+   */
+  async setLlmConfig(config: {
+    provider: string;
+    model: string;
+    api_url: string;
+    api_key?: string;
+    max_tokens?: number;
+    temperature?: number;
+    timeout?: number;
+    retry_attempts?: number;
+  }): Promise<ApiResponse<{ saved: boolean }>> {
+    return this.post('/config/llm', config);
+  }
+
+  /**
+   * POST /config/llm/test - Test LLM connection
+   */
+  async testLlmConfig(): Promise<ApiResponse<any>> {
+    return this.post('/config/llm/test', {});
+  }
+
+  // ============================================================================
   // INIT ENDPOINT
   // ============================================================================
 

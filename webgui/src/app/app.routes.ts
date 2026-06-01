@@ -57,6 +57,10 @@ export const routes: Routes = [
         path: 'feedback',
         loadComponent: () => import('./pages/feedback/feedback.component').then((m) => m.FeedbackComponent),
       },
+      {
+        path: 'llm-config',
+        loadComponent: () => import('./pages/llm-config/llm-config.component').then((m) => m.LlmConfigComponent),
+      },
     ],
   },
 

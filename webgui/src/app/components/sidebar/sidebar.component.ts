@@ -168,6 +168,19 @@ import { VersionService, VersionInfo } from '../../core/version.service';
           </div>
         }
       </div>
+
+      <!-- Settings Section -->
+      <div class="sidebar-section">
+        <div class="sidebar-header">
+          <h3>Settings</h3>
+        </div>
+        <div class="settings-list">
+          <a routerLink="/llm-config" class="settings-item">
+            <span class="settings-icon">⚙️</span>
+            <span class="settings-name">LLM Config</span>
+          </a>
+        </div>
+      </div>
     </aside>
 
     <!-- Create Version Modal -->
@@ -555,6 +568,39 @@ import { VersionService, VersionInfo } from '../../core/version.service';
     .modal select.input option {
       background: var(--bg-secondary);
       color: var(--text-primary);
+    }
+
+    /* Settings */
+    .settings-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .settings-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .settings-item:hover {
+      background: var(--bg-card);
+      border-color: var(--border-subtle);
+    }
+
+    .settings-icon {
+      font-size: 0.9rem;
+    }
+
+    .settings-name {
+      font-size: 0.85rem;
+      font-weight: 500;
     }
   `]
 })
