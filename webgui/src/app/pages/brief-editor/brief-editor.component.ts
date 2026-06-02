@@ -390,15 +390,73 @@ import { PipelineStore } from '../../core/pipeline.store';
           <!-- Next Action -->
           <div class="mt-4 flex justify-end gap-3">
             @if (analysisResult?.status === 'needs_clarification') {
-              <a routerLink="/clarification" class="btn btn-primary">
-                Làm rõ yêu cầu →
-              </a>
+              @if (!clarificationActive) {
+                <button (click)="startClarification()" class="btn btn-primary" [disabled]="isStartingClarification">
+                  {{ isStartingClarification ? '⏳ Đang bắt đầu...' : '💬 Làm rõ yêu cầu →' }}
+                </button>
+              }
             } @else {
               <a routerLink="/contract-viewer" class="btn btn-primary">
                 Generate Contract →
               </a>
             }
           </div>
+
+          <!-- Clarification Inline Section -->
+          @if (clarificationActive && clarificationCurrentQuestion) {
+            <div class="mt-6 p-5 bg-purple-900 bg-opacity-20 border border-purple-500 rounded">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold text-purple-300">💬 Clarification Session</h3>
+                <span class="text-xs px-2 py-1 rounded bg-purple-900 bg-opacity-40 text-purple-300">
+                  Round {{ clarificationRound }}/{{ clarificationMaxRounds }}
+                </span>
+              </div>
+
+              <!-- Q&A History Timeline -->
+              @if (clarificationQaHistory.length > 0) {
+                <div class="mb-4 space-y-2 max-h-60 overflow-y-auto">
+                  @for (qa of clarificationQaHistory; track qa.question) {
+                    <div class="p-3 bg-bg-secondary rounded text-sm">
+                      <p class="text-blue-400"><strong>Q:</strong> {{ qa.question }}</p>
+                      <p class="text-green-400 mt-1"><strong>A:</strong> {{ qa.answer }}</p>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Current Question -->
+              <div class="mb-4 p-3 bg-purple-900 bg-opacity-30 rounded border-l-4 border-purple-400">
+                <p class="text-sm text-purple-200">{{ clarificationCurrentQuestion.question }}</p>
+              </div>
+
+              <!-- Answer Input -->
+              <div class="flex gap-3">
+                <textarea
+                  [(ngModel)]="clarificationAnswer"
+                  class="flex-1 bg-bg-secondary border border-border-primary rounded p-3 text-sm text-text-primary resize-none focus:outline-none focus:border-accent-primary"
+                  rows="3"
+                  placeholder="Nhập câu trả lời của bạn..."
+                  (keydown.enter)="submitClarificationAnswer($event)"
+                ></textarea>
+                <div class="flex flex-col gap-2">
+                  <button
+                    (click)="submitClarificationAnswer()"
+                    class="btn btn-primary text-sm"
+                    [disabled]="!clarificationAnswer.trim() || isSubmittingAnswer"
+                  >
+                    {{ isSubmittingAnswer ? '⏳' : 'Gửi' }}
+                  </button>
+                  <button
+                    (click)="clarificationActive = false; clarificationCurrentQuestion = null"
+                    class="text-xs text-text-tertiary hover:text-text-primary"
+                    [disabled]="isSubmittingAnswer"
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
         </div>
       }
 
@@ -504,6 +562,17 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
     events: false,
     ui_components: false,
   };
+
+  // Clarification inline session
+  clarificationActive = false;
+  clarificationSessionId: string | null = null;
+  clarificationCurrentQuestion: any = null;
+  clarificationAnswer = '';
+  clarificationRound = 1;
+  clarificationMaxRounds = 10;
+  clarificationQaHistory: Array<{question: string; answer: string}> = [];
+  isStartingClarification = false;
+  isSubmittingAnswer = false;
 
   // Single brief info (1 version = 1 brief, status = progress)
   briefInfo: any = null;
@@ -729,5 +798,104 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
       archived: 'bg-gray-900 bg-opacity-40 text-gray-400 border border-gray-700',
     };
     return map[status] || 'bg-bg-secondary text-text-tertiary border border-border-primary';
+  }
+
+  // ============================================================================
+  // Clarification inline session
+  // ============================================================================
+
+  async startClarification(): Promise<void> {
+    this.isStartingClarification = true;
+    this.cdr.detectChanges();
+
+    try {
+      const result = await this.api.startClarification({ version: this.activeVersion });
+
+      if (result.success && result.data) {
+        if (result.data.status === 'ready') {
+          // LLM nói đã đủ rõ, không cần clarify
+          this.showToast(result.data.message || 'Brief đã đủ rõ!', 'success');
+          await this.loadBrief();
+          return;
+        }
+
+        if (result.data.questions && result.data.questions.length > 0) {
+          this.clarificationActive = true;
+          this.clarificationSessionId = result.data.clarification_id;
+          this.clarificationCurrentQuestion = result.data.questions[0];
+          this.clarificationRound = result.data.round || 1;
+          this.clarificationQaHistory = [];
+          this.clarificationAnswer = '';
+          this.cdr.detectChanges();
+        }
+      } else {
+        this.showToast(result.message || 'Không thể bắt đầu clarification', 'error');
+      }
+    } catch {
+      this.showToast('Lỗi kết nối server', 'error');
+    } finally {
+      this.isStartingClarification = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  async submitClarificationAnswer(event?: KeyboardEvent): Promise<void> {
+    // Ctrl+Enter hoặc Shift không nhấn
+    if (event && !event.ctrlKey && !event.shiftKey) {
+      event.preventDefault();
+    }
+    if (event && !(event as KeyboardEvent).ctrlKey) return;
+
+    if (!this.clarificationAnswer.trim() || !this.clarificationSessionId) return;
+
+    this.isSubmittingAnswer = true;
+    this.cdr.detectChanges();
+
+    try {
+      const answerText = this.clarificationAnswer.trim();
+      const result = await this.api.submitClarificationAnswers({
+        session_id: this.clarificationSessionId,
+        answers: [{
+          question_id: this.clarificationCurrentQuestion.id,
+          values: [answerText],
+          notes: '',
+        }],
+      });
+
+      if (result.success && result.data) {
+        // Lưu Q&A vào history
+        this.clarificationQaHistory.push({
+          question: this.clarificationCurrentQuestion.question,
+          answer: answerText,
+        });
+
+        if (result.data.status === 'ready') {
+          // Hoàn tất clarification
+          this.showToast(`Clarification hoàn tất sau ${this.clarificationRound} rounds!`, 'success');
+          this.clarificationActive = false;
+          this.clarificationCurrentQuestion = null;
+          this.clarificationSessionId = null;
+          this.clarificationQaHistory = [];
+          this.clarificationAnswer = '';
+          await this.loadBrief();
+          return;
+        }
+
+        if (result.data.status === 'more_questions' && result.data.questions) {
+          // Còn câu hỏi tiếp theo
+          this.clarificationCurrentQuestion = result.data.questions[0];
+          this.clarificationRound = result.data.round || this.clarificationRound + 1;
+          this.clarificationAnswer = '';
+          this.cdr.detectChanges();
+        }
+      } else {
+        this.showToast(result.message || 'Gửi câu trả lời thất bại', 'error');
+      }
+    } catch {
+      this.showToast('Lỗi kết nối server', 'error');
+    } finally {
+      this.isSubmittingAnswer = false;
+      this.cdr.detectChanges();
+    }
   }
 }

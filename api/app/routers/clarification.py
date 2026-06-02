@@ -8,6 +8,7 @@ Reuse logic từ midicoder.pipeline.commands.brief:
 """
 
 import uuid
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 from fastapi import Query, Request
@@ -33,6 +34,13 @@ def _get_cli_functions():
         _generate_clarification_question = _gcq
         _save_clarification = _sc
         _convert_to_master_brief = _cmb
+
+
+def _get_project_db_path(db_name: str) -> Path:
+    """Lấy explicit path đến database file của project."""
+    from app.config import get_project_cwd
+    project_cwd = Path(get_project_cwd())
+    return project_cwd / ".midicoder" / "data" / db_name
 
 
 def _get_session_store():
@@ -90,10 +98,10 @@ async def start_clarification(
     from midicoder.storage.sqlite import BriefsManager, ArtifactsManager
     from midicoder.pipeline.llm import load_llm_config
 
-    briefs_manager = BriefsManager()
+    briefs_manager = BriefsManager(db_path=_get_project_db_path("briefs.db"))
     briefs_manager.init()
 
-    artifacts_manager = ArtifactsManager()
+    artifacts_manager = ArtifactsManager(db_path=_get_project_db_path("artifacts.db"))
     artifacts_manager.init()
 
     # Bước 1: Tìm working-brief có analysis artifact
@@ -253,7 +261,7 @@ async def submit_clarification_answers(
     from midicoder.storage.sqlite import BriefsManager
     from midicoder.pipeline.llm import load_llm_config
 
-    briefs_manager = BriefsManager()
+    briefs_manager = BriefsManager(db_path=_get_project_db_path("briefs.db"))
     briefs_manager.init()
 
     brief_id = session["brief_id"]
@@ -296,8 +304,9 @@ async def submit_clarification_answers(
     session["round"] = round_num + 1
 
     if not needs_more:
-        # Đã đủ rõ → convert → master-brief
+        # Đã đủ rõ → convert → master-brief + update status
         _convert_to_master_brief(briefs_manager, brief_id)
+        briefs_manager.update_status(brief_id, "clarified")
 
         # Cleanup session
         del store[session_id]
@@ -353,7 +362,7 @@ async def get_clarification_status(
     if not session:
         # Kiểm tra xem brief đã chuyển sang master chưa (session đã clean)
         from midicoder.storage.sqlite import BriefsManager
-        mgr = BriefsManager()
+        mgr = BriefsManager(db_path=_get_project_db_path("briefs.db"))
         mgr.init()
         for b in mgr.list():
             if b.get("brief_id") == session_id:
