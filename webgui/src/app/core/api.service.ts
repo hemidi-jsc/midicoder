@@ -423,7 +423,15 @@ export class ApiService {
   }
 
   /**
-   * GET /brief/list - List all briefs with type/status
+   * GET /brief/lineage - Get brief change history (from brief_lineage table)
+   */
+  async getBriefLineage(version?: string): Promise<ApiResponse<{ lineage: any[]; count: number }>> {
+    const params = version ? `?version=${version}` : '';
+    return this.get(`/brief/lineage${params}`);
+  }
+
+  /**
+   * GET /brief/list - List all briefs with type/status (deprecated: 1 version = 1 brief)
    */
   async listBriefs(version?: string): Promise<ApiResponse<{ briefs: any[]; count: number }>> {
     const params = version ? `?version=${version}` : '';

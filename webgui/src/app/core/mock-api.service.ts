@@ -77,6 +77,17 @@ export interface BriefAnalyzeResponse {
       source_text: string;
       description: string;
     }>;
+    summary?: string;
+  };
+  metadata?: {
+    domain: string;
+    confidence: number;
+    entities: number;
+    commands: number;
+    queries: number;
+    events: number;
+    ui_components: number;
+    brief_id?: string;
   };
 }
 
