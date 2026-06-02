@@ -61,12 +61,6 @@ import { PipelineStore } from '../../core/pipeline.store';
                     [title]="'Trạng thái: ' + briefInfo.status">
                 {{ briefInfo.status | titlecase }}
               </span>
-              @if (hasAnalysis) {
-                <span class="text-xs px-2 py-1 rounded font-medium bg-blue-900 bg-opacity-40 text-blue-300 border border-blue-700"
-                      title="Brief đã được phân tích">
-                  ✓ Analyzed
-                </span>
-              }
               @if (activeVersion) {
                 <span class="text-xs px-2 py-1 rounded font-medium bg-bg-secondary text-text-tertiary border border-border-primary">
                   {{ activeVersion }}
@@ -341,7 +335,6 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   isFreezing = false;
   saveStatus: 'idle' | 'saving' | 'saved' = 'idle';
   analysisResult: any = null;
-  hasAnalysis = false;
 
   clarifications: any[] = [];
   lineage: any[] = [];
@@ -405,10 +398,8 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
       this.briefContent = result.data.content || '';
       this._lastSavedContent = this.briefContent;
       this.clarifications = result.data.clarifications || [];
-      // Không reset hasAnalysis — giữ trạng thái nếu vừa analyze thành công
-      if (!this.hasAnalysis) {
-        this.hasAnalysis = this.clarifications.length > 0;
-      }
+      // Restore analysis result from backend (persisted in artifacts table)
+      this.analysisResult = result.data.analysis || null;
     }
   }
 
@@ -492,7 +483,6 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
 
       if (result.success && result.data) {
         this.analysisResult = result.data;
-        this.hasAnalysis = true;
         await this.loadBrief();
         await this.loadLineage();
         this.showToast('Phân tích thành công! Đã extract ' + (result.data.metadata?.entities || 0) + ' entities', 'success');

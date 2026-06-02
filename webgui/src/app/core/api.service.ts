@@ -407,6 +407,7 @@ export class ApiService {
     title: string;
     content: string;
     clarifications: any[];
+    analysis?: BriefAnalyzeResponse | null;
     created_at: string;
     updated_at: string;
   }>> {
@@ -428,14 +429,6 @@ export class ApiService {
   async getBriefLineage(version?: string): Promise<ApiResponse<{ lineage: any[]; count: number }>> {
     const params = version ? `?version=${version}` : '';
     return this.get(`/brief/lineage${params}`);
-  }
-
-  /**
-   * GET /brief/list - List all briefs with type/status (deprecated: 1 version = 1 brief)
-   */
-  async listBriefs(version?: string): Promise<ApiResponse<{ briefs: any[]; count: number }>> {
-    const params = version ? `?version=${version}` : '';
-    return this.get(`/brief/list${params}`);
   }
 
   /**
