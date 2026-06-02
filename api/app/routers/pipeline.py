@@ -23,6 +23,50 @@ def _map_progress_stage(stage_data: dict) -> str:
     return "pending"
 
 
+def _get_active_version_for_project(project_cwd: str) -> str | None:
+    """Đọc active version từ project path cụ thể (không dùng Path.cwd())."""
+    try:
+        active_file = Path(project_cwd) / ".midicoder" / "config" / "active_version.txt"
+        if active_file.exists():
+            return active_file.read_text().strip()
+        # Fallback: đọc từ YAML config
+        import yaml
+        config_file = Path(project_cwd) / ".midicoder" / "config" / "midicoder.yml"
+        if config_file.exists():
+            with open(config_file, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            return cfg.get("active_version")
+    except Exception:
+        pass
+    return None
+
+
+def _get_versions_for_project(project_cwd: str) -> list[dict]:
+    """List versions từ project path cụ thể (không dùng Path.cwd())."""
+    versions_dir = Path(project_cwd) / ".midicoder" / "versions"
+    if not versions_dir.exists():
+        return []
+    versions = []
+    import yaml
+    for vdir in versions_dir.iterdir():
+        if vdir.is_dir():
+            metadata = vdir / "metadata.yml"
+            if metadata.exists():
+                try:
+                    with open(metadata, "r", encoding="utf-8") as f:
+                        data = yaml.safe_load(f) or {}
+                    versions.append({
+                        "version": vdir.name,
+                        "active": False,
+                        "archived": data.get("archived", False),
+                    })
+                except Exception:
+                    versions.append({"version": vdir.name, "active": False, "archived": False})
+            else:
+                versions.append({"version": vdir.name, "active": False, "archived": False})
+    return versions
+
+
 @router.get("/status", response_model=ApiResponse)
 async def get_pipeline_status(request: Request):
     """
@@ -31,27 +75,43 @@ async def get_pipeline_status(request: Request):
     Đọc từ midicoder.pipeline.commands.util.get_pipeline_progress()
     → ArtifactsManager (SQLite) → artifacts table
     """
+    import os
+
     language = i18n.get_language_from_request(request)
 
     try:
-        from midicoder.pipeline.commands.util import (
-            get_pipeline_progress,
-            get_artifacts_summary,
-            get_last_activity,
-            get_versions_list,
-        )
-        from midicoder.pipeline.commands.version import get_active_version
         from midicoder.pipeline.config import get_config
         from midicoder.storage.projects import ProjectsManager
+        from app.config import get_project_cwd
 
-        # Progress từ SQLite ArtifactsManager
-        progress = get_pipeline_progress()
-        artifacts = get_artifacts_summary()
-        last_activity = get_last_activity()
-        versions = get_versions_list()
+        # Lấy project path active
+        project_cwd = get_project_cwd()
 
-        # Active version
-        active_version = get_active_version()
+        # CLI functions dùng Path.cwd() — phải chdir đến project path trước
+        original_cwd = os.getcwd()
+        try:
+            if project_cwd:
+                os.chdir(project_cwd)
+
+            from midicoder.pipeline.commands.util import (
+                get_pipeline_progress,
+                get_artifacts_summary,
+                get_last_activity,
+            )
+            progress = get_pipeline_progress()
+            artifacts = get_artifacts_summary()
+            last_activity = get_last_activity()
+        finally:
+            os.chdir(original_cwd)
+
+        # Versions & active version — đọc từ project path (không phải Path.cwd())
+        versions = _get_versions_for_project(project_cwd)
+        active_version = _get_active_version_for_project(project_cwd)
+
+        # Đánh dấu version active
+        for v in versions:
+            if v["version"] == active_version:
+                v["active"] = True
 
         # Project name từ ProjectsManager (multi-project registry)
         projects_mgr = ProjectsManager()
@@ -80,12 +140,12 @@ async def get_pipeline_status(request: Request):
             data={
                 "project_name": project_name or "midicoder-project",
                 "project": active_project,
-                "active_version": active_version,  # None nếu chưa có version nào
+                "active_version": active_version,
                 "pipeline_progress": frontend_progress,
                 "artifacts": artifacts,
                 "last_activity": last_activity,
                 "versions": versions,
-                "workspace_initialized": Path(".midicoder").exists(),
+                "workspace_initialized": (Path(project_cwd) / ".midicoder").exists(),
             },
             message=i18n.translate("common.success", language),
             language=language,
@@ -108,16 +168,16 @@ async def list_versions(request: Request):
     """
     List tất cả versions có sẵn.
 
-    Dùng midicoder pipeline để lấy versions list.
+    Đọc từ project path active (không phải Path.cwd()).
     """
     language = i18n.get_language_from_request(request)
 
     try:
-        from midicoder.pipeline.commands.util import get_versions_list
-        from midicoder.pipeline.commands.version import get_active_version
+        from app.config import get_project_cwd
 
-        versions = get_versions_list()
-        active = get_active_version()
+        project_cwd = get_project_cwd()
+        versions = _get_versions_for_project(project_cwd)
+        active = _get_active_version_for_project(project_cwd)
 
         return ApiResponse(
             success=True,
