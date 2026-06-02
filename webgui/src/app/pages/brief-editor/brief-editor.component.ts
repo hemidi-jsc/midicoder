@@ -42,7 +42,7 @@ import { ApiResponse, BriefAnalyzeResponse } from '../../core/mock-api.service';
 
       <!-- Error Message -->
       @if (errorMessage) {
-        <div class="mb-4 p-3 bg-accent-error bg-opacity-10 border border-accent-error rounded text-accent-error">
+        <div class="mb-4 p-3 bg-accent-error bg-opacity-15 border border-accent-error rounded text-accent-error font-medium">
           {{ errorMessage }}
         </div>
       }
