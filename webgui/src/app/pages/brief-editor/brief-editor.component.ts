@@ -12,6 +12,14 @@ import { RouterLink, Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { PipelineStore } from '../../core/pipeline.store';
 
+interface SectionOpenState {
+  entities: boolean;
+  commands: boolean;
+  queries: boolean;
+  events: boolean;
+  ui_components: boolean;
+}
+
 @Component({
   selector: 'app-brief-editor',
   standalone: true,
@@ -436,7 +444,7 @@ import { PipelineStore } from '../../core/pipeline.store';
                   class="flex-1 bg-bg-secondary border border-border-primary rounded p-3 text-sm text-text-primary resize-none focus:outline-none focus:border-accent-primary"
                   rows="3"
                   placeholder="Nhập câu trả lời của bạn..."
-                  (keydown.enter)="submitClarificationAnswer($event)"
+                  (keydown.enter)="onClarificationKeydown($event)"
                 ></textarea>
                 <div class="flex flex-col gap-2">
                   <button
@@ -555,7 +563,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   showHistory = false;
 
   // Collapsible sections state
-  sectionOpen = {
+  sectionOpen: SectionOpenState = {
     entities: false,
     commands: false,
     queries: false,
@@ -649,9 +657,16 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  toggleSection(key: string): void {
+  toggleSection(key: keyof SectionOpenState): void {
     this.sectionOpen[key] = !this.sectionOpen[key];
     this.cdr.detectChanges();
+  }
+
+  onClarificationKeydown(event: Event): void {
+    const kbEvent = event as KeyboardEvent;
+    if (kbEvent.ctrlKey) {
+      this.submitClarificationAnswer();
+    }
   }
 
   // ============================================================================
@@ -814,7 +829,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
       if (result.success && result.data) {
         if (result.data.status === 'ready') {
           // LLM nói đã đủ rõ, không cần clarify
-          this.showToast(result.data.message || 'Brief đã đủ rõ!', 'success');
+          this.showToast('Brief đã đủ rõ!', 'success');
           await this.loadBrief();
           return;
         }
@@ -839,13 +854,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
     }
   }
 
-  async submitClarificationAnswer(event?: KeyboardEvent): Promise<void> {
-    // Ctrl+Enter hoặc Shift không nhấn
-    if (event && !event.ctrlKey && !event.shiftKey) {
-      event.preventDefault();
-    }
-    if (event && !(event as KeyboardEvent).ctrlKey) return;
-
+  async submitClarificationAnswer(): Promise<void> {
     if (!this.clarificationAnswer.trim() || !this.clarificationSessionId) return;
 
     this.isSubmittingAnswer = true;

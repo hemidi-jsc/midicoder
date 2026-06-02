@@ -111,6 +111,7 @@ export interface ClarificationStartResponse {
   status: 'questions_ready' | 'ready';
   round: number;
   questions?: Question[];
+  message?: string;
 }
 
 export interface ClarificationAnswersRequest {
