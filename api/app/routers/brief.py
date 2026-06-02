@@ -152,10 +152,6 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
     except Exception as e:
         return ApiResponse(success=False, data=None, message=f"LLM analysis failed: {str(e)}", language=language)
 
-    # Lưu analysis artifact — dùng explicit project DB path
-    artifacts_manager = ArtifactsManager(db_path=_get_project_db_path("artifacts.db"))
-    artifacts_manager.init()
-
     entities = json_data.get("entities", [])
     commands = json_data.get("commands", [])
     queries = json_data.get("queries", [])
@@ -164,24 +160,36 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
     confidence = json_data.get("confidence", 0.5)
     summary = json_data.get("summary", "")
 
-    artifacts_manager.create(
-        artifact_id=f"analysis-{brief_id}",
-        artifact_type="analysis",
-        name="Brief Analysis",
-        version=version,
-        brief_id=brief_id,
-        content=json.dumps(json_data, indent=2, ensure_ascii=False),
-        metadata={
-            "domain": domain,
-            "confidence": confidence,
-            "tokens_used": response.usage.get("total_tokens", 0),
-            "entity_count": len(entities),
-            "command_count": len(commands),
-            "query_count": len(queries),
-            "event_count": len(events),
-            "ui_component_count": len(ui_components),
-        },
-    )
+    artifact_id = f"analysis-{brief_id}"
+    artifacts_manager = ArtifactsManager(db_path=_get_project_db_path("artifacts.db"))
+    artifacts_manager.init()
+
+    content_json = json.dumps(json_data, indent=2, ensure_ascii=False)
+    artifact_metadata = {
+        "domain": domain,
+        "confidence": confidence,
+        "tokens_used": response.usage.get("total_tokens", 0),
+        "entity_count": len(entities),
+        "command_count": len(commands),
+        "query_count": len(queries),
+        "event_count": len(events),
+        "ui_component_count": len(ui_components),
+    }
+
+    # Upsert: update nếu artifact đã tồn tại, tạo mới nếu chưa
+    existing_artifact = artifacts_manager.get(artifact_id)
+    if existing_artifact:
+        artifacts_manager.update_content(artifact_id, content_json)
+    else:
+        artifacts_manager.create(
+            artifact_id=artifact_id,
+            artifact_type="analysis",
+            name="Brief Analysis",
+            version=version,
+            brief_id=brief_id,
+            content=content_json,
+            metadata=artifact_metadata,
+        )
 
     ambiguities = json_data.get("ambiguities", [])
     needs_clarification = bool(ambiguities) or confidence < 0.8
@@ -345,22 +353,42 @@ async def get_brief(version: str = Query(None), request: Request = None):
                 try:
                     content = json.loads(art.get("content") or "{}")
                     # metadata trong SQLite là JSON string — phải parse
-                    metadata = {}
+                    metadata_raw = {}
                     raw_metadata = art.get("metadata")
                     if raw_metadata:
                         if isinstance(raw_metadata, str):
-                            metadata = json.loads(raw_metadata)
+                            metadata_raw = json.loads(raw_metadata)
                         elif isinstance(raw_metadata, dict):
-                            metadata = raw_metadata
-                    
+                            metadata_raw = raw_metadata
+
+                    # LLM trả domain/type/scale ở gốc JSON — không phải trong intent object
+                    intent = content.get("intent") or {
+                        "domain": content.get("domain", ""),
+                        "type": content.get("type", "api"),
+                        "scale": content.get("scale", "medium"),
+                    }
+
+                    # Normalize metadata keys: artifact DB lưu entity_count, command_count...
+                    # nhưng frontend template đọc metadata.entities, metadata.commands...
+                    normalized_metadata = {
+                        "domain": metadata_raw.get("domain", intent.get("domain", "")),
+                        "confidence": metadata_raw.get("confidence", 0.5),
+                        "entities": metadata_raw.get("entity_count", metadata_raw.get("entities", 0)),
+                        "commands": metadata_raw.get("command_count", metadata_raw.get("commands", 0)),
+                        "queries": metadata_raw.get("query_count", metadata_raw.get("queries", 0)),
+                        "events": metadata_raw.get("event_count", metadata_raw.get("events", 0)),
+                        "ui_components": metadata_raw.get("ui_component_count", metadata_raw.get("ui_components", 0)),
+                        "brief_id": brief_id,
+                    }
+
                     analysis_data = {
-                        "status": "ready_for_contract" if metadata.get("confidence", 0) >= 0.8 else "needs_clarification",
+                        "status": "ready_for_contract" if normalized_metadata.get("confidence", 0) >= 0.8 else "needs_clarification",
                         "analysis": {
-                            "intent": content.get("intent", {}),
+                            "intent": intent,
                             "ambiguities": content.get("ambiguities", []),
                             "summary": content.get("summary", ""),
                         },
-                        "metadata": metadata,
+                        "metadata": normalized_metadata,
                     }
                     if content.get("ambiguities"):
                         analysis_data["status"] = "needs_clarification"
