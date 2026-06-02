@@ -88,6 +88,8 @@ def _get_pipeline_progress_from_sqlite(db_path: Path) -> dict:
             status = row["status"] or "pending"
             if aid.startswith("brief_"):
                 progress["brief"] = {"status": status}
+            elif aid.startswith("analysis-brief"):
+                progress["brief"] = {"status": "generated"}
             elif aid.startswith("contract_"):
                 progress["contract"] = {"status": status}
             elif aid.startswith("mir_"):
