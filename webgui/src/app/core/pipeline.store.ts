@@ -100,7 +100,8 @@ export class PipelineStore {
   async loadStatus(): Promise<void> {
     this.isLoading.set(true);
     try {
-      const result = await this.api.getSystemStatus();
+      // Use /pipeline/status which returns pipeline_progress from disk artifacts
+      const result = await this.api.getPipelineStatus();
       if (result.success && result.data) {
         this.updateFromBackend(result.data);
       } else {

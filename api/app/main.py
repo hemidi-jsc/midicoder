@@ -19,7 +19,10 @@ if str(midicoder_path) not in sys.path:
 from app.config import settings
 from app.i18n import i18n
 from app.models import ApiResponse, ErrorResponse
-from app.routers import health, config, index, version, brief, contract, ir, code, runtime, websocket, pipeline, patches
+from app.routers import (
+    health, config, index, version, brief, contract, ir, code,
+    runtime, websocket, pipeline, patches, init, projects,
+)
 
 
 # Tạo FastAPI application
@@ -29,6 +32,8 @@ app = FastAPI(
     description="API Server cho Midicoder WebGUI - CLI Wrapper",
     openapi_tags=[
         {"name": "Health", "description": "Health check và thông tin hệ thống"},
+        {"name": "Init", "description": "Khởi tạo dự án"},
+        {"name": "Projects", "description": "Quản lý multi-projects"},
         {"name": "Config", "description": "Quản lý cấu hình"},
         {"name": "Index", "description": "Quản lý index"},
         {"name": "Version", "description": "Quản lý phiên bản"},
@@ -104,6 +109,12 @@ app.redoc_url = "/redoc"
 # Thêm các routers
 # Health và system
 app.include_router(health.router, prefix="/api")
+
+# Init
+app.include_router(init.router, prefix="/api")
+
+# Projects (multi-project management)
+app.include_router(projects.router, prefix="/api")
 
 # Config
 app.include_router(config.router, prefix="/api")

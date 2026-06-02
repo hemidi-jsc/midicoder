@@ -118,6 +118,22 @@ export interface IndexReindexRequest {
   paths?: string[];
 }
 
+export interface ProjectCreateRequest {
+  name: string;
+  path: string;
+  stack?: string;
+}
+
+export interface ProjectInfo {
+  id: number;
+  project_id: string;
+  name: string;
+  path: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -678,6 +694,30 @@ export class ApiService {
   /**
    * POST /auth/logout - Logout
    */
+  // ============================================================================
+  // Projects — multi-project management
+  // ============================================================================
+
+  async listProjects(): Promise<ApiResponse<{ projects: ProjectInfo[]; active?: ProjectInfo }>> {
+    return this.get<any>('/projects');
+  }
+
+  async getActiveProject(): Promise<ApiResponse<{ project?: ProjectInfo }>> {
+    return this.get<any>('/projects/active');
+  }
+
+  async createProject(request: ProjectCreateRequest): Promise<ApiResponse<any>> {
+    return this.post<any>('/projects', request);
+  }
+
+  async activateProject(projectId: string): Promise<ApiResponse<{ project: ProjectInfo }>> {
+    return this.post<any>(`/projects/${projectId}/activate`);
+  }
+
+  async deleteProject(projectId: string): Promise<ApiResponse<any>> {
+    return this.http.delete<any>(`${this.baseUrl}/projects/${projectId}`).toPromise();
+  }
+
   async logout(): Promise<ApiResponse> {
     localStorage.removeItem('midicoder_token');
     localStorage.removeItem('midicoder_user');

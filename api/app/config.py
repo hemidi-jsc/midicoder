@@ -79,17 +79,29 @@ def load_global_config() -> dict:
 
 def get_project_cwd() -> str:
     """
-    Lấy đường dẫn working directory từ global config
-    
-    Returns:
-        str: Working directory, hoặc đường dẫn hiện tại nếu không có config
+    Lấy đường dẫn working directory của project đang active.
+
+    Ưu tiên:
+    1. ProjectsManager.get_active_project_path() (SQLite ~/.midicoder/data/projects.db)
+    2. Global config project.cwd (~/.midicoder/midicoder.json)
+    3. Current working directory
     """
+    # Thử đọc từ ProjectsManager
+    try:
+        from midicoder.storage.projects import ProjectsManager
+        mgr = ProjectsManager()
+        mgr.init()
+        active_path = mgr.get_active_project_path()
+        if active_path:
+            return active_path
+    except Exception:
+        pass
+
+    # Fallback: đọc từ global config
     config = load_global_config()
-    
-    # Lấy CWD từ config
     if "project" in config and "cwd" in config["project"]:
         return config["project"]["cwd"]
-    
+
     # Mặc định: thư mục hiện tại
     return str(Path.cwd())
 

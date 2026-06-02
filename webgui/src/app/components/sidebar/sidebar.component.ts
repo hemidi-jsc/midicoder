@@ -1,9 +1,9 @@
 /**
  * Sidebar Component
- * Hiển thị danh sách versions và pipeline progress
+ * Hiển thị Projects, Versions, Pipeline progress
  */
 
-import { Component, OnInit, OnDestroy, Renderer2, Inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, Inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, Router, NavigationEnd } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -11,6 +11,7 @@ import { DOCUMENT } from '@angular/common';
 import { Subscription, filter } from 'rxjs';
 
 import { VersionService, VersionInfo } from '../../core/version.service';
+import { ApiService, ProjectInfo } from '../../core/api.service';
 
 @Component({
   selector: 'app-sidebar',
@@ -18,6 +19,35 @@ import { VersionService, VersionInfo } from '../../core/version.service';
   imports: [CommonModule, RouterLink, FormsModule],
   template: `
     <aside class="sidebar">
+      <!-- Projects Section -->
+      <div class="sidebar-section">
+        <div class="sidebar-header">
+          <h3>Projects</h3>
+          <button class="btn-icon" (click)="showCreateProjectModal = true" title="Create new project">
+            +
+          </button>
+        </div>
+
+        <div class="project-list">
+          @for (project of projects; track project.project_id) {
+            <div
+              class="project-item"
+              [class.active]="project.active"
+              (click)="switchProject(project)"
+            >
+              <div class="project-info">
+                <span class="project-name">{{ project.name }}</span>
+                @if (project.active) {
+                  <span class="project-active-badge">ACTIVE</span>
+                }
+              </div>
+            </div>
+          } @empty {
+            <p class="empty-text">Chưa có project nào</p>
+          }
+        </div>
+      </div>
+
       <!-- Versions Section -->
       <div class="sidebar-section">
         <div class="sidebar-header">
@@ -29,8 +59,8 @@ import { VersionService, VersionInfo } from '../../core/version.service';
 
         <div class="version-list">
           @for (version of versions; track version.version) {
-            <div 
-              class="version-item" 
+            <div
+              class="version-item"
               [class.active]="version.version === activeVersion"
               [class.archived]="version.status === 'archived'"
               (click)="switchVersion(version.version)"
@@ -194,9 +224,9 @@ import { VersionService, VersionInfo } from '../../core/version.service';
           <div class="modal-body">
             <div class="form-group">
               <label for="versionName">Version Name</label>
-              <input 
+              <input
                 id="versionName"
-                type="text" 
+                type="text"
                 [(ngModel)]="newVersionName"
                 placeholder="v1.0.2"
                 class="input"
@@ -215,6 +245,41 @@ import { VersionService, VersionInfo } from '../../core/version.service';
           <div class="modal-footer">
             <button class="btn btn-secondary" (click)="showCreateModal = false">Cancel</button>
             <button class="btn btn-primary" (click)="createVersion()" [disabled]="!newVersionName">Create</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Create Project Modal -->
+    @if (showCreateProjectModal) {
+      <div class="modal-overlay" (click)="showCreateProjectModal = false">
+        <div class="modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h3>Tạo Project Mới</h3>
+            <button class="btn-close" (click)="showCreateProjectModal = false">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label for="projectName">Tên Project *</label>
+              <input id="projectName" type="text" [(ngModel)]="newProjectName" placeholder="my-app" class="input">
+            </div>
+            <div class="form-group">
+              <label for="projectPath">Working Directory *</label>
+              <input id="projectPath" type="text" [(ngModel)]="newProjectPath" placeholder="D:\projects\my-app" class="input">
+            </div>
+            <div class="form-group">
+              <label for="projectStack">Tech Stack (optional)</label>
+              <input id="projectStack" type="text" [(ngModel)]="newProjectStack" placeholder="fastapi,angular" class="input">
+            </div>
+            @if (createProjectError) {
+              <p class="error-text">{{ createProjectError }}</p>
+            }
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" (click)="closeProjectModal()">Hủy</button>
+            <button class="btn btn-primary" (click)="createProject()" [disabled]="!newProjectName || !newProjectPath || isCreatingProject">
+              {{ isCreatingProject ? 'Đang tạo...' : 'Tạo' }}
+            </button>
           </div>
         </div>
       </div>
@@ -256,6 +321,73 @@ import { VersionService, VersionInfo } from '../../core/version.service';
     .sidebar-section {
       margin-bottom: 32px;
       padding: 0 16px;
+    }
+
+    /* Project List */
+    .project-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .project-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      border-left: 3px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .project-item:hover {
+      background: var(--bg-card);
+    }
+
+    .project-item.active {
+      border-left-color: var(--accent-success);
+      background: rgba(63, 185, 80, 0.08);
+    }
+
+    .project-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .project-name {
+      font-weight: 500;
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .project-active-badge {
+      font-size: 0.6rem;
+      padding: 1px 5px;
+      background: rgba(63, 185, 80, 0.2);
+      color: var(--accent-success);
+      border-radius: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      flex-shrink: 0;
+    }
+
+    .empty-text {
+      color: var(--text-tertiary);
+      font-size: 0.8rem;
+      text-align: center;
+      padding: 12px 0;
+      margin: 0;
+    }
+
+    .error-text {
+      color: var(--accent-error);
+      font-size: 0.85rem;
+      margin-top: 8px;
     }
 
     .sidebar-header {
@@ -613,11 +745,21 @@ export class SidebarComponent implements OnInit, OnDestroy {
   fromVersion = '';
   currentPhase: 'init' | 'brief' | 'contract' | 'ir' | 'code' | 'preview' = 'init';
 
+  // Projects
+  projects: ProjectInfo[] = [];
+  showCreateProjectModal = false;
+  newProjectName = '';
+  newProjectPath = '';
+  newProjectStack = '';
+  isCreatingProject = false;
+  createProjectError = '';
+
   private routerSub?: Subscription;
 
   constructor(
     private versionService: VersionService,
     private router: Router,
+    private api: ApiService,
     @Inject(DOCUMENT) private document: Document,
   ) {}
 
@@ -633,6 +775,9 @@ export class SidebarComponent implements OnInit, OnDestroy {
       this.activeVersionInfo = this.versionService.getVersion(version);
     });
 
+    // Load projects from backend
+    this.loadProjects();
+
     // Determine current phase based on URL
     this.updateCurrentPhase();
 
@@ -645,6 +790,74 @@ export class SidebarComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.routerSub?.unsubscribe();
   }
+
+  // ====================================================================
+  // Project methods
+  // ====================================================================
+
+  async loadProjects(): Promise<void> {
+    try {
+      const result = await this.api.listProjects();
+      if (result.success && result.data) {
+        this.projects = result.data.projects || [];
+      }
+    } catch (e) {
+      console.warn('Failed to load projects:', e);
+    }
+  }
+
+  async switchProject(project: ProjectInfo): Promise<void> {
+    if (project.active) return;
+    try {
+      const result = await this.api.activateProject(project.project_id);
+      if (result.success) {
+        await this.loadProjects();
+        // Reload page to pick up new project context
+        window.location.reload();
+      }
+    } catch (e) {
+      console.error('Failed to switch project:', e);
+    }
+  }
+
+  async createProject(): Promise<void> {
+    if (!this.newProjectName.trim() || !this.newProjectPath.trim()) return;
+
+    this.isCreatingProject = true;
+    this.createProjectError = '';
+
+    try {
+      const result = await this.api.createProject({
+        name: this.newProjectName.trim(),
+        path: this.newProjectPath.trim(),
+        stack: this.newProjectStack.trim() || undefined,
+      });
+
+      if (result.success) {
+        this.closeProjectModal();
+        await this.loadProjects();
+        window.location.reload();
+      } else {
+        this.createProjectError = result.message || 'Tạo project thất bại';
+      }
+    } catch (e: any) {
+      this.createProjectError = e.message || 'Lỗi kết nối đến server';
+    } finally {
+      this.isCreatingProject = false;
+    }
+  }
+
+  closeProjectModal(): void {
+    this.showCreateProjectModal = false;
+    this.newProjectName = '';
+    this.newProjectPath = '';
+    this.newProjectStack = '';
+    this.createProjectError = '';
+  }
+
+  // ====================================================================
+  // Existing methods
+  // ====================================================================
 
   private updateCurrentPhase(): void {
     const url = this.router.url;

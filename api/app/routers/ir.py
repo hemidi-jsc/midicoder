@@ -4,12 +4,6 @@ Router cho các commands về IR (MIR)
 
 from fastapi import APIRouter, Query, Request
 
-from app.artifact import (
-    get_ir_dependency_graph,
-    get_ir_entity_relationship,
-    get_ir_mir,
-    get_ir_symbol_table,
-)
 from app.cli_wrapper import cli_wrapper
 from app.i18n import i18n
 from app.models import ApiResponse, IRBuildRequest
@@ -58,56 +52,111 @@ async def build_ir(request_data: IRBuildRequest = None, request: Request = None)
 
 
 # ============================================================================
-# GET endpoints — đọc artifact files từ disk
+# GET endpoints — đọc từ SQLite ArtifactsManager (lazy import)
 # ============================================================================
 
 @router.get("/mir", response_model=ApiResponse)
 async def get_mir(version: str = Query(None), request: Request = None):
-    """
-    Lấy MIR JSON từ disk.
-    Reads .midicoder/versions/{version}/ir/mir.json
-    """
+    """Lấy MIR JSON từ SQLite ArtifactsManager."""
     language = i18n.get_language_from_request(request)
-    data = get_ir_mir(version)
-    if data is None:
-        return ApiResponse(success=False, data=None, message="MIR not found", language=language)
-    return ApiResponse(success=True, data=data, language=language)
+    try:
+        import json
+        from midicoder.storage.sqlite import ArtifactsManager
+        mgr = ArtifactsManager()
+        mgr.init()
+        artifacts = mgr.list_by_type("mir")
+        if not artifacts:
+            return ApiResponse(success=False, data=None, message="MIR not found", language=language)
+        content = artifacts[0].get("content", "")
+        try:
+            data = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            data = {"raw": content}
+        return ApiResponse(success=True, data=data, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
 
 
 @router.get("/symbol-table", response_model=ApiResponse)
-async def get_symbol_table(version: str = Query(None), request: Request = None):
-    """
-    Lấy symbol table JSON từ disk.
-    Reads .midicoder/versions/{version}/ir/symbol-table.json
-    """
+async def get_symbol_table_endpoint(version: str = Query(None), request: Request = None):
+    """Lấy symbol table từ metadata của MIR artifact."""
     language = i18n.get_language_from_request(request)
-    data = get_ir_symbol_table(version)
-    if data is None:
-        return ApiResponse(success=False, data=None, message="Symbol table not found", language=language)
-    return ApiResponse(success=True, data=data, language=language)
+    try:
+        import json
+        from midicoder.storage.sqlite import ArtifactsManager
+        mgr = ArtifactsManager()
+        mgr.init()
+        artifacts = mgr.list_by_type("mir")
+        if not artifacts:
+            return ApiResponse(success=False, data=None, message="Symbol table not found", language=language)
+        metadata = artifacts[0].get("metadata", {})
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                metadata = {}
+        if isinstance(metadata, dict):
+            data = metadata.get("symbol_table") or metadata
+        else:
+            data = None
+        if data is None:
+            return ApiResponse(success=False, data=None, message="Symbol table not found", language=language)
+        return ApiResponse(success=True, data=data, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
 
 
 @router.get("/dependency-graph", response_model=ApiResponse)
-async def get_dependency_graph(version: str = Query(None), request: Request = None):
-    """
-    Lấy dependency graph JSON từ disk.
-    Reads .midicoder/versions/{version}/ir/dependency-graph.json
-    """
+async def get_dependency_graph_endpoint(version: str = Query(None), request: Request = None):
+    """Lấy dependency graph từ MIR artifact."""
     language = i18n.get_language_from_request(request)
-    data = get_ir_dependency_graph(version)
-    if data is None:
-        return ApiResponse(success=False, data=None, message="Dependency graph not found", language=language)
-    return ApiResponse(success=True, data=data, language=language)
+    try:
+        import json
+        from midicoder.storage.sqlite import ArtifactsManager
+        mgr = ArtifactsManager()
+        mgr.init()
+        artifacts = mgr.list_by_type("mir")
+        if not artifacts:
+            return ApiResponse(success=False, data=None, message="Dependency graph not found", language=language)
+        content = artifacts[0].get("content", "")
+        try:
+            mir_data = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            return ApiResponse(success=False, data=None, message="Dependency graph not found", language=language)
+        data = {
+            "operations": mir_data.get("operations", []),
+            "data_flows": mir_data.get("data_flows", []),
+            "effect_flows": mir_data.get("effect_flows", []),
+        }
+        return ApiResponse(success=True, data=data, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
 
 
 @router.get("/entity-relationship", response_model=ApiResponse)
-async def get_entity_relationship(version: str = Query(None), request: Request = None):
-    """
-    Lấy entity-relationship GraphML từ disk.
-    Reads .midicoder/versions/{version}/ir/entity-relationship.graphml
-    """
+async def get_entity_relationship_endpoint(version: str = Query(None), request: Request = None):
+    """Lấy entity-relationship graph từ MIR metadata."""
     language = i18n.get_language_from_request(request)
-    content = get_ir_entity_relationship(version)
-    if content is None:
-        return ApiResponse(success=False, data=None, message="Entity relationship graph not found", language=language)
-    return ApiResponse(success=True, data={"content": content}, language=language)
+    try:
+        import json
+        from midicoder.storage.sqlite import ArtifactsManager
+        mgr = ArtifactsManager()
+        mgr.init()
+        artifacts = mgr.list_by_type("mir")
+        if not artifacts:
+            return ApiResponse(success=False, data=None, message="Entity relationship graph not found", language=language)
+        metadata = artifacts[0].get("metadata", {})
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                metadata = {}
+        if isinstance(metadata, dict):
+            content = metadata.get("entity_relationship_graph")
+        else:
+            content = None
+        if content is None:
+            return ApiResponse(success=False, data=None, message="Entity relationship graph not found", language=language)
+        return ApiResponse(success=True, data={"content": content}, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)

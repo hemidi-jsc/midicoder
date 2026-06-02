@@ -2,12 +2,10 @@
 Router cho các commands về brief
 """
 
-from pathlib import Path
 from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Query, Request
 
-from app.artifact import get_brief_master, get_brief_raw, get_brief_working
 from app.cli_wrapper import cli_wrapper
 from app.i18n import i18n
 from app.models import ApiResponse
@@ -27,44 +25,29 @@ class BriefSaveRequest(BaseModel):
     brief_content: str = Field(default="", description="Nội dung brief (optional)")
 
 
-def _write_brief_file(version: str, content: str) -> bool:
-    """
-    Write brief content to version directory.
-    CLI commands đọc từ .midicoder/versions/{version}/brief.md
-    """
-    try:
-        from app.config import get_project_cwd
-        project_cwd = Path(get_project_cwd())
-        brief_dir = project_cwd / ".midicoder" / "versions" / version
-        brief_dir.mkdir(parents=True, exist_ok=True)
-        brief_file = brief_dir / "brief.md"
-        brief_file.write_text(content, encoding="utf-8")
-        return True
-    except Exception as e:
-        print(f"Error writing brief file: {e}")
-        return False
-
-
 @router.post("/analyze", response_model=ApiResponse)
 async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Request = None):
-    """
-    Phân tích brief
-
-    Args:
-        request_data: Request chứa brief_content và version
-        request: Request object để lấy ngôn ngữ
-
-    Returns:
-        ApiResponse: Kết quả phân tích brief
-    """
+    """Phân tích brief"""
     if request_data is None:
         request_data = BriefAnalyzeRequest(brief_content="")
 
     language = i18n.get_language_from_request(request)
 
-    # Write brief content to file trước khi analyze
+    # Lưu brief vào SQLite trước khi analyze
     if request_data.brief_content.strip():
-        _write_brief_file(request_data.version, request_data.brief_content)
+        from midicoder.storage.sqlite import BriefsManager
+        mgr = BriefsManager()
+        mgr.init()
+        try:
+            mgr.create(
+                brief_id=request_data.version,
+                version=request_data.version,
+                content=request_data.brief_content,
+                title=f"Working brief {request_data.version}",
+                brief_type="working",
+            )
+        except Exception:
+            pass  # Brief có thể đã tồn tại (UNIQUE constraint)
 
     # Gọi CLI wrapper để analyze brief
     result = await cli_wrapper.brief_analyze()
@@ -88,28 +71,42 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
 
 @router.post("/save", response_model=ApiResponse)
 async def save_brief(request_data: BriefSaveRequest = None, request: Request = None):
-    """
-    Lưu brief
-
-    Args:
-        request_data: Request chứa name, tags, version, brief_content
-        request: Request object để lấy ngôn ngữ
-
-    Returns:
-        ApiResponse: Kết quả lưu brief
-    """
+    """Lưu brief vào SQLite BriefsManager"""
     if request_data is None:
         request_data = BriefSaveRequest(name="default")
 
     language = i18n.get_language_from_request(request)
 
-    # Write brief to file nếu có content
+    # Lưu brief vào SQLite nếu có content
     if request_data.brief_content.strip():
-        _write_brief_file(request_data.version, request_data.brief_content)
+        from midicoder.storage.sqlite import BriefsManager
+        mgr = BriefsManager()
+        mgr.init()
+        try:
+            brief_record = mgr.create(
+                brief_id=request_data.name,
+                version=request_data.version,
+                content=request_data.brief_content,
+                title=request_data.name,
+                brief_type="working",
+            )
+            return ApiResponse(
+                success=True,
+                data={"saved": True, "brief_id": request_data.name, "id": brief_record.get("id")},
+                message="Brief saved successfully",
+                language=language,
+            )
+        except Exception as e:
+            return ApiResponse(
+                success=False,
+                data=None,
+                message=f"Failed to save brief: {str(e)}",
+                language=language,
+            )
 
     return ApiResponse(
         success=True,
-        data={"saved_path": f".midicoder/versions/{request_data.version}/briefs/{request_data.name}.md"},
+        data={"saved": True, "brief_id": request_data.name},
         message="Brief saved successfully",
         language=language,
     )
@@ -147,44 +144,65 @@ async def rewrite_brief(request: Request):
     )
 
 
-# ============================================================================
-# GET endpoints — đọc artifact files từ disk
-# ============================================================================
-
 @router.get("/master", response_model=ApiResponse)
 async def get_master_brief(version: str = Query(None), request: Request = None):
-    """
-    Lấy master brief markdown từ disk.
-    Reads .midicoder/versions/{version}/briefs/master-brief.md
-    """
+    """Lấy master brief markdown từ SQLite BriefsManager."""
     language = i18n.get_language_from_request(request)
-    content = get_brief_master(version)
-    if content is None:
+    try:
+        from midicoder.storage.sqlite import BriefsManager
+        mgr = BriefsManager()
+        mgr.init()
+        briefs = mgr.list(version=version)
+        for brief in briefs:
+            if brief.get("type") == "master":
+                content = brief.get("content")
+                if content:
+                    return ApiResponse(success=True, data={"content": content}, language=language)
+        # Fallback: lấy brief mới nhất
+        if briefs:
+            content = briefs[0].get("content")
+            if content:
+                return ApiResponse(success=True, data={"content": content}, language=language)
         return ApiResponse(success=False, data=None, message="Master brief not found", language=language)
-    return ApiResponse(success=True, data={"content": content}, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
 
 
 @router.get("/working", response_model=ApiResponse)
 async def get_working_brief(version: str = Query(None), request: Request = None):
-    """
-    Lấy working brief markdown từ disk.
-    Reads .midicoder/versions/{version}/briefs/working-brief.md
-    """
+    """Lấy working brief markdown từ SQLite BriefsManager."""
     language = i18n.get_language_from_request(request)
-    content = get_brief_working(version)
-    if content is None:
+    try:
+        from midicoder.storage.sqlite import BriefsManager
+        mgr = BriefsManager()
+        mgr.init()
+        briefs = mgr.list(version=version)
+        for brief in briefs:
+            if brief.get("type") == "working":
+                content = brief.get("content")
+                if content:
+                    return ApiResponse(success=True, data={"content": content}, language=language)
+        # Fallback: lấy brief mới nhất
+        if briefs:
+            content = briefs[0].get("content")
+            if content:
+                return ApiResponse(success=True, data={"content": content}, language=language)
         return ApiResponse(success=False, data=None, message="Working brief not found", language=language)
-    return ApiResponse(success=True, data={"content": content}, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
 
 
 @router.get("/raw", response_model=ApiResponse)
 async def get_raw_brief(version: str = Query(None), request: Request = None):
-    """
-    Lấy brief.md gốc từ disk (file CLI đọc).
-    Reads .midicoder/versions/{version}/brief.md
-    """
+    """Lấy brief mới nhất từ SQLite BriefsManager (bất kể type)."""
     language = i18n.get_language_from_request(request)
-    content = get_brief_raw(version)
-    if content is None:
-        return ApiResponse(success=False, data=None, message="Brief not found", language=language)
-    return ApiResponse(success=True, data={"content": content}, language=language)
+    try:
+        from midicoder.storage.sqlite import BriefsManager
+        mgr = BriefsManager()
+        mgr.init()
+        briefs = mgr.list(version=version)
+        if not briefs:
+            return ApiResponse(success=False, data=None, message="Brief not found", language=language)
+        return ApiResponse(success=True, data={"content": briefs[0].get("content", "")}, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)

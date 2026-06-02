@@ -47,17 +47,29 @@ class CLIWrapper:
 
         # Thêm command
         cmd_args.append(command)
-        
+
         # Thêm subcommand nếu có
         if subcommand:
             cmd_args.append(subcommand)
-        
-        # Thêm các đối số từ args dict
+
+        # Thêm positional args trước flags
         if args:
+            # Handle _positional: positional argument (sau subcommand, trước --flags)
+            if "_positional" in args:
+                pos_val = args["_positional"]
+                if isinstance(pos_val, list):
+                    cmd_args.extend(str(v) for v in pos_val)
+                else:
+                    cmd_args.append(str(pos_val))
+
+            # Thêm các đối số từ args dict (skip _positional)
             for key, value in args.items():
+                if key == "_positional":
+                    continue
+
                 # Chuyển underscore thành hyphen (--my_arg -> --my-arg)
                 arg_name = f"--{key.replace('_', '-')}"
-                
+
                 # Xử lý giá trị boolean
                 if isinstance(value, bool):
                     if value:
@@ -217,8 +229,11 @@ class CLIWrapper:
     # ==================== Version Commands ====================
     
     async def version_create(self, version: str) -> Dict[str, Any]:
-        """Tạo phiên bản mới"""
-        return await self.execute_command("version", "create", {"version": version})
+        """Tạo phiên bản mới — positional argument, không phải --version flag"""
+        # CLI: version create <name> [options]
+        # Execute command builds args dict as --key value, but `name` is positional.
+        # Workaround: pass as special `name` key that _build_command_args handles.
+        return await self.execute_command("version", "create", {"_positional": version})
     
     # ==================== Brief Commands ====================
     

@@ -4,11 +4,6 @@ Router cho các commands về code
 
 from fastapi import APIRouter, Query, Request
 
-from app.artifact import (
-    get_generated_code_files,
-    get_generated_file_content,
-    get_plan_lowering,
-)
 from app.cli_wrapper import cli_wrapper
 from app.i18n import i18n
 from app.models import ApiResponse, CodeGenRequest, CodeApplyRequest
@@ -171,41 +166,83 @@ async def apply_code(request_data: CodeApplyRequest = None, request: Request = N
 
 
 # ============================================================================
-# GET endpoints — đọc artifact files từ disk
+# GET endpoints — plan từ SQLite ArtifactsManager, code files từ disk
 # ============================================================================
 
 @router.get("/files", response_model=ApiResponse)
 async def list_code_files(version: str = Query(None), request: Request = None):
-    """
-    List generated code files.
-    Reads .midicoder/versions/{version}/code/generated/
-    """
+    """List generated code files từ disk (generated source code)."""
     language = i18n.get_language_from_request(request)
-    files = get_generated_code_files(version)
-    return ApiResponse(success=True, data={"files": files, "count": len(files)}, language=language)
+    try:
+        from pathlib import Path
+        from app.config import get_project_cwd, get_active_version
+        files = []
+        project_cwd = Path(get_project_cwd())
+        v = version or get_active_version() or "v1.0.0"
+        code_dir = project_cwd / ".midicoder" / "versions" / v / "code" / "generated"
+        if code_dir.exists():
+            for child in sorted(code_dir.rglob("*")):
+                if child.is_file():
+                    rel_path = str(child.relative_to(code_dir))
+                    files.append({
+                        "path": rel_path,
+                        "type": child.suffix.lstrip(".") or "text",
+                        "size": child.stat().st_size,
+                        "status": "generated",
+                    })
+        return ApiResponse(success=True, data={"files": files, "count": len(files)}, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
 
 
 @router.get("/file/{file_path:path}", response_model=ApiResponse)
 async def get_code_file(file_path: str, version: str = Query(None), request: Request = None):
-    """
-    Lấy nội dung file code đã generate.
-    Reads .midicoder/versions/{version}/code/generated/{file_path}
-    """
+    """Lấy nội dung file code đã generate từ disk."""
     language = i18n.get_language_from_request(request)
-    content = get_generated_file_content(version, file_path)
-    if content is None:
-        return ApiResponse(success=False, data=None, message=f"File not found: {file_path}", language=language)
-    return ApiResponse(success=True, data={"path": file_path, "content": content}, language=language)
+    try:
+        from pathlib import Path
+        from app.config import get_project_cwd, get_active_version
+        project_cwd = Path(get_project_cwd())
+        v = version or get_active_version() or "v1.0.0"
+        file_full = project_cwd / ".midicoder" / "versions" / v / "code" / "generated" / file_path
+        if not file_full.exists():
+            return ApiResponse(success=False, data=None, message=f"File not found: {file_path}", language=language)
+        content = file_full.read_text(encoding="utf-8")
+        return ApiResponse(success=True, data={"path": file_path, "content": content}, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
 
 
 @router.get("/plan", response_model=ApiResponse)
 async def get_code_plan(version: str = Query(None), request: Request = None):
-    """
-    Lấy lowering plan JSON.
-    Reads .midicoder/versions/{version}/plan/lowering.json
-    """
+    """Lấy lowering plan JSON từ SQLite ArtifactsManager."""
     language = i18n.get_language_from_request(request)
-    data = get_plan_lowering(version)
-    if data is None:
-        return ApiResponse(success=False, data=None, message="Code plan not found", language=language)
-    return ApiResponse(success=True, data=data, language=language)
+    try:
+        import json
+        from midicoder.storage.sqlite import ArtifactsManager
+        from app.config import get_active_version
+        mgr = ArtifactsManager()
+        mgr.init()
+        artifacts = mgr.list_by_type("plan")
+        if not artifacts:
+            return ApiResponse(success=False, data=None, message="Code plan not found", language=language)
+        target_version = version or get_active_version() or "v1.0.0"
+        for art in artifacts:
+            aid = art.get("artifact_id", "")
+            art_version = art.get("version", "")
+            if aid == f"plan-{target_version}" or art_version == target_version:
+                content = art.get("content", "")
+                try:
+                    data = json.loads(content)
+                except (json.JSONDecodeError, TypeError):
+                    data = {"raw": content}
+                return ApiResponse(success=True, data=data, language=language)
+        # Fallback: lấy plan mới nhất
+        content = artifacts[0].get("content", "")
+        try:
+            data = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            data = {"raw": content}
+        return ApiResponse(success=True, data=data, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)

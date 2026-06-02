@@ -4,12 +4,6 @@ Router cho các commands về contract
 
 from fastapi import APIRouter, Query, Request
 
-from app.artifact import (
-    get_contracts_contracts_yaml,
-    get_contracts_entities_yaml,
-    get_contracts_ir,
-    get_contracts_manifest,
-)
 from app.cli_wrapper import cli_wrapper
 from app.i18n import i18n
 from app.models import ApiResponse
@@ -146,74 +140,90 @@ async def contract_feedback(request: Request):
 
 
 # ============================================================================
-# GET endpoints — đọc artifact files từ disk
+# GET endpoints — đọc từ SQLite ArtifactsManager (lazy import)
 # ============================================================================
 
 @router.get("/ir", response_model=ApiResponse)
-async def get_contract_ir(version: str = Query(None), request: Request = None):
-    """
-    Lấy contract IR JSON từ disk.
-
-    Reads .midicoder/versions/{version}/contracts/ir.json
-    """
+async def get_contract_ir_endpoint(version: str = Query(None), request: Request = None):
+    """Lấy contract IR từ SQLite ArtifactsManager."""
     language = i18n.get_language_from_request(request)
-    data = get_contracts_ir(version)
-    if data is None:
-        return ApiResponse(
-            success=False,
-            data=None,
-            message=i18n.translate("contract.ir_not_found", language) or "IR contract not found",
-            language=language,
-        )
-    return ApiResponse(success=True, data=data, language=language)
+    try:
+        from midicoder.storage.sqlite import ArtifactsManager
+        mgr = ArtifactsManager()
+        mgr.init()
+        artifacts = mgr.list_by_type("contract")
+        if not artifacts:
+            return ApiResponse(success=False, data=None, message="No contracts found", language=language)
+        # Build IR dict: category → parsed content
+        ir = {}
+        for art in artifacts:
+            aid = art.get("artifact_id", "")
+            if aid.startswith("contract_"):
+                category = aid.replace("contract_", "", 1)
+                content = art.get("content", "")
+                try:
+                    import json
+                    ir[category] = json.loads(content)
+                except (json.JSONDecodeError, TypeError):
+                    ir[category] = content
+        return ApiResponse(success=True, data=ir, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
 
 
 @router.get("/manifest", response_model=ApiResponse)
-async def get_contract_manifest(version: str = Query(None), request: Request = None):
-    """
-    Lấy contract manifest JSON từ disk.
-    """
+async def get_contract_manifest_endpoint(version: str = Query(None), request: Request = None):
+    """Lấy contract manifest từ SQLite ArtifactsManager."""
     language = i18n.get_language_from_request(request)
-    data = get_contracts_manifest(version)
-    if data is None:
-        return ApiResponse(
-            success=False,
-            data=None,
-            message="Manifest not found",
-            language=language,
-        )
-    return ApiResponse(success=True, data=data, language=language)
+    try:
+        from midicoder.storage.sqlite import ArtifactsManager
+        mgr = ArtifactsManager()
+        mgr.init()
+        artifacts = mgr.list_by_type("contract")
+        if not artifacts:
+            return ApiResponse(success=False, data=None, message="Manifest not found", language=language)
+        categories = {}
+        for art in artifacts:
+            aid = art.get("artifact_id", "")
+            if aid.startswith("contract_"):
+                category = aid.replace("contract_", "", 1)
+                categories[category] = {
+                    "name": art.get("name", aid),
+                    "status": art.get("status", "pending"),
+                    "updated_at": art.get("updated_at"),
+                }
+        return ApiResponse(success=True, data={"total": len(artifacts), "categories": categories}, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
 
 
 @router.get("/entities", response_model=ApiResponse)
 async def get_contract_entities(version: str = Query(None), request: Request = None):
-    """
-    Lấy entities.yaml từ disk.
-    """
+    """Lấy entities YAML từ SQLite ArtifactsManager."""
     language = i18n.get_language_from_request(request)
-    content = get_contracts_entities_yaml(version)
-    if content is None:
-        return ApiResponse(
-            success=False,
-            data=None,
-            message="Entities YAML not found",
-            language=language,
-        )
-    return ApiResponse(success=True, data={"content": content}, language=language)
+    try:
+        from midicoder.storage.sqlite import ArtifactsManager
+        mgr = ArtifactsManager()
+        mgr.init()
+        artifact = mgr.get("contract_entities")
+        if artifact is None:
+            return ApiResponse(success=False, data=None, message="Entities YAML not found", language=language)
+        return ApiResponse(success=True, data={"content": artifact.get("content", "")}, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
 
 
 @router.get("/contracts", response_model=ApiResponse)
 async def get_contract_contracts(version: str = Query(None), request: Request = None):
-    """
-    Lấy contracts.yaml từ disk.
-    """
+    """Lấy contracts YAML từ SQLite ArtifactsManager."""
     language = i18n.get_language_from_request(request)
-    content = get_contracts_contracts_yaml(version)
-    if content is None:
-        return ApiResponse(
-            success=False,
-            data=None,
-            message="Contracts YAML not found",
-            language=language,
-        )
-    return ApiResponse(success=True, data={"content": content}, language=language)
+    try:
+        from midicoder.storage.sqlite import ArtifactsManager
+        mgr = ArtifactsManager()
+        mgr.init()
+        artifact = mgr.get("contract_commands")
+        if artifact is None:
+            return ApiResponse(success=False, data=None, message="Contracts YAML not found", language=language)
+        return ApiResponse(success=True, data={"content": artifact.get("content", "")}, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
