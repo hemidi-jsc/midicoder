@@ -120,7 +120,7 @@ export class PipelineStore {
    */
   private updateFromBackend(data: any): void {
     this.projectName.set(data.project_name || data.cwd || '');
-    this.activeVersion.set(data.active_version || 'v1.0.0');
+    this.activeVersion.set(data.active_version || '');
 
     const progress = data.pipeline_progress || {};
 

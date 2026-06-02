@@ -80,7 +80,7 @@ async def get_pipeline_status(request: Request):
             data={
                 "project_name": project_name or "midicoder-project",
                 "project": active_project,
-                "active_version": active_version or "v1.0.0",
+                "active_version": active_version,  # None nếu chưa có version nào
                 "pipeline_progress": frontend_progress,
                 "artifacts": artifacts,
                 "last_activity": last_activity,

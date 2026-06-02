@@ -57,8 +57,8 @@ export class VersionService {
         const progress = data.pipeline_progress || {};
 
         const versionInfo: VersionInfo = {
-          version: activeVersion || 'v1.0.0',
-          status: 'active',
+          version: activeVersion || '',
+          status: activeVersion ? 'active' : 'draft',
           createdAt: new Date().toISOString(),
           progress: {
             init: (progress.init as any) || 'pending',
@@ -71,16 +71,23 @@ export class VersionService {
           lastModified: new Date().toISOString(),
         };
 
-        this.versionsSubject.next([versionInfo]);
-        this.activeVersionSubject.next(activeVersion || 'v1.0.0');
-        localStorage.setItem('midicoder_active_version', activeVersion || 'v1.0.0');
+        // Chỉ push version nếu có active_version thực sự
+        if (activeVersion) {
+          this.versionsSubject.next([versionInfo]);
+        } else {
+          this.versionsSubject.next([]);
+        }
+        this.activeVersionSubject.next(activeVersion || '');
+        localStorage.setItem('midicoder_active_version', activeVersion || '');
       }
     } catch (error) {
       console.warn('Failed to load versions from backend:', error);
-      // Fallback: load from localStorage or empty
-      const savedActive = localStorage.getItem('midicoder_active_version') || '';
-      if (savedActive) {
-        this.activeVersionSubject.next(savedActive);
+      // Không fallback localStorage khi project mới — chỉ fallback nếu có stored version
+      const storedVersion = localStorage.getItem('midicoder_active_version') || '';
+      // Xóa stale localStorage để tránh version cũ bám theo project mới
+      localStorage.removeItem('midicoder_active_version');
+      if (storedVersion) {
+        this.activeVersionSubject.next(storedVersion);
       }
     }
   }

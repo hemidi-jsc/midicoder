@@ -126,12 +126,11 @@ async def create_project(request_data: ProjectCreateRequest, request: Request):
         init_database(data_dir / "provenance.db", SCHEMA_PROVENANCE)
         init_database(data_dir / "context.db", SCHEMA_CONTEXT)
 
-        # 3. Tạo project config file
+        # 3. Tạo project config file (không set active_version - sẽ set khi tạo version đầu tiên)
         config_file = workspace_dir / "config" / "midicoder.yml"
         config_data = {
             "midicoder_version": "1.0.0",
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "active_version": "v1.0.0",
             "max_versions": 5,
             "capabilities": {"enabled": []},
         }
@@ -140,11 +139,8 @@ async def create_project(request_data: ProjectCreateRequest, request: Request):
             encoding="utf-8",
         )
 
-        # 4. Tạo active_version.txt
-        (workspace_dir / "config" / "active_version.txt").write_text("v1.0.0", encoding="utf-8")
-
-        # 5. Tạo active_version file root
-        (workspace_dir / "active_version").write_text("v1.0.0", encoding="utf-8")
+        # 4. Không tạo active_version.txt / active_version — để backend trả về None
+        # (xóa 2 dòng cũ tạo file "v1.0.0")
 
         # 6. Update global config project.cwd
         cfg = get_config()
