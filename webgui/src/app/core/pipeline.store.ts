@@ -38,6 +38,7 @@ export class PipelineStore {
    */
   private projectName = signal<string>('');
   private activeVersion = signal<string>('');
+  private workspaceInitialized = signal<boolean>(false);
 
   /**
    * Loading state
@@ -121,6 +122,7 @@ export class PipelineStore {
   private updateFromBackend(data: any): void {
     this.projectName.set(data.project_name || data.cwd || '');
     this.activeVersion.set(data.active_version || '');
+    this.workspaceInitialized.set(!!data.workspace_initialized);
 
     const progress = data.pipeline_progress || {};
 
@@ -224,6 +226,10 @@ export class PipelineStore {
 
   getActiveVersion(): string {
     return this.activeVersion();
+  }
+
+  isWorkspaceInitialized(): boolean {
+    return this.workspaceInitialized();
   }
 
   isLoadingData(): boolean {

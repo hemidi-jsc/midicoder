@@ -33,49 +33,21 @@ import { Subscription } from 'rxjs';
         </p>
       </div>
 
-      <!-- Init Not Started State -->
-      @if (!pipelineInitialized()) {
+      <!-- No Versions State (workspace exists, versions empty) -->
+      @if (workspaceInitialized() && !pipelineInitialized()) {
         <div class="card init-card">
           <div class="init-content">
-            <h2 class="init-title">🚀 Khởi tạo dự án mới</h2>
-            <p class="init-desc">Chưa có dự án nào được khởi tạo. Hãy bắt đầu bằng cách tạo dự án mới.</p>
-
-            @if (isInitLoading) {
-              <div class="init-loading">
-                <div class="spinner"></div>
-                <p>Đang khởi tạo dự án...</p>
-              </div>
-            } @else {
-              <div class="init-form">
-                <div class="form-group">
-                  <label class="form-label">Working Directory</label>
-                  <input
-                    type="text"
-                    class="form-input"
-                    [(ngModel)]="initWorkingDir"
-                    placeholder="Để trống để dùng thư mục hiện tại"
-                  />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Tech Stack</label>
-                  <input
-                    type="text"
-                    class="form-input"
-                    [(ngModel)]="initStack"
-                    placeholder="fastapi,nest,angular (tùy chọn)"
-                  />
-                </div>
-                @if (initError) {
-                  <p class="error-text">{{ initError }}</p>
-                }
-                <button class="btn-primary-large" (click)="runInit()" [disabled]="isInitLoading">
-                  Khởi tạo dự án
-                </button>
-              </div>
-            }
+            <h2 class="init-title">📋 Tạo phiên bản đầu tiên</h2>
+            <p class="init-desc">Project đã được khởi tạo. Tạo phiên bản đầu tiên để bắt đầu pipeline.</p>
+            <button class="btn-primary-large" (click)="showCreateVersionModal = true">
+              Tạo phiên bản
+            </button>
           </div>
         </div>
-      } @else {
+      }
+
+      <!-- Pipeline Progress (versions exist) -->
+      @if (pipelineInitialized()) {
         <!-- Pipeline Progress Card -->
         <div class="dashboard-card">
           <h2 class="card-title">Tiến độ Pipeline</h2>
@@ -735,12 +707,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
   // Reactive version list
   versions = signal<VersionInfo[]>([]);
 
-  // Init form state
-  isInitLoading = false;
-  initWorkingDir = '';
-  initStack = '';
-  initError = '';
-
   // Version creation
   showCreateVersionModal = false;
   newVersionName = '';
@@ -758,6 +724,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   projectName() { return this.pipelineStore.getProjectName(); }
   activeVersion() { return this.pipelineStore.getActiveVersion(); }
   overallProgress() { return this.pipelineStore.overallProgress(); }
+  workspaceInitialized() { return this.pipelineStore.isWorkspaceInitialized(); }
 
   constructor() {
     // Subscribe to versions
@@ -776,37 +743,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.pipelineStore.loadStatus();
+    this.versionService.loadVersions();
   }
 
   ngOnDestroy(): void {
     this.subscriptions.forEach(sub => sub.unsubscribe());
-  }
-
-  /**
-   * Run init project
-   */
-  async runInit(): Promise<void> {
-    this.isInitLoading = true;
-    this.initError = '';
-
-    try {
-      const result = await this.api.initProject({
-        non_interactive: true,
-        working_dir: this.initWorkingDir || undefined,
-        stack: this.initStack || undefined,
-      });
-
-      if (result.success) {
-        await this.pipelineStore.loadStatus();
-        await this.versionService.loadVersions();
-      } else {
-        this.initError = result.message || 'Khởi tạo thất bại';
-      }
-    } catch (error: any) {
-      this.initError = error.message || 'Lỗi kết nối đến server';
-    } finally {
-      this.isInitLoading = false;
-    }
   }
 
   /**
