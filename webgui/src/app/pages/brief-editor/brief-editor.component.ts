@@ -20,27 +20,26 @@ import { PipelineStore } from '../../core/pipeline.store';
     <div class="container mx-auto px-6 py-8">
       <!-- Toast Notification -->
       @if (toast.show) {
-        <div class="fixed top-4 right-4 z-50 animate-slide-in">
-          <div class="flex items-center gap-3 px-5 py-4 rounded-lg shadow-2xl border"
-               [class]="toast.type === 'success'
-                 ? 'bg-green-900 border-green-500'
-                 : 'bg-red-900 border-red-500'">
+        <div class="fixed top-16 right-4 z-50 animate-slide-in pointer-events-none">
+          <div class="pointer-events-auto flex items-center gap-3 px-5 py-3.5 rounded-lg shadow-2xl"
+               [ngClass]="toast.type === 'success'
+                 ? 'bg-green-600 border border-green-400'
+                 : 'bg-red-600 border border-red-400'">
             <!-- Icon -->
             @if (toast.type === 'success') {
-              <svg class="h-6 w-6 text-green-300 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <svg class="h-5 w-5 text-green-100 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
               </svg>
             } @else {
-              <svg class="h-6 w-6 text-red-300 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <svg class="h-5 w-5 text-red-100 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
               </svg>
             }
-            <span class="font-semibold text-sm"
-                  [class]="toast.type === 'success' ? 'text-green-200' : 'text-red-200'">
+            <span class="font-semibold text-sm text-white">
               {{ toast.message }}
             </span>
-            <button (click)="toast.show = false" class="ml-2 opacity-70 hover:opacity-100">
-              <svg class="h-4 w-4" [class]="toast.type === 'success' ? 'text-green-300' : 'text-red-300'" fill="currentColor" viewBox="0 0 20 20">
+            <button (click)="toast.show = false" class="ml-1 opacity-60 hover:opacity-100 transition-opacity">
+              <svg class="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
               </svg>
             </button>
@@ -406,7 +405,10 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
       this.briefContent = result.data.content || '';
       this._lastSavedContent = this.briefContent;
       this.clarifications = result.data.clarifications || [];
-      this.hasAnalysis = this.clarifications.length > 0 || this.briefInfo.has_analysis;
+      // Không reset hasAnalysis — giữ trạng thái nếu vừa analyze thành công
+      if (!this.hasAnalysis) {
+        this.hasAnalysis = this.clarifications.length > 0;
+      }
     }
   }
 
