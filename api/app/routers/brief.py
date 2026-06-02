@@ -104,7 +104,7 @@ def _upsert_brief(mgr, version: str, content: str, title: str = None, change_des
 
 @router.post("/analyze", response_model=ApiResponse)
 async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Request = None):
-    """Phân tích brief — upsert SQLite + gọi LLM trực tiếp."""
+    """Phân tích brief — upsert SQLite + reuse _analyze_with_llm() từ CLI pipeline."""
     if request_data is None:
         request_data = BriefAnalyzeRequest(brief_content="")
 
@@ -123,50 +123,25 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
     if not brief_id:
         return ApiResponse(success=False, data=None, message="Không thể lưu brief vào SQLite", language=language)
 
-    from midicoder.pipeline.llm import load_llm_config, call_llm
-    from midicoder.pipeline.domain import detect_domain, get_domain_prompt, normalize_domain
+    # Reuse 100% CLI pipeline function
+    from midicoder.pipeline.commands.brief import _analyze_with_llm
 
     try:
-        llm_config = load_llm_config()
-    except Exception as e:
-        return ApiResponse(success=False, data=None, message=f"Lỗi load LLM config: {str(e)}", language=language)
-
-    domain = normalize_domain(detect_domain(request_data.brief_content, llm_config))
-    try:
-        system_prompt = get_domain_prompt(domain)
-    except Exception:
-        system_prompt = get_domain_prompt("generic")
-
-    try:
-        response = call_llm(
-            config=llm_config,
-            system=system_prompt,
-            messages=[{"role": "user", "content": request_data.brief_content}],
+        analysis = _analyze_with_llm(
+            brief_content=request_data.brief_content,
+            domain=None,
+            brief_id=brief_id,
         )
-
-        content = response.content.strip()
-        content = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL).strip()
-
-        json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', content, re.DOTALL)
-        if json_match:
-            content = json_match.group(1).strip()
-        if not content.startswith('{'):
-            brace_start = content.find('{')
-            if brace_start >= 0:
-                brace_end = content.rfind('}')
-                if brace_end >= brace_start:
-                    content = content[brace_start:brace_end + 1]
-
-        json_data = json.loads(content)
     except Exception as e:
         return ApiResponse(success=False, data=None, message=f"LLM analysis failed: {str(e)}", language=language)
 
+    json_data = analysis.json_data
     entities = json_data.get("entities", [])
     commands = json_data.get("commands", [])
     queries = json_data.get("queries", [])
     events = json_data.get("events", [])
     ui_components = json_data.get("ui_components", [])
-    confidence = json_data.get("confidence", 0.5)
+    confidence = analysis.confidence
     summary = json_data.get("summary", "")
 
     artifact_id = f"analysis-{brief_id}"
@@ -175,9 +150,10 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
 
     content_json = json.dumps(json_data, indent=2, ensure_ascii=False)
     artifact_metadata = {
-        "domain": domain,
+        "domain": analysis.domain,
         "confidence": confidence,
-        "tokens_used": response.usage.get("total_tokens", 0),
+        "tokens_used": analysis.tokens_used,
+        "latency_ms": analysis.latency_ms,
         "entity_count": len(entities),
         "command_count": len(commands),
         "query_count": len(queries),
@@ -203,12 +179,8 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
     ambiguities = json_data.get("ambiguities", [])
     needs_clarification = bool(ambiguities) or confidence < 0.8
 
-    # Update brief status dựa trên kết quả phân tích
-    if not needs_clarification:
-        briefs_manager.update_status(brief_id, "clarified")
-        # Log lineage với hash của brief content
-        current_hash = hashlib.sha256(request_data.brief_content.encode("utf-8")).hexdigest()
-        _log_lineage(briefs_manager, brief_id, version, "status_change", f"Brief clarified (confidence={confidence:.2f})", old_hash=current_hash, new_hash=current_hash)
+    # Analysis hoàn tất — brief vẫn giữ status 'draft'
+    # Status 'clarified' chỉ được set khi clarification Q&A hoàn tất
 
     return ApiResponse(
         success=True,
@@ -216,7 +188,7 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
             "status": "needs_clarification" if needs_clarification else "ready_for_contract",
             "analysis": {
                 "intent": {
-                    "domain": json_data.get("domain", domain),
+                    "domain": json_data.get("domain", analysis.domain),
                     "type": json_data.get("type", "api"),
                     "scale": json_data.get("scale", "medium"),
                 },
@@ -224,7 +196,7 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
                 "summary": summary,
             },
             "metadata": {
-                "domain": domain,
+                "domain": analysis.domain,
                 "confidence": confidence,
                 "entities": len(entities),
                 "commands": len(commands),
