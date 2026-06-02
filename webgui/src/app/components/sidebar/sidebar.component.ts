@@ -75,6 +75,8 @@ import { ApiService, ProjectInfo } from '../../core/api.service';
                 <span class="version-active-indicator">✓</span>
               }
             </div>
+          } @empty {
+            <p class="empty-text">Chưa có phiên bản nào</p>
           }
         </div>
       </div>
