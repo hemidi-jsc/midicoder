@@ -404,6 +404,11 @@ async def get_brief(version: str = Query(None), request: Request = None):
                             "intent": intent,
                             "ambiguities": content.get("ambiguities", []),
                             "summary": content.get("summary", ""),
+                            "entities": content.get("entities", []),
+                            "commands": content.get("commands", []),
+                            "queries": content.get("queries", []),
+                            "events": content.get("events", []),
+                            "ui_components": content.get("ui_components", []),
                         },
                         "metadata": normalized_metadata,
                     }

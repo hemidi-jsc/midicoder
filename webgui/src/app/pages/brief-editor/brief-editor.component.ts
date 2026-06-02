@@ -229,6 +229,149 @@ import { PipelineStore } from '../../core/pipeline.store';
             </div>
           </div>
 
+          <!-- Collapsible: Raw Details -->
+          <div class="mb-4 space-y-3">
+            <!-- Entities -->
+            @if (analysisResult?.analysis?.entities?.length) {
+              <div class="border border-border-primary rounded overflow-hidden">
+                <button (click)="toggleSection('entities')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
+                  <span class="font-medium text-sm">📋 Entities ({{ analysisResult.analysis.entities.length }})</span>
+                  <svg class="h-4 w-4 text-text-tertiary transition-transform" [class.rotate-180]="sectionOpen.entities" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                @if (sectionOpen.entities) {
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                      <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
+                        <tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Description</th></tr>
+                      </thead>
+                      <tbody>
+                        @for (e of analysisResult.analysis.entities; track e.name) {
+                          <tr class="border-t border-border-primary">
+                            <td class="px-4 py-2 font-medium text-blue-400">{{ e.name }}</td>
+                            <td class="px-4 py-2 text-text-tertiary">{{ e.type || '—' }}</td>
+                            <td class="px-4 py-2 text-text-secondary">{{ e.description || '—' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Commands -->
+            @if (analysisResult?.analysis?.commands?.length) {
+              <div class="border border-border-primary rounded overflow-hidden">
+                <button (click)="toggleSection('commands')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
+                  <span class="font-medium text-sm">⚡ Commands ({{ analysisResult.analysis.commands.length }})</span>
+                  <svg class="h-4 w-4 text-text-tertiary transition-transform" [class.rotate-180]="sectionOpen.commands" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                @if (sectionOpen.commands) {
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                      <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
+                        <tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Target</th><th class="px-4 py-2 text-left">Description</th></tr>
+                      </thead>
+                      <tbody>
+                        @for (c of analysisResult.analysis.commands; track c.name) {
+                          <tr class="border-t border-border-primary">
+                            <td class="px-4 py-2 font-medium text-orange-400">{{ c.name }}</td>
+                            <td class="px-4 py-2 text-text-tertiary">{{ c.target || '—' }}</td>
+                            <td class="px-4 py-2 text-text-secondary">{{ c.description || '—' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Queries -->
+            @if (analysisResult?.analysis?.queries?.length) {
+              <div class="border border-border-primary rounded overflow-hidden">
+                <button (click)="toggleSection('queries')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
+                  <span class="font-medium text-sm">🔍 Queries ({{ analysisResult.analysis.queries.length }})</span>
+                  <svg class="h-4 w-4 text-text-tertiary transition-transform" [class.rotate-180]="sectionOpen.queries" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                @if (sectionOpen.queries) {
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                      <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
+                        <tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Entity</th><th class="px-4 py-2 text-left">Filter</th></tr>
+                      </thead>
+                      <tbody>
+                        @for (q of analysisResult.analysis.queries; track q.name) {
+                          <tr class="border-t border-border-primary">
+                            <td class="px-4 py-2 font-medium text-cyan-400">{{ q.name }}</td>
+                            <td class="px-4 py-2 text-text-tertiary">{{ q.entity || '—' }}</td>
+                            <td class="px-4 py-2 text-text-secondary">{{ q.filter || '—' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Events -->
+            @if (analysisResult?.analysis?.events?.length) {
+              <div class="border border-border-primary rounded overflow-hidden">
+                <button (click)="toggleSection('events')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
+                  <span class="font-medium text-sm">🔔 Events ({{ analysisResult.analysis.events.length }})</span>
+                  <svg class="h-4 w-4 text-text-tertiary transition-transform" [class.rotate-180]="sectionOpen.events" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                @if (sectionOpen.events) {
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                      <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
+                        <tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Source</th><th class="px-4 py-2 text-left">Description</th></tr>
+                      </thead>
+                      <tbody>
+                        @for (ev of analysisResult.analysis.events; track ev.name) {
+                          <tr class="border-t border-border-primary">
+                            <td class="px-4 py-2 font-medium text-purple-400">{{ ev.name }}</td>
+                            <td class="px-4 py-2 text-text-tertiary">{{ ev.source || '—' }}</td>
+                            <td class="px-4 py-2 text-text-secondary">{{ ev.description || '—' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- UI Components -->
+            @if (analysisResult?.analysis?.ui_components?.length) {
+              <div class="border border-border-primary rounded overflow-hidden">
+                <button (click)="toggleSection('ui_components')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
+                  <span class="font-medium text-sm">🎨 UI Components ({{ analysisResult.analysis.ui_components.length }})</span>
+                  <svg class="h-4 w-4 text-text-tertiary transition-transform" [class.rotate-180]="sectionOpen.ui_components" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                @if (sectionOpen.ui_components) {
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                      <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
+                        <tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Description</th></tr>
+                      </thead>
+                      <tbody>
+                        @for (uc of analysisResult.analysis.ui_components; track uc.name) {
+                          <tr class="border-t border-border-primary">
+                            <td class="px-4 py-2 font-medium text-teal-400">{{ uc.name }}</td>
+                            <td class="px-4 py-2 text-text-tertiary">{{ uc.type || '—' }}</td>
+                            <td class="px-4 py-2 text-text-secondary">{{ uc.description || '—' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+
           <!-- Ambiguities -->
           @if (analysisResult?.analysis?.ambiguities?.length) {
             <div class="mb-4">
@@ -353,6 +496,15 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   lineage: any[] = [];
   showHistory = false;
 
+  // Collapsible sections state
+  sectionOpen = {
+    entities: false,
+    commands: false,
+    queries: false,
+    events: false,
+    ui_components: false,
+  };
+
   // Single brief info (1 version = 1 brief, status = progress)
   briefInfo: any = null;
   get isFrozen(): boolean {
@@ -425,6 +577,11 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
 
   toggleHistory(): void {
     this.showHistory = !this.showHistory;
+    this.cdr.detectChanges();
+  }
+
+  toggleSection(key: string): void {
+    this.sectionOpen[key] = !this.sectionOpen[key];
     this.cdr.detectChanges();
   }
 
