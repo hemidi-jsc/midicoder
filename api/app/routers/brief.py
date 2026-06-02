@@ -194,6 +194,11 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
     ambiguities = json_data.get("ambiguities", [])
     needs_clarification = bool(ambiguities) or confidence < 0.8
 
+    # Update brief status dựa trên kết quả phân tích
+    if not needs_clarification:
+        briefs_manager.update_status(brief_id, "clarified")
+        _log_lineage(briefs_manager, brief_id, version, "status_change", f"Brief clarified (confidence={confidence:.2f})")
+
     return ApiResponse(
         success=True,
         data={
