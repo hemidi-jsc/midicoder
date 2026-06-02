@@ -1,8 +1,3 @@
-/**
- * Component chính của ứng dụng
- * Bao gồm layout: header, sidebar, main content
- */
-
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet, Router, NavigationEnd } from '@angular/router';
@@ -11,8 +6,13 @@ import { Subscription, filter } from 'rxjs';
 
 import { AuthService } from './core/auth.service';
 import { ScreenCheckService } from './core/screen-check.service';
-import { VersionService } from './core/version.service';
 import { SidebarComponent } from './components/sidebar/sidebar.component';
+
+/** Application version — lấy từ package.json build-time, fallback nếu dev */
+const APP_VERSION = '1.0.0';
+
+/** Docs base URL theo version */
+const DOCS_BASE = `https://docs.midicoder.com/${APP_VERSION}/ce`;
 
 @Component({
   selector: 'app-root',
@@ -40,19 +40,38 @@ import { SidebarComponent } from './components/sidebar/sidebar.component';
       <!-- Header - chỉ hiển thị khi đã đăng nhập và không ở trang login -->
       @if (isAuthenticated && !isLoginPage) {
         <header class="fixed top-0 left-0 w-full bg-bg-secondary border-b border-border-primary z-50 flex items-center justify-between">
-          <!-- Logo và Version Selector - bên trái -->
-          <div class="flex items-center space-x-4">
+          <!-- Logo và App Version Badge - bên trái -->
+          <div class="flex items-center space-x-3">
             <img src="logo.png" alt="Midicoder" class="logo-header">
-            <div class="version-selector">
-              <select
-                [(ngModel)]="activeVersion"
-                (change)="switchVersion($event)"
-                class="version-select"
+            <a
+              href="https://github.com/hemidi-jsc/midicoder/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="app-version-badge"
+              title="Xem release trên GitHub"
+            >
+              v{{ appVersion }}
+            </a>
+            <div class="header-links">
+              <a
+                [attr.href]="docsChangelogUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="header-link"
+                title="Changelog"
               >
-                @for (v of versions; track v.version) {
-                  <option [value]="v.version">{{ v.version }}</option>
-                }
-              </select>
+                Changelog
+              </a>
+              <span class="header-separator">·</span>
+              <a
+                [attr.href]="docsGettingStartedUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="header-link"
+                title="Tài liệu"
+              >
+                Docs
+              </a>
             </div>
           </div>
 
@@ -89,35 +108,52 @@ import { SidebarComponent } from './components/sidebar/sidebar.component';
       width: auto;
     }
 
-    .version-selector {
-      position: relative;
-    }
-
-    .version-select {
-      background: var(--bg-secondary);
+    /* App Version Badge */
+    .app-version-badge {
+      display: inline-flex;
+      align-items: center;
+      background: var(--bg-card);
       border: 1px solid var(--border-subtle);
-      color: var(--text-primary);
-      padding: 6px 28px 6px 12px;
-      font-size: 0.85rem;
-      font-weight: 500;
-      cursor: pointer;
-      appearance: none;
+      color: var(--text-secondary);
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      font-family: monospace;
+      letter-spacing: 0.02em;
+      text-decoration: none;
       transition: all 0.2s;
+      cursor: pointer;
     }
 
-    .version-select:hover {
-      border-color: var(--border-hover);
-    }
-
-    .version-select:focus {
-      outline: none;
+    .app-version-badge:hover {
       border-color: var(--brand-color);
+      color: var(--brand-color);
       box-shadow: var(--glow-sm);
     }
 
-    .version-select option {
-      background: var(--bg-secondary);
-      color: var(--text-primary);
+    /* Header Links */
+    .header-links {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .header-link {
+      color: var(--text-tertiary);
+      font-size: 0.8rem;
+      text-decoration: none;
+      transition: color 0.2s;
+      white-space: nowrap;
+    }
+
+    .header-link:hover {
+      color: var(--brand-color);
+    }
+
+    .header-separator {
+      color: var(--text-tertiary);
+      font-size: 0.75rem;
+      user-select: none;
     }
 
     .logout-btn {
@@ -153,21 +189,19 @@ export class AppComponent implements OnInit, OnDestroy {
   screenSupported = true;
   screenWarningMessage = '';
   isLoginPage = false;
-  
-  // Version management
-  versions: any[] = [];
-  activeVersion = '';
+
+  /** App version to display in header */
+  appVersion = APP_VERSION;
+  docsChangelogUrl = `${DOCS_BASE}/changelog`;
+  docsGettingStartedUrl = `${DOCS_BASE}/getting-started`;
 
   private authSub?: Subscription;
   private routerSub?: Subscription;
-  private versionSub?: Subscription;
-  private activeVersionSub?: Subscription;
 
   constructor(
     private authService: AuthService,
     private router: Router,
     private screenCheck: ScreenCheckService,
-    private versionService: VersionService,
   ) {
     // Subscribe to auth state changes
     this.authSub = this.authService.isAuthenticated$.subscribe((auth) => {
@@ -175,20 +209,10 @@ export class AppComponent implements OnInit, OnDestroy {
       this.currentUser = this.authService.getCurrentUser();
     });
 
-    // Subscribe to versions
-    this.versionSub = this.versionService.versions$.subscribe(versions => {
-      this.versions = versions;
-    });
-
-    // Subscribe to active version
-    this.activeVersionSub = this.versionService.activeVersion$.subscribe(version => {
-      this.activeVersion = version;
-    });
-
     // Subscribe to navigation events - check auth AFTER navigation completes
     this.routerSub = this.router.events.pipe(filter(event => event instanceof NavigationEnd)).subscribe(() => {
       this.isLoginPage = this.router.url === '/login';
-      
+
       // Check auth after navigation completes to avoid redirect loops
       setTimeout(() => {
         const auth = this.authService.isAuthenticated();
@@ -209,8 +233,6 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.authSub?.unsubscribe();
     this.routerSub?.unsubscribe();
-    this.versionSub?.unsubscribe();
-    this.activeVersionSub?.unsubscribe();
   }
 
   /**
@@ -218,15 +240,5 @@ export class AppComponent implements OnInit, OnDestroy {
    */
   async handleLogout(): Promise<void> {
     await this.authService.logout();
-    // Auth state will be updated via subscription
-  }
-
-  /**
-   * Switch version
-   */
-  switchVersion(event: Event): void {
-    const select = event.target as HTMLSelectElement;
-    const version = select.value;
-    this.versionService.setActiveVersion(version);
   }
 }
