@@ -1,8 +1,9 @@
 """
 Router cho pipeline status
-Dùng midicoder.pipeline.commands.util để đọc progress từ SQLite ArtifactsManager
+Đọc trực tiếp từ SQLite với explicit project path (không dùng Path.cwd())
 """
 
+import sqlite3
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -28,7 +29,9 @@ def _get_active_version_for_project(project_cwd: str) -> str | None:
     try:
         active_file = Path(project_cwd) / ".midicoder" / "config" / "active_version.txt"
         if active_file.exists():
-            return active_file.read_text().strip()
+            content = active_file.read_text().strip()
+            if content:
+                return content
         # Fallback: đọc từ YAML config
         import yaml
         config_file = Path(project_cwd) / ".midicoder" / "config" / "midicoder.yml"
@@ -48,7 +51,7 @@ def _get_versions_for_project(project_cwd: str) -> list[dict]:
         return []
     versions = []
     import yaml
-    for vdir in versions_dir.iterdir():
+    for vdir in sorted(versions_dir.iterdir(), key=lambda d: d.name):
         if vdir.is_dir():
             metadata = vdir / "metadata.yml"
             if metadata.exists():
@@ -67,16 +70,89 @@ def _get_versions_for_project(project_cwd: str) -> list[dict]:
     return versions
 
 
+def _get_pipeline_progress_from_sqlite(db_path: Path) -> dict:
+    """Đọc pipeline progress trực tiếp từ SQLite artifacts table."""
+    if not db_path.exists():
+        return {}
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT artifact_id, status FROM artifacts ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        conn.close()
+
+        progress = {}
+        for row in rows:
+            aid = row["artifact_id"] or ""
+            status = row["status"] or "pending"
+            if aid.startswith("brief_"):
+                progress["brief"] = {"status": status}
+            elif aid.startswith("contract_"):
+                progress["contract"] = {"status": status}
+            elif aid.startswith("mir_"):
+                progress["mir"] = {"status": status}
+            elif aid.startswith("plan_"):
+                progress["code"] = {"status": status}
+            elif aid.startswith("code_"):
+                progress["code"] = {"status": "generated"}
+        return progress
+    except Exception:
+        return {}
+
+
+def _get_artifacts_summary_from_sqlite(db_path: Path) -> dict:
+    """Đọc artifacts summary trực tiếp từ SQLite."""
+    if not db_path.exists():
+        return {"briefs": 0, "contracts": 0, "mir": 0, "plans": 0, "code": 0}
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute("SELECT artifact_id, COUNT(*) as cnt FROM artifacts GROUP BY artifact_id")
+        rows = cursor.fetchall()
+        conn.close()
+
+        summary = {"briefs": 0, "contracts": 0, "mir": 0, "plans": 0, "code": 0}
+        for row in rows:
+            aid = row[0] or ""
+            cnt = row[1] or 0
+            if aid.startswith("brief_"):
+                summary["briefs"] += cnt
+            elif aid.startswith("contract_"):
+                summary["contracts"] += cnt
+            elif aid.startswith("mir_"):
+                summary["mir"] += cnt
+            elif aid.startswith("plan_"):
+                summary["plans"] += cnt
+            elif aid.startswith("code_"):
+                summary["code"] += cnt
+        return summary
+    except Exception:
+        return {"briefs": 0, "contracts": 0, "mir": 0, "plans": 0, "code": 0}
+
+
+def _get_last_activity_from_sqlite(db_path: Path) -> str | None:
+    """Đọc last activity từ SQLite artifacts table."""
+    if not db_path.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute("SELECT updated_at FROM artifacts ORDER BY updated_at DESC LIMIT 1")
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
 @router.get("/status", response_model=ApiResponse)
 async def get_pipeline_status(request: Request):
     """
     Lấy trạng thái hiện tại của pipeline.
-
-    Đọc từ midicoder.pipeline.commands.util.get_pipeline_progress()
-    → ArtifactsManager (SQLite) → artifacts table
+    
+    Đọc trực tiếp từ SQLite với explicit project path (không dùng CLI Path.cwd()).
     """
-    import os
-
     language = i18n.get_language_from_request(request)
 
     try:
@@ -86,23 +162,13 @@ async def get_pipeline_status(request: Request):
 
         # Lấy project path active
         project_cwd = get_project_cwd()
+        data_dir = Path(project_cwd) / ".midicoder" / "data"
+        artifacts_db = data_dir / "artifacts.db"
 
-        # CLI functions dùng Path.cwd() — phải chdir đến project path trước
-        original_cwd = os.getcwd()
-        try:
-            if project_cwd:
-                os.chdir(project_cwd)
-
-            from midicoder.pipeline.commands.util import (
-                get_pipeline_progress,
-                get_artifacts_summary,
-                get_last_activity,
-            )
-            progress = get_pipeline_progress()
-            artifacts = get_artifacts_summary()
-            last_activity = get_last_activity()
-        finally:
-            os.chdir(original_cwd)
+        # Đọc progress trực tiếp từ SQLite (không qua CLI)
+        progress = _get_pipeline_progress_from_sqlite(artifacts_db)
+        artifacts = _get_artifacts_summary_from_sqlite(artifacts_db)
+        last_activity = _get_last_activity_from_sqlite(artifacts_db)
 
         # Versions & active version — đọc từ project path (không phải Path.cwd())
         versions = _get_versions_for_project(project_cwd)
@@ -135,6 +201,8 @@ async def get_pipeline_status(request: Request):
             "preview": "pending",
         }
 
+        workspace_initialized = (Path(project_cwd) / ".midicoder").exists()
+
         return ApiResponse(
             success=True,
             data={
@@ -145,7 +213,7 @@ async def get_pipeline_status(request: Request):
                 "artifacts": artifacts,
                 "last_activity": last_activity,
                 "versions": versions,
-                "workspace_initialized": (Path(project_cwd) / ".midicoder").exists(),
+                "workspace_initialized": workspace_initialized,
             },
             message=i18n.translate("common.success", language),
             language=language,
