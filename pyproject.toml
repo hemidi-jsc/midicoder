@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "midicoder"
-version = "0.1.0"
+version = "1.0.0"
 description = "Midicoder CE"
 readme = "README.md"
 requires-python = "==3.12.*"
@@ -19,7 +19,8 @@ dependencies = [
   "tree_sitter>=0.21.3",
   "tree_sitter_languages>=1.10.2",
   "code-review-graph>=2.3.2",
-  "litellm>=1.0.0",
+  "openai>=1.0.0",
+  "tiktoken>=0.7.0",
 ]
 
 [project.scripts]

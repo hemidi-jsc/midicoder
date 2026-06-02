@@ -239,7 +239,7 @@ class CLIWrapper:
     
     async def brief_analyze(self) -> Dict[str, Any]:
         """Phân tích brief"""
-        return await self.execute_command("brief", "analyze")
+        return await self.execute_command("brief", "analyze", {"force": True})
     
     async def brief_rewrite(self) -> Dict[str, Any]:
         """Viết lại brief"""

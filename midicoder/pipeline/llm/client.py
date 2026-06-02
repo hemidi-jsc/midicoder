@@ -1,13 +1,13 @@
 ﻿"""
-LLM Client cho Midicoder Pipeline (REBUILD với litellm).
+LLM Client cho Midicoder Pipeline (sử dụng OpenAI SDK).
 
-Sử dụng litellm SDK để wrap multiple LLM providers:
-- openai-compatible: Custom URL với OpenAI API format
-- openai: OpenAI API
-- anthropic: Anthropic API
-- aws-bedrock: AWS Bedrock
-- azure: Azure AI Foundry
-- vertex: Google Vertex AI
+Sử dụng OpenAI SDK (openai package) để call LLM API — tương thích với mọi
+OpenAI-compatible endpoint bao gồm Qwen, Ollama, v.v.
+
+Xử lý đúng reasoning models:
+- content: None khi model chưa sinh ra content (chỉ reasoning)
+- reasoning: thinking process của model
+- Kết hợp cả hai thành full output
 
 Sử dụng:
     from midicoder.pipeline.llm import load_llm_config, call_llm, call_llm_async, call_llm_stream
@@ -29,15 +29,14 @@ Sử dụng:
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Optional
 
-import litellm
-from litellm import APIError, RateLimitError, AuthenticationError
+import tiktoken
+from openai import OpenAI, AsyncOpenAI, APIError, RateLimitError, AuthenticationError
 
 from midicoder.pipeline.config import get_config
 
-# Logger cho metadata logging
 logger = __import__("logging").getLogger(__name__)
 
 
@@ -54,6 +53,18 @@ SUPPORTED_PROVIDERS = [
     "vertex",
 ]
 
+# ============================================================================
+# Max context windows per model family
+# ============================================================================
+
+MAX_CONTEXT_WINDOWS = {
+    "qwen": 131072,
+    "gpt": 128000,
+    "claude": 200000,
+    "llama": 128000,
+    "default": 131072,
+}
+
 
 # ============================================================================
 # Data Classes
@@ -63,23 +74,23 @@ SUPPORTED_PROVIDERS = [
 class LlmConfig:
     """
     Cấu hình cho LLM client.
-    
+
     Attributes:
-        provider: LLM provider (openai-compatible, openai, anthropic, aws-bedrock, azure, vertex)
-        model: Model name (vd: "gpt-4o", "claude-3-sonnet", "qwen3.5-27B")
+        provider: LLM provider (openai-compatible, openai, anthropic, v.v.)
+        model: Model name (vd: "qwen3.5-27B", "gpt-4o")
         api_url: API endpoint URL
         api_key: API key cho authentication (optional)
-        max_tokens: Max tokens cho response (default: 8192)
+        max_tokens: Max tokens cho response (default: max context window)
         temperature: Temperature cho sampling 0.0-1.0 (default: 0.3)
         timeout: Timeout cho request bằng giây (default: 300)
         retry_attempts: Số lần retry khi fail (default: 3)
     """
-    
+
     provider: str
     model: str
     api_url: str
     api_key: Optional[str] = None
-    max_tokens: int = 8192
+    max_tokens: int = 131072
     temperature: float = 0.3
     timeout: int = 300
     retry_attempts: int = 3
@@ -89,13 +100,13 @@ class LlmConfig:
 class LlmResponse:
     """
     Response từ LLM.
-    
+
     Attributes:
-        content: Content từ LLM response
+        content: Content từ LLM (content + reasoning nếu có)
         usage: Token usage info (prompt_tokens, completion_tokens, total_tokens)
-        raw: Raw response object từ litellm
+        raw: Raw response object từ OpenAI SDK
     """
-    
+
     content: str
     usage: dict
     raw: Any = None
@@ -105,12 +116,12 @@ class LlmResponse:
 class LlmStreamChunk:
     """
     Chunk từ streaming LLM response.
-    
+
     Attributes:
         content: Incremental content (có thể empty)
         usage: Token usage (chỉ có trong last chunk)
     """
-    
+
     content: str
     usage: Optional[dict] = None
 
@@ -119,67 +130,62 @@ class LlmStreamChunk:
 # Config Loading
 # ============================================================================
 
+def _get_max_context_window(model: str) -> int:
+    """
+    Lấy max context window dựa trên tên model.
+    """
+    model_lower = model.lower()
+    for key, window in MAX_CONTEXT_WINDOWS.items():
+        if key in model_lower:
+            return window
+    return MAX_CONTEXT_WINDOWS["default"]
+
+
 def load_llm_config() -> LlmConfig:
     """
     Load LLM config từ global config file.
-    
-    Đọc config từ ~/.midicoder/midicoder.json với structure:
-    {
-        "llm": {
-            "provider": "openai-compatible",
-            "model": "qwen3.5-27B",
-            "api_url": "http://localhost:11434/v1",
-            "api_key": "sk-...",
-            "max_tokens": 8192,
-            "temperature": 0.3,
-            "timeout": 300,
-            "retry_attempts": 3
-        }
-    }
-    
+
+    Đọc config từ ~/.midicoder/midicoder.json.
+
     Returns:
         LlmConfig instance với values từ config file + defaults
-    
+
     Raises:
-        ValueError: Nếu thiếu required fields (model, api_url) hoặc provider không hợp lệ
+        ValueError: Nếu thiếu required fields (model, api_url)
     """
     config = get_config()
-    
-    # Read from nested llm.* keys
+
     provider = config.get("llm.provider", "openai-compatible")
     model = config.get("llm.model")
     api_url = config.get("llm.api_url")
     api_key = config.get("llm.api_key")
-    
-    # Optional fields với defaults
-    max_tokens = config.get("llm.max_tokens", 8192)
+
+    max_tokens = config.get("llm.max_tokens")
     temperature = config.get("llm.temperature", 0.3)
     timeout = config.get("llm.timeout", 300)
     retry_attempts = config.get("llm.retry_attempts", 3)
-    
-    # Apply defaults nếu None
+
+    # Defaults
     if max_tokens is None:
-        max_tokens = 8192
+        max_tokens = _get_max_context_window(model) if model else 131072
     if temperature is None:
         temperature = 0.3
     if timeout is None:
         timeout = 300
     if retry_attempts is None:
         retry_attempts = 3
-    
-    # Validate required fields
+
     if not model:
         raise ValueError("Thiếu 'llm.model' trong config file")
     if not api_url:
         raise ValueError("Thiếu 'llm.api_url' trong config file")
-    
-    # Validate provider
+
     if provider not in SUPPORTED_PROVIDERS:
         raise ValueError(
             f"Provider '{provider}' không hợp lệ. "
             f"Supported: {', '.join(SUPPORTED_PROVIDERS)}"
         )
-    
+
     return LlmConfig(
         provider=provider,
         model=model,
@@ -197,48 +203,61 @@ def load_llm_config() -> LlmConfig:
 # ============================================================================
 
 def _build_messages(system: Optional[str], messages: list[dict[str, str]]) -> list[dict[str, str]]:
-    """
-    Build messages list cho litellm từ system prompt + messages.
-    
-    Args:
-        system: System prompt (optional)
-        messages: User messages list
-        
-    Returns:
-        Formatted messages list cho litellm
-    """
+    """Build messages list từ system prompt + messages."""
     result = []
-    
     if system:
         result.append({"role": "system", "content": system})
-    
     result.extend(messages)
-    
     return result
 
 
-def _extract_usage(usage_obj: Any) -> dict:
+def _extract_content(choice) -> tuple[str, str]:
     """
-    Extract usage dict từ litellm response usage object.
-    
-    Args:
-        usage_obj: Usage object từ litellm response
-        
+    Extract content và reasoning từ một choice trong response.
+
     Returns:
-        Dict với prompt_tokens, completion_tokens, total_tokens
+        (content, reasoning) — cả hai có thể empty string
     """
+    content = ""
+    reasoning = ""
+
+    message = choice.get("message", {}) if isinstance(choice, dict) else choice.message
+
+    if isinstance(message, dict):
+        content = message.get("content", "") or ""
+        reasoning = message.get("reasoning", "") or ""
+    else:
+        content = message.content or ""
+        reasoning = getattr(message, "reasoning", "") or ""
+
+    return content, reasoning
+
+
+def _merge_content(content: str, reasoning: str) -> str:
+    """
+    Merge content + reasoning thành full output.
+
+    - Nếu content rỗng nhưng có reasoning → dùng reasoning (reasoning models)
+    - Nếu có cả hai → content + reasoning
+    - Nếu chỉ có content → dùng content
+    """
+    if content and reasoning:
+        return content
+    return content or reasoning
+
+
+def _extract_usage(usage_obj: Any) -> dict:
+    """Extract usage dict từ response usage object."""
     if usage_obj is None:
         return {}
-    
-    # litellm usage có thể là object hoặc dict
+
     if hasattr(usage_obj, "prompt_tokens"):
         return {
             "prompt_tokens": getattr(usage_obj, "prompt_tokens", 0),
             "completion_tokens": getattr(usage_obj, "completion_tokens", 0),
             "total_tokens": getattr(usage_obj, "total_tokens", 0),
         }
-    
-    # Nếu là dict
+
     return {
         "prompt_tokens": usage_obj.get("prompt_tokens", 0),
         "completion_tokens": usage_obj.get("completion_tokens", 0),
@@ -252,15 +271,7 @@ def _log_call(
     tokens_used: int = 0,
     latency_ms: int = 0,
 ) -> None:
-    """
-    Log LLM call metadata (không log content).
-    
-    Args:
-        config: LLM config
-        status: "success" hoặc "error"
-        tokens_used: Số tokens đã dùng
-        latency_ms: Latency bằng mili giây
-    """
+    """Log LLM call metadata (không log content)."""
     logger.info(
         "LLM call completed",
         extra={
@@ -271,6 +282,25 @@ def _log_call(
             "status": status,
         },
     )
+
+
+def count_tokens(text: str, model: str = "cl100k_base") -> int:
+    """
+    Đếm số tokens bằng tiktoken.
+
+    Args:
+        text: Text cần đếm
+        model: Tên tokenizer (default: cl100k_base cho GPT-4/Qwen compatible)
+
+    Returns:
+        Số tokens
+    """
+    try:
+        encoding = tiktoken.get_encoding(model)
+    except KeyError:
+        encoding = tiktoken.get_encoding("cl100k_base")
+
+    return len(encoding.encode(text))
 
 
 # ============================================================================
@@ -285,79 +315,46 @@ def call_llm(
 ) -> LlmResponse:
     """
     Call LLM sync, trả về full response.
-    
-    Sử dụng litellm.completion() để gọi LLM. Block cho đến khi response
-    hoàn chỉnh. Retry logic do litellm handle.
-    
+
     Args:
         config: LLM config
         system: System prompt (optional)
-        messages: User messages list (OpenAI-style format)
-        
+        messages: User messages list
+
     Returns:
         LlmResponse với content, usage, raw
-        
-    Raises:
-        litellm.APIError: Khi API trả về error
-        litellm.RateLimitError: Khi rate limit
-        litellm.AuthenticationError: Khi auth fail
     """
     messages_list = _build_messages(system, messages or [])
-    
-    start_time = time.time()
-    
-    try:
-        # Build model string for litellm
-        # For openai-compatible providers, use "openai/{model}" so litellm routes correctly
-        if config.provider == "openai-compatible":
-            model_str = f"openai/{config.model}"
-        else:
-            model_str = f"{config.provider}/{config.model}"
 
-        # Call litellm completion
-        response = litellm.completion(
-            model=model_str,
+    start_time = time.time()
+
+    try:
+        client = OpenAI(
+            base_url=config.api_url,
+            api_key=config.api_key or "not-needed",
+            timeout=config.timeout,
+        )
+
+        response = client.chat.completions.create(
+            model=config.model,
             messages=messages_list,
-            api_base=config.api_url,
-            api_key=config.api_key,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
-            timeout=config.timeout,
-            num_retries=config.retry_attempts,
-            stream=False,
         )
-        
-        # Extract content (handle cả dict và object response)
-        content = ""
-        reasoning = ""
-        if response.choices:
-            choice = response.choices[0]
-            if isinstance(choice, dict):
-                msg = choice.get("message", {})
-                content = msg.get("content", "") or ""
-                reasoning = msg.get("reasoning", "") or ""
-            else:
-                content = choice.message.content or ""
-                reasoning = getattr(choice.message, "reasoning", "") or ""
 
-        # For reasoning models: append reasoning after content
-        if reasoning and not content:
-            content = reasoning
-        elif reasoning and content:
-            content = content + "\n" + reasoning
-        
-        # Extract usage
+        content, reasoning = _extract_content(response.choices[0])
+        merged = _merge_content(content, reasoning)
         usage = _extract_usage(response.usage)
-        
+
         latency_ms = int((time.time() - start_time) * 1000)
         _log_call(config, "success", usage.get("total_tokens", 0), latency_ms)
-        
+
         return LlmResponse(
-            content=content,
+            content=merged,
             usage=usage,
             raw=response,
         )
-        
+
     except (APIError, RateLimitError, AuthenticationError):
         latency_ms = int((time.time() - start_time) * 1000)
         _log_call(config, "error", 0, latency_ms)
@@ -376,69 +373,46 @@ async def call_llm_async(
 ) -> LlmResponse:
     """
     Call LLM async, trả về full response.
-    
-    Sử dụng litellm.acompletion() để gọi LLM non-blocking.
-    
+
     Args:
         config: LLM config
         system: System prompt (optional)
         messages: User messages list
-        
+
     Returns:
         LlmResponse với content, usage, raw
-        
-    Raises:
-        litellm.APIError: Khi API trả về error
-        litellm.RateLimitError: Khi rate limit
-        litellm.AuthenticationError: Khi auth fail
     """
     messages_list = _build_messages(system, messages or [])
-    
+
     start_time = time.time()
-    
+
     try:
-        response = await litellm.acompletion(
-            model=f"{config.provider}/{config.model}",
+        client = AsyncOpenAI(
+            base_url=config.api_url,
+            api_key=config.api_key or "not-needed",
+            timeout=config.timeout,
+        )
+
+        response = await client.chat.completions.create(
+            model=config.model,
             messages=messages_list,
-            api_base=config.api_url,
-            api_key=config.api_key,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
-            timeout=config.timeout,
-            num_retries=config.retry_attempts,
-            stream=False,
         )
-        
-        # Extract content (handle cả dict và object response)
-        content = ""
-        reasoning = ""
-        if response.choices:
-            choice = response.choices[0]
-            if isinstance(choice, dict):
-                msg = choice.get("message", {})
-                content = msg.get("content", "") or ""
-                reasoning = msg.get("reasoning", "") or ""
-            else:
-                content = choice.message.content or ""
-                reasoning = getattr(choice.message, "reasoning", "") or ""
 
-        # For reasoning models: append reasoning after content
-        if reasoning and not content:
-            content = reasoning
-        elif reasoning and content:
-            content = content + "\n" + reasoning
-        
+        content, reasoning = _extract_content(response.choices[0])
+        merged = _merge_content(content, reasoning)
         usage = _extract_usage(response.usage)
-        
+
         latency_ms = int((time.time() - start_time) * 1000)
         _log_call(config, "success", usage.get("total_tokens", 0), latency_ms)
-        
+
         return LlmResponse(
-            content=content,
+            content=merged,
             usage=usage,
             raw=response,
         )
-        
+
     except (APIError, RateLimitError, AuthenticationError):
         latency_ms = int((time.time() - start_time) * 1000)
         _log_call(config, "error", 0, latency_ms)
@@ -453,66 +427,54 @@ async def call_llm_stream(
 ) -> AsyncIterator[LlmStreamChunk]:
     """
     Call LLM với streaming, trả về chunks qua async generator.
-    
-    Sử dụng litellm.acompletion(stream=True) để stream response.
-    Yield từng chunk theo thời gian thực.
-    
+
     Args:
         config: LLM config
         system: System prompt (optional)
         messages: User messages list
-        
+
     Yields:
-        LlmStreamChunk với content và usage (usage chỉ có trong last chunk)
-        
-    Raises:
-        litellm.APIError: Khi API trả về error
-        litellm.RateLimitError: Khi rate limit
-        litellm.AuthenticationError: Khi auth fail
+        LlmStreamChunk với content và usage
     """
     messages_list = _build_messages(system, messages or [])
-    
+
     start_time = time.time()
-    
+
     try:
-        stream = await litellm.acompletion(
-            model=f"{config.provider}/{config.model}",
+        client = AsyncOpenAI(
+            base_url=config.api_url,
+            api_key=config.api_key or "not-needed",
+            timeout=config.timeout,
+        )
+
+        stream = await client.chat.completions.create(
+            model=config.model,
             messages=messages_list,
-            api_base=config.api_url,
-            api_key=config.api_key,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
-            timeout=config.timeout,
-            num_retries=config.retry_attempts,
             stream=True,
         )
-        
+
         last_chunk_usage = None
-        
+
         async for chunk in stream:
-            # Extract content from delta (handle cả dict và object)
             content = ""
             if chunk.choices:
                 choice = chunk.choices[0]
-                if isinstance(choice, dict):
-                    delta = choice.get("delta", {})
-                    content = delta.get("content", "") if isinstance(delta, dict) else ""
-                else:
-                    delta = choice.delta
-                    if hasattr(delta, "content") and delta.content:
-                        content = delta.content
-            
-            # Check for usage in chunk (usually in last chunk)
+                delta = choice.get("delta", {}) if isinstance(choice, dict) else choice.delta
+                if isinstance(delta, dict):
+                    content = delta.get("content", "") or ""
+                elif hasattr(delta, "content") and delta.content:
+                    content = delta.content
+
             if hasattr(chunk, "usage") and chunk.usage:
                 last_chunk_usage = _extract_usage(chunk.usage)
-            elif isinstance(chunk, dict) and chunk.get("usage"):
-                last_chunk_usage = _extract_usage(chunk["usage"])
-            
+
             yield LlmStreamChunk(content=content, usage=last_chunk_usage)
-        
+
         latency_ms = int((time.time() - start_time) * 1000)
         _log_call(config, "success", last_chunk_usage.get("total_tokens", 0) if last_chunk_usage else 0, latency_ms)
-        
+
     except (APIError, RateLimitError, AuthenticationError):
         latency_ms = int((time.time() - start_time) * 1000)
         _log_call(config, "error", 0, latency_ms)

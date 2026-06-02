@@ -1,7 +1,7 @@
 ﻿"""
-Package LLM Client cho Midicoder Pipeline (REBUILD với litellm).
+Package LLM Client cho Midicoder Pipeline (sử dụng OpenAI SDK).
 
-Sử dụng litellm SDK để wrap multiple LLM providers:
+Sử dụng OpenAI SDK để wrap multiple LLM providers:
 - openai-compatible: Custom URL với OpenAI API format (default)
 - openai: OpenAI API
 - anthropic: Anthropic API
@@ -43,6 +43,8 @@ from midicoder.pipeline.llm.client import (
     # Async API
     call_llm_async,
     call_llm_stream,
+    # Token counting
+    count_tokens,
 )
 
 __all__ = [
@@ -57,4 +59,6 @@ __all__ = [
     # Async API
     "call_llm_async",
     "call_llm_stream",
+    # Token counting
+    "count_tokens",
 ]

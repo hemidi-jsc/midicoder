@@ -3,7 +3,6 @@ Tests cho Context Feed module.
 
 Kiểm tra:
 - calculate_adaptive_limit: Tính giới hạn context theo model
-- estimate_tokens: Ước lượng số tokens
 - get_brief_context: Query context cho brief analyze
 - get_clarify_context: Query context cho brief clarify
 - ContextFeedResult: Dataclass result
@@ -18,7 +17,6 @@ from pathlib import Path
 from midicoder.pipeline.context_feed import (
     ContextFeedResult,
     calculate_adaptive_limit,
-    estimate_tokens,
     get_brief_context,
     get_clarify_context,
     format_context_inject,
@@ -74,33 +72,30 @@ class TestCalculateAdaptiveLimit:
         assert result == expected
 
 
-class TestEstimateTokens:
-    """Tests cho hàm estimate_tokens."""
+class TestCountTokens:
+    """Tests cho hàm count_tokens (import từ llm module)."""
 
-    def test_empty_string_returns_zero(self):
-        """Empty string returns 0 tokens."""
-        result = estimate_tokens("")
-        assert result == 0
+    def test_count_tokens_basic(self):
+        """Test đếm tokens cơ bản."""
+        from midicoder.pipeline.llm import count_tokens
 
-    def test_simple_text_estimation(self):
-        """Simple text estimation (4 chars per token)."""
-        text = "Hello World"  # 11 chars
-        result = estimate_tokens(text)
-        # 11 // 4 = 2 tokens
-        assert result == 2
+        count = count_tokens("Hello world")
+        assert count > 0
 
-    def test_longer_text_estimation(self):
-        """Longer text estimation."""
-        text = "a" * 100  # 100 chars
-        result = estimate_tokens(text)
-        assert result == 25  # 100 // 4
+    def test_count_tokens_empty(self):
+        """Test đếm tokens với text rỗng."""
+        from midicoder.pipeline.llm import count_tokens
 
-    def test_multiline_text_estimation(self):
-        """Multiline text estimation."""
-        text = "Line 1\nLine 2\nLine 3"
-        result = estimate_tokens(text)
-        # 20 chars // 4 = 5 tokens
-        assert result == 5
+        count = count_tokens("")
+        assert count == 0
+
+    def test_count_tokens_longer_text(self):
+        """Test đếm tokens với text dài."""
+        from midicoder.pipeline.llm import count_tokens
+
+        text = "This is a test sentence for token counting"
+        count = count_tokens(text)
+        assert count > 5  # Should be at least ~8 tokens
 
 
 class TestContextFeedResult:

@@ -390,45 +390,58 @@ export class ApiService {
   }
 
   /**
-   * POST /brief/rewrite - Rewrite brief
+   * POST /brief/save - Save brief (upsert: 1 version = 1 brief)
    */
-  async rewriteBrief(): Promise<ApiResponse<any>> {
-    return this.post('/brief/rewrite');
-  }
-
-  /**
-   * POST /brief/save - Save brief
-   */
-  async saveBrief(request: { name: string; tags?: string[]; version?: string; brief_content?: string }): Promise<ApiResponse<{ saved_path: string }>> {
+  async saveBrief(request: { version?: string; brief_content?: string }): Promise<ApiResponse<{ saved: boolean; brief_id?: string; updated?: boolean }>> {
     return this.post('/brief/save', request);
   }
 
   /**
-   * GET /brief/library - Get brief library
+   * GET /brief/get - Get single brief for version (replaces /master, /working, /raw)
    */
-  async getBriefLibrary(): Promise<ApiResponse<any>> {
-    return this.get('/brief/library');
+  async getBrief(version?: string): Promise<ApiResponse<{
+    brief_id: string;
+    version: string;
+    type: string;
+    status: string;
+    title: string;
+    content: string;
+    clarifications: any[];
+    created_at: string;
+    updated_at: string;
+  }>> {
+    const params = version ? `?version=${version}` : '';
+    return this.get(`/brief/get${params}`);
   }
 
   /**
-   * GET /brief/master - Get master brief content
+   * GET /brief/clarifications - Get clarification Q&A history
    */
-  async getMasterBrief(): Promise<ApiResponse<{ content: string }>> {
-    return this.get('/brief/master');
+  async getClarifications(version?: string): Promise<ApiResponse<{ clarifications: any[]; count: number }>> {
+    const params = version ? `?version=${version}` : '';
+    return this.get(`/brief/clarifications${params}`);
   }
 
   /**
-   * GET /brief/working - Get working brief content
+   * GET /brief/list - List all briefs with type/status
    */
-  async getWorkingBrief(): Promise<ApiResponse<{ content: string }>> {
-    return this.get('/brief/working');
+  async listBriefs(version?: string): Promise<ApiResponse<{ briefs: any[]; count: number }>> {
+    const params = version ? `?version=${version}` : '';
+    return this.get(`/brief/list${params}`);
   }
 
   /**
-   * GET /brief/raw - Get raw brief.md content
+   * POST /brief/freeze - Freeze brief (clarified → frozen)
    */
-  async getRawBrief(): Promise<ApiResponse<{ content: string }>> {
-    return this.get('/brief/raw');
+  async freezeBrief(version: string): Promise<ApiResponse<{ brief_id: string; status: string; type: string }>> {
+    return this.post('/brief/freeze', { version });
+  }
+
+  /**
+   * POST /brief/rewrite - Rewrite brief with LLM
+   */
+  async rewriteBrief(brief_content?: string): Promise<ApiResponse<{ brief_id: string; content: string; tokens_used: number }>> {
+    return this.post('/brief/rewrite', { brief_content: brief_content || '' });
   }
 
   // ============================================================================

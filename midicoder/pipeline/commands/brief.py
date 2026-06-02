@@ -164,21 +164,31 @@ def _analyze_with_llm(
         
     except Exception as e:
         click.echo(f"❌ LLM call failed: {e}")
-        briefs_manager = BriefsManager()
-        briefs_manager.update_status(brief_id, "error")
+        # LLM call fail — brief vẫn ở status draft (error là transient state, không phải status)
         raise
     
     # Step 5: Parse JSON response
     click.echo("   → Đang parse JSON response...")
     llm_content = response.content.strip()
-    
+
+    # Strip <thinking> tags từ reasoning models (Qwen, o1, v.v.)
+    import re
+    llm_content = re.sub(r'<thinking>.*?</thinking>', '', llm_content, flags=re.DOTALL).strip()
+
+    # Extract JSON từ markdown code block
+    json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', llm_content, re.DOTALL)
+    if json_match:
+        llm_content = json_match.group(1).strip()
+
+    # Fallback: tìm object đầu tiên { ... }
+    if not llm_content.startswith('{'):
+        brace_start = llm_content.find('{')
+        if brace_start >= 0:
+            brace_end = llm_content.rfind('}')
+            if brace_end >= brace_start:
+                llm_content = llm_content[brace_start:brace_end + 1]
+
     try:
-        # Try to extract JSON if wrapped in markdown
-        if llm_content.startswith("```json"):
-            llm_content = llm_content.removeprefix("```json").removesuffix("```")
-        elif llm_content.startswith("```"):
-            llm_content = llm_content.removeprefix("```").removesuffix("```")
-        
         json_data = json.loads(llm_content)
         click.echo("   ✓ JSON parsed successfully")
         
@@ -253,7 +263,13 @@ def brief():
     type=str,
     help="Tên domain (optional)"
 )
-def analyze(domain):
+@click.option(
+    "--force", "-f",
+    is_flag=True,
+    default=False,
+    help="Ghi đè brief cũ mà không hỏi confirmation"
+)
+def analyze(domain, force):
     """
     Phân tích brief để extract requirements.
 
@@ -265,15 +281,17 @@ def analyze(domain):
 
     OPTIONS:
       --domain DOMAIN    Tên domain (optional)
+      --force, -f        Ghi đè brief cũ mà không hỏi confirmation
 
     EXAMPLES:
       midicoder brief analyze
       midicoder brief analyze --domain ecommerce
+      midicoder brief analyze --force
     """
-    _execute_analyze(domain)
+    _execute_analyze(domain, force)
 
 
-def _execute_analyze(domain: Optional[str] = None) -> None:
+def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
     """
     Thực thi phân tích brief.
 
@@ -282,6 +300,7 @@ def _execute_analyze(domain: Optional[str] = None) -> None:
 
     Args:
         domain: Tên domain (optional)
+        force: Ghi đè brief cũ mà không hỏi confirmation
 
     Raises:
         SystemExit: Nếu brief file không tồn tại hoặc không có active version
@@ -325,10 +344,13 @@ def _execute_analyze(domain: Optional[str] = None) -> None:
 
     if existing:
         click.echo(f"⚠️  Brief đã tồn tại: {existing.get('brief_id')}")
-        response = click.prompt("Ghi đè?", type=str, default="n")
-        if response.lower() != "y":
-            click.echo("❌ Hủy bỏ.")
-            return
+        if force:
+            click.echo("   → Ghi đè (--force)")
+        else:
+            response = click.prompt("Ghi đè?", type=str, default="n")
+            if response.lower() != "y":
+                click.echo("❌ Hủy bỏ.")
+                return
 
     # Bước 3: Tạo working-brief
     brief_id = f"brief-{uuid.uuid4().hex[:8]}"
@@ -406,8 +428,7 @@ def _execute_analyze(domain: Optional[str] = None) -> None:
         except Exception as e:
             click.echo(f"⚠️  Không thể record provenance: {e}")
         
-        # Bước 6: Update status
-        briefs_manager.update_status(brief_id, "analyzed")
+        # Bước 6: Brief vẫn ở status draft sau analyze (clarify → clarified → user frozen)
         
         # Bước 7: Hiển thị tóm tắt
         click.echo("")
@@ -422,7 +443,6 @@ def _execute_analyze(domain: Optional[str] = None) -> None:
         click.echo("   1. Kiểm tra ~/.midicoder/midicoder.json")
         click.echo("   2. Đảm bảo LLM server đang chạy")
         click.echo("   3. Chạy lại lệnh")
-        briefs_manager.update_status(brief_id, "error")
         raise SystemExit(1)
 
     # Done
@@ -620,11 +640,18 @@ def _execute_clarify(max_rounds: int = 10) -> None:
     briefs_manager = BriefsManager()
     briefs_manager.init()
 
-    # Tìm brief có status = analyzed hoặc type = working
+    # Tìm working-brief có analysis artifact (đã được analyze)
     active_brief = None
+    artifacts_manager = ArtifactsManager()
+    artifacts_manager.init()
     for brief in briefs_manager.list():
-        if brief.get("status") == "analyzed" or brief.get("type") == "working":
-            active_brief = brief
+        if brief.get("type") == "working":
+            # Check có analysis artifact chưa
+            bid = brief.get("brief_id")
+            for art in artifacts_manager.list(artifact_type="analysis", brief_id=bid):
+                active_brief = brief
+                break
+        if active_brief:
             break
 
     if not active_brief:

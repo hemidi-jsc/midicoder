@@ -103,7 +103,7 @@ export interface ClarificationStartResponse {
 }
 
 export interface ClarificationAnswersRequest {
-  clarification_id: string;
+  session_id: string;
   answers: Array<{
     question_id: string;
     values: string[];

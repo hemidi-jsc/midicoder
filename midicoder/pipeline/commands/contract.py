@@ -33,7 +33,7 @@ from midicoder.dsl.projection import ProjectionTree
 from midicoder.dsl.validator import validate_tree, ValidationStatus, ValidationReport
 from midicoder.pipeline.dsl_parser import DSLParser
 from midicoder.pipeline.prompts import load_prompt
-from litellm import APIError
+from openai import APIError
 from midicoder.pipeline.llm.client import (
     LlmConfig,
     call_llm,
