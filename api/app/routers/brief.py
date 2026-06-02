@@ -49,14 +49,23 @@ def _get_working_brief(mgr, version: str):
     return None
 
 
-def _log_lineage(mgr, brief_id: str, version: str, change_type: str, change_description: str):
+def _log_lineage(mgr, brief_id: str, version: str, change_type: str, change_description: str, old_hash: str = None, new_hash: str = None):
     """Log thay đổi vào brief_lineage table."""
     try:
         with mgr._get_connection() as conn:
-            conn.execute(
-                "INSERT INTO brief_lineage (brief_id, parent_brief_id, version, change_type, change_description) VALUES (?, ?, ?, ?, ?)",
-                (brief_id, brief_id, version, change_type, change_description),
-            )
+            # Kiểm tra schema có columns hash không (backward compat với DB cũ)
+            cursor = conn.execute("PRAGMA table_info(brief_lineage)")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if "old_content_hash" in columns:
+                conn.execute(
+                    "INSERT INTO brief_lineage (brief_id, parent_brief_id, version, change_type, change_description, old_content_hash, new_content_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (brief_id, brief_id, version, change_type, change_description, old_hash, new_hash),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO brief_lineage (brief_id, parent_brief_id, version, change_type, change_description) VALUES (?, ?, ?, ?, ?)",
+                    (brief_id, brief_id, version, change_type, change_description),
+                )
     except Exception:
         pass
 
@@ -70,7 +79,7 @@ def _upsert_brief(mgr, version: str, content: str, title: str = None, change_des
         brief_id = existing.get("brief_id")
         old_hash = existing.get("hash", "")
         if old_hash != content_hash:
-            _log_lineage(mgr, brief_id, version, "content_update", f"Content updated: {change_description}")
+            _log_lineage(mgr, brief_id, version, "content_update", f"Content updated: {change_description}", old_hash=old_hash, new_hash=content_hash)
         with mgr._get_connection() as conn:
             conn.execute(
                 "UPDATE briefs SET content = ?, hash = ?, title = ?, updated_at = datetime('now') WHERE brief_id = ?",
@@ -87,7 +96,7 @@ def _upsert_brief(mgr, version: str, content: str, title: str = None, change_des
                 title=title or content.split("\n")[0].strip()[:100],
                 brief_type="working",
             )
-            _log_lineage(mgr, brief_id, version, "created", "Brief created")
+            _log_lineage(mgr, brief_id, version, "created", "Brief created", old_hash=None, new_hash=content_hash)
             return brief_id, False
         except Exception:
             return None, False
@@ -197,7 +206,9 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
     # Update brief status dựa trên kết quả phân tích
     if not needs_clarification:
         briefs_manager.update_status(brief_id, "clarified")
-        _log_lineage(briefs_manager, brief_id, version, "status_change", f"Brief clarified (confidence={confidence:.2f})")
+        # Log lineage với hash của brief content
+        current_hash = hashlib.sha256(request_data.brief_content.encode("utf-8")).hexdigest()
+        _log_lineage(briefs_manager, brief_id, version, "status_change", f"Brief clarified (confidence={confidence:.2f})", old_hash=current_hash, new_hash=current_hash)
 
     return ApiResponse(
         success=True,
@@ -327,8 +338,9 @@ async def freeze_brief(version: str = Query(None), request: Request = None):
         return ApiResponse(success=False, data=None, message=f"Brief ở status {target.get('status')}, không thể freeze", language=language)
 
     brief_id = target.get("brief_id")
+    brief_hash = target.get("hash", "")
     mgr.update_status(brief_id, "frozen")
-    _log_lineage(mgr, brief_id, version, "frozen", "Brief frozen")
+    _log_lineage(mgr, brief_id, version, "frozen", "Brief frozen", old_hash=brief_hash, new_hash=brief_hash)
 
     return ApiResponse(success=True, data={"brief_id": brief_id, "status": "frozen"}, message="Brief đã được đóng", language=language)
 

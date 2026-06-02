@@ -218,6 +218,8 @@ CREATE TABLE IF NOT EXISTS brief_lineage (
     version TEXT NOT NULL,
     change_type TEXT,
     change_description TEXT,
+    old_content_hash TEXT,
+    new_content_hash TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (brief_id) REFERENCES briefs(brief_id) ON DELETE CASCADE,
     FOREIGN KEY (parent_brief_id) REFERENCES briefs(brief_id) ON DELETE SET NULL

@@ -300,12 +300,25 @@ import { PipelineStore } from '../../core/pipeline.store';
                         ? 'bg-green-900 bg-opacity-40 text-green-300 border border-green-700'
                         : entry.change_type === 'content_update'
                           ? 'bg-blue-900 bg-opacity-40 text-blue-300 border border-blue-700'
-                          : entry.change_type === 'frozen'
-                            ? 'bg-red-900 bg-opacity-40 text-red-300 border border-red-700'
-                            : 'bg-gray-900 bg-opacity-40 text-gray-300 border border-gray-700'">
+                          : entry.change_type === 'status_change'
+                            ? 'bg-purple-900 bg-opacity-40 text-purple-300 border border-purple-700'
+                            : entry.change_type === 'frozen'
+                              ? 'bg-red-900 bg-opacity-40 text-red-300 border border-red-700'
+                              : 'bg-gray-900 bg-opacity-40 text-gray-300 border border-gray-700'">
                   {{ entry.change_type }}
                 </span>
                 <span class="text-sm text-text-secondary flex-1">{{ entry.change_description }}</span>
+                @if (entry.old_content_hash && entry.new_content_hash) {
+                  @if (entry.change_type === 'content_update' && entry.old_content_hash !== entry.new_content_hash) {
+                    <span class="text-xs font-mono text-orange-300 bg-orange-900 bg-opacity-30 px-2 py-1 rounded">
+                      {{ entry.old_content_hash | slice:0:8 }} → {{ entry.new_content_hash | slice:0:8 }}
+                    </span>
+                  } @else {
+                    <span class="text-xs font-mono text-text-tertiary">
+                      #{{ entry.new_content_hash | slice:0:8 }}
+                    </span>
+                  }
+                }
               </div>
             }
           </div>
