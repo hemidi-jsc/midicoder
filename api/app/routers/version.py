@@ -15,13 +15,21 @@ router = APIRouter(prefix="/version", tags=["Version"])
 
 
 @router.post("/create", response_model=ApiResponse)
-async def create_version(
-    version: str = Query(..., description="Tên version (SemVer)"),
-    from_version: str = Query(None, description="Copy từ version này"),
-    request: Request = None,
-):
+async def create_version(request: Request = None):
     """Tạo version mới — reuse CLI `midicoder version create <name> [--from parent]`."""
     language = i18n.get_language_from_request(request)
+
+    body = await request.json()
+    version = body.get("version", "")
+    from_version = body.get("from_version")
+
+    if not version:
+        return ApiResponse(
+            success=False,
+            data=None,
+            message="Cần cung cấp 'version' trong request body",
+            language=language,
+        )
 
     args = {"_positional": version}
     if from_version:
@@ -46,12 +54,20 @@ async def create_version(
 
 
 @router.post("/use", response_model=ApiResponse)
-async def use_version(
-    version: str = Query(..., description="Version để switch"),
-    request: Request = None,
-):
+async def use_version(request: Request = None):
     """Switch version — reuse CLI `midicoder version use <name>`. Không có --from."""
     language = i18n.get_language_from_request(request)
+
+    body = await request.json()
+    version = body.get("version", "")
+
+    if not version:
+        return ApiResponse(
+            success=False,
+            data=None,
+            message="Cần cung cấp 'version' trong request body",
+            language=language,
+        )
 
     result = await cli_wrapper.execute_command("version", "use", {"_positional": version})
 

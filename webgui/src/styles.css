@@ -231,6 +231,61 @@ input[type="checkbox"] {
   50% { opacity: 0.5; }
 }
 
+/* Analysis result section overrides — better readability */
+.analysis-card {
+  background-color: rgba(16, 16, 24, 0.9);
+  border-color: rgba(252, 103, 103, 0.2) !important;
+}
+.analysis-card .text-text-tertiary {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+.analysis-card .text-sm,
+.analysis-card p {
+  color: rgba(255, 255, 255, 0.85);
+}
+.analysis-card table td {
+  color: rgba(255, 255, 255, 0.75) !important;
+}
+.analysis-card table thead th {
+  color: rgba(255, 255, 255, 0.55) !important;
+}
+.analysis-card table tbody tr {
+  background-color: rgba(16, 16, 24, 0.6);
+}
+.analysis-card table tbody tr:hover {
+  background-color: rgba(252, 103, 103, 0.06);
+}
+/* Resource grid cards brighter background */
+.analysis-card .grid > .p-3 {
+  background-color: rgba(30, 30, 45, 0.8) !important;
+}
+/* Colored section highlights with proper opacity */
+.analysis-card .bg-blue-900.bg-opacity-20 {
+  background-color: rgba(30, 58, 138, 0.35) !important;
+}
+.analysis-card .bg-yellow-900.bg-opacity-10 {
+  background-color: rgba(120, 80, 10, 0.3) !important;
+}
+
+/* Clarification session styling */
+.clarification-card {
+  background-color: rgba(16, 16, 24, 0.9);
+  border: 1px solid rgba(252, 103, 103, 0.2);
+}
+.clarification-question {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+.clarification-history-item {
+  background-color: rgba(30, 30, 45, 0.6);
+  border-left: 3px solid var(--brand-color);
+}
+
+/* General overrides */
+.bg-opacity-10 { opacity: 0.3; }
+.bg-opacity-20 { opacity: 0.35; }
+
 /* Rounded */
 .rounded { }
 .rounded-full { }

@@ -38,6 +38,23 @@ CREATE TABLE IF NOT EXISTS projects (
 
 CREATE INDEX IF NOT EXISTS idx_projects_active ON projects(active);
 CREATE INDEX IF NOT EXISTS idx_projects_path ON projects(path);
+
+-- Versions table: mỗi project có nhiều versions, chỉ 1 active mỗi lúc
+CREATE TABLE IF NOT EXISTS versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version_name TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    active INTEGER DEFAULT 0,
+    parent_version TEXT,
+    status TEXT DEFAULT 'draft',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(version_name, project_id),
+    FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_versions_active ON versions(active);
+CREATE INDEX IF NOT EXISTS idx_versions_project ON versions(project_id);
 """
 
 
@@ -208,3 +225,123 @@ class ProjectsManager:
         if active:
             return active.get("path")
         return None
+
+    # ------------------------------------------------------------------
+    # Version CRUD — lưu vào SQLite projects.db
+    # ------------------------------------------------------------------
+
+    def version_create(
+        self,
+        project_id: str,
+        version_name: str,
+        parent_version: Optional[str] = None,
+        set_active: bool = True,
+    ) -> Dict[str, Any]:
+        """Tạo version mới cho project."""
+        if set_active:
+            self.version_deactivate_all(project_id)
+
+        try:
+            with get_connection(self.db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO versions (version_name, project_id, active, parent_version, status)
+                    VALUES (?, ?, ?, ?, 'draft')
+                    """,
+                    (version_name, project_id, 1 if set_active else 0, parent_version),
+                )
+            return self.version_get(project_id, version_name) or {
+                "version_name": version_name,
+                "project_id": project_id,
+                "active": True,
+                "parent_version": parent_version,
+                "status": "draft",
+            }
+        except Exception as e:
+            # UNIQUE constraint violation
+            if "UNIQUE" in str(e) or "unique" in str(e).lower():
+                return self.version_get(project_id, version_name)
+            raise
+
+    def version_get(
+        self,
+        project_id: str,
+        version_name: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Lấy version theo project_id + version_name."""
+        with get_connection(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT * FROM versions WHERE project_id = ? AND version_name = ?",
+                (project_id, version_name),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def version_get_active(self, project_id: str) -> Optional[Dict[str, Any]]:
+        """Lấy version đang active của project."""
+        with get_connection(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT * FROM versions WHERE project_id = ? AND active = 1 LIMIT 1",
+                (project_id,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def version_list(self, project_id: str) -> List[Dict[str, Any]]:
+        """Lấy tất cả versions của project."""
+        with get_connection(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT * FROM versions WHERE project_id = ? ORDER BY created_at DESC",
+                (project_id,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def version_use(
+        self,
+        project_id: str,
+        version_name: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Switch active version của project."""
+        v = self.version_get(project_id, version_name)
+        if not v:
+            return None
+
+        with get_connection(self.db_path) as conn:
+            conn.execute(
+                "UPDATE versions SET active = 0 WHERE project_id = ?",
+                (project_id,),
+            )
+            conn.execute(
+                "UPDATE versions SET active = 1, status = 'active', updated_at = datetime('now') WHERE project_id = ? AND version_name = ?",
+                (project_id, version_name),
+            )
+        return self.version_get(project_id, version_name)
+
+    def version_delete(
+        self,
+        project_id: str,
+        version_name: str,
+        force: bool = False,
+    ) -> bool:
+        """Xóa version (không cho xóa active version trừ khi force)."""
+        v = self.version_get(project_id, version_name)
+        if not v:
+            return False
+
+        if v.get("active") and not force:
+            raise ValueError(f"Cannot delete active version '{version_name}'. Use force=True.")
+
+        with get_connection(self.db_path) as conn:
+            cursor = conn.execute(
+                "DELETE FROM versions WHERE project_id = ? AND version_name = ?",
+                (project_id, version_name),
+            )
+            return cursor.rowcount > 0
+
+    def version_deactivate_all(self, project_id: str):
+        """Deactivate tất cả versions của project."""
+        with get_connection(self.db_path) as conn:
+            conn.execute(
+                "UPDATE versions SET active = 0 WHERE project_id = ?",
+                (project_id,),
+            )

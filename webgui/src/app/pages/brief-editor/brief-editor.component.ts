@@ -97,13 +97,6 @@ interface SectionOpenState {
             }
           </span>
 
-          <!-- Rewrite Button -->
-          @if (briefInfo && briefInfo.status !== 'frozen') {
-            <button (click)="handleRewrite()" class="btn btn-secondary" [disabled]="isRewriting || isAnalyzing || !briefContent.trim()">
-              {{ isRewriting ? '⏳ Đang xử lý...' : '✏️ Viết lại' }}
-            </button>
-          }
-
           <!-- Freeze Button - chỉ hiện khi status === clarified -->
           @if (briefInfo && briefInfo.status === 'clarified') {
             <button (click)="handleFreeze()" class="btn btn-secondary" [disabled]="isFreezing">
@@ -149,7 +142,7 @@ interface SectionOpenState {
 
       <!-- Analysis Result -->
       @if (analysisResult) {
-        <div class="card mt-6">
+        <div class="card mt-6 analysis-card">
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-lg font-semibold">📊 Kết quả phân tích</h2>
             <div class="flex items-center gap-2">
@@ -175,16 +168,16 @@ interface SectionOpenState {
           <!-- Intent + Confidence -->
           <div class="mb-4 grid grid-cols-4 gap-4">
             <div>
-              <span class="text-text-tertiary text-xs">Domain</span>
-              <p class="text-sm font-medium">{{ analysisResult?.analysis?.intent?.domain }}</p>
+              <span class="text-text-secondary text-xs">Domain</span>
+              <p class="text-sm font-medium text-text-primary">{{ analysisResult?.analysis?.intent?.domain }}</p>
             </div>
             <div>
-              <span class="text-text-tertiary text-xs">Type</span>
-              <p class="text-sm font-medium">{{ analysisResult?.analysis?.intent?.type }}</p>
+              <span class="text-text-secondary text-xs">Type</span>
+              <p class="text-sm font-medium text-text-primary">{{ analysisResult?.analysis?.intent?.type }}</p>
             </div>
             <div>
-              <span class="text-text-tertiary text-xs">Scale</span>
-              <p class="text-sm font-medium">{{ analysisResult?.analysis?.intent?.scale }}</p>
+              <span class="text-text-secondary text-xs">Scale</span>
+              <p class="text-sm font-medium text-text-primary">{{ analysisResult?.analysis?.intent?.scale }}</p>
             </div>
             <div>
               <span class="text-text-tertiary text-xs">Confidence</span>
@@ -216,23 +209,23 @@ interface SectionOpenState {
             <div class="grid grid-cols-5 gap-3">
               <div class="p-3 bg-bg-secondary rounded text-center border border-border-primary">
                 <p class="text-2xl font-bold text-blue-400">{{ analysisResult?.metadata?.entities }}</p>
-                <p class="text-xs text-text-tertiary mt-1">Entities</p>
+                <p class="text-xs text-text-secondary mt-1">Entities</p>
               </div>
               <div class="p-3 bg-bg-secondary rounded text-center border border-border-primary">
                 <p class="text-2xl font-bold text-orange-400">{{ analysisResult?.metadata?.commands }}</p>
-                <p class="text-xs text-text-tertiary mt-1">Commands</p>
+                <p class="text-xs text-text-secondary mt-1">Commands</p>
               </div>
               <div class="p-3 bg-bg-secondary rounded text-center border border-border-primary">
                 <p class="text-2xl font-bold text-cyan-400">{{ analysisResult?.metadata?.queries }}</p>
-                <p class="text-xs text-text-tertiary mt-1">Queries</p>
+                <p class="text-xs text-text-secondary mt-1">Queries</p>
               </div>
               <div class="p-3 bg-bg-secondary rounded text-center border border-border-primary">
                 <p class="text-2xl font-bold text-purple-400">{{ analysisResult?.metadata?.events }}</p>
-                <p class="text-xs text-text-tertiary mt-1">Events</p>
+                <p class="text-xs text-text-secondary mt-1">Events</p>
               </div>
               <div class="p-3 bg-bg-secondary rounded text-center border border-border-primary">
                 <p class="text-2xl font-bold text-teal-400">{{ analysisResult?.metadata?.ui_components }}</p>
-                <p class="text-xs text-text-tertiary mt-1">UI Components</p>
+                <p class="text-xs text-text-secondary mt-1">UI Components</p>
               </div>
             </div>
           </div>
@@ -243,8 +236,8 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.entities?.length) {
               <div class="border border-border-primary rounded overflow-hidden">
                 <button (click)="toggleSection('entities')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm">📋 Entities ({{ analysisResult.analysis.entities.length }})</span>
-                  <svg class="h-4 w-4 text-text-tertiary transition-transform" [class.rotate-180]="sectionOpen.entities" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  <span class="font-medium text-sm text-text-primary">📋 Entities ({{ analysisResult.analysis.entities.length }})</span>
+                  <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.entities" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.entities) {
                   <div class="overflow-x-auto">
@@ -271,8 +264,8 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.commands?.length) {
               <div class="border border-border-primary rounded overflow-hidden">
                 <button (click)="toggleSection('commands')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm">⚡ Commands ({{ analysisResult.analysis.commands.length }})</span>
-                  <svg class="h-4 w-4 text-text-tertiary transition-transform" [class.rotate-180]="sectionOpen.commands" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  <span class="font-medium text-sm text-text-primary">⚡ Commands ({{ analysisResult.analysis.commands.length }})</span>
+                  <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.commands" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.commands) {
                   <div class="overflow-x-auto">
@@ -299,8 +292,8 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.queries?.length) {
               <div class="border border-border-primary rounded overflow-hidden">
                 <button (click)="toggleSection('queries')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm">🔍 Queries ({{ analysisResult.analysis.queries.length }})</span>
-                  <svg class="h-4 w-4 text-text-tertiary transition-transform" [class.rotate-180]="sectionOpen.queries" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  <span class="font-medium text-sm text-text-primary">🔍 Queries ({{ analysisResult.analysis.queries.length }})</span>
+                  <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.queries" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.queries) {
                   <div class="overflow-x-auto">
@@ -327,8 +320,8 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.events?.length) {
               <div class="border border-border-primary rounded overflow-hidden">
                 <button (click)="toggleSection('events')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm">🔔 Events ({{ analysisResult.analysis.events.length }})</span>
-                  <svg class="h-4 w-4 text-text-tertiary transition-transform" [class.rotate-180]="sectionOpen.events" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  <span class="font-medium text-sm text-text-primary">🔔 Events ({{ analysisResult.analysis.events.length }})</span>
+                  <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.events" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.events) {
                   <div class="overflow-x-auto">
@@ -355,8 +348,8 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.ui_components?.length) {
               <div class="border border-border-primary rounded overflow-hidden">
                 <button (click)="toggleSection('ui_components')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm">🎨 UI Components ({{ analysisResult.analysis.ui_components.length }})</span>
-                  <svg class="h-4 w-4 text-text-tertiary transition-transform" [class.rotate-180]="sectionOpen.ui_components" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  <span class="font-medium text-sm text-text-primary">🎨 UI Components ({{ analysisResult.analysis.ui_components.length }})</span>
+                  <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.ui_components" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.ui_components) {
                   <div class="overflow-x-auto">
@@ -386,9 +379,9 @@ interface SectionOpenState {
               <h3 class="font-medium text-yellow-400 mb-2">⚠️ Ambiguities ({{ analysisResult?.analysis?.ambiguities?.length }})</h3>
               <div class="space-y-2">
                 @for (ambiguity of analysisResult?.analysis?.ambiguities; track ambiguity.id) {
-                  <div class="p-3 bg-yellow-900 bg-opacity-10 rounded border-l-2 border-yellow-500">
+                  <div class="p-3 bg-yellow-900 bg-opacity-20 rounded border-l-2 border-yellow-500">
                     <p class="text-sm text-text-primary"><strong>{{ ambiguity.type }}:</strong> {{ ambiguity.description }}</p>
-                    <p class="text-sm text-text-tertiary mt-1">{{ ambiguity.source_text }}</p>
+                    <p class="text-sm text-text-secondary mt-1">{{ ambiguity.source_text }}</p>
                   </div>
                 }
               </div>
@@ -399,7 +392,7 @@ interface SectionOpenState {
           <div class="mt-4 flex justify-end gap-3">
             @if (analysisResult?.status === 'needs_clarification') {
               @if (!clarificationActive) {
-                <button (click)="startClarification()" class="btn btn-primary" [disabled]="isStartingClarification">
+                <button (click)="startBatchClarification()" class="btn btn-primary" [disabled]="isStartingClarification">
                   {{ isStartingClarification ? '⏳ Đang bắt đầu...' : '💬 Làm rõ yêu cầu →' }}
                 </button>
               }
@@ -410,58 +403,58 @@ interface SectionOpenState {
             }
           </div>
 
-          <!-- Clarification Inline Section -->
-          @if (clarificationActive && clarificationCurrentQuestion) {
-            <div class="mt-6 p-5 bg-purple-900 bg-opacity-20 border border-purple-500 rounded">
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="font-semibold text-purple-300">💬 Clarification Session</h3>
-                <span class="text-xs px-2 py-1 rounded bg-purple-900 bg-opacity-40 text-purple-300">
-                  Round {{ clarificationRound }}/{{ clarificationMaxRounds }}
-                </span>
+          <!-- Clarification Batch Section -->
+          @if (clarificationActive) {
+            <div class="clarification-batch-section">
+              <div class="clarification-batch-header">
+                <h3 class="clarification-batch-title">💬 Làm rõ các điểm chưa rõ</h3>
+                <p class="clarification-batch-subtitle">{{ clarificationAmbiguities.length }} điểm cần làm rõ — hãy điền câu trả lời cho từng mục</p>
               </div>
 
-              <!-- Q&A History Timeline -->
-              @if (clarificationQaHistory.length > 0) {
-                <div class="mb-4 space-y-2 max-h-60 overflow-y-auto">
-                  @for (qa of clarificationQaHistory; track qa.question) {
-                    <div class="p-3 bg-bg-secondary rounded text-sm">
-                      <p class="text-blue-400"><strong>Q:</strong> {{ qa.question }}</p>
-                      <p class="text-green-400 mt-1"><strong>A:</strong> {{ qa.answer }}</p>
+              <div class="clarification-batch-questions">
+                @for (amb of clarificationAmbiguities; track amb.id || amb.type) {
+                  <div class="clarification-ambiguity-card"
+                       [class.answered]="clarificationAnswers[amb.id || amb.type]?.trim()">
+                    <div class="ambiguity-badge-wrapper">
+                      <span class="ambiguity-type-badge"
+                            [class]="amb.type === 'undefined_behavior' ? 'amb-undefined' : amb.type === 'missing_detail' ? 'amb-missing' : 'amb-tech'">
+                        {{ amb.type }}
+                      </span>
+                      @if (clarificationAnswers[amb.id || amb.type]?.trim()) {
+                        <span class="ambiguity-checked">✓</span>
+                      }
                     </div>
-                  }
-                </div>
-              }
-
-              <!-- Current Question -->
-              <div class="mb-4 p-3 bg-purple-900 bg-opacity-30 rounded border-l-4 border-purple-400">
-                <p class="text-sm text-purple-200">{{ clarificationCurrentQuestion.question }}</p>
+                    <p class="ambiguity-description">{{ amb.description }}</p>
+                    @if (amb.source_text) {
+                      <p class="ambiguity-source">"— {{ amb.source_text }}"</p>
+                    }
+                    <textarea
+                      [(ngModel)]="clarificationAnswers[amb.id || amb.type]"
+                      placeholder="Điền câu trả lời của bạn..."
+                      rows="2"
+                      class="ambiguity-textarea"
+                    ></textarea>
+                  </div>
+                }
               </div>
 
-              <!-- Answer Input -->
-              <div class="flex gap-3">
-                <textarea
-                  [(ngModel)]="clarificationAnswer"
-                  class="flex-1 bg-bg-secondary border border-border-primary rounded p-3 text-sm text-text-primary resize-none focus:outline-none focus:border-accent-primary"
-                  rows="3"
-                  placeholder="Nhập câu trả lời của bạn..."
-                  (keydown.enter)="onClarificationKeydown($event)"
-                ></textarea>
-                <div class="flex flex-col gap-2">
-                  <button
-                    (click)="submitClarificationAnswer()"
-                    class="btn btn-primary text-sm"
-                    [disabled]="!clarificationAnswer.trim() || isSubmittingAnswer"
-                  >
-                    {{ isSubmittingAnswer ? '⏳' : 'Gửi' }}
-                  </button>
-                  <button
-                    (click)="clarificationActive = false; clarificationCurrentQuestion = null"
-                    class="text-xs text-text-tertiary hover:text-text-primary"
-                    [disabled]="isSubmittingAnswer"
-                  >
-                    Hủy
-                  </button>
-                </div>
+              <!-- Progress bar -->
+              <div class="clarification-progress-bar">
+                <div class="clarification-progress-fill" [style.width.%]="clarificationProgressPct"></div>
+              </div>
+              <p class="clarification-progress-text">{{ answeredCount }}/{{ clarificationAmbiguities.length }} câu đã trả lời</p>
+
+              <!-- Submit button -->
+              <div class="clarification-submit-row">
+                <button (click)="cancelClarification()" class="clarification-cancel-btn">Hủy</button>
+                <button (click)="submitBatchAnswers()" class="btn btn-primary clarification-submit-btn"
+                        [disabled]="answeredCount < clarificationAmbiguities.length || isSubmittingAnswers">
+                  @if (isSubmittingAnswers) {
+                    ⏳ Đang gửi...
+                  } @else {
+                    ✅ Gửi tất cả ({{ answeredCount }}/{{ clarificationAmbiguities.length }})
+                  }
+                </button>
               </div>
             </div>
           }
@@ -492,48 +485,98 @@ interface SectionOpenState {
           </div>
         </div>
       }
+    </div>
 
-      <!-- Change History (Lineage) -->
-      @if (showHistory && lineage.length > 0) {
-        <div class="card mt-6">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-semibold">📋 Lịch sử thay đổi ({{ lineage.length }})</h2>
-            <button (click)="showHistory = false" class="text-xs text-text-tertiary hover:text-text-primary">✕ Đóng</button>
+    <!-- History Modal Overlay -->
+    @if (showHistory) {
+      <div class="history-overlay" (click)="showHistory = false">
+        <div class="history-backdrop"></div>
+        <div class="history-modal" (click)="$event.stopPropagation()">
+          <!-- Header -->
+          <div class="history-header">
+            <div>
+              <h2 class="text-xl font-semibold text-white">📋 Lịch sử thay đổi</h2>
+              @if (lineage.length > 0) {
+                <p class="text-sm text-text-secondary mt-1">{{ lineage.length }} thay đổi đã được ghi nhận</p>
+              }
+            </div>
+            <button (click)="showHistory = false" class="text-text-secondary hover:text-white text-2xl leading-none px-2 py-1 rounded hover:bg-bg-secondary transition-colors close-btn" type="button">✕</button>
           </div>
-          <div class="space-y-2">
-            @for (entry of lineage; track entry.id) {
-              <div class="p-3 bg-bg-secondary rounded flex items-center gap-4">
-                <span class="text-xs font-mono text-text-tertiary whitespace-nowrap">{{ entry.created_at || '' }}</span>
-                <span class="text-xs px-2 py-0.5 rounded font-medium"
-                      [class]="entry.change_type === 'created'
-                        ? 'bg-green-900 bg-opacity-40 text-green-300 border border-green-700'
-                        : entry.change_type === 'content_update'
-                          ? 'bg-blue-900 bg-opacity-40 text-blue-300 border border-blue-700'
-                          : entry.change_type === 'status_change'
-                            ? 'bg-purple-900 bg-opacity-40 text-purple-300 border border-purple-700'
-                            : entry.change_type === 'frozen'
-                              ? 'bg-red-900 bg-opacity-40 text-red-300 border border-red-700'
-                              : 'bg-gray-900 bg-opacity-40 text-gray-300 border border-gray-700'">
-                  {{ entry.change_type }}
-                </span>
-                <span class="text-sm text-text-secondary flex-1">{{ entry.change_description }}</span>
-                @if (entry.old_content_hash && entry.new_content_hash) {
-                  @if (entry.change_type === 'content_update' && entry.old_content_hash !== entry.new_content_hash) {
-                    <span class="text-xs font-mono text-orange-300 bg-orange-900 bg-opacity-30 px-2 py-1 rounded">
-                      {{ entry.old_content_hash | slice:0:8 }} → {{ entry.new_content_hash | slice:0:8 }}
-                    </span>
-                  } @else {
-                    <span class="text-xs font-mono text-text-tertiary">
-                      #{{ entry.new_content_hash | slice:0:8 }}
-                    </span>
+          <!-- Body -->
+          <div class="history-body">
+            @if (lineage.length === 0) {
+              <div class="text-center py-16">
+                <p class="text-4xl mb-3">📝</p>
+                <p class="text-text-secondary text-base">Chưa có lịch sử thay đổi nào</p>
+                <p class="text-text-tertiary text-sm mt-1">Lịch sử sẽ tự động ghi nhận khi bạn chỉnh sửa brief</p>
+              </div>
+            }
+            @for (entry of lineage; track entry.id; let idx = $index) {
+              <div class="history-entry">
+                <!-- Timeline dot -->
+                <div class="history-dot-col">
+                  <div class="history-dot"
+                       [class]="entry.change_type === 'created'
+                         ? 'dot-green'
+                         : entry.change_type === 'content_update'
+                           ? 'dot-blue'
+                           : entry.change_type === 'status_change'
+                             ? 'dot-purple'
+                             : entry.change_type === 'frozen'
+                               ? 'dot-red'
+                               : 'dot-gray'">
+                  </div>
+                  @if (idx < lineage.length - 1) {
+                    <div class="history-line"></div>
                   }
-                }
+                </div>
+                <!-- Content -->
+                <div class="history-entry-content">
+                  <div class="history-entry-meta">
+                    <span class="history-badge"
+                          [class]="entry.change_type === 'created'
+                            ? 'badge-green'
+                            : entry.change_type === 'content_update'
+                              ? 'badge-blue'
+                              : entry.change_type === 'status_change'
+                                ? 'badge-purple'
+                                : entry.change_type === 'frozen'
+                                  ? 'badge-red'
+                                  : 'badge-gray'">
+                      {{ entry.change_type }}
+                    </span>
+                    <span class="text-xs font-mono text-text-secondary">{{ entry.created_at || '' }}</span>
+                  </div>
+                  <p class="history-description">{{ entry.change_description }}</p>
+                  @if (entry.old_content_hash && entry.new_content_hash) {
+                    @if (entry.change_type === 'content_update' && entry.old_content_hash !== entry.new_content_hash) {
+                      <div class="history-hash-row">
+                        <span class="text-xs font-mono text-orange-300 bg-orange-900/30 px-2 py-1 rounded">
+                          {{ entry.old_content_hash | slice:0:8 }}
+                        </span>
+                        <svg class="w-3 h-3 text-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                        <span class="text-xs font-mono text-green-300 bg-green-900/30 px-2 py-1 rounded">
+                          {{ entry.new_content_hash | slice:0:8 }}
+                        </span>
+                      </div>
+                    } @else {
+                      <span class="text-xs font-mono text-text-tertiary mt-1 inline-block">#{{ entry.new_content_hash | slice:0:8 }}</span>
+                    }
+                  }
+                </div>
               </div>
             }
           </div>
+          <!-- Footer -->
+          @if (lineage.length > 0) {
+            <div class="history-footer">
+              <span class="text-xs text-text-tertiary">Cập nhật cuối: {{ lineage[0]?.created_at || 'unknown' }}</span>
+              <button (click)="showHistory = false" class="btn btn-secondary text-xs">Đóng</button>
+            </div>
+          }
         </div>
-      }
-    </div>
+      </div>
+    }
   `,
   styles: [`
     @keyframes slideIn {
@@ -542,6 +585,287 @@ interface SectionOpenState {
     }
     .animate-slide-in {
       animation: slideIn 0.3s ease-out;
+    }
+
+    /* ---- Clarification Batch UI ---- */
+    .clarification-batch-section {
+      margin-top: 24px;
+      padding: 24px;
+      background: #14141f;
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      border-radius: 12px;
+    }
+    .clarification-batch-header {
+      margin-bottom: 20px;
+    }
+    .clarification-batch-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: #fff;
+      margin: 0 0 6px 0;
+    }
+    .clarification-batch-subtitle {
+      font-size: 0.875rem;
+      color: rgba(255, 255, 255, 0.5);
+      margin: 0;
+    }
+    .clarification-batch-questions {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .clarification-ambiguity-card {
+      padding: 16px;
+      background: #1a1a2e;
+      border: 1px solid rgba(252, 103, 103, 0.12);
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .clarification-ambiguity-card.answered {
+      border-color: rgba(63, 185, 80, 0.4);
+      background: rgba(63, 185, 80, 0.05);
+    }
+    .ambiguity-badge-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .ambiguity-type-badge {
+      font-size: 0.75rem;
+      padding: 2px 10px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .amb-undefined {
+      background: rgba(255, 166, 0, 0.2);
+      color: #ffb74d;
+      border: 1px solid rgba(255, 166, 0, 0.3);
+    }
+    .amb-missing {
+      background: rgba(255, 82, 82, 0.2);
+      color: #ff8a80;
+      border: 1px solid rgba(255, 82, 82, 0.3);
+    }
+    .amb-tech {
+      background: rgba(41, 121, 255, 0.2);
+      color: #82b1ff;
+      border: 1px solid rgba(41, 121, 255, 0.3);
+    }
+    .ambiguity-checked {
+      color: #3fb950;
+      font-size: 16px;
+      font-weight: bold;
+    }
+    .ambiguity-description {
+      font-size: 0.875rem;
+      color: rgba(255, 255, 255, 0.85);
+      line-height: 1.5;
+      margin: 0 0 6px 0;
+    }
+    .ambiguity-source {
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.4);
+      font-style: italic;
+      margin: 0 0 12px 0;
+    }
+    .ambiguity-textarea {
+      width: 100%;
+      padding: 10px 12px;
+      background: rgba(10, 10, 15, 0.6);
+      border: 1px solid rgba(252, 103, 103, 0.12);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 0.875rem;
+      font-family: inherit;
+      resize: vertical;
+      line-height: 1.5;
+      transition: border-color 0.2s;
+    }
+    .ambiguity-textarea:focus {
+      outline: none;
+      border-color: var(--brand-color);
+      box-shadow: 0 0 0 2px rgba(252, 103, 103, 0.1);
+    }
+    .ambiguity-textarea::placeholder {
+      color: rgba(255, 255, 255, 0.25);
+    }
+    .clarification-progress-bar {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .clarification-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #a855f7, #fc6767);
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+    .clarification-progress-text {
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.4);
+      text-align: center;
+      margin: 0 0 16px 0;
+    }
+    .clarification-submit-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .clarification-cancel-btn {
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid rgba(252, 103, 103, 0.12);
+      color: rgba(255, 255, 255, 0.5);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: all 0.2s;
+    }
+    .clarification-cancel-btn:hover {
+      color: #fff;
+      border-color: rgba(252, 103, 103, 0.3);
+    }
+    .clarification-submit-btn {
+      min-width: 200px;
+    }
+
+    /* ---- History Modal ---- */
+    .history-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .history-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+    }
+    .history-modal {
+      position: relative;
+      z-index: 10000;
+      width: 90%;
+      max-width: 720px;
+      max-height: 80vh;
+      background: #14141f;
+      border: 1px solid rgba(252,103,103,0.2);
+      border-radius: 12px;
+      box-shadow: 0 0 40px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+    }
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      border-bottom: 1px solid rgba(252,103,103,0.12);
+    }
+    .history-header h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #fff;
+      margin: 0;
+    }
+    .history-header p {
+      font-size: 0.875rem;
+      color: rgba(255,255,255,0.6);
+      margin-top: 4px;
+    }
+    .close-btn {
+      min-width: 32px;
+      text-align: center;
+    }
+    .history-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+    }
+    .history-entry {
+      display: flex;
+      gap: 16px;
+      padding: 16px;
+      background: #1a1a2e;
+      border-radius: 8px;
+      border: 1px solid rgba(252,103,103,0.12);
+      margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    .history-entry:hover {
+      border-color: rgba(252,103,103,0.4);
+    }
+    .history-dot-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 2px;
+    }
+    .history-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-green { background: #3fb950; box-shadow: 0 0 8px rgba(63,185,80,0.5); }
+    .dot-blue  { background: #3884ff; box-shadow: 0 0 8px rgba(56,132,255,0.5); }
+    .dot-purple{ background: #a855f7; box-shadow: 0 0 8px rgba(168,85,247,0.5); }
+    .dot-red   { background: #f85149; box-shadow: 0 0 8px rgba(248,81,73,0.5); }
+    .dot-gray  { background: #888; }
+    .history-line {
+      width: 1px;
+      flex: 1;
+      min-height: 20px;
+      margin-top: 4px;
+      background: rgba(252,103,103,0.12);
+    }
+    .history-entry-content {
+      flex: 1;
+      min-width: 0;
+    }
+    .history-entry-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+    .history-description {
+      font-size: 0.875rem;
+      color: #fff;
+      line-height: 1.6;
+      margin: 0;
+    }
+    .history-hash-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .history-badge {
+      font-size: 0.75rem;
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .badge-green  { background: rgba(63,185,80,0.2); color: #56d364; border: 1px solid rgba(63,185,80,0.3); }
+    .badge-blue   { background: rgba(56,132,255,0.2); color: #58a6ff; border: 1px solid rgba(56,132,255,0.3); }
+    .badge-purple { background: rgba(168,85,247,0.2); color: #c084fc; border: 1px solid rgba(168,85,247,0.3); }
+    .badge-red    { background: rgba(248,81,73,0.2); color: #f87171; border: 1px solid rgba(248,81,73,0.3); }
+    .badge-gray   { background: rgba(136,136,136,0.2); color: #999; border: 1px solid rgba(136,136,136,0.3); }
+    .history-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      border-top: 1px solid rgba(252,103,103,0.12);
     }
   `],
 })
@@ -553,7 +877,6 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   }
 
   isAnalyzing = false;
-  isRewriting = false;
   isFreezing = false;
   saveStatus: 'idle' | 'saving' | 'saved' = 'idle';
   analysisResult: any = null;
@@ -571,14 +894,28 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
     ui_components: false,
   };
 
-  // Clarification inline session
+  // Clarification inline session — batch mode
   clarificationActive = false;
   clarificationSessionId: string | null = null;
-  clarificationCurrentQuestion: any = null;
-  clarificationAnswer = '';
-  clarificationRound = 1;
-  clarificationMaxRounds = 10;
-  clarificationQaHistory: Array<{question: string; answer: string}> = [];
+  clarificationAmbiguities: any[] = [];
+  clarificationAnswers: Record<string, string> = {};
+  isSubmittingAnswers = false;
+
+  get answeredCount(): number {
+    return Object.values(this.clarificationAnswers).filter(v => v?.trim()).length;
+  }
+  get clarificationProgressPct(): number {
+    if (this.clarificationAmbiguities.length === 0) return 0;
+    return (this.answeredCount / this.clarificationAmbiguities.length) * 100;
+  }
+
+  cancelClarification(): void {
+    this.clarificationActive = false;
+    this.clarificationAmbiguities = [];
+    this.clarificationAnswers = {};
+    this.clarificationSessionId = null;
+    this.cdr.detectChanges();
+  }
   isStartingClarification = false;
   isSubmittingAnswer = false;
 
@@ -664,9 +1001,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
 
   onClarificationKeydown(event: Event): void {
     const kbEvent = event as KeyboardEvent;
-    if (kbEvent.ctrlKey) {
-      this.submitClarificationAnswer();
-    }
+    // Ctrl+Enter no longer triggers single answer submit (batch mode)
   }
 
   // ============================================================================
@@ -706,7 +1041,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   }
 
   // ============================================================================
-  // Actions: Analyze, Rewrite, Freeze
+  // Actions: Analyze, Freeze
   // ============================================================================
 
   async handleAnalyze(): Promise<void> {
@@ -752,34 +1087,6 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
     }
   }
 
-  async handleRewrite(): Promise<void> {
-    if (!this.briefContent.trim()) {
-      this.showToast('Vui lòng nhập brief', 'error');
-      return;
-    }
-
-    this.isRewriting = true;
-    this.cdr.detectChanges();
-
-    try {
-      const result = await this.api.rewriteBrief(this.briefContent);
-
-      if (result.success && result.data?.content) {
-        this.briefContent = result.data.content;
-        this._lastSavedContent = result.data.content;
-        this.showToast('Viết lại brief thành công', 'success');
-        await this.loadBrief();
-      } else {
-        this.showToast(result.error?.message || 'Viết lại thất bại', 'error');
-      }
-    } catch {
-      this.showToast('Lỗi kết nối server', 'error');
-    } finally {
-      this.isRewriting = false;
-      this.cdr.detectChanges();
-    }
-  }
-
   async handleFreeze(): Promise<void> {
     this.isFreezing = true;
     this.cdr.detectChanges();
@@ -816,94 +1123,72 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   }
 
   // ============================================================================
-  // Clarification inline session
+  // Clarification batch session
   // ============================================================================
 
-  async startClarification(): Promise<void> {
-    this.isStartingClarification = true;
-    this.cdr.detectChanges();
+  async startBatchClarification(): Promise<void> {
+    // Auto-save brief trước
+    if (this.hasUnsavedChanges) await this.autoSave();
 
-    try {
-      const result = await this.api.startClarification({ version: this.activeVersion });
-
-      if (result.success && result.data) {
-        if (result.data.status === 'ready') {
-          // LLM nói đã đủ rõ, không cần clarify
-          this.showToast('Brief đã đủ rõ!', 'success');
-          await this.loadBrief();
-          return;
-        }
-
-        if (result.data.questions && result.data.questions.length > 0) {
-          this.clarificationActive = true;
-          this.clarificationSessionId = result.data.clarification_id;
-          this.clarificationCurrentQuestion = result.data.questions[0];
-          this.clarificationRound = result.data.round || 1;
-          this.clarificationQaHistory = [];
-          this.clarificationAnswer = '';
-          this.cdr.detectChanges();
-        }
-      } else {
-        this.showToast(result.message || 'Không thể bắt đầu clarification', 'error');
-      }
-    } catch {
-      this.showToast('Lỗi kết nối server', 'error');
-    } finally {
-      this.isStartingClarification = false;
-      this.cdr.detectChanges();
+    // Lấy ambiguities từ analysisResult hiện tại
+    const ambiguities = this.analysisResult?.analysis?.ambiguities || [];
+    if (ambiguities.length === 0) {
+      this.showToast('Không có ambiguity cần làm rõ', 'error');
+      return;
     }
+
+    // Set up batch UI với ambiguities từ analysis
+    this.clarificationSessionId = null;
+    this.clarificationAmbiguities = ambiguities.map((a: any, i: number) => ({
+      id: a.id || `amb-${i}`,
+      type: a.type || 'general',
+      description: a.description || '',
+      source_text: a.source_text || '',
+    }));
+    this.clarificationAnswers = {};
+    this.clarificationActive = true;
+    this.isStartingClarification = false;
+    this.cdr.detectChanges();
   }
 
-  async submitClarificationAnswer(): Promise<void> {
-    if (!this.clarificationAnswer.trim() || !this.clarificationSessionId) return;
+  async submitBatchAnswers(): Promise<void> {
+    if (this.answeredCount < this.clarificationAmbiguities.length) {
+      this.showToast('Vui lòng trả lời tất cả các câu hỏi', 'error');
+      return;
+    }
 
-    this.isSubmittingAnswer = true;
+    this.isSubmittingAnswers = true;
     this.cdr.detectChanges();
 
     try {
-      const answerText = this.clarificationAnswer.trim();
-      const result = await this.api.submitClarificationAnswers({
-        session_id: this.clarificationSessionId,
-        answers: [{
-          question_id: this.clarificationCurrentQuestion.id,
-          values: [answerText],
-          notes: '',
-        }],
+      // Build answers text and append to brief content
+      const answersText = this.clarificationAmbiguities
+        .map(amb => `[${amb.type}]: ${this.clarificationAnswers[amb.id] || ''}`)
+        .join('\n');
+
+      const updatedContent = this.briefContent + '\n\n--- Câu trả lời làm rõ ---\n' + answersText;
+
+      // Re-analyze brief with clarified content
+      const result = await this.api.analyzeBrief({
+        brief_content: updatedContent,
+        version: this.activeVersion,
       });
 
       if (result.success && result.data) {
-        // Lưu Q&A vào history
-        this.clarificationQaHistory.push({
-          question: this.clarificationCurrentQuestion.question,
-          answer: answerText,
-        });
-
-        if (result.data.status === 'ready') {
-          // Hoàn tất clarification
-          this.showToast(`Clarification hoàn tất sau ${this.clarificationRound} rounds!`, 'success');
-          this.clarificationActive = false;
-          this.clarificationCurrentQuestion = null;
-          this.clarificationSessionId = null;
-          this.clarificationQaHistory = [];
-          this.clarificationAnswer = '';
-          await this.loadBrief();
-          return;
-        }
-
-        if (result.data.status === 'more_questions' && result.data.questions) {
-          // Còn câu hỏi tiếp theo
-          this.clarificationCurrentQuestion = result.data.questions[0];
-          this.clarificationRound = result.data.round || this.clarificationRound + 1;
-          this.clarificationAnswer = '';
-          this.cdr.detectChanges();
-        }
+        this.analysisResult = result.data;
+        this.briefContent = updatedContent;
+        this._lastSavedContent = updatedContent;
+        this.showToast('Làm rõ yêu cầu thành công! Analysis đã được cập nhật', 'success');
+        this.cancelClarification();
+        await this.loadBrief();
+        await this.loadLineage();
       } else {
-        this.showToast(result.message || 'Gửi câu trả lời thất bại', 'error');
+        this.showToast(result.error?.message || 'Lỗi khi xử lý clarification', 'error');
       }
     } catch {
       this.showToast('Lỗi kết nối server', 'error');
     } finally {
-      this.isSubmittingAnswer = false;
+      this.isSubmittingAnswers = false;
       this.cdr.detectChanges();
     }
   }

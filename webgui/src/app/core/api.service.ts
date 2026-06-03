@@ -438,13 +438,6 @@ export class ApiService {
     return this.post('/brief/freeze', { version });
   }
 
-  /**
-   * POST /brief/rewrite - Rewrite brief with LLM
-   */
-  async rewriteBrief(brief_content?: string): Promise<ApiResponse<{ brief_id: string; content: string; tokens_used: number }>> {
-    return this.post('/brief/rewrite', { brief_content: brief_content || '' });
-  }
-
   // ============================================================================
   // CONTRACT ENDPOINTS
   // ============================================================================

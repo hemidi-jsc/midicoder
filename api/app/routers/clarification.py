@@ -1,9 +1,9 @@
 """
 Router cho clarification Q&A sessions.
 
-Reuse logic từ midicoder.pipeline.commands.brief:
-- _generate_clarification_question() — LLM generate question
-- _save_clarification() — lưu Q&A vào SQLite
+Reuse logic từ midicoder.pipeline.analyze (pure module):
+- generate_clarification_question() — LLM generate question (không phụ thuộc click)
+- _save_clarification() — lưu Q&A vào SQLite (import từ CLI, dùng BriefsManager)
 - _convert_to_master_brief() — convert working→master
 """
 
@@ -16,22 +16,22 @@ from fastapi import Query, Request
 from app.i18n import i18n
 from app.models import ApiResponse
 
-# Lazy import CLI functions — tránh import CLI khi app startup
-_generate_clarification_question = None
+# Pure function — không phụ thuộc click, import trực tiếp từ midicoder
+from midicoder.pipeline.analyze import generate_clarification_question
+
+# CLI-only functions (dùng BriefsManager internal) — lazy import
 _save_clarification = None
 _convert_to_master_brief = None
 
 
-def _get_cli_functions():
-    """Lazy import CLI functions từ brief.py"""
-    global _generate_clarification_question, _save_clarification, _convert_to_master_brief
-    if _generate_clarification_question is None:
+def _get_cli_helpers():
+    """Lazy import CLI helper functions từ brief.py (không phải logic, chỉ là DB helpers)."""
+    global _save_clarification, _convert_to_master_brief
+    if _save_clarification is None:
         from midicoder.pipeline.commands.brief import (
-            _generate_clarification_question as _gcq,
             _save_clarification as _sc,
             _convert_to_master_brief as _cmb,
         )
-        _generate_clarification_question = _gcq
         _save_clarification = _sc
         _convert_to_master_brief = _cmb
 
@@ -93,10 +93,9 @@ async def start_clarification(
     language = i18n.get_language_from_request(request)
     version = request_data.version or "v1.0.0"
 
-    _get_cli_functions()
+    _get_cli_helpers()
 
     from midicoder.storage.sqlite import BriefsManager, ArtifactsManager
-    from midicoder.pipeline.llm import load_llm_config
 
     briefs_manager = BriefsManager(db_path=_get_project_db_path("briefs.db"))
     briefs_manager.init()
@@ -144,25 +143,13 @@ async def start_clarification(
             language=language,
         )
 
-    # Bước 3: Load LLM config + generate câu hỏi đầu tiên
-    try:
-        llm_config = load_llm_config()
-    except Exception as e:
-        return ApiResponse(
-            success=False,
-            data=None,
-            message=f"Lỗi load LLM config: {str(e)}",
-            language=language,
-        )
-
     domain = active_brief.get("domain", "generic")
     qa_history = []
 
-    # Generate câu hỏi đầu tiên (reuse CLI function)
-    needs_more, question_text = _generate_clarification_question(
+    # Generate câu hỏi đầu tiên (pure function từ midicoder.pipeline.analyze)
+    needs_more, question_text = generate_clarification_question(
         analysis_data=analysis_data,
         qa_history=qa_history,
-        llm_config=llm_config,
         domain=domain,
     )
 
@@ -245,7 +232,7 @@ async def submit_clarification_answers(
     session_id = request_data.session_id
     answers = request_data.answers
 
-    _get_cli_functions()
+    _get_cli_helpers()
 
     store = _get_session_store()
     session = store.get(session_id)
@@ -259,7 +246,6 @@ async def submit_clarification_answers(
         )
 
     from midicoder.storage.sqlite import BriefsManager
-    from midicoder.pipeline.llm import load_llm_config
 
     briefs_manager = BriefsManager(db_path=_get_project_db_path("briefs.db"))
     briefs_manager.init()
@@ -291,12 +277,10 @@ async def submit_clarification_answers(
             "answer": answer_text,
         })
 
-    # Generate câu hỏi tiếp theo
-    llm_config = load_llm_config()
-    needs_more, next_question = _generate_clarification_question(
+    # Generate câu hỏi tiếp theo (pure function)
+    needs_more, next_question = generate_clarification_question(
         analysis_data=session["analysis_data"],
         qa_history=qa_history,
-        llm_config=llm_config,
         domain=session["domain"],
     )
 

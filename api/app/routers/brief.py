@@ -10,7 +10,6 @@ Kiến trúc:
 
 import hashlib
 import json
-import re
 import uuid
 from pathlib import Path
 
@@ -123,11 +122,11 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
     if not brief_id:
         return ApiResponse(success=False, data=None, message="Không thể lưu brief vào SQLite", language=language)
 
-    # Reuse 100% CLI pipeline function
-    from midicoder.pipeline.commands.brief import _analyze_with_llm
+    # Reuse 100% CLI pipeline function — import từ pure module
+    from midicoder.pipeline.analyze import analyze_brief_with_llm
 
     try:
-        analysis = _analyze_with_llm(
+        analysis = analyze_brief_with_llm(
             brief_content=request_data.brief_content,
             domain=None,
             brief_id=brief_id,
@@ -177,15 +176,13 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
         )
 
     ambiguities = json_data.get("ambiguities", [])
-    needs_clarification = bool(ambiguities) or confidence < 0.8
 
-    # Analysis hoàn tất — brief vẫn giữ status 'draft'
-    # Status 'clarified' chỉ được set khi clarification Q&A hoàn tất
-
+    # Luôn trả về "needs_clarification" sau khi analyze
+    # User có thể skip clarify nếu brief đã đủ rõ (clarify done=True ngay lập tức)
     return ApiResponse(
         success=True,
         data={
-            "status": "needs_clarification" if needs_clarification else "ready_for_contract",
+            "status": "needs_clarification",
             "analysis": {
                 "intent": {
                     "domain": json_data.get("domain", analysis.domain),
@@ -235,58 +232,6 @@ async def save_brief(request_data: BriefSaveRequest = None, request: Request = N
         return ApiResponse(success=False, data=None, message="Failed to save brief", language=language)
 
     return ApiResponse(success=True, data={"saved": True}, message="OK", language=language)
-
-
-@router.post("/rewrite", response_model=ApiResponse)
-async def rewrite_brief(request_data: BriefAnalyzeRequest = None, request: Request = None):
-    """Viết lại brief bằng LLM — upsert content mới + log lineage."""
-    if request_data is None:
-        request_data = BriefAnalyzeRequest(brief_content="")
-
-    language = i18n.get_language_from_request(request)
-    version = request_data.version or "v1.0.0"
-
-    from midicoder.storage.sqlite import BriefsManager
-    mgr = BriefsManager(db_path=_get_project_db_path("briefs.db"))
-    mgr.init()
-
-    existing = _get_working_brief(mgr, version)
-    if not existing:
-        return ApiResponse(success=False, data=None, message="Không tìm thấy brief để rewrite", language=language)
-
-    brief_content = request_data.brief_content or existing.get("content", "")
-    if not brief_content.strip():
-        return ApiResponse(success=False, data=None, message="Brief content không được để trống", language=language)
-
-    from midicoder.pipeline.llm import load_llm_config, call_llm
-
-    try:
-        llm_config = load_llm_config()
-    except Exception as e:
-        return ApiResponse(success=False, data=None, message=f"Lỗi load LLM config: {str(e)}", language=language)
-
-    rewrite_prompt = (
-        "Bạn là technical writer chuyên nghiệp. Cải thiện brief dưới đây để rõ ràng, cụ thể hơn.\n\n"
-        f"## Brief gốc:\n{brief_content}"
-    )
-
-    try:
-        response = call_llm(
-            config=llm_config,
-            system="Cải thiện brief để rõ ràng, cụ thể hơn.",
-            messages=[{"role": "user", "content": rewrite_prompt}],
-        )
-        improved_content = response.content.strip()
-        brief_id, _ = _upsert_brief(mgr, version, improved_content, existing.get("title", ""), change_description="LLM rewrite")
-
-        return ApiResponse(
-            success=True,
-            data={"brief_id": brief_id, "content": improved_content, "tokens_used": response.usage.get("total_tokens", 0)},
-            message="Rewrite brief thành công",
-            language=language,
-        )
-    except Exception as e:
-        return ApiResponse(success=False, data=None, message=f"LLM rewrite failed: {str(e)}", language=language)
 
 
 @router.post("/freeze", response_model=ApiResponse)

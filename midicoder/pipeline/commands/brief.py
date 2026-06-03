@@ -44,27 +44,11 @@ from midicoder.pipeline.context_feed import (
     get_brief_context,
     get_clarify_context,
 )
-
-
-@dataclass
-class BriefAnalysis:
-    """
-    Kết quả phân tích brief.
-    
-    Attributes:
-        json_data: JSON structured data (entities, commands, queries, events)
-        text_summary: Tóm tắt text
-        domain: Domain detected
-        confidence: Độ tin cậy
-        tokens_used: Số tokens LLM đã dùng
-        latency_ms: Thời gian LLM call (ms)
-    """
-    json_data: dict
-    text_summary: str
-    domain: str
-    confidence: float
-    tokens_used: int = 0
-    latency_ms: int = 0
+from midicoder.pipeline.analyze import (
+    BriefAnalysis,
+    analyze_brief_with_llm,
+    generate_clarification_question,
+)
 
 
 def _analyze_with_llm(
@@ -73,171 +57,28 @@ def _analyze_with_llm(
     brief_id: str,
 ) -> BriefAnalysis:
     """
-    Gọi LLM để phân tích brief.
-    
-    Process:
-    1. Xác định domain (user-provided hoặc auto-detect)
-    2. Load domain prompt template
-    3. Query codebase context (optional)
-    4. Call LLM với prompt + brief content (+ context)
-    5. Parse JSON response
-    6. Tạo text summary từ JSON
-    
-    Args:
-        brief_content: Nội dung brief (Markdown)
-        domain: Domain user-provided (optional)
-        brief_id: Brief ID (cho artifact naming)
-    
-    Returns:
-        BriefAnalysis với json_data và text_summary
-    
-    Raises:
-        MidicoderError: Khi LLM call fail hoặc JSON parse error
+    CLI wrapper cho analyze_brief_with_llm — thêm click.echo output.
+
+    Delegate vào pure module (midicoder.pipeline.analyze), thêm progress
+    output cho CLI user.
     """
-    # Step 1: Load LLM config
+    click.echo("   → Đang xác định domain...")
     try:
-        llm_config = load_llm_config()
-    except Exception as e:
-        click.echo(f"⚠️  Không thể load LLM config: {e}")
-        click.echo("💡 Cấu hình LLM tại ~/.midicoder/midicoder.json")
-        raise
-    
-    # Step 2: Xác định domain
-    if domain:
-        final_domain = normalize_domain(domain)
-        click.echo(f"   → Domain (user-provided): {final_domain}")
-    else:
-        click.echo("   → Đang auto-detect domain...")
-        final_domain = detect_domain(brief_content, llm_config)
-        click.echo(f"   → Domain detected: {final_domain}")
-    
-    # Step 3: Load prompt template
-    try:
-        system_prompt = get_domain_prompt(final_domain)
-        click.echo(f"   → Đã load prompt template")
-    except Exception as e:
-        click.echo(f"⚠️  Lỗi load prompt: {e}, dùng default")
-        system_prompt = get_domain_prompt("generic")
-    
-    # Step 3.5: Query codebase context (optional enhancement)
-    click.echo("   → Đang query codebase context...")
-    try:
-        context_result = get_brief_context(
+        analysis = analyze_brief_with_llm(
             brief_content=brief_content,
-            domain=final_domain,
-            model_name=llm_config.model,
-            system_prompt=system_prompt,  # Pass system prompt để tính total tokens
+            domain=domain,
+            brief_id=brief_id,
         )
-        
-        if context_result.warning:
-            click.echo(f"   {context_result.warning}")
-        elif context_result.context_items:
-            click.echo(f"   ✓ Codebase context: {len(context_result.context_items)} items, {context_result.token_count} tokens")
-            click.echo(f"   → Total tokens: brief={context_result.brief_tokens}, system={context_result.system_tokens}, context={context_result.token_count}, total={context_result.total_tokens}")
-        else:
-            click.echo("   ⚠️ Không tìm thấy codebase context (chạy 'midicoder index' để index codebase)")
-    except Exception as e:
-        click.echo(f"   ⚠️ Không thể query codebase context: {e}")
-        context_result = None
-    
-    # Build user message với context (nếu có)
-    user_message_content = brief_content
-    if context_result and context_result.formatted_context:
-        # Inject context vào đầu user message
-        user_message_content = f"{context_result.formatted_context}\n\n## Brief Content:\n{brief_content}"
-    
-    # Step 4: Call LLM
-    click.echo("   → Đang gọi LLM...")
-    start_time = time.time()
-    
-    try:
-        response = call_llm(
-            config=llm_config,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message_content}],
-        )
-        
-        latency_ms = int((time.time() - start_time) * 1000)
-        tokens_used = response.usage.get("total_tokens", 0)
-        
-        click.echo(f"   ✓ LLM response: {tokens_used} tokens, {latency_ms}ms")
-        
     except Exception as e:
         click.echo(f"❌ LLM call failed: {e}")
-        # LLM call fail — brief vẫn ở status draft (error là transient state, không phải status)
         raise
-    
-    # Step 5: Parse JSON response
-    click.echo("   → Đang parse JSON response...")
-    llm_content = response.content.strip()
 
-    # Strip <thinking> tags từ reasoning models (Qwen, o1, v.v.)
-    import re
-    llm_content = re.sub(r'<thinking>.*?</thinking>', '', llm_content, flags=re.DOTALL).strip()
+    click.echo(f"   ✓ Domain: {analysis.domain}")
+    click.echo(f"   ✓ LLM response: {analysis.tokens_used} tokens, {analysis.latency_ms}ms")
+    click.echo(f"   ✓ Confidence: {analysis.confidence:.0%}")
+    click.echo("   ✓ JSON parsed successfully")
 
-    # Extract JSON từ markdown code block
-    json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', llm_content, re.DOTALL)
-    if json_match:
-        llm_content = json_match.group(1).strip()
-
-    # Fallback: tìm object đầu tiên { ... }
-    if not llm_content.startswith('{'):
-        brace_start = llm_content.find('{')
-        if brace_start >= 0:
-            brace_end = llm_content.rfind('}')
-            if brace_end >= brace_start:
-                llm_content = llm_content[brace_start:brace_end + 1]
-
-    try:
-        json_data = json.loads(llm_content)
-        click.echo("   ✓ JSON parsed successfully")
-        
-    except json.JSONDecodeError as e:
-        click.echo(f"❌ JSON parse error: {e}")
-        click.echo("💡 Lưu raw response vào artifact")
-        
-        # Lưu raw response vào artifact
-        artifacts_manager = ArtifactsManager()
-        artifacts_manager.init()
-        artifacts_manager.create(
-            artifact_id=f"analysis-{brief_id}",
-            artifact_type="analysis",
-            name="Brief Analysis (Raw)",
-            version="v1.0.0",
-            brief_id=brief_id,
-            content=llm_content,
-            metadata={"error": "JSON parse failed", "latency_ms": latency_ms},
-        )
-        
-        raise
-    
-    # Step 6: Tạo text summary từ JSON
-    entities = json_data.get("entities", [])
-    commands = json_data.get("commands", [])
-    queries = json_data.get("queries", [])
-    events = json_data.get("events", [])
-    ui_components = json_data.get("ui_components", [])
-    confidence = json_data.get("confidence", 0.5)
-    summary = json_data.get("summary", "")
-
-    text_summary = f"""Tóm tắt phân tích brief:
-- Domain: {final_domain.title()}
-- Số entities: {len(entities)} ({', '.join(e.get('name', '') for e in entities[:5])})
-- Số commands: {len(commands)}
-- Số queries: {len(queries)}
-- Số events: {len(events)}
-- Số UI components: {len(ui_components)}
-- Độ tin cậy: {confidence:.0%}
-- {summary}"""
-    
-    return BriefAnalysis(
-        json_data=json_data,
-        text_summary=text_summary,
-        domain=final_domain,
-        confidence=confidence,
-        tokens_used=tokens_used,
-        latency_ms=latency_ms,
-    )
+    return analysis
 
 
 @click.group()
@@ -485,95 +326,21 @@ def _generate_clarification_question(
     domain: str,
 ) -> tuple[bool, str]:
     """
-    Gọi LLM để generate clarification question.
+    CLI wrapper cho generate_clarification_question — thêm click.echo output.
 
-    Sử dụng brief-clarify.md prompt template với narrower context focus.
-
-    Args:
-        analysis_data: Analysis JSON từ brief analyze
-        qa_history: Lịch sử Q&A (list of {question, answer})
-        llm_config: LLM config
-        domain: Domain name
-
-    Returns:
-        (needs_more, question_text)
-        - needs_more=True: Còn cần hỏi thêm
-        - needs_more=False: Đã đủ rõ, kết thúc
+    Delegate vào pure module (midicoder.pipeline.analyze).
     """
-    # Load clarification prompt
     try:
-        system_prompt = get_domain_prompt(domain, prompt_type="clarify")
-    except Exception:
-        click.echo("⚠️  Không load được domain prompt, dùng default")
-        system_prompt = get_domain_prompt("generic", prompt_type="clarify")
-
-    # Query codebase context với narrower focus (dựa trên analysis + Q&A history)
-    try:
-        context_result = get_clarify_context(
+        needs_more, question = generate_clarification_question(
             analysis_data=analysis_data,
             qa_history=qa_history,
-            model_name=llm_config.model,
+            domain=domain,
         )
-        
-        if context_result.warning:
-            click.echo(f"   {context_result.warning}")
-        elif context_result.context_items:
-            click.echo(f"   ✓ Clarify context: {len(context_result.context_items)} items")
-        else:
-            click.echo("   ⚠️ Không tìm thấy codebase context cho clarification")
-    except Exception as e:
-        click.echo(f"   ⚠️ Không thể query codebase context: {e}")
-        context_result = None
-
-    # Build user message với context + analysis + history
-    user_content_parts = []
-    
-    # Inject context vào đầu (nếu có)
-    if context_result and context_result.formatted_context:
-        user_content_parts.append(context_result.formatted_context)
-    
-    # Thêm brief analysis
-    user_content_parts.append(f"## Brief Analysis:\n{json.dumps(analysis_data, indent=2, ensure_ascii=False)}")
-    
-    # Thêm Q&A history
-    user_content_parts.append("\n## Q&A History:")
-    if qa_history:
-        for i, qa in enumerate(qa_history, 1):
-            user_content_parts.append(f"\nQ{i}: {qa['question']}\nA{i}: {qa['answer']}")
-    else:
-        user_content_parts.append("\n(Chưa có câu hỏi nào)")
-    
-    user_content = "\n".join(user_content_parts)
-
-    try:
-        response = call_llm(
-            config=llm_config,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_content}],
-        )
-
-        # Parse JSON response
-        content = response.content.strip()
-        if content.startswith("```json"):
-            content = content.removeprefix("```json").removesuffix("```")
-        elif content.startswith("```"):
-            content = content.removeprefix("```").removesuffix("```")
-
-        result = json.loads(content)
-        done = result.get("done", False)
-
-        if done:
-            return (False, "")
-        else:
-            return (True, result.get("question", ""))
-
-    except json.JSONDecodeError as e:
-        click.echo(f"⚠️  LLM response không phải JSON hợp lệ: {e}")
-        click.echo("Trả về done=True để kết thúc")
-        return (False, "")
     except Exception as e:
         click.echo(f"❌ LLM call failed: {e}")
         raise
+
+    return (needs_more, question)
 
 
 def _save_clarification(

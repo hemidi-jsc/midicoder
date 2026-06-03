@@ -33,6 +33,14 @@
         <field name="component_type" type="string">One of: form_field, data_table, card_list, dialog, form_builder, sidebar, header, modal, notification, chart, breadcrumb, tabs, stepper, accordion, tooltip, progress_bar, avatar, badge, empty_state, skeleton</field>
       </item>
     </field>
+    <field name="ambiguities" type="array">
+      <item>
+        <field name="id" type="string">Unique identifier (e.g., "amb-1")</field>
+        <field name="description" type="string">What is unclear or missing from the brief</field>
+        <field name="type" type="string">Category: missing_detail, conflicting_requirement, vague_scope, undefined_behavior, tech_gap</field>
+        <field name="source_text" type="string">The exact text fragment from the brief that is ambiguous</field>
+      </item>
+    </field>
     <field name="domain" type="string">Detected domain (e.g., ecommerce, finance)</field>
     <field name="confidence" type="float">Confidence score (0.0 to 1.0)</field>
     <field name="summary" type="string">Brief summary of the system</field>
@@ -46,5 +54,8 @@
     <rule>Use Vietnamese for descriptions and messages</rule>
     <rule>Be comprehensive — capture all requirements mentioned in the brief</rule>
     <rule>Each item must be unique and well-structured</rule>
+    <rule>Always extract ambiguities — list any unclear, vague, or missing details from the brief</rule>
+    <rule>Even a well-written brief has at least 1-2 ambiguities; never return an empty ambiguities array</rule>
+    <rule>For each ambiguity, quote the exact text from the brief that is unclear</rule>
   </rules>
 </system>
