@@ -1115,6 +1115,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   getStatusBadgeClass(status: string): string {
     const map: Record<string, string> = {
       draft: 'bg-yellow-900 bg-opacity-40 text-yellow-300 border border-yellow-700',
+      analyzed: 'bg-blue-900 bg-opacity-40 text-blue-300 border border-blue-700',
       clarified: 'bg-green-900 bg-opacity-40 text-green-300 border border-green-700',
       frozen: 'bg-red-900 bg-opacity-40 text-red-300 border border-red-700',
       archived: 'bg-gray-900 bg-opacity-40 text-gray-400 border border-gray-700',
@@ -1178,7 +1179,11 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
         this.analysisResult = result.data;
         this.briefContent = updatedContent;
         this._lastSavedContent = updatedContent;
-        this.showToast('Làm rõ yêu cầu thành công! Analysis đã được cập nhật', 'success');
+
+        // Set status thành clarified sau khi làm rõ xong
+        await this.api.setBriefStatus(this.activeVersion, 'clarified');
+
+        this.showToast('Làm rõ yêu cầu thành công! Brief đã chuyển sang status clarified', 'success');
         this.cancelClarification();
         await this.loadBrief();
         await this.loadLineage();

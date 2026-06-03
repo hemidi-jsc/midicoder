@@ -438,6 +438,13 @@ export class ApiService {
     return this.post('/brief/freeze', { version });
   }
 
+  /**
+   * POST /brief/set-status - Set brief status (draft → analyzed → clarified → frozen)
+   */
+  async setBriefStatus(version: string, status: string): Promise<ApiResponse<{ brief_id: string; status: string }>> {
+    return this.post('/brief/set-status', { version, status });
+  }
+
   // ============================================================================
   // CONTRACT ENDPOINTS
   // ============================================================================

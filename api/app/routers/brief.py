@@ -177,6 +177,20 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
 
     ambiguities = json_data.get("ambiguities", [])
 
+    # Cập nhật status brief sau analyze
+    if confidence >= 0.8 and len(ambiguities) == 0:
+        # Đủ rõ, không có ambiguity → clarified
+        try:
+            briefs_manager.update_status(brief_id, "clarified")
+        except Exception:
+            pass
+    else:
+        # Có ambiguity hoặc confidence thấp → analyzed (chờ clarify)
+        try:
+            briefs_manager.update_status(brief_id, "analyzed")
+        except Exception:
+            pass
+
     # Luôn trả về "needs_clarification" sau khi analyze
     # User có thể skip clarify nếu brief đã đủ rõ (clarify done=True ngay lập tức)
     return ApiResponse(
@@ -236,7 +250,7 @@ async def save_brief(request_data: BriefSaveRequest = None, request: Request = N
 
 @router.post("/freeze", response_model=ApiResponse)
 async def freeze_brief(version: str = Query(None), request: Request = None):
-    """Đóng brief — status clarified → frozen."""
+    """Đóng brief — status clarified/draft → frozen."""
     language = i18n.get_language_from_request(request)
 
     if not version:
@@ -251,8 +265,8 @@ async def freeze_brief(version: str = Query(None), request: Request = None):
     if not target:
         return ApiResponse(success=False, data=None, message="Không tìm thấy brief", language=language)
 
-    if target.get("status") not in ("clarified", "draft"):
-        return ApiResponse(success=False, data=None, message=f"Brief ở status {target.get('status')}, không thể freeze", language=language)
+    if target.get("status") == "frozen":
+        return ApiResponse(success=False, data=None, message="Brief đã được đóng rồi", language=language)
 
     brief_id = target.get("brief_id")
     brief_hash = target.get("hash", "")
@@ -260,6 +274,33 @@ async def freeze_brief(version: str = Query(None), request: Request = None):
     _log_lineage(mgr, brief_id, version, "frozen", "Brief frozen", old_hash=brief_hash, new_hash=brief_hash)
 
     return ApiResponse(success=True, data={"brief_id": brief_id, "status": "frozen"}, message="Brief đã được đóng", language=language)
+
+
+@router.post("/set-status", response_model=ApiResponse)
+async def set_brief_status(request: Request):
+    """Set status của brief (draft → analyzed → clarified → frozen).
+
+    Request body: {"version": "v1.0.0", "status": "clarified"}
+    """
+    language = i18n.get_language_from_request(request)
+    body = await request.json()
+    version = body.get("version", "v1.0.0")
+    new_status = body.get("status", "clarified")
+
+    from midicoder.storage.sqlite import BriefsManager
+    mgr = BriefsManager(db_path=_get_project_db_path("briefs.db"))
+    mgr.init()
+
+    target = _get_working_brief(mgr, version)
+    if not target:
+        return ApiResponse(success=False, data=None, message="Không tìm thấy brief", language=language)
+
+    brief_id = target.get("brief_id")
+    brief_hash = target.get("hash", "")
+    mgr.update_status(brief_id, new_status)
+    _log_lineage(mgr, brief_id, version, "status_change", f"Status changed to {new_status}", old_hash=brief_hash, new_hash=brief_hash)
+
+    return ApiResponse(success=True, data={"brief_id": brief_id, "status": new_status}, message=f"Brief status: {new_status}", language=language)
 
 
 @router.get("/get", response_model=ApiResponse)
