@@ -77,14 +77,16 @@ def load_global_config() -> dict:
         return {}
 
 
-def get_project_cwd() -> str:
+def get_project_cwd() -> str | None:
     """
     Lấy đường dẫn working directory của project đang active.
 
     Ưu tiên:
     1. ProjectsManager.get_active_project_path() (SQLite ~/.midicoder/data/projects.db)
     2. Global config project.cwd (~/.midicoder/midicoder.json)
-    3. Current working directory
+
+    Returns None nếu không có project active — không fallback Path.cwd()
+    vì midicoder support multiple projects.
     """
     # Thử đọc từ ProjectsManager
     try:
@@ -102,8 +104,7 @@ def get_project_cwd() -> str:
     if "project" in config and "cwd" in config["project"]:
         return config["project"]["cwd"]
 
-    # Mặc định: thư mục hiện tại
-    return str(Path.cwd())
+    return None
 
 
 # Load global config khi khởi động
@@ -114,8 +115,10 @@ _project_cwd = get_project_cwd()
 def get_active_version() -> str | None:
     """Lấy active version từ config."""
     try:
-        cwd = Path(get_project_cwd())
-        active_file = cwd / ".midicoder" / "config" / "active_version.txt"
+        cwd = get_project_cwd()
+        if not cwd:
+            return None
+        active_file = Path(cwd) / ".midicoder" / "config" / "active_version.txt"
         if active_file.exists():
             return active_file.read_text().strip()
     except Exception:
@@ -123,9 +126,12 @@ def get_active_version() -> str | None:
     return None
 
 
-def get_version_dir(version: str | None = None) -> Path:
-    """Lấy path đến version directory."""
+def get_version_dir(version: str | None = None) -> Path | None:
+    """Lấy path đến version directory. Returns None nếu không có project active."""
+    cwd = get_project_cwd()
+    if not cwd:
+        return None
     v = version or get_active_version()
     if not v:
         v = "v1.0.0"  # fallback
-    return Path(get_project_cwd()) / ".midicoder" / "versions" / v
+    return Path(cwd) / ".midicoder" / "versions" / v

@@ -9,7 +9,6 @@ Cung cấp các hàm để:
 Sử dụng:
     from midicoder.pipeline.context_feed import (
         get_brief_context,
-        get_clarify_context,
         format_context_inject,
         calculate_adaptive_limit,
     )
@@ -212,80 +211,6 @@ def get_brief_context(
         )
 
 
-def get_clarify_context(
-    analysis_data: dict[str, Any],
-    qa_history: list[dict[str, str]],
-    model_name: Optional[str] = None,
-    db_path: Optional[str] = None,
-) -> ContextFeedResult:
-    """
-    Lấy codebase context cho brief clarify (narrower focus).
-
-    Query context dựa trên analysis data và Q&A history.
-    Focus vào các entities/commands đang được clarify.
-
-    Args:
-        analysis_data: Analysis JSON từ brief analyze
-        qa_history: Lịch sử Q&A (list of {question, answer})
-        model_name: Model name để calculate adaptive limit
-        db_path: Đường dẫn context.db (optional)
-
-    Returns:
-        ContextFeedResult với context items và formatted string
-    """
-    start_time = time.time()
-    warning = None
-
-    try:
-        adaptive_limit = calculate_adaptive_limit(model_name)
-
-        focus_text = _extract_clarify_focus(analysis_data, qa_history)
-
-        brief = Brief(content=focus_text)
-
-        context_items = _query_context_with_timeout(
-            brief=brief,
-            db_path=db_path,
-            timeout=CONTEXT_QUERY_TIMEOUT_SECONDS,
-        )
-
-        if not context_items:
-            warning = "⚠️ Không tìm thấy codebase context liên quan cho clarification"
-
-        formatted_context = format_context_for_prompt(context_items)
-
-        token_count = count_tokens(formatted_context)
-
-        if token_count > adaptive_limit and context_items:
-            context_items = _truncate_context_by_tokens(
-                context_items,
-                max_tokens=adaptive_limit,
-            )
-            formatted_context = format_context_for_prompt(context_items)
-            token_count = count_tokens(formatted_context)
-
-        query_time_ms = int((time.time() - start_time) * 1000)
-
-        return ContextFeedResult(
-            context_items=context_items,
-            formatted_context=formatted_context,
-            token_count=token_count,
-            query_time_ms=query_time_ms,
-            warning=warning,
-        )
-
-    except Exception as e:
-        query_time_ms = int((time.time() - start_time) * 1000)
-
-        return ContextFeedResult(
-            context_items=[],
-            formatted_context="",
-            token_count=0,
-            query_time_ms=query_time_ms,
-            warning=f"⚠️ Lỗi khi query codebase context: {str(e)}",
-        )
-
-
 def _query_context_with_timeout(
     brief: Brief,
     db_path: Optional[str],
@@ -309,48 +234,6 @@ def _query_context_with_timeout(
         raise FileNotFoundError(f"Context database not found: {db_path}")
 
     return get_relevant_context(brief=brief, db_path=db_path, limit=20)
-
-
-def _extract_clarify_focus(
-    analysis_data: dict[str, Any],
-    qa_history: list[dict[str, str]],
-) -> str:
-    """
-    Extract focus text từ analysis data và Q&A history.
-
-    Focus vào các entities/commands đang được clarify.
-
-    Args:
-        analysis_data: Analysis JSON từ brief analyze
-        qa_history: Lịch sử Q&A
-
-    Returns:
-        Focus text cho context query
-    """
-    focus_parts = []
-
-    entities = analysis_data.get("entities", [])
-    if entities:
-        entity_names = [e.get("name", "") for e in entities[:5]]
-        if entity_names:
-            focus_parts.append(f"Entities: {', '.join(entity_names)}")
-
-    commands = analysis_data.get("commands", [])
-    if commands:
-        command_names = [c.get("name", "") for c in commands[:3]]
-        if command_names:
-            focus_parts.append(f"Commands: {', '.join(command_names)}")
-
-    if qa_history:
-        latest_qa = qa_history[-1]
-        question = latest_qa.get("question", "")
-        answer = latest_qa.get("answer", "")
-        if question:
-            focus_parts.append(f"Clarifying: {question[:200]}")
-        if answer:
-            focus_parts.append(f"Answer: {answer[:200]}")
-
-    return "\n".join(focus_parts) if focus_parts else ""
 
 
 def _truncate_context_by_tokens(
@@ -397,7 +280,7 @@ def format_context_inject(
     Format context result cho prompt injection.
 
     Args:
-        context_result: ContextFeedResult từ get_brief_context hoặc get_clarify_context
+        context_result: ContextFeedResult từ get_brief_context
 
     Returns:
         Formatted string cho prompt injection
@@ -457,6 +340,5 @@ __all__ = [
     "ContextFeedResult",
     "calculate_adaptive_limit",
     "get_brief_context",
-    "get_clarify_context",
     "format_context_inject",
 ]

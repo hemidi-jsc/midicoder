@@ -20,7 +20,7 @@ from app.config import settings
 from app.i18n import i18n
 from app.models import ApiResponse, ErrorResponse
 from app.routers import (
-    health, config, index, version, brief, clarification, contract, ir, code,
+    health, config, index, version, brief, contract, ir, code,
     runtime, websocket, pipeline, patches, init, projects,
 )
 
@@ -127,9 +127,6 @@ app.include_router(version.router, prefix="/api")
 
 # Brief
 app.include_router(brief.router, prefix="/api")
-
-# Clarification
-app.include_router(clarification.router, prefix="/api")
 
 # Contract
 app.include_router(contract.router, prefix="/api")

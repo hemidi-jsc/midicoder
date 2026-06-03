@@ -34,10 +34,6 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/brief-editor/brief-editor.component').then((m) => m.BriefEditorComponent),
       },
       {
-        path: 'clarification',
-        loadComponent: () => import('./pages/clarification/clarification.component').then((m) => m.ClarificationComponent),
-      },
-      {
         path: 'contract-viewer',
         loadComponent: () => import('./pages/contract-viewer/contract-viewer.component').then((m) => m.ContractViewerComponent),
       },

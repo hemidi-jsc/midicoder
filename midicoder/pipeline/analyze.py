@@ -1,5 +1,5 @@
 """
-Pure pipeline functions for brief analysis and clarification.
+Pure pipeline functions for brief analysis.
 
 Module này KHÔNG phụ thuộc click — dùng được từ cả CLI và WebGUI backend.
 CLI (`brief.py`) wrap các functions này thêm click.echo, artifact saving, v.v.
@@ -7,7 +7,6 @@ WebGUI backend có thể import trực tiếp HOẶC call CLI command qua subpro
 
 Các public function:
 - analyze_brief_with_llm()      → BriefAnalysis
-- generate_clarification_question() → (needs_more, question_text)
 """
 
 import json
@@ -150,91 +149,3 @@ def analyze_brief_with_llm(
         tokens_used=tokens_used,
         latency_ms=latency_ms,
     )
-
-
-def generate_clarification_question(
-    analysis_data: dict,
-    qa_history: list,
-    domain: str = "generic",
-) -> tuple:
-    """
-    Generate clarification question bằng LLM — pure function.
-
-    Args:
-        analysis_data: Analysis JSON từ brief analyze
-        qa_history: Lịch sử Q&A (list of {question, answer})
-        domain: Domain name
-
-    Returns:
-        (needs_more, question_text)
-        - needs_more=True: Còn cần hỏi thêm
-        - needs_more=False: Đã đủ rõ, kết thúc
-    """
-    from midicoder.pipeline.llm import load_llm_config, call_llm
-    from midicoder.pipeline.domain import get_domain_prompt
-    from midicoder.pipeline.context_feed import get_clarify_context
-
-    # Load LLM config
-    llm_config = load_llm_config()
-
-    # Load clarification prompt
-    try:
-        system_prompt = get_domain_prompt(domain, prompt_type="clarify")
-    except Exception:
-        system_prompt = get_domain_prompt("generic", prompt_type="clarify")
-
-    # Query codebase context (optional)
-    try:
-        context_result = get_clarify_context(
-            analysis_data=analysis_data,
-            qa_history=qa_history,
-            model_name=llm_config.model,
-        )
-    except Exception:
-        context_result = None
-
-    # Build user message
-    user_content_parts = []
-
-    if context_result and context_result.formatted_context:
-        user_content_parts.append(context_result.formatted_context)
-
-    user_content_parts.append(
-        f"## Brief Analysis:\n{json.dumps(analysis_data, indent=2, ensure_ascii=False)}"
-    )
-
-    user_content_parts.append("\n## Q&A History:")
-    if qa_history:
-        for i, qa in enumerate(qa_history, 1):
-            user_content_parts.append(f"\nQ{i}: {qa['question']}\nA{i}: {qa['answer']}")
-    else:
-        user_content_parts.append("\n(Chưa có câu hỏi nào)")
-
-    user_content = "\n".join(user_content_parts)
-
-    try:
-        response = call_llm(
-            config=llm_config,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_content}],
-        )
-
-        # Parse JSON response
-        content = response.content.strip()
-        if content.startswith("```json"):
-            content = content.removeprefix("```json").removesuffix("```")
-        elif content.startswith("```"):
-            content = content.removeprefix("```").removesuffix("```")
-
-        result = json.loads(content)
-        done = result.get("done", False)
-
-        if done:
-            return (False, "")
-        else:
-            return (True, result.get("question", ""))
-
-    except json.JSONDecodeError:
-        return (False, "")
-    except Exception:
-        raise

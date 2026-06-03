@@ -43,7 +43,7 @@ KNOWN_DOMAINS = [
 ]
 
 # Default prompt paths (flat files in prompts/)
-DEFAULT_PROMPT_PREFIX = "default-brief"  # default-brief-analyze, default-brief-clarify
+DEFAULT_PROMPT_PREFIX = "brief"  # brief-analyze
 
 # Domain detection prompt (nhỏ, nhanh)
 DOMAIN_DETECTION_PROMPT = """
@@ -119,16 +119,12 @@ def get_domain_prompt(
     """
     Load prompt template cho domain.
 
-    Supports two prompt types:
-    - "analyze": brief-analyze.md (cho brief analyze)
-    - "clarify": brief-clarify.md (cho brief clarify)
-
     Priority (EU-0.3+):
     1. midicoder/pipeline/prompts/{normalized-domain}/brief-{type}.md  (new — package-level)
     2. industry/{original-domain}/prompts/brief-{type}.md              (legacy — backward compat)
     3. industry/{original-domain}/brief-{type}.md                      (legacy alternate)
     4. industry/{normalized-domain}/brief-{type}.md                    (legacy canonical)
-    5. midicoder/pipeline/prompts/default-brief-{type}.md              (fallback)
+    5. midicoder/pipeline/prompts/brief-{type}.md                      (fallback)
 
     Ví dụ:
     - Input: "ecommerce-d2c", prompt_type="analyze"
@@ -138,7 +134,7 @@ def get_domain_prompt(
     Args:
         domain: Domain name (original hoặc normalized)
         industry_path: Path đến industry folder (default: ./industry) — legacy compat
-        prompt_type: Loại prompt ("analyze" hoặc "clarify")
+        prompt_type: Loại prompt ("analyze")
 
     Returns:
         Prompt template content

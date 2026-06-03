@@ -33,11 +33,13 @@ class BriefSaveRequest(BaseModel):
     brief_content: str = Field(default="", description="Nội dung brief")
 
 
-def _get_project_db_path(db_name: str) -> Path:
-    """Lấy explicit path đến database file của project."""
+def _get_project_db_path(db_name: str) -> Path | None:
+    """Lấy explicit path đến database file của project. Returns None nếu không có project."""
     from app.config import get_project_cwd
-    project_cwd = Path(get_project_cwd())
-    return project_cwd / ".midicoder" / "data" / db_name
+    project_cwd = get_project_cwd()
+    if not project_cwd:
+        return None
+    return Path(project_cwd) / ".midicoder" / "data" / db_name
 
 
 def _get_working_brief(mgr, version: str):

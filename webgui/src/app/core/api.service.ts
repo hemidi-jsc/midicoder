@@ -15,11 +15,6 @@ import {
   UserResponse,
   BriefAnalyzeRequest,
   BriefAnalyzeResponse,
-  ClarificationStartRequest,
-  ClarificationStartResponse,
-  ClarificationAnswersRequest,
-  ClarificationAnswersResponse,
-  ClarificationStatusResponse,
   BriefSaveRequest,
   BriefSaveResponse,
   Brief,
@@ -546,31 +541,6 @@ export class ApiService {
    */
   async getCodeFiles(): Promise<ApiResponse<{ files: CodeFile[]; count: number }>> {
     return this.get('/code/files');
-  }
-
-  // ============================================================================
-  // CLARIFICATION ENDPOINTS
-  // ============================================================================
-
-  /**
-   * POST /clarification/start - Start clarification session
-   */
-  async startClarification(request: ClarificationStartRequest): Promise<ApiResponse<ClarificationStartResponse>> {
-    return this.post('/clarification/start', request);
-  }
-
-  /**
-   * POST /clarification/answers - Submit clarification answers
-   */
-  async submitClarificationAnswers(request: ClarificationAnswersRequest): Promise<ApiResponse<ClarificationAnswersResponse>> {
-    return this.post('/clarification/answers', request);
-  }
-
-  /**
-   * GET /clarification/status/{session_id} - Get clarification status
-   */
-  async getClarificationStatus(sessionId: string): Promise<ApiResponse<ClarificationStatusResponse>> {
-    return this.get(`/clarification/status/${sessionId}`);
   }
 
   // ============================================================================

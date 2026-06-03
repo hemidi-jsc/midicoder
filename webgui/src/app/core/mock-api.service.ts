@@ -91,56 +91,6 @@ export interface BriefAnalyzeResponse {
   };
 }
 
-export interface ClarificationStartRequest {
-  version: string;
-  non_interactive?: boolean;
-}
-
-export interface Question {
-  id: string;
-  source_text: string;
-  ambiguity_type: string;
-  question: string;
-  options?: Array<{ value: string; label: string }>;
-  required: boolean;
-  type: 'single_select' | 'multi_select' | 'text';
-}
-
-export interface ClarificationStartResponse {
-  clarification_id: string;
-  status: 'questions_ready' | 'ready';
-  round: number;
-  questions?: Question[];
-  message?: string;
-}
-
-export interface ClarificationAnswersRequest {
-  session_id: string;
-  answers: Array<{
-    question_id: string;
-    values: string[];
-    notes?: string;
-  }>;
-}
-
-export interface ClarificationAnswersResponse {
-  status: 'more_questions' | 'ready';
-  round: number;
-  questions?: Question[];
-}
-
-export interface ClarificationStatusResponse {
-  clarification_id: string;
-  status: string;
-  current_round: number;
-  total_rounds: number;
-  master_brief_path?: string;
-  clarification_log?: {
-    total_questions: number;
-    total_tokens_used: number;
-  };
-}
-
 export interface BriefSaveRequest {
   name: string;
   tags?: string[];
@@ -575,81 +525,6 @@ export class MockApiService {
             description: 'What level of tenant isolation?',
           },
         ],
-      },
-    });
-  }
-
-  /**
-   * POST /brief/clarify/start
-   */
-  async startClarification(request: ClarificationStartRequest): Promise<ApiResponse<ClarificationStartResponse>> {
-    await this.delay(800);
-
-    return this.success({
-      clarification_id: 'clarify-abc123',
-      status: 'questions_ready',
-      round: 1,
-      questions: [
-        {
-          id: 'q-001',
-          source_text: 'sync inventory across channels',
-          ambiguity_type: 'scope',
-          question: 'Which sales channels do you need to sync?',
-          options: [
-            { value: 'amazon', label: 'Amazon' },
-            { value: 'walmart', label: 'Walmart' },
-            { value: 'shopify', label: 'Shopify' },
-            { value: 'ebay', label: 'eBay' },
-            { value: 'custom', label: 'Custom (specify)' },
-          ],
-          required: true,
-          type: 'multi_select',
-        },
-        {
-          id: 'q-002',
-          source_text: 'multi-tenant platform',
-          ambiguity_type: 'data_policy',
-          question: 'What level of tenant isolation do you need?',
-          options: [
-            { value: 'schema_per_tenant', label: 'Schema-per-tenant (full isolation)' },
-            { value: 'row_level_security', label: 'Row-level security (shared schema)' },
-            { value: 'tenant_id_filter', label: 'Shared schema with tenant_id filter' },
-          ],
-          required: true,
-          type: 'single_select',
-        },
-      ],
-    });
-  }
-
-  /**
-   * POST /brief/clarify/answers
-   */
-  async submitAnswers(request: ClarificationAnswersRequest): Promise<ApiResponse<ClarificationAnswersResponse>> {
-    await this.delay(1000);
-
-    // Mock: trả về status ready sau khi submit
-    return this.success({
-      status: 'ready',
-      round: 2,
-    });
-  }
-
-  /**
-   * GET /brief/clarify/status
-   */
-  async getClarificationStatus(): Promise<ApiResponse<ClarificationStatusResponse>> {
-    await this.delay(300);
-
-    return this.success({
-      clarification_id: 'clarify-abc123',
-      status: 'ready',
-      current_round: 2,
-      total_rounds: 2,
-      master_brief_path: '.midicoder/versions/v1.0.0/briefs/master-brief.md',
-      clarification_log: {
-        total_questions: 2,
-        total_tokens_used: 1234,
       },
     });
   }

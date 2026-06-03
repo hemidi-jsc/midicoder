@@ -12,13 +12,16 @@ from typing import Any, Dict, List, Optional
 from .config import get_project_cwd, get_active_version
 
 
-def _version_root(version: Optional[str] = None) -> Path:
+def _version_root(version: Optional[str] = None) -> Path | None:
     """
     Lấy path root của version directory.
     Nếu không có version, lấy active version.
+    Returns None nếu không có project active.
     """
-    project_cwd = Path(get_project_cwd())
-    versions_dir = project_cwd / ".midicoder" / "versions"
+    project_cwd = get_project_cwd()
+    if not project_cwd:
+        return None
+    versions_dir = Path(project_cwd) / ".midicoder" / "versions"
     v = version or get_active_version()
     if not v:
         # Fallback: lấy version đầu tiên

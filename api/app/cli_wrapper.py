@@ -120,7 +120,14 @@ class CLIWrapper:
 
         # Thiết lập thư mục làm việc từ global config
         cwd = get_project_cwd()
-        
+        if not cwd:
+            return {
+                "success": False,
+                "stdout": "",
+                "stderr": "Không có project đang active. Hãy tạo hoặc chọn project trước.",
+                "returncode": 1,
+            }
+
         try:
             # Tạo subprocess (stdin=PIPE để questionary không crash khi không có console)
             subprocess_kwargs: Dict[str, Any] = {
