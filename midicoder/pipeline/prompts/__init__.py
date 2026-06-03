@@ -12,10 +12,9 @@ Lý do: Tách prompt ra file riêng để:
 Cấu trúc:
     prompts/
     ├── contract_entities.md          # Generic contract prompts
-    ├── default-brief-analyze.md      # Default brief prompt
+    ├── brief-analyze.md              # Default brief prompt
     ├── ecommerce/                    # Domain-specific prompts
-    │   ├── brief-analyze.md
-    │   └── brief-clarify.md
+    │   └── brief-analyze.md
     ├── healthcare/
     │   └── brief-analyze.md
     └── ...
