@@ -1,12 +1,12 @@
-"""
+﻿"""
 Router cho các commands về runtime
 """
 
 from fastapi import APIRouter, Request
 
-from app.cli_wrapper import cli_wrapper
-from app.i18n import i18n
-from app.models import ApiResponse, RuntimeTestRequest, RuntimeFixRequest
+from midicoder.api.pipeline_bridge import pipeline_bridge
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse, RuntimeTestRequest, RuntimeFixRequest
 
 router = APIRouter(prefix="/runtime", tags=["Runtime"])
 
@@ -29,7 +29,7 @@ async def test_runtime(request_data: RuntimeTestRequest = None, request: Request
     language = i18n.get_language_from_request(request) if request else "vi"
     
     # Gọi CLI wrapper để test runtime
-    result = await cli_wrapper.runtime_test(
+    result = await pipeline_bridge.runtime_test(
         timeout=request_data.timeout,
         port=request_data.port,
         verbose=request_data.verbose,
@@ -75,7 +75,7 @@ async def fix_runtime(request_data: RuntimeFixRequest = None, request: Request =
     language = i18n.get_language_from_request(request) if request else "vi"
     
     # Gọi CLI wrapper để fix runtime
-    result = await cli_wrapper.runtime_fix(
+    result = await pipeline_bridge.runtime_fix(
         log_timestamp=request_data.log_timestamp,
         dry_run=request_data.dry_run,
         auto_apply=request_data.auto_apply,

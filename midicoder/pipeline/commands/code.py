@@ -72,154 +72,6 @@ class GeneratedFile:
 
 
 # ============================================================================
-# CLI Commands
-# ============================================================================
-
-@click.group()
-def code():
-    """
-    Code planning, generation, và application.
-    
-    Các lệnh con:
-      plan   Tạo implementation plan từ MIR
-      gen    Generate code từ plan + templates
-      apply  Apply code vào target directory
-    
-    Ví dụ:
-      midicoder code plan           # Tạo plan
-      midicoder code gen --target all   # Generate code
-      midicoder code apply          # Apply vào project
-    """
-    pass
-
-
-@code.command()
-@click.option(
-    "--target", "-t",
-    type=click.Choice(["backend", "frontend", "all"]),
-    default="all",
-    help="Target để generate (backend|frontend|all)"
-)
-@click.option(
-    "--verbose", "-v",
-    is_flag=True,
-    help="Hiển thị chi tiết plan"
-)
-@click.option(
-    "--status-filter", "-s",
-    type=click.Choice(["stable", "experimental", "deprecated"]),
-    default=None,
-    help="Chỉ include packs có status tương ứng (mặc định: tất cả)"
-)
-def plan(target: str, verbose: bool, status_filter: str | None):
-    """
-    Tạo implementation plan từ MIR.
-
-    Phân tích MIR và tạo kế hoạch files cần generate.
-    Lưu plan vào SQLite artifacts table.
-
-    OPTIONS:
-      --target, -t       Target để generate (backend|frontend|all, mặc định: all)
-      --verbose, -v      Hiển thị chi tiết plan
-      --status-filter, -s Chỉ include packs có status tương ứng
-
-    EXAMPLES:
-      midicoder code plan
-      midicoder code plan --target backend
-      midicoder code plan --status-filter stable
-    """
-    _execute_plan(target=target, verbose=verbose, status_filter=status_filter)
-
-
-@code.command()
-@click.option(
-    "--target", "-t",
-    type=click.Choice(["backend", "frontend", "all"]),
-    default="all",
-    help="Target để generate (backend|frontend|all)"
-)
-@click.option(
-    "--dry-run",
-    is_flag=True,
-    help="Generate nhưng không lưu files"
-)
-@click.option(
-    "--status-filter", "-s",
-    type=click.Choice(["stable", "experimental", "deprecated"]),
-    default=None,
-    help="Chỉ include packs có status tương ứng (mặc định: tất cả)"
-)
-@click.option(
-    "--verify", "-V",
-    is_flag=True,
-    help="Kiểm tra compile/syntax sau khi generate code"
-)
-def gen(target: str, dry_run: bool, status_filter: str | None, verify: bool):
-    """
-    Generate code từ plan.
-
-    Sử dụng Jinja2 templates để generate code từ plan.
-    Lưu vào .midicoder/versions/{active_version}/src/
-
-    OPTIONS:
-      --target, -t       Target để generate (backend|frontend|all, mặc định: all)
-      --dry-run          Generate nhưng không lưu files
-      --status-filter, -s Chỉ include packs có status tương ứng
-      --verify, -V       Kiểm tra compile/syntax sau khi generate
-
-    EXAMPLES:
-      midicoder code gen
-      midicoder code gen --target backend
-      midicoder code gen --verify
-      midicoder code gen --status-filter stable
-    """
-    _execute_gen(target=target, dry_run=dry_run, status_filter=status_filter, verify=verify)
-
-
-@code.command()
-@click.option(
-    "--target-dir", "-d",
-    type=click.Path(),
-    default=".",
-    help="Target directory để apply code"
-)
-@click.option(
-    "--dry-run",
-    is_flag=True,
-    help="Hiển thị sẽ apply những gì"
-)
-@click.option(
-    "--backup",
-    is_flag=True,
-    help="Tạo backup trước khi overwrite"
-)
-@click.option(
-    "--force", "-f",
-    is_flag=True,
-    help="Overwrite không hỏi confirmation"
-)
-def apply(target_dir: str, dry_run: bool, backup: bool, force: bool):
-    """
-    Apply generated code vào target directory.
-    
-    Copy/merge generated files vào target directory.
-    Handle conflicts với prompt hoặc force.
-    
-    OPTIONS:
-      --target-dir, -d    Target directory (mặc định: current)
-      --dry-run           Hiển thị sẽ apply những gì
-      --backup            Tạo backup trước khi overwrite
-      --force, -f         Overwrite không hỏi confirmation
-    
-    EXAMPLES:
-      midicoder code apply
-      midicoder code apply --target-dir ./src
-      midicoder code apply --backup --force
-    """
-    _execute_apply(target_dir=target_dir, dry_run=dry_run, backup=backup, force=force)
-
-
-# ============================================================================
 # Implementation Functions
 # ============================================================================
 
@@ -1173,17 +1025,10 @@ def _execute_apply(target_dir: str, dry_run: bool, backup: bool, force: bool) ->
                 click.echo(f"   ↻ Backup: {relative_path} → {backup_file.name}")
             
             if not force:
-                response = click.prompt(
-                    f"File đã tồn tại: {relative_path}. Ghi đè?",
-                    type=click.Choice(["y", "n", "a"]),
-                    default="n",
-                )
-                if response == "n":
-                    skipped_count += 1
-                    continue
-                elif response == "a":
-                    force = True  # Apply all remaining
-            
+                click.echo(f"   ⚠️  File đã tồn tại: {relative_path} — skip (dùng --force để ghi đè)")
+                skipped_count += 1
+                continue
+
             click.echo(f"   ↻ Overwrite: {relative_path}")
         
         # Copy file

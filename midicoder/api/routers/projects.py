@@ -1,4 +1,4 @@
-"""
+﻿"""
 Router cho Projects — multi-project management.
 
 Dùng ProjectsManager từ midicoder.storage.projects (SQLite ~/.midicoder/data/projects.db).
@@ -10,8 +10,8 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from app.i18n import i18n
-from app.models import ApiResponse
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 

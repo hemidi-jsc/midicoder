@@ -1,4 +1,4 @@
-"""
+﻿"""
 Router cho các commands về config
 """
 
@@ -8,9 +8,9 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Request
 
-from app.cli_wrapper import cli_wrapper
-from app.i18n import i18n
-from app.models import ApiResponse, ConfigSetRequest
+from midicoder.api.pipeline_bridge import pipeline_bridge
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse, ConfigSetRequest
 
 router = APIRouter(prefix="/config", tags=["Config"])
 
@@ -182,7 +182,7 @@ async def list_config(request: Request):
     language = i18n.get_language_from_request(request)
     
     # Gọi CLI wrapper để lấy config
-    result = await cli_wrapper.config_list()
+    result = await pipeline_bridge.config_list()
     
     if result["success"]:
         # Parse stdout để lấy config dict
@@ -225,7 +225,7 @@ async def get_config(key: str, request: Request):
     language = i18n.get_language_from_request(request)
     
     # Gọi CLI wrapper để lấy config
-    result = await cli_wrapper.config_get(key)
+    result = await pipeline_bridge.config_get(key)
     
     if result["success"]:
         # Parse stdout để lấy giá trị
@@ -260,7 +260,7 @@ async def set_config(config: ConfigSetRequest, request: Request):
     language = i18n.get_language_from_request(request)
     
     # Gọi CLI wrapper để set config
-    result = await cli_wrapper.config_set(config.key, config.value)
+    result = await pipeline_bridge.config_set(config.key, config.value)
     
     if result["success"]:
         return ApiResponse(
@@ -292,7 +292,7 @@ async def validate_config(request: Request):
     language = i18n.get_language_from_request(request)
     
     # Gọi CLI wrapper để validate config
-    result = await cli_wrapper.config_validate()
+    result = await pipeline_bridge.config_validate()
     
     if result["success"]:
         return ApiResponse(
@@ -324,7 +324,7 @@ async def reset_config(request: Request):
     language = i18n.get_language_from_request(request)
     
     # Gọi CLI wrapper để reset config
-    result = await cli_wrapper.config_reset()
+    result = await pipeline_bridge.config_reset()
     
     if result["success"]:
         return ApiResponse(

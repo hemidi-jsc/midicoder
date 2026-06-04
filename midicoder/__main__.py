@@ -1,9 +1,20 @@
-"""Module entry point for python -m midicoder."""
+"""Midicoder entry point — WebGUI Launcher only.
+
+Khi chạy `midicoder`, terminal sẽ:
+- Hiển thị ASCII logo
+- Start backend (FastAPI :6868)
+- Start frontend (Angular :7272)
+- Start SQLite viewer (Datasette :8080)
+- Mở browser tabs
+- Aggregate logs về terminal
+- Graceful shutdown khi Ctrl+C
+
+Terminal chỉ dùng để hiển thị status/logs — không phải CLI interactive.
+"""
 
 from __future__ import annotations
 
-# Import từ pipeline module (new CLI)
-from midicoder.pipeline.cli import main
+from midicoder.launcher import run
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run())

@@ -1,12 +1,12 @@
-"""
+﻿"""
 Router cho các commands về code
 """
 
 from fastapi import APIRouter, Query, Request
 
-from app.cli_wrapper import cli_wrapper
-from app.i18n import i18n
-from app.models import ApiResponse, CodeGenRequest, CodeApplyRequest
+from midicoder.api.pipeline_bridge import pipeline_bridge
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse, CodeGenRequest, CodeApplyRequest
 
 router = APIRouter(prefix="/code", tags=["Code"])
 
@@ -25,7 +25,7 @@ async def build_code_plan(request: Request):
     language = i18n.get_language_from_request(request)
     
     # Gọi CLI wrapper để build code plan
-    result = await cli_wrapper.code_build()
+    result = await pipeline_bridge.code_build()
     
     if result["success"]:
         return ApiResponse(
@@ -60,7 +60,7 @@ async def plan_code(request: Request):
     language = i18n.get_language_from_request(request)
     
     # Gọi CLI wrapper để plan code
-    result = await cli_wrapper.code_plan()
+    result = await pipeline_bridge.code_plan()
     
     if result["success"]:
         return ApiResponse(
@@ -99,7 +99,7 @@ async def generate_code(request_data: CodeGenRequest = None, request: Request = 
     language = i18n.get_language_from_request(request) if request else "vi"
     
     # Gọi CLI wrapper để generate code
-    result = await cli_wrapper.code_gen(runtime=request_data.runtime)
+    result = await pipeline_bridge.code_gen(runtime=request_data.runtime)
     
     if result["success"]:
         return ApiResponse(
@@ -139,7 +139,7 @@ async def apply_code(request_data: CodeApplyRequest = None, request: Request = N
     language = i18n.get_language_from_request(request) if request else "vi"
 
     # Gọi CLI wrapper để apply code
-    result = await cli_wrapper.code_apply(
+    result = await pipeline_bridge.code_apply(
         force=request_data.force,
         dry_run=request_data.dry_run,
         no_reindex=request_data.no_reindex,
@@ -175,7 +175,7 @@ async def list_code_files(version: str = Query(None), request: Request = None):
     language = i18n.get_language_from_request(request)
     try:
         from pathlib import Path
-        from app.config import get_project_cwd, get_active_version
+        from midicoder.api.config import get_project_cwd, get_active_version
         files = []
         project_cwd = Path(get_project_cwd())
         v = version or get_active_version() or "v1.0.0"
@@ -201,7 +201,7 @@ async def get_code_file(file_path: str, version: str = Query(None), request: Req
     language = i18n.get_language_from_request(request)
     try:
         from pathlib import Path
-        from app.config import get_project_cwd, get_active_version
+        from midicoder.api.config import get_project_cwd, get_active_version
         project_cwd = Path(get_project_cwd())
         v = version or get_active_version() or "v1.0.0"
         file_full = project_cwd / ".midicoder" / "versions" / v / "code" / "generated" / file_path
@@ -220,7 +220,7 @@ async def get_code_plan(version: str = Query(None), request: Request = None):
     try:
         import json
         from midicoder.storage.sqlite import ArtifactsManager
-        from app.config import get_active_version
+        from midicoder.api.config import get_active_version
         mgr = ArtifactsManager()
         mgr.init()
         artifacts = mgr.list_by_type("plan")

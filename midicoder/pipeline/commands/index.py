@@ -1,28 +1,19 @@
 ﻿"""
-Mô-đun Index Command - CLI command cho việc build và manage codebase index.
+Mô-đun Index - Pure functions cho việc build và manage codebase index.
 
-Cung cấp commands:
-- midicoder index: Build index cho current project
-- midicoder index --force: Rebuild toàn bộ index
-- midicoder index --watch: Watch mode cho auto re-index
-
-Sử dụng:
-    midicoder index
-    midicoder index --force
-    midicoder index --watch
+Cung cấp hàm:
+- build_index(): Build index cho current project
+- get_global_config_path(): Lấy đường dẫn global config
+- get_current_project_path(): Lấy đường dẫn current project
 """
 
 from __future__ import annotations
 
-import os
-import sys
 import json
+import sys
 from pathlib import Path
-from typing import Optional
 
-import click
-
-from midicoder.errors import ErrorCode, MidicoderErrorManager as EM, ExitCode
+from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
 
 def get_global_config_path() -> Path:
@@ -76,156 +67,127 @@ def get_current_project_path() -> Path:
     return Path(project_path)
 
 
-@click.command("index")
-@click.option(
-    "--force",
-    is_flag=True,
-    default=False,
-    help="Rebuild entire index from scratch",
-)
-@click.option(
-    "--watch",
-    is_flag=True,
-    default=False,
-    help="Watch for file changes và auto re-index (debounce 1s)",
-)
-@click.option(
-    "--verbose",
-    "-v",
-    is_flag=True,
-    default=False,
-    help="Verbose output",
-)
-def index_command(force: bool, watch: bool, verbose: bool) -> int:
+def build_index(
+    force: bool = False,
+    watch: bool = False,
+    verbose: bool = False,
+) -> int:
     """
     Build codebase index cho context-aware brief analysis.
-    
+
     Index source code vào SQLite (context.db) và Neo4j graph
     để cung cấp context cho brief analysis và clarification.
-    
+
     Args:
         force: Rebuild entire index
         watch: Watch mode cho auto re-index
         verbose: Verbose output
-        
+
     Returns:
         Exit code (0 = success, 1 = error)
     """
+    from midicoder.errors import ExitCode
+
     # Get current project path
     try:
         project_path = get_current_project_path()
     except Exception as e:
-        click.echo(f"Lỗi: {e}", err=True)
+        print(f"Lỗi: {e}", file=sys.stderr)
         return ExitCode.GENERIC_ERROR.value
-    
+
     # Check if project exists
     if not project_path.exists():
-        click.echo(
+        print(
             f"Lỗi: Project directory không tồn tại: {project_path}",
-            err=True
+            file=sys.stderr
         )
         return ExitCode.FILE_NOT_FOUND.value
-    
+
     # Check if project is initialized
     midicoder_dir = project_path / ".midicoder"
     if not midicoder_dir.exists():
-        click.echo(
+        print(
             f"Lỗi: Project chưa được khởi tạo. Chạy `midicoder init` trước.",
-            err=True
+            file=sys.stderr
         )
         return ExitCode.GENERIC_ERROR.value
-    
+
     # Import indexer (lazy import để tránh circular)
     try:
         from midicoder.pipeline.indexer import Indexer, IndexStats
     except ImportError as e:
-        click.echo(f"Lỗi khi import indexer module: {e}", err=True)
+        print(f"Lỗi khi import indexer module: {e}", file=sys.stderr)
         return ExitCode.GENERIC_ERROR.value
-    
+
     # Create indexer
     db_path = midicoder_dir / "data" / "context.db"
     indexer = Indexer(
         project_path=str(project_path),
         db_path=str(db_path),
     )
-    
+
     if verbose:
-        click.echo(f"Project: {project_path}")
-        click.echo(f"Database: {db_path}")
-    
+        print(f"Project: {project_path}")
+        print(f"Database: {db_path}")
+
     if watch:
         # Watch mode
         if force:
-            click.echo("Rebuilding index before watch mode...")
+            print("Rebuilding index before watch mode...")
             stats = indexer.build(force=True)
             _print_stats(stats, verbose)
-        
-        click.echo("Starting watch mode...")
-        click.echo("Press Ctrl+C to stop.")
-        
+
+        print("Starting watch mode...")
+        print("Press Ctrl+C to stop.")
+
         try:
             indexer.watch(debounce_seconds=1.0)
         except KeyboardInterrupt:
-            click.echo("\nWatch mode stopped.")
-        
+            print("\nWatch mode stopped.")
+
         return ExitCode.SUCCESS.value
-    
+
     # Build index
     try:
         stats = indexer.build(force=force)
     except Exception as e:
-        click.echo(f"Lỗi khi build index: {e}", err=True)
+        print(f"Lỗi khi build index: {e}", file=sys.stderr)
         return ExitCode.GENERIC_ERROR.value
-    
+
     # Print stats
     _print_stats(stats, verbose)
-    
+
     # Print summary
     if force:
-        click.echo(f"\n✓ Rebuilt index: {stats.files_count} files, {stats.symbols_count} symbols")
+        print(f"\n✓ Rebuilt index: {stats.files_count} files, {stats.symbols_count} symbols")
     else:
-        click.echo(f"\n✓ Indexed: {stats.files_count} files, {stats.symbols_count} symbols")
-    
+        print(f"\n✓ Indexed: {stats.files_count} files, {stats.symbols_count} symbols")
+
     if stats.errors_count > 0:
-        click.echo(f"⚠ {stats.errors_count} files had errors (skipped)", err=True)
-    
+        print(f"⚠ {stats.errors_count} files had errors (skipped)", file=sys.stderr)
+
     if stats.neo4j_synced:
-        click.echo("✓ Synced to Neo4j")
+        print("✓ Synced to Neo4j")
     else:
-        click.echo("⚠ Neo4j sync skipped (not available)", err=True)
-    
+        print("⚠ Neo4j sync skipped (not available)", file=sys.stderr)
+
     return ExitCode.SUCCESS.value
 
 
-def _print_stats(stats: IndexStats, verbose: bool) -> None:
+def _print_stats(stats: "IndexStats", verbose: bool) -> None:
     """
     Print index stats.
-    
+
     Args:
         stats: IndexStats object
         verbose: Verbose mode
     """
     if verbose:
-        click.echo("")
-        click.echo("Index Statistics:")
-        click.echo(f"  Files indexed: {stats.files_count}")
-        click.echo(f"  Symbols extracted: {stats.symbols_count}")
-        click.echo(f"  Relationships: {stats.relationships_count}")
-        click.echo(f"  Errors: {stats.errors_count}")
-        click.echo(f"  Duration: {stats.duration_seconds:.2f}s")
-        click.echo(f"  Neo4j synced: {'Yes' if stats.neo4j_synced else 'No'}")
-
-
-def register_index_command(cli: click.Group) -> None:
-    """
-    Register index command vào main CLI.
-    
-    Args:
-        cli: Main CLI group
-    """
-    cli.add_command(index_command)
-
-
-# Allow running as standalone for testing
-if __name__ == "__main__":
-    sys.exit(index_command())
+        print("")
+        print("Index Statistics:")
+        print(f"  Files indexed: {stats.files_count}")
+        print(f"  Symbols extracted: {stats.symbols_count}")
+        print(f"  Relationships: {stats.relationships_count}")
+        print(f"  Errors: {stats.errors_count}")
+        print(f"  Duration: {stats.duration_seconds:.2f}s")
+        print(f"  Neo4j synced: {'Yes' if stats.neo4j_synced else 'No'}")

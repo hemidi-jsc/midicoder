@@ -1,12 +1,12 @@
-"""
+﻿"""
 Router cho các commands về contract
 """
 
 from fastapi import APIRouter, Query, Request
 
-from app.cli_wrapper import cli_wrapper
-from app.i18n import i18n
-from app.models import ApiResponse
+from midicoder.api.pipeline_bridge import pipeline_bridge
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse
 
 router = APIRouter(prefix="/contract", tags=["Contract"])
 
@@ -25,7 +25,7 @@ async def generate_contract(request: Request):
     language = i18n.get_language_from_request(request)
     
     # Gọi CLI wrapper để generate contract
-    result = await cli_wrapper.contract_gen()
+    result = await pipeline_bridge.contract_gen()
     
     if result["success"]:
         return ApiResponse(
@@ -57,7 +57,7 @@ async def resume_contract_gen(request: Request):
     language = i18n.get_language_from_request(request)
     
     # Gọi CLI wrapper để resume contract gen
-    result = await cli_wrapper.contract_gen_resume()
+    result = await pipeline_bridge.contract_gen_resume()
     
     if result["success"]:
         return ApiResponse(
@@ -89,7 +89,7 @@ async def check_contract(request: Request):
     language = i18n.get_language_from_request(request)
     
     # Gọi CLI wrapper để check contract
-    result = await cli_wrapper.contract_check()
+    result = await pipeline_bridge.contract_check()
     
     if result["success"]:
         return ApiResponse(
@@ -121,7 +121,7 @@ async def contract_feedback(request: Request):
     language = i18n.get_language_from_request(request)
 
     # Gọi CLI wrapper để contract feedback
-    result = await cli_wrapper.contract_feedback()
+    result = await pipeline_bridge.contract_feedback()
 
     if result["success"]:
         return ApiResponse(

@@ -80,6 +80,20 @@ Sau khi cài đặt, kiểm tra:
 midicoder --version
 ```
 
+Chạy ứng dụng:
+
+```bash
+midicoder
+```
+
+Midicoder sẽ khởi động 3 server tự động và mở browser:
+
+| Service | Port | URL |
+|---------|------|-----|
+| Backend (FastAPI) | 6868 | http://localhost:6868 |
+| Frontend (Angular) | 7272 | http://localhost:7272 |
+| SQLite Viewer (Datasette) | 8080 | http://localhost:8080 |
+
 ---
 
 # Midicoder pipeline
@@ -184,19 +198,191 @@ contract coding → ships
 
 ---
 
-# Bắt đầu
+# Developing Workflow
+
+## Yêu cầu hệ thống
+
+- **Python 3.12.x** (bắt buộc — không hỗ trợ 3.11 hoặc 3.13+)
+- **Node.js 18+** (cho Angular build)
+- **uv** (recommended, cho quản lý virtual environment)
+
+## Setup môi trường phát triển
 
 ```bash
-pip install -e .
+# 1. Clone repository
+git clone https://github.com/hemidi-jsc/midicoder-ce.git
+cd midicoder-ce
 
-midicoder init
-midicoder index
-midicoder version create 0.1.0
-midicoder contract gen
-midicoder ir build
-midicoder code build
-midicoder code gen
-midicoder code apply
+# 2. Tạo virtual environment (dùng uv)
+uv venv --python 3.12
+source .venv/bin/activate  # Linux/macOS
+# hoặc: .venv\Scripts\activate  # Windows
+
+# 3. Cài đặt dependencies
+uv pip install -e ".[dev]"
+
+# 4. Cài đặt dependencies cho Angular frontend
+cd webgui && npm install && cd ..
+```
+
+## Chạy trong chế độ phát triển
+
+Midicoder hoạt động với 3 server song song. Trong chế độ dev, chạy mỗi server riêng biệt để tận dụng hot-reload:
+
+### Terminal 1 — Backend (FastAPI)
+
+```bash
+# API server tự động reload khi file .py thay đổi
+uvicorn midicoder.api.main:server --host 0.0.0.0 --port 6868 --reload
+```
+
+### Terminal 2 — Frontend (Angular)
+
+```bash
+cd webgui
+ng serve --port 7272
+# Angular dev server tự động proxy API requests đến backend:
+#   /api/*  →  http://localhost:6868/api/*
+#   /ws/*   →  ws://localhost:6868/ws/*
+```
+
+### Terminal 3 — SQLite Viewer (Datasette) — Optional
+
+```bash
+datasette ~/.midicoder/data --port 8080 --host 0.0.0.0 --cors
+```
+
+Mở browser tại:
+- **Frontend:** http://localhost:7272
+- **Backend API:** http://localhost:6868/docs (Swagger UI)
+- **SQLite Viewer:** http://localhost:8080
+
+> **Lưu ý:** Angular dev server (`ng serve`) proxy API requests về backend tự động. Bạn truy cập frontend là đủ, không cần mở backend tab riêng.
+
+## Cấu trúc dự án
+
+```
+midicoder-ce/
+├── midicoder/                 # Python package chính
+│   ├── __main__.py            # Entry point
+│   ├── launcher.py            # WebGUI launcher (start 3 servers)
+│   ├── spa_serve.py           # SPA static server (stdlib-only)
+│   ├── api/                   # FastAPI backend
+│   │   ├── main.py            # ASGI app
+│   │   └── routers/           # API endpoints
+│   ├── pipeline/              # Pipeline logic
+│   ├── frontend/              # Angular dist (build artifact, trong .gitignore)
+│   ├── packs/                 # Capability packs
+│   └── storage/               # SQLite storage layer
+├── webgui/                    # Angular SPA frontend
+│   ├── src/
+│   └── angular.json
+├── scripts/
+│   ├── build-win.ps1          # Build binary cho Windows
+│   ├── build-linux.sh         # Build binary cho Linux/macOS
+│   ├── install/
+│   │   ├── install.sh         # Install script (Linux/macOS)
+│   │   └── install.ps1        # Install script (Windows)
+│   └── hooks/                 # PyInstaller hooks
+├── midicoder.spec             # PyInstaller spec file
+└── pyproject.toml
+```
+
+## Linting & Testing
+
+```bash
+# Lint Python code
+ruff check midicoder/
+
+# Format Python code
+ruff format midicoder/
+
+# Chạy test
+pytest midicoder/tests/
+
+# Lint + build Angular
+cd webgui && ng lint && ng build --configuration=production
+```
+
+---
+
+# Build Binary Release
+
+Midicoder được đóng gói thành **standalone binary** bằng PyInstaller — người dùng cuối không cần cài đặt Python, Node.js, hay bất kỳ dependency nào.
+
+## Binary bundling structure
+
+Thành phần được bundle vào binary:
+
+| Component | Status | Ghi chú |
+|-----------|--------|---------|
+| Python 3.12.x runtime | ✅ Bundled | Locked từ `.venv` |
+| FastAPI + uvicorn | ✅ Bundled | Auto-discovered |
+| tree_sitter (native .pyd/.so) | ✅ Bundled | UPX exclude patterns |
+| Datasette (SQLite viewer) | ✅ Bundled | Templates + static assets |
+| Angular SPA dist | ✅ Bundled | Build tại release time |
+| Node.js | ❌ | Chỉ cần khi build Angular |
+
+## Build trên Windows
+
+```powershell
+# Prerequisites: .venv với Python 3.12.x + Node.js
+.\scripts\build-win.ps1
+```
+
+Script tự động thực hiện:
+1. Build Angular (`npx ng build --configuration=production`)
+2. Copy dist → `midicoder/frontend/`
+3. Build PyInstaller từ `midicoder.spec`
+4. Package thành `midicoder-windows-bin.zip`
+5. Cleanup `midicoder/frontend/`
+
+Output: `dist/windows/midicoder.exe` (~150-250MB)
+
+## Build trên Linux/macOS
+
+```bash
+# Prerequisites: .venv với Python 3.12.x + Node.js
+./scripts/build-linux.sh
+```
+
+Quy trình tương tự Windows. Output: `dist/linux/midicoder` + `midicoder-linux-bin.tar.gz`
+
+## Build thủ công
+
+```bash
+# 1. Build Angular
+cd webgui && npx ng build --configuration=production && cd ..
+
+# 2. Copy dist vào package
+rm -rf midicoder/frontend
+mkdir -p midicoder/frontend
+cp -r webgui/dist/webgui/browser/* midicoder/frontend/
+touch midicoder/frontend/__init__.py
+
+# 3. Build PyInstaller
+.venv/bin/python -m PyInstaller --clean midicoder.spec
+
+# 4. Cleanup
+rm -rf midicoder/frontend
+```
+
+> **Quan trọng:** `midicoder/frontend/` là build artifact — KHÔNG commit vào git.
+> File này được thêm vào `.gitignore` và build script tự động tạo/xóa khi build.
+
+## Verify binary
+
+```bash
+# Kiểm tra version
+./dist/midicoder --version
+
+# Chạy binary — sẽ start 3 servers + mở browser
+./dist/midicoder
+
+# Kiểm tra các port đang hoạt động
+curl http://localhost:6868/api/pipeline/status  # Backend
+curl http://localhost:7272/ | head -5           # Frontend
+curl http://localhost:8080/                     # Datasette
 ```
 
 ---

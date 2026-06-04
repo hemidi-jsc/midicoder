@@ -572,6 +572,145 @@ class BriefsManager:
             )
             return True
 
+    def update_type(self, brief_id: str, brief_type: str) -> bool:
+        """
+        Cập nhật type của brief (working → master → library).
+
+        Args:
+            brief_id: Brief ID
+            brief_type: Type mới ('working', 'master', 'library', 'patch')
+
+        Returns:
+            True nếu thành công
+        """
+        with get_connection(self.db_path) as conn:
+            conn.execute(
+                "UPDATE briefs SET type = ?, updated_at = datetime('now') WHERE brief_id = ?",
+                (brief_type, brief_id),
+            )
+            return True
+
+    def save_as_library(self, brief_id: str, name: str, tags: Optional[str] = None) -> bool:
+        """
+        Lưu brief vào library — cập nhật type='library' và title/name.
+
+        Args:
+            brief_id: Brief ID
+            name: Tên library brief
+            tags: Comma-separated tags (optional)
+
+        Returns:
+            True nếu thành công
+        """
+        # Build metadata JSON if tags provided
+        metadata = None
+        if tags:
+            import json
+            metadata = json.dumps({"name": name, "tags": tags})
+
+        with get_connection(self.db_path) as conn:
+            if metadata:
+                conn.execute(
+                    """UPDATE briefs 
+                       SET type = 'library', title = ?, source_file = ?, status = 'frozen',
+                           updated_at = datetime('now')
+                       WHERE brief_id = ?""",
+                    (name, metadata, brief_id),
+                )
+            else:
+                conn.execute(
+                    """UPDATE briefs 
+                       SET type = 'library', title = ?, status = 'frozen',
+                           updated_at = datetime('now')
+                       WHERE brief_id = ?""",
+                    (name, brief_id),
+                )
+            return True
+
+    def search_by_type(self, brief_type: str) -> List[Dict]:
+        """
+        Tìm briefs theo type.
+
+        Args:
+            brief_type: Type để filter ('working', 'master', 'library', 'patch')
+
+        Returns:
+            List of brief records with matching type
+        """
+        with get_connection(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT * FROM briefs WHERE type = ? ORDER BY created_at DESC",
+                (brief_type,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_library_brief(self, name: str) -> Optional[Dict]:
+        """
+        Tìm library brief theo tên.
+
+        Args:
+            name: Tên library brief (lưu trong title field)
+
+        Returns:
+            Brief record hoặc None
+        """
+        with get_connection(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT * FROM briefs WHERE type = 'library' AND title = ? ORDER BY created_at DESC LIMIT 1",
+                (name,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def duplicate_brief(self, src_brief_id: str, new_brief_id: str, new_type: str) -> Optional[Dict]:
+        """
+        Copy brief sang record mới (với brief_id mới và type mới).
+
+        Args:
+            src_brief_id: Brief ID nguồn
+            new_brief_id: Brief ID mới
+            new_type: Type mới ('working', 'master', 'patch')
+
+        Returns:
+            Brief record mới hoặc None
+        """
+        with get_connection(self.db_path) as conn:
+            src = conn.execute(
+                "SELECT * FROM briefs WHERE brief_id = ? ORDER BY id DESC LIMIT 1",
+                (src_brief_id,),
+            ).fetchone()
+            if not src:
+                return None
+
+            src_dict = dict(src)
+            content = src_dict.get("content", "")
+            content_hash = hashlib.sha256(content.encode()).hexdigest() if content else None
+
+            cursor = conn.execute(
+                """INSERT INTO briefs (brief_id, version, type, title, content, status, hash)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    new_brief_id,
+                    src_dict.get("version", "v1.0.0"),
+                    new_type,
+                    src_dict.get("title"),
+                    content,
+                    "draft",
+                    content_hash,
+                ),
+            )
+
+            return {
+                "id": cursor.lastrowid,
+                "brief_id": new_brief_id,
+                "version": src_dict.get("version", "v1.0.0"),
+                "type": new_type,
+                "title": src_dict.get("title"),
+                "content": content,
+                "hash": content_hash,
+                "status": "draft",
+            }
+
     def _update_source_file(self, brief_id: str, source_file: str) -> bool:
         """
         Cập nhật source_file của brief (internal method).

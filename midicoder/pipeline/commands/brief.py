@@ -77,56 +77,6 @@ def _analyze_with_llm(
     return analysis
 
 
-@click.group()
-def brief():
-    """
-    Quản lý và phân tích yêu cầu (briefs).
-
-    Brief là mô tả yêu cầu hệ thống bằng tự nhiên (Markdown).
-    Các lệnh con:
-      analyze  Phân tích brief để extract requirements
-      save     Lưu brief vào library
-      load     Load brief từ library
-      list     Hiển thị danh sách briefs
-      library  Hiển thị industry brief templates
-    """
-    pass
-
-
-@brief.command()
-@click.option(
-    "--domain",
-    type=str,
-    help="Tên domain (optional)"
-)
-@click.option(
-    "--force", "-f",
-    is_flag=True,
-    default=False,
-    help="Ghi đè brief cũ mà không hỏi confirmation"
-)
-def analyze(domain, force):
-    """
-    Phân tích brief để extract requirements.
-
-    Sử dụng LLM để hiểu brief và tạo brief analysis.
-    Lưu kết quả vào SQLite (working-brief).
-
-    Brief file luôn được đọc từ:
-    .midicoder/versions/{active_version}/brief.md
-
-    OPTIONS:
-      --domain DOMAIN    Tên domain (optional)
-      --force, -f        Ghi đè brief cũ mà không hỏi confirmation
-
-    EXAMPLES:
-      midicoder brief analyze
-      midicoder brief analyze --domain ecommerce
-      midicoder brief analyze --force
-    """
-    _execute_analyze(domain, force)
-
-
 def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
     """
     Thực thi phân tích brief.
@@ -146,7 +96,7 @@ def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
     # Bước 1: Lấy active_version từ config
     config = get_config()
     active_version = config.get("active_version")
-    
+
     if not active_version:
         click.echo("❌ Không tìm thấy active_version trong config")
         click.echo("💡 Chạy 'midicoder version create' hoặc 'midicoder init' trước")
@@ -155,7 +105,7 @@ def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
     # Bước 2: Xác định đường dẫn brief file
     versions_dir = Path(".midicoder/versions") / active_version
     brief_file = versions_dir / "brief.md"
-    
+
     if not brief_file.exists():
         click.echo(f"❌ File brief.md không tồn tại tại: {brief_file}")
         click.echo(f"💡 Tạo file tại: {brief_file}")
@@ -183,10 +133,8 @@ def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
         if force:
             click.echo("   → Ghi đè (--force)")
         else:
-            response = click.prompt("Ghi đè?", type=str, default="n")
-            if response.lower() != "y":
-                click.echo("❌ Hủy bỏ.")
-                return
+            click.echo("   → Không ghi đè (dùng --force để ghi đè)")
+            return
 
     # Bước 3: Tạo working-brief
     brief_id = f"brief-{uuid.uuid4().hex[:8]}"
@@ -213,7 +161,7 @@ def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
     # Bước 4: LLM analysis
     click.echo("")
     click.echo("🤖 Đang phân tích requirements bằng LLM...")
-    
+
     try:
         # Gọi LLM để phân tích
         analysis = _analyze_with_llm(
@@ -221,7 +169,7 @@ def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
             domain=domain,
             brief_id=brief_id,
         )
-        
+
         # Bước 5: Lưu kết quả vào artifact
         artifacts_manager = ArtifactsManager()
         artifacts_manager.init()
@@ -240,9 +188,9 @@ def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
                 "summary": analysis.text_summary,
             },
         )
-        
+
         click.echo(f"   ✓ Analysis artifact đã lưu")
-        
+
         # Bước 5: Record provenance lineage
         try:
             provenance_manager = ProvenanceManager()
@@ -263,16 +211,16 @@ def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
             click.echo(f"   ✓ Provenance lineage đã record")
         except Exception as e:
             click.echo(f"⚠️  Không thể record provenance: {e}")
-        
+
         # Bước 6: Brief vẫn ở status draft sau analyze (clarify → clarified → user frozen)
-        
+
         # Bước 7: Hiển thị tóm tắt
         click.echo("")
         click.echo("📊 Kết quả phân tích:")
         click.echo("=" * 60)
         click.echo(analysis.text_summary)
         click.echo("=" * 60)
-        
+
     except Exception as e:
         click.echo(f"❌ Lỗi khi phân tích với LLM: {e}")
         click.echo("💡 Brief đã lưu nhưng chưa có analysis. Hãy:")
@@ -287,36 +235,6 @@ def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
     click.echo("")
     click.echo("Tiếp theo:")
     click.echo("  1. midicoder contract gen - Generate DSL contracts")
-
-
-@brief.command()
-@click.option(
-    "--name", "-n",
-    required=True,
-    type=str,
-    help="Tên library brief (bắt buộc)"
-)
-@click.option(
-    "--tags", "-t",
-    type=str,
-    help="Tags cách nhau bằng dấu phẩy (optional)"
-)
-def save(name, tags):
-    """
-    Lưu brief vào library.
-
-    Lưu master-brief vào library để tái sử dụng.
-    Có thể export ra file Markdown.
-
-    OPTIONS:
-      -n, --name NAME    Tên library brief (bắt buộc)
-      -t, --tags TAGS    Tags cách nhau bằng dấu phẩy (optional)
-
-    EXAMPLES:
-      midicoder brief save --name "ecommerce-d2c"
-      midicoder brief save -n "ecommerce-d2c" -t "ecommerce,retail"
-    """
-    _execute_save(name, tags)
 
 
 def _execute_save(name: str, tags: Optional[str] = None) -> None:
@@ -350,33 +268,23 @@ def _execute_save(name: str, tags: Optional[str] = None) -> None:
     click.echo(f"   → ID: {brief_id}")
     click.echo(f"   → Tags: {tags or 'none'}")
 
-    # TODO: Create library-brief record
+    # Save master-brief → library-brief trong SQLite
+    briefs_manager.save_as_library(brief_id, name, tags)
     click.echo("")
-    click.echo("   ℹ️  Library save - sẽ implement đầy đủ")
-    click.echo("   → Update status: library")
-    click.echo("   → Export to: industry/briefs/<name>/brief.md (optional)")
+    click.echo("   → Type updated: master → library")
+    click.echo("   → Status updated: clarified → frozen")
+
+    # Export đến industry/briefs/ (optional)
+    industry_briefs = Path("industry/briefs") / name
+    industry_briefs.mkdir(parents=True, exist_ok=True)
+    brief_file = industry_briefs / "brief.md"
+    content = master_brief.get("content")
+    if content:
+        brief_file.write_text(content, encoding="utf-8")
+        click.echo(f"   → Export: {brief_file}")
 
     click.echo("")
     click.echo(f"✅ Brief đã lưu vào library: {name}")
-
-
-@brief.command()
-@click.argument("name")
-def load(name):
-    """
-    Load brief từ library.
-
-    Load brief từ library (SQLite hoặc industry/briefs/).
-    Tạo working-brief mới từ library brief.
-
-    ARGUMENTS:
-      name  Tên library brief
-
-    EXAMPLES:
-      midicoder brief load ecommerce-d2c
-      midicoder brief load banking-core
-    """
-    _execute_load(name)
 
 
 def _execute_load(name: str) -> None:
@@ -395,49 +303,42 @@ def _execute_load(name: str) -> None:
     if brief_file.exists():
         click.echo(f"   ✓ Found: {brief_file}")
         click.echo("   ℹ️  Load từ industry briefs")
-        # TODO: Load brief vào SQLite
+        # Load content file → tạo working-brief mới trong SQLite
+        content = brief_file.read_text(encoding="utf-8")
+        new_brief_id = f"brief-{uuid.uuid4().hex[:8]}"
+        briefs_manager = BriefsManager()
+        briefs_manager.init()
+        briefs_manager.create(
+            brief_id=new_brief_id,
+            version="v1.0.0",
+            content=content,
+            title=name,
+            brief_type="working",
+        )
+        click.echo(f"   → Created working-brief: {new_brief_id}")
     else:
-        # Check SQLite
+        # Check SQLite library
         briefs_manager = BriefsManager()
         briefs_manager.init()
 
-        library_brief = None
-        for brief in briefs_manager.list():
-            if brief.get("type") == "library" and brief.get("name") == name:
-                library_brief = brief
-                break
+        library_brief = briefs_manager.get_library_brief(name)
 
         if library_brief:
             click.echo(f"   ✓ Found in SQLite: {library_brief.get('brief_id')}")
-            # TODO: Copy library-brief → working-brief
+            # Copy library-brief → working-brief mới
+            new_brief_id = f"brief-{uuid.uuid4().hex[:8]}"
+            new_brief = briefs_manager.duplicate_brief(
+                library_brief["brief_id"], new_brief_id, "working"
+            )
+            if new_brief:
+                click.echo(f"   → Created working-brief: {new_brief['brief_id']}")
+                click.echo(f"   → Type: {new_brief['type']}, Status: {new_brief['status']}")
         else:
             click.echo(f"❌ Không tìm thấy brief: {name}")
             return
 
     click.echo("")
     click.echo(f"✅ Brief đã load: {name}")
-
-
-@brief.command()
-@click.option(
-    "--domain",
-    type=str,
-    help="Lọc theo domain (optional)"
-)
-def list(domain):
-    """
-    Hiển thị danh sách briefs.
-
-    Hiển thị tất cả briefs trong SQLite, phân loại theo type.
-
-    OPTIONS:
-      --domain DOMAIN  Lọc theo domain (optional)
-
-    EXAMPLES:
-      midicoder brief list
-      midicoder brief list --domain finance
-    """
-    _execute_list(domain)
 
 
 def _execute_list(domain: Optional[str] = None) -> None:
@@ -492,20 +393,6 @@ def _execute_list(domain: Optional[str] = None) -> None:
 
     click.echo("")
     click.echo(f"Total: {len(briefs)} briefs")
-
-
-@brief.command()
-def library():
-    """
-    Hiển thị industry brief templates.
-
-    Hiển thị các brief templates sẵn có trong industry/briefs/.
-    Có thể load bằng 'midicoder brief load <name>'.
-
-    EXAMPLES:
-      midicoder brief library
-    """
-    _execute_library()
 
 
 def _execute_library() -> None:

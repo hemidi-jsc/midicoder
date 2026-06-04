@@ -37,10 +37,11 @@ class Settings(BaseSettings):
     # Cấu hình WebSocket
     ws_ping_interval: float = 30.0
     ws_ping_timeout: float = 10.0
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": True,
+    }
 
 
 # Instance toàn cục

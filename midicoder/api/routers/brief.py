@@ -1,4 +1,4 @@
-"""
+﻿"""
 Router cho brief — 1 version = 1 brief duy nhất, status là progress.
 
 Kiến trúc:
@@ -17,8 +17,8 @@ from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Query, Request
 
-from app.i18n import i18n
-from app.models import ApiResponse
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse
 
 router = APIRouter(prefix="/brief", tags=["Brief"])
 
@@ -35,7 +35,7 @@ class BriefSaveRequest(BaseModel):
 
 def _get_project_db_path(db_name: str) -> Path | None:
     """Lấy explicit path đến database file của project. Returns None nếu không có project."""
-    from app.config import get_project_cwd
+    from midicoder.api.config import get_project_cwd
     project_cwd = get_project_cwd()
     if not project_cwd:
         return None

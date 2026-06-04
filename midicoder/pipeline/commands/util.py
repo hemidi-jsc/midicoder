@@ -740,8 +740,8 @@ def run_feedback(
         no_auto_apply: Nếu True, không trigger pipeline
     """
     if message is None:
-        message = click.prompt("Nhập feedback")
-    
+        message = ""  # Non-interactive: empty feedback
+
     auto_apply = not no_auto_apply
     
     try:

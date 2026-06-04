@@ -1,12 +1,12 @@
-"""
+﻿"""
 Router cho patch files
 """
 
 from fastapi import APIRouter, Query, Request
 
-from app.artifact import get_patch_content, list_patches
-from app.i18n import i18n
-from app.models import ApiResponse
+from midicoder.api.artifact import get_patch_content, list_patches
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse
 
 router = APIRouter(prefix="/patches", tags=["Patches"])
 

@@ -1,290 +1,160 @@
 # ============================================================
-# Midicoder Windows Install Script
+# Midicoder CE - Install Script (Windows PowerShell)
 # ============================================================
-# This script installs Midicoder CLI to %USERPROFILE%\.midicoder
-#
-# Prerequisites:
-#   - PowerShell 5.0 or higher
-#   - Internet connection (to download the binary)
+# Downloads the pre-built binary and installs to %USERPROFILE%\.midicoder
 #
 # Usage:
-#   powershell -ExecutionPolicy Bypass -c "irm https://midicoder.com/install.ps1 | iex"
+#   powershell -c "irm https://midicoder.com/install.ps1 | iex"
 #
 # Options:
-#   -Force      : Overwrite existing installation without prompt
-#   -Sandbox    : Install to ./sandbox/.midicoder instead of %USERPROFILE%
+#   -Force    : Overwrite existing installation
+#   -Version  : Specify version (default: latest)
 # ============================================================
 
 param(
     [switch]$Force,
-    [switch]$Sandbox
+    [string]$Version = "1.0.0"
 )
 
-# ============================================================
-# Configuration
-# ============================================================
+$ErrorActionPreference = "Stop"
 
-$MIDICODER_VERSION = "1.0.0"
-$MIDICODER_REPO = "hemidi-jsc/midicoder"
-$GITHUB_RELEASE_URL = "https://github.com/$MIDICODER_REPO/releases/download/v$MIDICODER_VERSION"
-$DOWNLOAD_URL = "$GITHUB_RELEASE_URL/midicoder-windows-bin.zip"
+$midicoderHome = "$env:USERPROFILE\.midicoder"
+$binPath = Join-Path $midicoderHome "bin"
+$githubBase = "https://github.com/hemidi-jsc/midicoder/releases/download"
+$packageName = "midicoder-windows-bin.zip"
+$downloadUrl = "$githubBase/v$Version/$packageName"
 
-# Determine installation path
-if ($Sandbox) {
-    # Get absolute path to sandbox/.midicoder
-    $scriptDir = (Get-Item $PSScriptRoot).FullName
-    $repoRoot = (Get-Item "$scriptDir\..\..").FullName
-    $MIDICODER_HOME = Join-Path $repoRoot "sandbox\.midicoder"
-    $IS_SANDBOX = $true
-    
-    # For sandbox mode, use local test package if available
-    $LOCAL_PACKAGE = Join-Path $repoRoot "sandbox\midicoder-windows-bin.zip"
-    if (Test-Path $LOCAL_PACKAGE) {
-        $DOWNLOAD_URL = $LOCAL_PACKAGE
-        $USE_LOCAL_PACKAGE = $true
+Write-Host ""
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host "  Midicoder CE Installer v$Version" -ForegroundColor Cyan
+Write-Host "=========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Check existing
+if (Test-Path $binPath) -and (-not $Force) {
+    Write-Host "[WARN] Midicoder already installed at $midicoderHome" -ForegroundColor Yellow
+    $resp = Read-Host "Overwrite? (y/N)"
+    if ($resp -ne "y" -and $resp -ne "Y") { exit 0 }
+    $backup = "$midicoderHome.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    Move-Item $midicoderHome $backup -Force
+    Write-Host "[INFO] Backed up to $backup" -ForegroundColor Cyan
+}
+
+# Download
+Write-Host "[INFO] Downloading from: $downloadUrl" -ForegroundColor Cyan
+$tempFile = [System.IO.Path]::GetTempPath() + "midicoder-install.zip"
+
+try {
+    $progressPreference = 'SilentlyContinue'
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing
+    $progressPreference = 'Continue'
+} catch {
+    Write-Host "[ERROR] Download failed: $_" -ForegroundColor Red
+    exit 1
+}
+
+# Install — ZIP contains midicoder/ folder (COLLECT mode), extract into bin/
+New-Item -ItemType Directory -Path $binPath -Force | Out-Null
+
+# Expand to temp first, then move contents into binPath (strip the midicoder/ wrapper)
+$tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "midicoder-install-$$"
+New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+Expand-Archive -Path $tempFile -DestinationPath $tempDir -Force
+Remove-Item $tempFile -Force
+
+# Move contents: midicoder/midicoder.exe → bin/midicoder.exe
+$extractedDir = Join-Path $tempDir "midicoder"
+if (Test-Path $extractedDir) {
+    Get-ChildItem $extractedDir -Recurse -File | ForEach-Object {
+        $relPath = $_.FullName.Substring($extractedDir.Length + 1)
+        $dest = Join-Path $binPath $relPath
+        $destDir = Split-Path $dest -Parent
+        if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
+        Copy-Item $_.FullName $dest -Force
+    }
+    Get-ChildItem $extractedDir -Directory -Recurse | ForEach-Object {
+        $relPath = $_.FullName.Substring($extractedDir.Length + 1)
+        $destDir = Join-Path $binPath $relPath
+        if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
     }
 } else {
-    $MIDICODER_HOME = "$env:USERPROFILE\.midicoder"
-    $IS_SANDBOX = $false
-    $USE_LOCAL_PACKAGE = $false
+    # Fallback: flat ZIP (single-file mode)
+    Copy-Item "$tempDir\*" $binPath -Recurse -Force
+}
+Remove-Item $tempDir -Recurse -Force
+
+# Verify exe
+$exePath = Join-Path $binPath "midicoder.exe"
+if (-not (Test-Path $exePath)) {
+    Write-Host "[WARN] Installation complete but .exe not found" -ForegroundColor Yellow
+    exit 1
 }
 
-$BIN_PATH = Join-Path $MIDICODER_HOME "bin"
+# Create .cmd wrapper so 'midicoder' works in CMD too
+$cmdWrapper = Join-Path $binPath "midicoder.cmd"
+@"
+@echo off
+"%~dp0midicoder.exe" %*
+"@ | Set-Content $cmdWrapper -Encoding ASCII
 
-# ============================================================
-# Helper Functions
-# ============================================================
-
-function Write-Green { param($Message) Write-Host $Message -ForegroundColor Green }
-function Write-Red { param($Message) Write-Host $Message -ForegroundColor Red }
-function Write-Yellow { param($Message) Write-Host $Message -ForegroundColor Yellow }
-function Write-Cyan { param($Message) Write-Host $Message -ForegroundColor Cyan }
-
-# ============================================================
-# Installation Functions
-# ============================================================
-
-function Show-Header {
-    Write-Cyan "========================================="
-    Write-Cyan "  Midicoder Installer v$MIDICODER_VERSION"
-    Write-Cyan "========================================="
-    Write-Host ""
-    
-    if ($IS_SANDBOX) {
-        Write-Yellow "[SANDBOX MODE] Installing to: $MIDICODER_HOME"
-        Write-Host ""
-    }
-}
-
-function Test-ExistingInstallation {
-    if (Test-Path $BIN_PATH) {
-        Write-Yellow "Midicoder is already installed at $MIDICODER_HOME"
-        
-        if (-not $Force) {
-            $response = Read-Host "Do you want to overwrite? (y/N)"
-            if ($response -ne "y" -and $response -ne "Y") {
-                Write-Host "Installation cancelled."
-                exit 0
-            }
-        }
-        
-        # Backup old installation
-        $backupPath = "$MIDICODER_HOME.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-        Write-Host "Backing up existing installation to $backupPath..."
-        Copy-Item -Path $MIDICODER_HOME -Destination $backupPath -Recurse -Force
-        Remove-Item -Path $MIDICODER_HOME -Recurse -Force
-    }
-}
-
-function Download-Binary {
-    Write-Host "Downloading Midicoder v$MIDICODER_VERSION..."
-    
-    $downloadFile = "midicoder-windows-bin.zip"
-    $downloadPath = Join-Path $env:TEMP $downloadFile
-    
-    try {
-        $progressPreference = 'SilentlyContinue'
-        Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $downloadPath -UseBasicParsing
-        $progressPreference = 'Continue'
-        Write-Green "Download complete."
-    }
-    catch {
-        Write-Red "Error downloading: $_"
-        Write-Red ""
-        Write-Red "Please check your internet connection and try again."
-        Write-Red "Or download manually from: $DOWNLOAD_URL"
-        exit 1
-    }
-    
-    return $downloadPath
-}
-
-function Verify-Download {
-    param($DownloadPath)
-    
-    Write-Host "Verifying download..."
-    
-    if (-not (Test-Path $DownloadPath)) {
-        Write-Red "Error: Downloaded file not found"
-        exit 1
-    }
-    
-    $fileSize = (Get-Item $DownloadPath).Length
-    # For sandbox mode, accept smaller test packages
-    $minSize = if ($USE_LOCAL_PACKAGE) { 100 } else { 1000000 }
-    if ($fileSize -lt $minSize) {
-        Write-Red "Error: Downloaded file size ($fileSize bytes) seems too small"
-        exit 1
-    }
-    
-    if ($USE_LOCAL_PACKAGE) {
-        Write-Green "Using local test package ($fileSize bytes)"
-    } else {
-        Write-Green "Download verified ($([math]::Round($fileSize / 1MB, 2)) MB)"
-    }
-}
-
-function Install-Binary {
-    param($DownloadPath)
-    
-    Write-Host "Installing Midicoder..."
-    
-    # Create directory structure
-    New-Item -ItemType Directory -Path $BIN_PATH -Force | Out-Null
-    New-Item -ItemType Directory -Path (Join-Path $MIDICODER_HOME "cache") -Force | Out-Null
-    New-Item -ItemType Directory -Path (Join-Path $MIDICODER_HOME "logs") -Force | Out-Null
-    
-    # Extract binary
-    try {
-        Expand-Archive -Path $DownloadPath -DestinationPath $BIN_PATH -Force
-        Write-Green "Binary extracted."
-    }
-    catch {
-        Write-Red "Error extracting archive: $_"
-        exit 1
-    }
-    
-    # Clean up download
-    if (Test-Path $DownloadPath) {
-        Remove-Item -Path $DownloadPath -Force
-    }
-}
-
-function Add-ToPath {
-    $binPath = $BIN_PATH
-    
-    if ($IS_SANDBOX) {
-        # For sandbox mode, only add to current session
-        $env:PATH = "$binPath;" + $env:PATH
-        Write-Yellow "[SANDBOX] Added to current session PATH only."
-        return
-    }
-    
-    # Get current PATH (User level)
-    $currentPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-    
-    # Check if already in PATH
-    if ($currentPath -like "*$binPath*") {
-        Write-Yellow "Already in PATH."
-        # Also add to current session
-        $env:PATH = "$binPath;" + $env:PATH
-        return
-    }
-    
-    # Add to PATH (User level - doesn't require admin)
+# Add to PATH (user level)
+$currentPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+if ($currentPath -notlike "*$binPath*") {
     $newPath = "$binPath;$currentPath"
     [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
-    
-    # Update current session
-    $env:PATH = $newPath
-    
-    Write-Green "Added to PATH (user level)."
+    $env:PATH = "$binPath;$env:PATH"
+    Write-Host "[INFO] Added to PATH (user level)" -ForegroundColor Cyan
+} else {
+    $env:PATH = "$binPath;$env:PATH"
 }
 
-function Verify-Installation {
-    Write-Host "Verifying installation..."
-    
-    $midicoderPath = Join-Path $BIN_PATH "midicoder.exe"
-    
-    if (-not (Test-Path $midicoderPath)) {
-        Write-Red "Error: midicoder.exe not found at $midicoderPath"
-        exit 1
-    }
-    
-    try {
-        $versionOutput = & $midicoderPath --version 2>&1
-        if ($versionOutput -and $versionOutput -notlike "*error*" -and $versionOutput -notlike "*Error*") {
-            Write-Green "Midicoder installed successfully!"
-            Write-Green "  $versionOutput"
-            return $true
-        } else {
-            Write-Yellow "Installation complete but verification failed"
-            Write-Yellow "  Output: $versionOutput"
-            return $false
-        }
-    }
-    catch {
-        Write-Yellow "Installation complete but verification failed: $_"
-        return $false
-    }
+# Create Start Menu shortcut
+try {
+    $startMenu = [Environment]::GetFolderPath("StartMenu")
+    $startMenuDir = Join-Path $startMenu "Programs\Midicoder"
+    New-Item -ItemType Directory -Path $startMenuDir -Force | Out-Null
+
+    $wsShell = New-Object -ComObject WScript.Shell
+    $shortcut = $wsShell.CreateShortcut("$startMenuDir\Midicoder.lnk")
+    $shortcut.TargetPath = $exePath
+    $shortcut.IconLocation = "$exePath,0"
+    $shortcut.WorkingDirectory = $binPath
+    $shortcut.Description = "Midicoder CE - Contract Coding Platform"
+    $shortcut.Save()
+
+    # Uninstall shortcut in Start Menu
+    $uninstallScript = Join-Path $repoRoot "..\scripts\uninstall\uninstall.ps1"
+    $uninstallShortcut = $wsShell.CreateShortcut("$startMenuDir\Uninstall Midicoder.lnk")
+    $uninstallShortcut.TargetPath = "powershell.exe"
+    $uninstallShortcut.Arguments = "-ExecutionPolicy Bypass -File `"$PSScriptRoot\..\uninstall\uninstall.ps1`""
+    $uninstallShortcut.WorkingDirectory = $PSScriptRoot
+    $uninstallShortcut.Description = "Uninstall Midicoder"
+    $uninstallShortcut.Save()
+
+    Write-Host "[INFO] Start Menu shortcuts created" -ForegroundColor Cyan
+} catch {
+    Write-Host "[WARN] Could not create Start Menu shortcuts: $_" -ForegroundColor Yellow
 }
 
-function Print-Usage {
-    Write-Host ""
-    Write-Green "========================================="
-    Write-Green "  Installation Complete!"
-    Write-Green "========================================="
-    Write-Host ""
-    
-    if ($IS_SANDBOX) {
-        Write-Host "To use midicoder in sandbox mode:"
-        Write-Host "  1. Add to PATH (current session):"
-        Write-Host "     $env:PATH = '$BIN_PATH';$env:PATH"
-        Write-Host ""
-        Write-Host "  2. Or run directly:"
-        Write-Host "     $BIN_PATH\midicoder.exe --version"
-        Write-Host ""
-    }
-    else {
-        Write-Host "To use midicoder:"
-        Write-Host "  1. Open a new PowerShell/Command Prompt window"
-        Write-Host "     (or run: $env:PATH = [Environment]::GetEnvironmentVariable('PATH','User') + $env:PATH)"
-        Write-Host ""
-        Write-Host "  2. Try running:"
-        Write-Host "     midicoder --version"
-        Write-Host "     midicoder --help"
-        Write-Host "     midicoder init"
-        Write-Host ""
-    }
-    
-    Write-Host "Installation directory: $MIDICODER_HOME"
-    Write-Host "Documentation: https://midicoder.com/docs"
-    Write-Host ""
-    
-    Write-Host "To uninstall:"
-    Write-Host "  powershell -ExecutionPolicy Bypass -File $MIDICODER_HOME\..\uninstall\uninstall.ps1"
-    Write-Host ""
+# Create Desktop shortcut
+try {
+    $desktop = [Environment]::GetFolderPath("Desktop")
+    $wsShell = New-Object -ComObject WScript.Shell
+    $shortcut = $wsShell.CreateShortcut("$desktop\Midicoder.lnk")
+    $shortcut.TargetPath = $exePath
+    $shortcut.IconLocation = "$exePath,0"
+    $shortcut.WorkingDirectory = $binPath
+    $shortcut.Description = "Midicoder CE - Contract Coding Platform"
+    $shortcut.Save()
+    Write-Host "[INFO] Desktop shortcut created" -ForegroundColor Cyan
+} catch {
+    Write-Host "[WARN] Could not create Desktop shortcut: $_" -ForegroundColor Yellow
 }
 
-# ============================================================
-# Main
-# ============================================================
-
-function Main {
-    Show-Header
-    Test-ExistingInstallation
-    $downloadPath = Download-Binary
-    Verify-Download -DownloadPath $downloadPath
-    Install-Binary -DownloadPath $downloadPath
-    Add-ToPath
-    $verified = Verify-Installation
-    Print-Usage
-    
-    if (-not $verified) {
-        Write-Yellow ""
-        Write-Yellow "Note: If midicoder command is not found, please restart your terminal."
-    }
-}
-
-# Run
-Main
+Write-Host ""
+Write-Host "To use midicoder:"
+Write-Host "  1. Open a new terminal"
+Write-Host "  2. Run: midicoder"
+Write-Host ""
+Write-Host "Uninstall: Remove-Item -Recurse -Force $midicoderHome"
+Write-Host ""

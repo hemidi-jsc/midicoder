@@ -1,15 +1,12 @@
-"""
-Router cho Version — reuse CLI pipeline qua cli_wrapper.
-
-Tất cả version operations gọi CLI `midicoder version <subcommand>` qua subprocess wrapper.
-WebGUI chỉ là wrapper, không tự implement logic version.
+﻿"""
+Router cho Version — reuse pipeline qua pipeline_bridge.
 """
 
 from fastapi import APIRouter, Query, Request
 
-from app.cli_wrapper import cli_wrapper
-from app.i18n import i18n
-from app.models import ApiResponse
+from midicoder.api.pipeline_bridge import pipeline_bridge
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse
 
 router = APIRouter(prefix="/version", tags=["Version"])
 
@@ -35,7 +32,7 @@ async def create_version(request: Request = None):
     if from_version:
         args["from"] = from_version
 
-    result = await cli_wrapper.execute_command("version", "create", args)
+    result = await pipeline_bridge.execute_command("version", "create", args)
 
     if result["success"]:
         return ApiResponse(
@@ -69,7 +66,7 @@ async def use_version(request: Request = None):
             language=language,
         )
 
-    result = await cli_wrapper.execute_command("version", "use", {"_positional": version})
+    result = await pipeline_bridge.execute_command("version", "use", {"_positional": version})
 
     if result["success"]:
         return ApiResponse(
@@ -92,7 +89,7 @@ async def list_versions(request: Request = None):
     """List versions — reuse CLI `midicoder version list`."""
     language = i18n.get_language_from_request(request)
 
-    result = await cli_wrapper.execute_command("version", "list")
+    result = await pipeline_bridge.execute_command("version", "list")
 
     if result["success"]:
         return ApiResponse(
@@ -119,7 +116,7 @@ async def delete_version(
     language = i18n.get_language_from_request(request)
 
     args = {"_positional": version, "force": force}
-    result = await cli_wrapper.execute_command("version", "delete", args)
+    result = await pipeline_bridge.execute_command("version", "delete", args)
 
     if result["success"]:
         return ApiResponse(

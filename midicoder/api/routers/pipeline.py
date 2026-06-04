@@ -1,4 +1,4 @@
-"""
+﻿"""
 Router cho pipeline status
 Đọc trực tiếp từ SQLite với explicit project path (không dùng Path.cwd())
 """
@@ -8,8 +8,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, Request
 
-from app.i18n import i18n
-from app.models import ApiResponse
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse
 
 router = APIRouter(prefix="/pipeline", tags=["Pipeline"])
 
@@ -160,7 +160,7 @@ async def get_pipeline_status(request: Request):
     try:
         from midicoder.pipeline.config import get_config
         from midicoder.storage.projects import ProjectsManager
-        from app.config import get_project_cwd
+        from midicoder.api.config import get_project_cwd
 
         # Lấy project path active
         project_cwd = get_project_cwd()
@@ -243,7 +243,7 @@ async def list_versions(request: Request):
     language = i18n.get_language_from_request(request)
 
     try:
-        from app.config import get_project_cwd
+        from midicoder.api.config import get_project_cwd
 
         project_cwd = get_project_cwd()
         versions = _get_versions_for_project(project_cwd)

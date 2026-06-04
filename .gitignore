@@ -38,3 +38,10 @@ sandbox/
 # Runtime-generated stacks directories (created by tests/emitters)
 midicoder/stacks/test/
 midicoder/stacks/v*/
+
+# Angular dist (build artifact — built at release time)
+webgui/dist/
+
+# Frontend dist (build artifact — copied from webgui/dist during build)
+midicoder/frontend/
+!midicoder/frontend/.gitkeep

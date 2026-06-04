@@ -123,23 +123,21 @@ remove_from_path() {
         log_warning "[SANDBOX] Not modifying system PATH (sandbox mode)"
         return
     fi
-    
+
     log_info "Removing from PATH..."
-    
-    # Remove from common shell config files
+
+    # The installer adds: export PATH="$HOME/.midicoder/bin:$PATH"
+    # Remove any line containing .midicoder/bin from shell config files
     for CONFIG_FILE in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile" "$HOME/.bash_profile"; do
         if [ -f "$CONFIG_FILE" ]; then
-            if grep -q "MIDICODER_HOME" "$CONFIG_FILE" 2>/dev/null; then
-                # Remove midicoder-related lines
-                sed -i '/MIDICODER_HOME/d' "$CONFIG_FILE" 2>/dev/null || \
-                sed -i.bak '/MIDICODER_HOME/d' "$CONFIG_FILE" 2>/dev/null || true
-                sed -i '/Midicoder installation/d' "$CONFIG_FILE" 2>/dev/null || \
-                sed -i.bak '/Midicoder installation/d' "$CONFIG_FILE" 2>/dev/null || true
+            if grep -q "\.midicoder" "$CONFIG_FILE" 2>/dev/null; then
+                sed -i '/\.midicoder/d' "$CONFIG_FILE" 2>/dev/null || \
+                sed -i.bak '/\.midicoder/d' "$CONFIG_FILE" 2>/dev/null || true
                 log_info "Removed from $CONFIG_FILE"
             fi
         fi
     done
-    
+
     log_success "Removed from shell configs."
 }
 

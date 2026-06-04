@@ -1,12 +1,12 @@
-"""
+﻿"""
 Router cho các commands về IR (MIR)
 """
 
 from fastapi import APIRouter, Query, Request
 
-from app.cli_wrapper import cli_wrapper
-from app.i18n import i18n
-from app.models import ApiResponse, IRBuildRequest
+from midicoder.api.pipeline_bridge import pipeline_bridge
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse, IRBuildRequest
 
 router = APIRouter(prefix="/ir", tags=["IR"])
 
@@ -29,7 +29,7 @@ async def build_ir(request_data: IRBuildRequest = None, request: Request = None)
     language = i18n.get_language_from_request(request) if request else "vi"
 
     # Gọi CLI wrapper để build IR
-    result = await cli_wrapper.ir_build(skip_diagrams=request_data.skip_diagrams)
+    result = await pipeline_bridge.ir_build(skip_diagrams=request_data.skip_diagrams)
 
     if result["success"]:
         return ApiResponse(

@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from midicoder.packs.cp14_audit_compliance.audit_engine import AuditLogger
-from midicoder.packs.cp14_audit_compliance.models import AuditActionType, AuditTrail
+from midicoder.packs.cp_full_audit_compliance.audit_engine import AuditLogger
+from midicoder.packs.cp_full_audit_compliance.models import AuditActionType, AuditTrail
 
 from .base import EffectResult
 

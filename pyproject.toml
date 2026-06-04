@@ -5,32 +5,46 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "midicoder"
 version = "1.0.0"
-description = "Midicoder CE"
+description = "Midicoder CE - Contract Coding Platform"
 readme = "README.md"
-requires-python = "==3.12.*"
+requires-python = ">=3.12"
 authors = [{ name = "Midicoder Team" }]
 license = { file = "LICENSE" }
 dependencies = [
-  "typer>=0.9.0",
   "pydantic>=2.0.0",
   "ruamel.yaml>=0.17.0",
-  "rich>=13.0.0",
-  "questionary>=2.0.0",
   "tree_sitter>=0.21.3",
   "tree_sitter_languages>=1.10.2",
   "code-review-graph>=2.3.2",
   "openai>=1.0.0",
   "tiktoken>=0.7.0",
+  "uvicorn[standard]>=0.30.0",
+  "fastapi>=0.115.0",
+  "pydantic-settings>=2.6.0",
+  "datasette>=0.64.0",
+  # click vẫn cần cho commands/ (pipeline_bridge capture click.echo)
+  "click>=8.0.0",
+  # pystray cho system tray icon (windowed launcher mode)
+  "pystray>=0.19.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-asyncio>=0.24.0",
+  "pyinstaller>=6.0.0",
+  "ruff>=0.9.0",
 ]
 
 [project.scripts]
-midicoder = "midicoder.cli:app"
+midicoder = "midicoder.launcher:run"
 
-[project.entry-points."python.command"]
-midicoder = "midicoder.__main__:main"
+[tool.setuptools.packages.find]
+include = ["midicoder*"]
 
-[tool.setuptools]
-packages = ["midicoder"]
+[tool.setuptools.package-data]
+"midicoder" = ["**/*.md", "**/*.jinja2", "**/*.yml", "**/*.yaml"]
+"midicoder.pipeline" = ["prompts/**/*.md"]
 
 [tool.black]
 target-version = ["py311"]

@@ -1,12 +1,12 @@
-"""
+﻿"""
 Router cho init — khởi tạo dự án mới
 """
 
 from fastapi import APIRouter, Request
 
-from app.cli_wrapper import cli_wrapper
-from app.i18n import i18n
-from app.models import ApiResponse, InitRequest
+from midicoder.api.pipeline_bridge import pipeline_bridge
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse, InitRequest
 
 router = APIRouter(prefix="/init", tags=["Init"])
 
@@ -55,7 +55,7 @@ async def init_project(request_data: InitRequest, request: Request):
 
     # Call CLI wrapper — note: init doesn't have a dedicated wrapper method,
     # so we execute it directly via the CLI
-    result = await cli_wrapper.execute_command("init", cli_args)
+    result = await pipeline_bridge.execute_command("init", cli_args)
 
     if result["success"]:
         return ApiResponse(

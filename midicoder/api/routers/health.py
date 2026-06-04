@@ -1,13 +1,13 @@
-"""
+﻿"""
 Router cho health check và thông tin hệ thống
 """
 
 from datetime import datetime
 from fastapi import APIRouter, Request
 
-from app.config import settings, get_project_cwd, get_global_config_path
-from app.i18n import i18n
-from app.models import ApiResponse, HealthResponse, LanguagesResponse
+from midicoder.api.config import settings, get_project_cwd, get_global_config_path
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse, HealthResponse, LanguagesResponse
 
 router = APIRouter(prefix="/health", tags=["Health"])
 

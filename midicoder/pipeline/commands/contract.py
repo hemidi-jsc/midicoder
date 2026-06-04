@@ -499,10 +499,8 @@ def generate_contracts(force: bool = False):
 
     if existing and not force:
         click.echo(f"⚠️  Contracts đã tồn tại ({len(existing)} artifacts)")
-        response = click.prompt("Ghi đè? (y/n)", default="n")
-        if response.lower() != "y":
-            click.echo("❌ Huỷ bỏ.")
-            return
+        click.echo("   → Không ghi đè (dùng --force để ghi đè)")
+        return
 
     # Step 3: Delegate đến _generate_contracts_to_sqlite (có placeholder fallback)
     click.echo("")

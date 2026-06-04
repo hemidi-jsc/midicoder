@@ -1,12 +1,12 @@
-"""
+﻿"""
 Router cho các commands về index
 """
 
 from fastapi import APIRouter, Request
 
-from app.cli_wrapper import cli_wrapper
-from app.i18n import i18n
-from app.models import ApiResponse, IndexReindexRequest
+from midicoder.api.pipeline_bridge import pipeline_bridge
+from midicoder.api.i18n import i18n
+from midicoder.api.models import ApiResponse, IndexReindexRequest
 
 router = APIRouter(prefix="/index", tags=["Index"])
 
@@ -25,7 +25,7 @@ async def build_index(request: Request):
     language = i18n.get_language_from_request(request)
     
     # Gọi CLI wrapper để build index
-    result = await cli_wrapper.index_build()
+    result = await pipeline_bridge.index_build()
     
     if result["success"]:
         return ApiResponse(
@@ -61,7 +61,7 @@ async def reindex(request_data: IndexReindexRequest = None, request: Request = N
     language = i18n.get_language_from_request(request) if request else "vi"
     
     # Gọi CLI wrapper để reindex
-    result = await cli_wrapper.index_reindex(request_data.paths if request_data.paths else None)
+    result = await pipeline_bridge.index_reindex(request_data.paths if request_data.paths else None)
     
     if result["success"]:
         return ApiResponse(

@@ -314,7 +314,7 @@ class TestBriefsManager:
     def test_create_master_brief(self):
         """
         Test: Tạo brief với type='master'.
-        
+
         Verification: Brief có type='master' khi指定.
         """
         result = self.manager.create(
@@ -323,8 +323,127 @@ class TestBriefsManager:
             content="Master content",
             brief_type="master"
         )
-        
+
         assert result["type"] == "master"
+
+    # ------------------------------------------------------------------ #
+    # Tests cho methods mới: library brief lifecycle
+    # ------------------------------------------------------------------ #
+
+    def test_update_type(self):
+        """
+        Test: update_type() chuyển type của brief.
+
+        Verification: brief.type được cập nhật đúng.
+        """
+        bid = "type-change-test"
+        self.manager.create(bid, "v1.0.0", "content")
+        self.manager.update_type(bid, "library")
+
+        brief = self.manager.get(bid)
+        assert brief["type"] == "library"
+
+    def test_search_by_type(self):
+        """
+        Test: search_by_type() filter đúng type.
+
+        Verification: trả về danh sách briefs có type match.
+        """
+        self.manager.create("b1", "v1.0.0", "c1", brief_type="working")
+        self.manager.create("b2", "v1.0.0", "c2", brief_type="library")
+        self.manager.create("b3", "v1.0.0", "c3", brief_type="library")
+
+        libraries = self.manager.search_by_type("library")
+        assert len(libraries) == 2
+        assert all(b["type"] == "library" for b in libraries)
+
+        workings = self.manager.search_by_type("working")
+        assert len(workings) == 1
+
+    def test_save_as_library(self):
+        """
+        Test: save_as_library() chuyển master → library + frozen.
+
+        Verification: type='library', status='frozen', title=name.
+        """
+        bid = "save-lib-test"
+        self.manager.create(bid, "v1.0.0", "master content", title="Original Title", brief_type="master")
+        self.manager.update_status(bid, "clarified")
+
+        self.manager.save_as_library(bid, "my-library-brief", "productivity,api")
+
+        brief = self.manager.get(bid)
+        assert brief["type"] == "library"
+        assert brief["status"] == "frozen"
+        assert brief["title"] == "my-library-brief"
+
+    def test_save_as_library_without_tags(self):
+        """
+        Test: save_as_library() không có tags vẫn hoạt động.
+        """
+        bid = "save-lib-no-tags"
+        self.manager.create(bid, "v1.0.0", "content", brief_type="master")
+        self.manager.save_as_library(bid, "no-tags-brief")
+
+        brief = self.manager.get(bid)
+        assert brief["type"] == "library"
+        assert brief["title"] == "no-tags-brief"
+
+    def test_get_library_brief_by_name(self):
+        """
+        Test: get_library_brief() tìm đúng brief theo name (title).
+
+        Verification: trả về brief record với type='library'.
+        """
+        self.manager.create("lb1", "v1.0.0", "content1", title="LibA", brief_type="library")
+        self.manager.create("lb2", "v1.0.0", "content2", title="LibB", brief_type="library")
+
+        found = self.manager.get_library_brief("LibA")
+        assert found is not None
+        assert found["brief_id"] == "lb1"
+        assert found["type"] == "library"
+
+    def test_get_library_brief_not_found(self):
+        """
+        Test: get_library_brief() không tìm thấy → None.
+        """
+        self.manager.create("lb1", "v1.0.0", "content", title="LibA", brief_type="library")
+
+        found = self.manager.get_library_brief("NonExistent")
+        assert found is None
+
+    def test_duplicate_brief(self):
+        """
+        Test: duplicate_brief() tạo bản copy với brief_id mới và type mới.
+
+        Verification:
+        - Record mới có brief_id mới, type mới, status=draft
+        - Content và hash giống bản gốc
+        - Bản gốc không bị thay đổi
+        """
+        src_id = "src-brief"
+        self.manager.create(src_id, "v2.0.0", "original content", title="Src Title", brief_type="library")
+
+        new = self.manager.duplicate_brief(src_id, "new-brief-id", "working")
+
+        assert new is not None
+        assert new["brief_id"] == "new-brief-id"
+        assert new["type"] == "working"
+        assert new["status"] == "draft"
+        assert new["content"] == "original content"
+        assert new["title"] == "Src Title"
+        assert new["version"] == "v2.0.0"
+
+        # Bản gốc không đổi
+        orig = self.manager.get(src_id)
+        assert orig["type"] == "library"
+
+    def test_duplicate_brief_unknown_source(self):
+        """
+        Test: duplicate_brief() với source không tồn tại → None.
+        """
+        result = self.manager.duplicate_brief("nonexistent", "new-id", "working")
+        assert result is None
 
 
 if __name__ == "__main__":
