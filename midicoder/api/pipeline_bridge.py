@@ -1,20 +1,14 @@
 """
 PipelineBridge — bridge between backend routers and midicoder pipeline commands.
 
-Import và gọi trực tiếp functions từ midicoder.pipeline.commands/
-thay vì subprocess. Không còn wrap CLI nữa.
-
-Capture click.echo output → trả về stdout string cho routers.
+Calls functions from midicoder.pipeline.commands/ directly,
+with click.echo capture for stdout output.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import io
-import os
-import sys
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
@@ -93,13 +87,11 @@ class PipelineBridge:
         subcommand = cmd_parts[1].lower() if len(cmd_parts) > 1 else None
 
         dispatch = {
-            "init": lambda: self._dispatch_init(kwargs),
             "contract": lambda: self._dispatch_contract(subcommand, kwargs),
             "ir": lambda: self._dispatch_ir(subcommand, kwargs),
             "code": lambda: self._dispatch_code(subcommand, kwargs),
             "version": lambda: self._dispatch_version(subcommand, kwargs),
             "index": lambda: self._dispatch_index(subcommand, kwargs),
-            "config": lambda: self._dispatch_config(subcommand, kwargs),
             "runtime": lambda: self._dispatch_runtime(subcommand, kwargs),
         }
 
@@ -159,21 +151,6 @@ class PipelineBridge:
     async def index_reindex(self, paths: Optional[List[str]] = None) -> Dict[str, Any]:
         return await self.execute_command("index", "build")
 
-    async def config_list(self) -> Dict[str, Any]:
-        return await self.execute_command("config", "list")
-
-    async def config_get(self, key: str) -> Dict[str, Any]:
-        return await self.execute_command("config", "get", key=key)
-
-    async def config_set(self, key: str, value: str) -> Dict[str, Any]:
-        return await self.execute_command("config", "set", key=key, value=value)
-
-    async def config_validate(self) -> Dict[str, Any]:
-        return await self.execute_command("config", "validate")
-
-    async def config_reset(self) -> Dict[str, Any]:
-        return await self.execute_command("config", "reset")
-
     async def runtime_test(
         self, target: str = "all", timeout: int = 30
     ) -> Dict[str, Any]:
@@ -185,14 +162,8 @@ class PipelineBridge:
         return await self.execute_command("runtime", "fix", target=target)
 
     # ------------------------------------------------------------------ #
-    #  Dispatchers — map (command, subcommand) → pure function call
+    #  Dispatchers
     # ------------------------------------------------------------------ #
-
-    def _dispatch_init(self, kwargs) -> Dict[str, Any]:
-        from midicoder.pipeline.commands.init import run_init
-        force = kwargs.get("force", False)
-        version = kwargs.get("version", "v1.0.0")
-        return _sync_wrap(lambda: run_init(force=force, version=version))
 
     def _dispatch_contract(self, sub: str, kwargs) -> Dict[str, Any]:
         if sub == "gen":
@@ -282,27 +253,7 @@ class PipelineBridge:
             }
         return _not_implemented("index", sub)
 
-    def _dispatch_config(self, sub: str, kwargs) -> Dict[str, Any]:
-        from midicoder.pipeline.commands.util import (
-            config_show, config_set as cli_config_set, config_reset,
-        )
-        if sub == "list":
-            return _sync_wrap(lambda: config_show())
-        elif sub == "get":
-            key = kwargs.get("key", "")
-            return _sync_wrap(lambda: config_show())  # simplified
-        elif sub == "set":
-            key = kwargs.get("key", "")
-            value = kwargs.get("value", "")
-            return _sync_wrap(lambda: cli_config_set(key, value))
-        elif sub == "validate":
-            return _sync_wrap(lambda: config_show())  # simplified
-        elif sub == "reset":
-            return _sync_wrap(lambda: config_reset())
-        return _not_implemented("config", sub)
-
     def _dispatch_runtime(self, sub: str, kwargs) -> Dict[str, Any]:
-        # Runtime test/fix — stub for now
         target = kwargs.get("target", "all")
         return {
             "success": True,

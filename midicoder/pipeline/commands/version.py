@@ -52,7 +52,7 @@ def get_workspace_dir() -> Path:
     if not workspace_dir.exists():
         EM.raise_error(
             ErrorCode.CONFIG_READ_FAILED,
-            message="Workspace chưa được khởi tạo. Hãy chạy `midicoder init` trước.",
+            message="Workspace chưa được khởi tạo. Hãy tạo project từ WebGUI trước.",
             path=str(workspace_dir),
         )
     return workspace_dir

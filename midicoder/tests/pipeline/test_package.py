@@ -110,12 +110,6 @@ class TestPipelinePackage:
 
         assert DEFAULT_VERSION == "v1.0.0"
 
-    def test_default_config_file_constant(self):
-        """Kiểm tra DEFAULT_CONFIG_FILE constant."""
-        from midicoder.pipeline import DEFAULT_CONFIG_FILE
-
-        assert DEFAULT_CONFIG_FILE == "midicoder.json"
-
     def test_default_workspace_dir_constant(self):
         """Kiểm tra DEFAULT_WORKSPACE_DIR constant."""
         from midicoder.pipeline import DEFAULT_WORKSPACE_DIR
@@ -150,7 +144,6 @@ class TestPipelinePackage:
         expected_constants = [
             "PACKAGE_NAME",
             "DEFAULT_VERSION",
-            "DEFAULT_CONFIG_FILE",
             "DEFAULT_WORKSPACE_DIR",
             "BRIEF_FILENAME",
         ]

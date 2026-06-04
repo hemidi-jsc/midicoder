@@ -1,40 +1,26 @@
 """
-Cấu hình cho API Server
-Tất cả comment đều bằng tiếng Việt
+API Server configuration.
+
+Project active path: ProjectsManager (SQLite projects.db)
+Global settings: SettingsManager (SQLite settings.db)
 """
 
-import json
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Cấu hình ứng dụng FastAPI"""
-    
-    # Tên ứng dụng
     app_name: str = "Midicoder WebGUI API"
-    
-    # Phiên bản API
     api_version: str = "v1"
-    
-    # Cấu hình server
     host: str = "localhost"
     port: int = 6868
-    
-    # Cấu hình CORS (cho phép frontend Angular trên cùng máy)
     cors_origins: list[str] = [
         "http://localhost:7272",
         "http://127.0.0.1:7272",
     ]
-    
-    # Ngôn ngữ mặc định
     default_language: str = "vi"
     supported_languages: list[str] = ["vi", "en"]
-    
-    # Timeout cho CLI commands (giây)
-    cli_timeout: int = 1800  # 30 phút
-    
-    # Cấu hình WebSocket
+    cli_timeout: int = 1800
     ws_ping_interval: float = 30.0
     ws_ping_timeout: float = 10.0
 
@@ -44,52 +30,17 @@ class Settings(BaseSettings):
     }
 
 
-# Instance toàn cục
 settings = Settings()
 
 
 def get_global_config_path() -> Path:
-    """
-    Lấy đường dẫn đến file cấu hình global ~/.midicoder/midicoder.json
-    
-    Returns:
-        Path: Đường dẫn đến file config
-    """
-    home_dir = Path.home()
-    return home_dir / ".midicoder" / "midicoder.json"
-
-
-def load_global_config() -> dict:
-    """
-    Load cấu hình global từ ~/.midicoder/midicoder.json
-    
-    Returns:
-        dict: Cấu hình global, hoặc dict rỗng nếu file không tồn tại
-    """
-    config_path = get_global_config_path()
-    
-    if not config_path.exists():
-        return {}
-    
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return {}
+    """Path to global data directory."""
+    from midicoder.storage.settings import GLOBAL_DATA_DIR
+    return GLOBAL_DATA_DIR
 
 
 def get_project_cwd() -> str | None:
-    """
-    Lấy đường dẫn working directory của project đang active.
-
-    Ưu tiên:
-    1. ProjectsManager.get_active_project_path() (SQLite ~/.midicoder/data/projects.db)
-    2. Global config project.cwd (~/.midicoder/midicoder.json)
-
-    Returns None nếu không có project active — không fallback Path.cwd()
-    vì midicoder support multiple projects.
-    """
-    # Thử đọc từ ProjectsManager
+    """Active project path from ProjectsManager, or None."""
     try:
         from midicoder.storage.projects import ProjectsManager
         mgr = ProjectsManager()
@@ -99,40 +50,49 @@ def get_project_cwd() -> str | None:
             return active_path
     except Exception:
         pass
-
-    # Fallback: đọc từ global config
-    config = load_global_config()
-    if "project" in config and "cwd" in config["project"]:
-        return config["project"]["cwd"]
-
     return None
 
 
-# Load global config khi khởi động
-_global_config = load_global_config()
-_project_cwd = get_project_cwd()
-
-
 def get_active_version() -> str | None:
-    """Lấy active version từ config."""
+    """Active version from ProjectsManager, fallback to project YAML."""
+    try:
+        from midicoder.storage.projects import ProjectsManager
+        cwd = get_project_cwd()
+        if not cwd:
+            return None
+        mgr = ProjectsManager()
+        mgr.init()
+        active = mgr.get_active()
+        if active:
+            project_id = active["project_id"]
+            ver = mgr.version_get_active(project_id)
+            if ver:
+                return ver["version_name"]
+    except Exception:
+        pass
+
     try:
         cwd = get_project_cwd()
         if not cwd:
             return None
-        active_file = Path(cwd) / ".midicoder" / "config" / "active_version.txt"
-        if active_file.exists():
-            return active_file.read_text().strip()
+        config_file = Path(cwd) / ".midicoder" / "config" / "midicoder.yml"
+        if config_file.exists():
+            import yaml
+            data = yaml.safe_load(config_file.read_text()) or {}
+            if "active_version" in data:
+                return data["active_version"]
     except Exception:
         pass
+
     return None
 
 
 def get_version_dir(version: str | None = None) -> Path | None:
-    """Lấy path đến version directory. Returns None nếu không có project active."""
+    """Path to version directory, or None if no active project."""
     cwd = get_project_cwd()
     if not cwd:
         return None
     v = version or get_active_version()
     if not v:
-        v = "v1.0.0"  # fallback
+        return None
     return Path(cwd) / ".midicoder" / "versions" / v

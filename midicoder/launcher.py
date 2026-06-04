@@ -206,6 +206,28 @@ def _wait_for_port(port: int, timeout: int = 30) -> bool:
     return False
 
 
+def _init_databases() -> None:
+    """Initialize global SQLite databases on first launch.
+
+    Creates ~/.midicoder/data/{projects.db, settings.db} with schemas.
+    """
+    try:
+        from midicoder.storage.projects import ProjectsManager
+        from midicoder.storage.settings import SettingsManager
+
+        # Init projects.db
+        projects_mgr = ProjectsManager()
+        projects_mgr.init()
+        _log("Initialized projects.db")
+
+        # Init settings.db (includes legacy migration)
+        settings_mgr = SettingsManager()
+        settings_mgr.init()
+        _log("Initialized settings.db")
+    except Exception as e:
+        _log(f"Database initialization error (non-fatal): {e}")
+
+
 def _kill_process_on_port(port: int) -> bool:
     """Kill any process listening on the given port (Windows).
 
@@ -339,24 +361,46 @@ def _start_frontend() -> Optional[ServerHandle]:
 
 
 def _start_sqlite_viewer() -> Optional[ServerHandle]:
-    """Start Datasette SQLite viewer in a thread."""
-    data_dir = Path.home() / ".midicoder" / "data"
-    if not data_dir.exists():
-        _log(f"Data directory không tồn tại: {data_dir}")
-        return None
+    """Start Datasette SQLite viewer in a thread.
 
+    Shows ALL databases:
+    - Global: ~/.midicoder/data/{projects.db, settings.db}
+    - Per-project: <project_path>/.midicoder/data/*.db (for each registered project)
+    """
     try:
         from datasette.app import Datasette
     except ImportError:
         _log("Datasette không thể import")
         return None
 
-    db_files = list(data_dir.glob("*.db"))
+    db_files = []
+
+    # 1. Global DBs
+    global_data = Path.home() / ".midicoder" / "data"
+    if global_data.exists():
+        db_files.extend([str(f) for f in global_data.glob("*.db")])
+
+    # 2. Per-project DBs from registered projects
+    try:
+        from midicoder.storage.projects import ProjectsManager
+        mgr = ProjectsManager()
+        mgr.init()
+        for proj in mgr.list_all():
+            proj_data = Path(proj["path"]) / ".midicoder" / "data"
+            if proj_data.exists():
+                db_files.extend([str(f) for f in proj_data.glob("*.db")])
+    except Exception as e:
+        _log(f"Could not list project DBs: {e}")
+
     if not db_files:
-        _log(f"Không tìm thấy file .db trong {data_dir}")
+        _log("Không tìm thấy file .db để hiển thị")
         return None
 
-    ds_app = Datasette(files=[str(f) for f in db_files], cors=True)
+    # Deduplicate by absolute path
+    db_files = list(set(Path(p).resolve() for p in db_files))
+    db_files = [str(p) for p in db_files]
+
+    ds_app = Datasette(files=db_files, cors=True)
 
     import uvicorn
     config = uvicorn.Config(
@@ -489,7 +533,10 @@ def run() -> int:
     _log(f"Log file: {log_path}")
     _log(f"Windowed mode: {is_windowed}")
 
-    # 1b. Ensure ports are free before starting
+    # 1b. Initialize global SQLite databases
+    _init_databases()
+
+    # 1c. Ensure ports are free before starting
     _ensure_ports_free()
     time.sleep(0.5)  # brief pause for OS to release ports
 

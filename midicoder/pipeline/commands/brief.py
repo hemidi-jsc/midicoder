@@ -99,7 +99,7 @@ def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
 
     if not active_version:
         click.echo("❌ Không tìm thấy active_version trong config")
-        click.echo("💡 Chạy 'midicoder version create' hoặc 'midicoder init' trước")
+        click.echo("💡 Chạy 'midicoder version create' trước")
         raise SystemExit(1)
 
     # Bước 2: Xác định đường dẫn brief file
@@ -224,7 +224,7 @@ def _execute_analyze(domain: Optional[str] = None, force: bool = False) -> None:
     except Exception as e:
         click.echo(f"❌ Lỗi khi phân tích với LLM: {e}")
         click.echo("💡 Brief đã lưu nhưng chưa có analysis. Hãy:")
-        click.echo("   1. Kiểm tra ~/.midicoder/midicoder.json")
+        click.echo("   1. Kiểm tra LLM config trong Settings")
         click.echo("   2. Đảm bảo LLM server đang chạy")
         click.echo("   3. Chạy lại lệnh")
         raise SystemExit(1)

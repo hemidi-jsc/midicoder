@@ -23,7 +23,6 @@ __package_name__ = "midicoder.pipeline"
 # === Package Constants ===
 PACKAGE_NAME = "midicoder"
 DEFAULT_VERSION = "v1.0.0"
-DEFAULT_CONFIG_FILE = "midicoder.json"
 DEFAULT_WORKSPACE_DIR = ".midicoder"
 BRIEF_FILENAME = "brief.md"
 
@@ -34,7 +33,6 @@ __all__ = [
     "__package_name__",
     "PACKAGE_NAME",
     "DEFAULT_VERSION",
-    "DEFAULT_CONFIG_FILE",
     "DEFAULT_WORKSPACE_DIR",
     "BRIEF_FILENAME",
 ]

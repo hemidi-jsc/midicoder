@@ -84,10 +84,12 @@ services:
 """)
         
         # Tạo config file
-        config_file = midicoder_dir / "midicoder.json"
-        config_file.write_text(json.dumps({
+        config_file = midicoder_dir / "config" / "midicoder.yml"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        import yaml
+        config_file.write_text(yaml.dump({
             "active_version": "v1.0.0",
-            "project_name": "test-project"
+            "midicoder_version": "1.0.0"
         }))
         
         yield project_dir

@@ -372,10 +372,9 @@ def get_neo4j_status() -> Dict[str, Any]:
     
     try:
         cfg = get_config()
-        global_conf = cfg.load_global_config()
-        
-        host = global_conf.get("neo4j", {}).get("host", "localhost")
-        port = global_conf.get("neo4j", {}).get("port", 7687)
+
+        host = cfg.get("neo4j.host", "localhost")
+        port = cfg.get("neo4j.port", 7687)
         
         # Try to connect
         import neo4j
@@ -482,7 +481,7 @@ def get_status(json_output: bool = False) -> Dict[str, Any]:
                 "timestamp": datetime.now().isoformat()
             },
             "workspace": workspace,
-            "error": "Project not initialized. Run `midicoder init` first."
+            "error": "Project not initialized. Create project from WebGUI first."
         }
         return status
     
@@ -527,7 +526,7 @@ def format_status_human(status: Dict[str, Any]) -> str:
     lines.append("")
     
     if not workspace.get("initialized"):
-        lines.append("Project not initialized. Run `midicoder init` first.")
+        lines.append("Project not initialized. Create project from WebGUI first.")
         return "\n".join(lines)
     
     # Active version
@@ -641,9 +640,9 @@ def config_show():
     from midicoder.pipeline.config import get_config
     
     cfg = get_config()
-    global_conf = cfg.load_global_config()
-    
-    click.echo(json.dumps(global_conf, indent=2, default=str))
+    all_settings = cfg.load_global_config().get_all()
+
+    click.echo(json.dumps(all_settings, indent=2, default=str))
 
 
 def config_set(key: str, value: str):

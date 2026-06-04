@@ -1499,7 +1499,7 @@ class MidicoderErrorManager:
         ErrorCode.VERSION_ALREADY_EXISTS: "Version đã tồn tại. Vui lòng chọn tên khác.",
 
         # Index Command Errors
-        ErrorCode.INDEX_PROJECT_NOT_FOUND: "Không tìm thấy project directory. Hãy chạy `midicoder init` trước.",
+        ErrorCode.INDEX_PROJECT_NOT_FOUND: "Không tìm thấy project directory. Hãy tạo hoặc import project từ WebGUI trước.",
         ErrorCode.INDEX_NEO4J_CONNECTION_FAILED: "Không thể kết nối đến Neo4j. Vui lòng kiểm tra Neo4j Docker container đang chạy.",
         ErrorCode.INDEX_PARSE_FAILED: "Lỗi khi parse file source code.",
         ErrorCode.INDEX_EMBEDDING_FAILED: "Không thể generate embedding cho symbol.",
@@ -1832,7 +1832,7 @@ class MidicoderErrorManager:
         ],
         ErrorCode.DB_SCHEMA_ERROR: [
             "Kiểm tra schema SQL syntax",
-            "Chạy `midicoder init` để recreate databases",
+            "Chạy lại database initialization từ launcher",
         ],
         ErrorCode.DB_CONSTRAINT_VIOLATION: [
             "Kiểm tra dữ liệu không vi phạm unique constraint",
@@ -1848,7 +1848,7 @@ class MidicoderErrorManager:
         ],
         ErrorCode.DB_FILE_CORRUPTED: [
             "Khôi phục từ backup nếu có",
-            "Chạy `midicoder init --force` để recreate databases",
+            "Khởi động lại Midicoder để auto-recreate databases",
         ],
         ErrorCode.DB_PERMISSION_DENIED: [
             "Kiểm tra quyền đọc/ghi thư mục database",

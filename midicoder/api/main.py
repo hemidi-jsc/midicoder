@@ -15,7 +15,7 @@ from midicoder.api.i18n import i18n
 from midicoder.api.models import ApiResponse, ErrorResponse
 from midicoder.api.routers import (
     health, config, index, version, brief, contract, ir, code,
-    runtime, websocket, pipeline, patches, init, projects,
+    runtime, websocket, pipeline, patches, projects,
 )
 
 
@@ -26,7 +26,6 @@ server = FastAPI(
     description="API Server cho Midicoder WebGUI",
     openapi_tags=[
         {"name": "Health", "description": "Health check và thông tin hệ thống"},
-        {"name": "Init", "description": "Khởi tạo dự án"},
         {"name": "Projects", "description": "Quản lý multi-projects"},
         {"name": "Config", "description": "Quản lý cấu hình"},
         {"name": "Index", "description": "Quản lý index"},
@@ -103,9 +102,6 @@ server.redoc_url = "/redoc"
 # Thêm các routers
 # Health và system
 server.include_router(health.router, prefix="/api")
-
-# Init
-server.include_router(init.router, prefix="/api")
 
 # Projects (multi-project management)
 server.include_router(projects.router, prefix="/api")

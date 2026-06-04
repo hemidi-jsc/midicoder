@@ -188,10 +188,7 @@ async def get_pipeline_status(request: Request):
         if active_project:
             project_name = active_project.get("name", "")
         else:
-            # Fallback: global config
-            cfg = get_config()
-            global_conf = cfg.load_global_config()
-            project_name = global_conf.get("project", {}).get("name", "")
+            project_name = ""
 
         # Map midicoder stages to frontend phases
         frontend_progress = {

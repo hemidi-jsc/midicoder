@@ -1,7 +1,5 @@
 ﻿"""
-Router cho Projects — multi-project management.
-
-Dùng ProjectsManager từ midicoder.storage.projects (SQLite ~/.midicoder/data/projects.db).
+Projects router — multi-project management via SQLite projects.db.
 """
 
 import hashlib
@@ -14,6 +12,25 @@ from midicoder.api.i18n import i18n
 from midicoder.api.models import ApiResponse
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
+
+
+def _set_config_project_path(path: str) -> None:
+    """Update ConfigManager to load project YAML from the given path."""
+    try:
+        from midicoder.pipeline.config import get_config
+        cfg = get_config()
+        cfg.set_project_path(path)
+    except Exception:
+        pass
+
+
+def _reset_config_project_path() -> None:
+    try:
+        from midicoder.pipeline.config import get_config
+        cfg = get_config()
+        cfg.set_project_path(None)
+    except Exception:
+        pass
 
 
 class ProjectCreateRequest(BaseModel):
@@ -96,8 +113,7 @@ async def create_project(request_data: ProjectCreateRequest, request: Request):
         if existing:
             # Đánh dấu active
             mgr.activate(existing["project_id"])
-            cfg = get_config()
-            cfg.set("project.cwd", path_str)
+            _set_config_project_path(path_str)
             return ApiResponse(
                 success=True,
                 data={"project": existing, "created": False, "already_exists": True},
@@ -105,15 +121,47 @@ async def create_project(request_data: ProjectCreateRequest, request: Request):
                 language=language,
             )
 
-        # Kiểm tra workspace đã tồn tại
+        # Kiểm tra workspace đã tồn tại — nếu có .midicoder/config/midicoder.yml → import
         workspace_dir = path / ".midicoder"
         if workspace_dir.exists():
-            return ApiResponse(
-                success=False,
-                data=None,
-                message=f"Workspace đã tồn tại tại {workspace_dir}. Xóa hoặc chọn project khác.",
-                language=language,
-            )
+            existing_config = workspace_dir / "config" / "midicoder.yml"
+            if existing_config.exists():
+                # Project Midicoder có sẵn — import thay vì reject
+                import yaml as _yaml
+                try:
+                    cfg_data = _yaml.safe_load(existing_config.read_text()) or {}
+                except Exception:
+                    cfg_data = {}
+                if "midicoder_version" not in cfg_data:
+                    return ApiResponse(
+                        success=False,
+                        data=None,
+                        message=f"Folder {workspace_dir} không phải project Midicoder (thiếu midicoder_version trong config).",
+                        language=language,
+                    )
+                # Import: register + activate
+                mgr.activate(existing["project_id"]) if existing else None
+                project = mgr.create(
+                    project_id=project_id,
+                    name=request_data.name,
+                    path=path_str,
+                    set_active=True,
+                )
+                _set_config_project_path(path_str)
+                return ApiResponse(
+                    success=True,
+                    data={"project": project, "created": False, "imported": True},
+                    message=f"Đã import project '{request_data.name}' từ disk",
+                    language=language,
+                )
+            else:
+                # Folder tồn tại nhưng không phải Midicoder project
+                return ApiResponse(
+                    success=False,
+                    data=None,
+                    message=f"Folder {workspace_dir} tồn tại nhưng không phải project Midicoder.",
+                    language=language,
+                )
 
         # 1. Tạo cấu trúc thư mục
         for sub in ("config", "data", "versions", "runtime", "cache"):
@@ -139,20 +187,14 @@ async def create_project(request_data: ProjectCreateRequest, request: Request):
             encoding="utf-8",
         )
 
-        # 4. Không tạo active_version.txt / active_version — để backend trả về None
-        # (xóa 2 dòng cũ tạo file "v1.0.0")
-
-        # 6. Update global config project.cwd
-        cfg = get_config()
-        cfg.set("project.cwd", path_str)
-
-        # 7. Save vào projects registry
+        # 4. Save vào projects registry + activate + set config path
         project = mgr.create(
             project_id=project_id,
             name=request_data.name,
             path=path_str,
             set_active=True,
         )
+        _set_config_project_path(path_str)
 
         return ApiResponse(
             success=True,
@@ -187,11 +229,7 @@ async def activate_project(project_id: str, request: Request):
             )
 
         mgr.activate(project_id)
-
-        # Update global config project.cwd
-        from midicoder.pipeline.config import get_config
-        cfg = get_config()
-        cfg.set("project.cwd", project["path"])
+        _set_config_project_path(project["path"])
 
         return ApiResponse(
             success=True,

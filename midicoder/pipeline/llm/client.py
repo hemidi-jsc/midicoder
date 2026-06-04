@@ -143,9 +143,7 @@ def _get_max_context_window(model: str) -> int:
 
 def load_llm_config() -> LlmConfig:
     """
-    Load LLM config từ global config file.
-
-    Đọc config từ ~/.midicoder/midicoder.json.
+    Load LLM config từ settings.db qua ConfigManager.
 
     Returns:
         LlmConfig instance với values từ config file + defaults

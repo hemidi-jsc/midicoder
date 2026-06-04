@@ -1111,7 +1111,7 @@ def repair_contracts():
         config = load_llm_config()
     except Exception as e:
         click.echo(f"❌ Không thể load LLM config: {e}")
-        click.echo("💡 Kiểm tra ~/.midicoder/midicoder.json")
+        click.echo("💡 Kiểm tra LLM config trong Settings")
         return
 
     # Build yaml_dict

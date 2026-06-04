@@ -21,11 +21,11 @@ def get_global_config_path() -> Path:
     Lấy đường dẫn global config file.
     
     Returns:
-        Path đến ~/.midicoder/midicoder.json
+        Path đến settings.db trong ~/.midicoder/data/
     """
     home_dir = Path.home()
-    config_dir = home_dir / ".midicoder"
-    return config_dir / "midicoder.json"
+    config_dir = home_dir / ".midicoder" / "data"
+    return config_dir / "settings.db"
 
 
 def get_current_project_path() -> Path:
@@ -107,7 +107,7 @@ def build_index(
     midicoder_dir = project_path / ".midicoder"
     if not midicoder_dir.exists():
         print(
-            f"Lỗi: Project chưa được khởi tạo. Chạy `midicoder init` trước.",
+            f"Lỗi: Project chưa được khởi tạo. Hãy tạo project từ WebGUI trước.",
             file=sys.stderr
         )
         return ExitCode.GENERIC_ERROR.value

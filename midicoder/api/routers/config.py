@@ -1,37 +1,28 @@
 ﻿"""
-Router cho các commands về config
+Config router — reads/writes settings.db (SQLite) via SettingsManager.
 """
 
-import json
-from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, Request
 
-from midicoder.api.pipeline_bridge import pipeline_bridge
 from midicoder.api.i18n import i18n
 from midicoder.api.models import ApiResponse, ConfigSetRequest
 
 router = APIRouter(prefix="/config", tags=["Config"])
 
-# Global config path
-GLOBAL_CONFIG_DIR = Path.home() / ".midicoder"
-GLOBAL_CONFIG_FILE = GLOBAL_CONFIG_DIR / "midicoder.json"
+
+def _settings():
+    """Lazy-init SettingsManager."""
+    from midicoder.storage.settings import SettingsManager
+    mgr = SettingsManager()
+    mgr.init()
+    return mgr
 
 
-def _read_global_config() -> Dict[str, Any]:
-    """Read global config from disk."""
-    if GLOBAL_CONFIG_FILE.exists():
-        return json.loads(GLOBAL_CONFIG_FILE.read_text(encoding="utf-8"))
-    return {}
-
-
-def _write_global_config(config: Dict[str, Any]) -> None:
-    """Write global config to disk."""
-    GLOBAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    GLOBAL_CONFIG_FILE.write_text(
-        json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+def _read_all_settings() -> Dict[str, Any]:
+    """Read all settings from SQLite."""
+    return _settings().get_all()
 
 
 # Supported LLM providers
@@ -62,13 +53,17 @@ def _validate_llm_config(llm: Dict[str, Any]) -> list[str]:
 @router.get("/llm", response_model=ApiResponse)
 async def get_llm_config(request: Request):
     """
-    Lấy LLM config từ global config.
-
-    Reads ~/.midicoder/midicoder.json llm section directly (no CLI subprocess).
+    Lấy LLM config từ settings.db.
     """
     language = i18n.get_language_from_request(request)
-    config = _read_global_config()
-    llm = config.get("llm", {})
+    all_settings = _read_all_settings()
+
+    # Extract llm.* keys
+    llm = {
+        k.replace("llm.", "", 1): v
+        for k, v in all_settings.items()
+        if k.startswith("llm.")
+    }
 
     return ApiResponse(
         success=True,
@@ -83,7 +78,7 @@ async def get_llm_config(request: Request):
 @router.post("/llm", response_model=ApiResponse)
 async def set_llm_config(request: Request):
     """
-    Ghi LLM config vào global config.
+    Ghi LLM config vào settings.db.
 
     Expects JSON body: {"provider": "...", "model": "...", "api_url": "...", ...}
     Validates required fields before writing.
@@ -106,12 +101,10 @@ async def set_llm_config(request: Request):
             language=language,
         )
 
-    config = _read_global_config()
-    # Merge llm config — keep existing keys not in body
-    existing = config.get("llm", {})
-    merged = {**existing, **body}
-    config["llm"] = merged
-    _write_global_config(config)
+    # Write each LLM key to settings.db
+    sm = _settings()
+    for key, value in body.items():
+        sm.set(f"llm.{key}", value)
 
     return ApiResponse(
         success=True,
@@ -124,20 +117,11 @@ async def set_llm_config(request: Request):
 @router.post("/llm/test", response_model=ApiResponse)
 async def test_llm_config(request: Request):
     """
-    Test LLM connection với config hiện tại.
-
-    Force reloads config from disk first so the test uses the latest values,
-    not the cached singleton from startup.
+    Test LLM connection với config hiện tại từ settings.db.
     """
     language = i18n.get_language_from_request(request)
 
     try:
-        # Force reload config from disk — invalidate cached singleton
-        from midicoder.pipeline.config import get_config
-        config_mgr = get_config()
-        config_mgr._global_loaded = False
-        config_mgr._global_config = {}
-
         from midicoder.pipeline.llm import call_llm, load_llm_config
 
         config = load_llm_config()
@@ -171,41 +155,14 @@ async def test_llm_config(request: Request):
 @router.get("/list", response_model=ApiResponse)
 async def list_config(request: Request):
     """
-    Liệt kê tất cả cấu hình
-    
-    Args:
-        request: Request object để lấy ngôn ngữ
-    
-    Returns:
-        ApiResponse: Danh sách cấu hình
+    Liệt kê tất cả cấu hình từ settings.db.
     """
     language = i18n.get_language_from_request(request)
-    
-    # Gọi CLI wrapper để lấy config
-    result = await pipeline_bridge.config_list()
-    
-    if result["success"]:
-        # Parse stdout để lấy config dict
-        try:
-            config_data = result.get("stdout_data") or {}
-            return ApiResponse(
-                success=True,
-                data=config_data,
-                message=i18n.translate("config.list_success", language),
-                language=language,
-            )
-        except Exception as e:
-            return ApiResponse(
-                success=False,
-                data=None,
-                message=str(e),
-                language=language,
-            )
-    
+    config_data = _read_all_settings()
     return ApiResponse(
-        success=False,
-        data=None,
-        message=result.get("stderr", "Unknown error"),
+        success=True,
+        data=config_data,
+        message=i18n.translate("config.list_success", language),
         language=language,
     )
 
@@ -213,34 +170,16 @@ async def list_config(request: Request):
 @router.get("/get/{key}", response_model=ApiResponse)
 async def get_config(key: str, request: Request):
     """
-    Lấy giá trị của một key config
-    
-    Args:
-        key: Key của config
-        request: Request object để lấy ngôn ngữ
-    
-    Returns:
-        ApiResponse: Giá trị config
+    Lấy giá trị của một key config (từ SettingsManager + project config YAML).
     """
     language = i18n.get_language_from_request(request)
-    
-    # Gọi CLI wrapper để lấy config
-    result = await pipeline_bridge.config_get(key)
-    
-    if result["success"]:
-        # Parse stdout để lấy giá trị
-        stdout = result.get("stdout", "").strip()
-        return ApiResponse(
-            success=True,
-            data={"key": key, "value": stdout},
-            message=i18n.translate("config.get_success", language),
-            language=language,
-        )
-    
+    from midicoder.pipeline.config import get_config
+    cfg = get_config()
+    value = cfg.get(key)
     return ApiResponse(
-        success=False,
-        data=None,
-        message=result.get("stderr", "Unknown error"),
+        success=True,
+        data={"key": key, "value": value},
+        message=i18n.translate("config.get_success", language),
         language=language,
     )
 
@@ -248,32 +187,16 @@ async def get_config(key: str, request: Request):
 @router.post("/set", response_model=ApiResponse)
 async def set_config(config: ConfigSetRequest, request: Request):
     """
-    Đặt giá trị cho một key config
-    
-    Args:
-        config: Request chứa key và value
-        request: Request object để lấy ngôn ngữ
-    
-    Returns:
-        ApiResponse: Kết quả đặt config
+    Đặt giá trị cho một key config (SettingsManager / project YAML).
     """
     language = i18n.get_language_from_request(request)
-    
-    # Gọi CLI wrapper để set config
-    result = await pipeline_bridge.config_set(config.key, config.value)
-    
-    if result["success"]:
-        return ApiResponse(
-            success=True,
-            data={"key": config.key, "value": config.value},
-            message=i18n.translate("config.set_success", language),
-            language=language,
-        )
-    
+    from midicoder.pipeline.config import get_config
+    cfg = get_config()
+    cfg.set(config.key, config.value)
     return ApiResponse(
-        success=False,
-        data=None,
-        message=result.get("stderr", "Unknown error"),
+        success=True,
+        data={"key": config.key, "value": config.value},
+        message=i18n.translate("config.set_success", language),
         language=language,
     )
 
@@ -281,31 +204,30 @@ async def set_config(config: ConfigSetRequest, request: Request):
 @router.post("/validate", response_model=ApiResponse)
 async def validate_config(request: Request):
     """
-    Validate cấu hình hiện tại
-    
-    Args:
-        request: Request object để lấy ngôn ngữ
-    
-    Returns:
-        ApiResponse: Kết quả validate
+    Validate cấu hình hiện tại — check LLM fields.
     """
     language = i18n.get_language_from_request(request)
-    
-    # Gọi CLI wrapper để validate config
-    result = await pipeline_bridge.config_validate()
-    
-    if result["success"]:
+    all_settings = _read_all_settings()
+
+    llm = {
+        k.replace("llm.", "", 1): v
+        for k, v in all_settings.items()
+        if k.startswith("llm.")
+    }
+    errors = _validate_llm_config(llm)
+
+    if errors:
         return ApiResponse(
-            success=True,
-            data=None,
-            message=i18n.translate("config.validate_success", language),
+            success=False,
+            data={"errors": errors},
+            message="; ".join(errors),
             language=language,
         )
-    
+
     return ApiResponse(
-        success=False,
+        success=True,
         data=None,
-        message=result.get("stderr", "Unknown error"),
+        message=i18n.translate("config.validate_success", language),
         language=language,
     )
 
@@ -313,30 +235,13 @@ async def validate_config(request: Request):
 @router.post("/reset", response_model=ApiResponse)
 async def reset_config(request: Request):
     """
-    Reset cấu hình về mặc định
-    
-    Args:
-        request: Request object để lấy ngôn ngữ
-    
-    Returns:
-        ApiResponse: Kết quả reset
+    Reset cấu hình về mặc định (settings.db).
     """
     language = i18n.get_language_from_request(request)
-    
-    # Gọi CLI wrapper để reset config
-    result = await pipeline_bridge.config_reset()
-    
-    if result["success"]:
-        return ApiResponse(
-            success=True,
-            data=None,
-            message=i18n.translate("config.reset_success", language),
-            language=language,
-        )
-    
+    _settings().reset(None)
     return ApiResponse(
-        success=False,
+        success=True,
         data=None,
-        message=result.get("stderr", "Unknown error"),
+        message=i18n.translate("config.reset_success", language),
         language=language,
     )
