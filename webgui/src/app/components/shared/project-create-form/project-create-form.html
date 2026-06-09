@@ -1,0 +1,151 @@
+@if (useModal) {
+  <div class="modal-overlay" (click)="onCancel()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Tạo project mới</h3>
+        <button class="btn-close" (click)="onCancel()">×</button>
+      </div>
+      <div class="modal-body">
+        @if (isLoadedTechStacks) {
+          <div class="project-create-form">
+            <div class="form-row">
+              <label class="form-label" for="pcfProjectName">Tên project</label>
+              <input id="pcfProjectName" type="text" class="form-input" [(ngModel)]="projectName" placeholder="my-app" />
+            </div>
+
+            <div class="form-row">
+              <label class="form-label" for="pcfProjectPath">Đường dẫn thư mục</label>
+              <input id="pcfProjectPath" type="text" class="form-input" [(ngModel)]="projectPath" [placeholder]="projectPathPlaceholder" title="Đường dẫn tuyệt đối đến thư mục project" />
+            </div>
+
+            <div class="form-row">
+              <label class="form-label" for="pcfStackInfra">Infrastructure</label>
+              <select id="pcfStackInfra" class="form-input" [(ngModel)]="stackSelection.infrastructure">
+                @for (opt of techStackOptions.infrastructure; track opt.value) {
+                  <option [value]="opt.value">{{ opt.label }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="form-row">
+              <label class="form-label" for="pcfStackBackend">Backend</label>
+              <select id="pcfStackBackend" class="form-input" [(ngModel)]="stackSelection.backend">
+                @for (opt of techStackOptions.backend; track opt.value) {
+                  <option [value]="opt.value">{{ opt.label }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="form-row">
+              <label class="form-label" for="pcfStackFrontend">Frontend</label>
+              <select id="pcfStackFrontend" class="form-input" [(ngModel)]="stackSelection.frontend">
+                @for (opt of techStackOptions.frontend; track opt.value) {
+                  <option [value]="opt.value">{{ opt.label }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="form-row">
+              <label class="form-label" for="pcfStackUi">UI System</label>
+              <select id="pcfStackUi" class="form-input" [(ngModel)]="stackSelection.ui_framework">
+                @for (opt of techStackOptions.ui_framework; track opt.value) {
+                  <option [value]="opt.value">{{ opt.label }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="form-row">
+              <label class="form-label" for="pcfPromptDomain">Domain</label>
+              <select id="pcfPromptDomain" class="form-input" [(ngModel)]="selectedPromptDomain">
+                @for (d of promptDomains; track d.value) {
+                  <option [value]="d.value">{{ d.label }}</option>
+                }
+              </select>
+            </div>
+
+            @if (createError) {
+              <p class="error-text">{{ createError }}</p>
+            }
+            <div class="form-actions">
+              <button class="btn-primary-large" (click)="onCreate()" [disabled]="!isFormValid || isCreating">
+                {{ isCreating ? 'Đang tạo...' : 'Tạo project' }}
+              </button>
+            </div>
+          </div>
+        } @else {
+          <p class="loading-text">Đang tải thông tin tech stack...</p>
+        }
+      </div>
+    </div>
+  </div>
+} @else {
+  @if (isLoadedTechStacks) {
+    <div class="project-create-form">
+      <div class="form-row">
+        <label class="form-label" for="pcfProjectName">Tên project</label>
+        <input id="pcfProjectName" type="text" class="form-input" [(ngModel)]="projectName" placeholder="my-app" />
+      </div>
+
+      <div class="form-row">
+        <label class="form-label" for="pcfProjectPath">Đường dẫn thư mục</label>
+        <input id="pcfProjectPath" type="text" class="form-input" [(ngModel)]="projectPath" [placeholder]="projectPathPlaceholder" title="Đường dẫn tuyệt đối đến thư mục project" />
+      </div>
+
+      <div class="form-row">
+        <label class="form-label" for="pcfStackInfra">Infrastructure</label>
+        <select id="pcfStackInfra" class="form-input" [(ngModel)]="stackSelection.infrastructure">
+          @for (opt of techStackOptions.infrastructure; track opt.value) {
+            <option [value]="opt.value">{{ opt.label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label" for="pcfStackBackend">Backend</label>
+        <select id="pcfStackBackend" class="form-input" [(ngModel)]="stackSelection.backend">
+          @for (opt of techStackOptions.backend; track opt.value) {
+            <option [value]="opt.value">{{ opt.label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label" for="pcfStackFrontend">Frontend</label>
+        <select id="pcfStackFrontend" class="form-input" [(ngModel)]="stackSelection.frontend">
+          @for (opt of techStackOptions.frontend; track opt.value) {
+            <option [value]="opt.value">{{ opt.label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label" for="pcfStackUi">UI System</label>
+        <select id="pcfStackUi" class="form-input" [(ngModel)]="stackSelection.ui_framework">
+          @for (opt of techStackOptions.ui_framework; track opt.value) {
+            <option [value]="opt.value">{{ opt.label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label" for="pcfPromptDomain">Domain</label>
+        <select id="pcfPromptDomain" class="form-input" [(ngModel)]="selectedPromptDomain">
+          @for (d of promptDomains; track d.value) {
+            <option [value]="d.value">{{ d.label }}</option>
+          }
+        </select>
+      </div>
+
+      @if (createError) {
+        <p class="error-text">{{ createError }}</p>
+      }
+      <div class="form-actions">
+        <button class="btn-primary-large" (click)="onCreate()" [disabled]="!isFormValid || isCreating">
+          {{ isCreating ? 'Đang tạo...' : 'Tạo project' }}
+        </button>
+      </div>
+    </div>
+  } @else {
+    <p class="loading-text">Đang tải thông tin tech stack...</p>
+  }
+}

@@ -300,7 +300,7 @@ class TestVersionUse:
         new_metadata = Path(workspace_with_multiple_versions) / ".midicoder" / "versions" / "v1.0.1" / "metadata.yml"
         with open(new_metadata) as f:
             new_meta = yaml.safe_load(f)
-        assert new_meta['status'] == 'active'
+        assert new_meta['status'] == 'inbuild'
     
     def test_use_version_without_v_prefix(self, workspace_with_multiple_versions):
         """Test switch version không có v prefix."""
@@ -332,7 +332,7 @@ class TestVersionList:
         versions = list_versions()
         assert len(versions) == 1
         assert versions[0]['name'] == 'v1.0.0'
-        assert versions[0]['metadata']['status'] == 'active'
+        assert versions[0]['metadata']['status'] == 'inbuild'
     
     def test_list_versions_multiple_sorted(self, workspace_with_multiple_versions):
         """Test list versions với nhiều versions (sorted by created_at)."""
@@ -492,7 +492,7 @@ class TestHelperFunctions:
         """Test load_version_metadata."""
         metadata = load_version_metadata('v1.0.0')
         assert metadata['version'] == '1.0.0'
-        assert metadata['status'] == 'active'
+        assert metadata['status'] == 'inbuild'
     
     def test_load_version_metadata_not_found(self, temp_workspace):
         """Test load_version_metadata khi version không tồn tại."""

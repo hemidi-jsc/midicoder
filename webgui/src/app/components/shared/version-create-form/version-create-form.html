@@ -1,0 +1,120 @@
+<div class="modal-overlay" (click)="onCancel()">
+  <div class="modal" (click)="$event.stopPropagation()">
+
+    <!-- ====== STEP 1: Form điền tên version ====== -->
+    @if (!showConfirm) {
+      <div class="modal-header">
+        <h3>Tạo phiên bản mới</h3>
+        <button class="btn-close" (click)="onCancel()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="versionName">Tên phiên bản</label>
+          <input
+            id="versionName"
+            type="text"
+            [(ngModel)]="versionName"
+            placeholder="v1.0.0"
+            class="form-input"
+            (keyup.enter)="onCheckCreate()"
+            autofocus
+          >
+        </div>
+
+        @if (createError) {
+          <p class="error-text">{{ createError }}</p>
+        }
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" (click)="onCancel()">Hủy</button>
+        <button
+          class="btn-primary"
+          (click)="onCheckCreate()"
+          [disabled]="!versionName.trim() || isChecking"
+        >
+          {{ isChecking ? 'Đang kiểm tra...' : 'Tạo' }}
+        </button>
+      </div>
+    }
+
+    <!-- ====== STEP 2: Confirmation Dialog ====== -->
+    @if (showConfirm && impact) {
+      <div class="modal-header confirm-header">
+        <h3>Xác nhận tạo phiên bản</h3>
+        <button class="btn-close" (click)="onConfirmCancel()">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="confirm-target">
+          <span class="confirm-label">Phiên bản mới:</span>
+          <span class="confirm-version">{{ versionName }}</span>
+        </div>
+
+        @if (impact.will_archive.length > 0) {
+          <div class="impact-section">
+            <div class="impact-header">
+              <span class="impact-icon">📦</span>
+              <strong>Version bị archived</strong>
+              <span class="impact-count">{{ impact.will_archive.length }}</span>
+            </div>
+            <div class="impact-list">
+              @for (v of impact.will_archive; track v.version) {
+                <div class="impact-item archived">
+                  <span class="impact-version-name">{{ v.version }}</span>
+                  <span class="impact-status-badge status-{{ v.status }}">{{ v.status }}</span>
+                </div>
+              }
+            </div>
+            <p class="impact-note">Archived version sẽ không thể truy cập nữa.</p>
+          </div>
+        }
+
+        @if (impact.will_delete.length > 0) {
+          <div class="impact-section danger-section">
+            <div class="impact-header">
+              <span class="impact-icon">🗑️</span>
+              <strong>Version bị xóa (quá cũ)</strong>
+              <span class="impact-count danger">{{ impact.will_delete.length }}</span>
+            </div>
+            <div class="impact-list">
+              @for (v of impact.will_delete; track v.version) {
+                <div class="impact-item deleted">
+                  <span class="impact-version-name">{{ v.version }}</span>
+                  <span class="impact-status-badge status-{{ v.status }}">{{ v.status }}</span>
+                  <span class="impact-date">{{ v.created_at ? (v.created_at | slice:0:10) : '' }}</span>
+                </div>
+              }
+            </div>
+            <p class="impact-note danger">Số version vượt quá giới hạn {{ impact.max_versions }}, versions cũ nhất bị xóa vĩnh viễn.</p>
+          </div>
+        }
+
+        @if (!hasImpact) {
+          <div class="no-impact">
+            <span class="no-impact-icon">✅</span>
+            <p>Tạo phiên bản mới không ảnh hưởng đến version nào.</p>
+          </div>
+        }
+
+        @if (createError) {
+          <p class="error-text">{{ createError }}</p>
+        }
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" (click)="onConfirmCancel()">
+          @if (!hasImpact) { Quay lại } @else { Hủy }
+        </button>
+        <button
+          class="btn-primary"
+          [class.btn-danger]="hasImpact"
+          (click)="onConfirmCreate()"
+          [disabled]="isCreating"
+        >
+          {{ isCreating ? 'Đang tạo...' : (hasImpact ? 'Xác nhận tạo' : 'Tạo') }}
+        </button>
+      </div>
+    }
+
+  </div>
+</div>

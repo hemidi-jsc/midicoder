@@ -1,13 +1,12 @@
 /**
  * Real API Service - kết nối với FastAPI backend
- * Thay thế MockApiService bằng HTTP calls thực sự
  * Base URL: http://localhost:6868/api
  */
 
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 
-// Re-export types từ mock-api.service để dùng chung
+// Re-export types — shared API type definitions
 import {
   ApiResponse,
   LoginRequest,
@@ -41,7 +40,7 @@ import {
   PipelineStatus,
   NewsItem,
   NewsResponse,
-} from './mock-api.service';
+} from './api.types';
 
 // ============================================================================
 // Request/Response models cho backend FastAPI
@@ -116,7 +115,13 @@ export interface IndexReindexRequest {
 export interface ProjectCreateRequest {
   name: string;
   path: string;
-  stack?: string;
+  tech_stack: {
+    infrastructure: string;
+    backend: string;
+    frontend: string;
+    ui_framework: string;
+  };
+  prompt_domain: string;
 }
 
 export interface ProjectInfo {
@@ -371,6 +376,32 @@ export class ApiService {
    */
   async createVersion(request: VersionCreateRequest): Promise<ApiResponse<any>> {
     return this.post('/version/create', request);
+  }
+
+  /**
+   * GET /version/list - List all versions
+   */
+  async listVersions(): Promise<ApiResponse<{ versions: any[]; active_version?: string }>> {
+    return this.get('/version/list');
+  }
+
+  /**
+   * POST /version/check-create - Check impact before creating version
+   */
+  async checkCreateVersion(versionName: string): Promise<ApiResponse<{
+    will_archive: { version: string; status: string; note: string }[];
+    will_delete: { version: string; status: string; created_at: string }[];
+    max_versions: number;
+    current_count: number;
+  }>> {
+    return this.post('/version/check-create', { version: versionName });
+  }
+
+  /**
+   * POST /version/use - Switch version
+   */
+  async useVersion(request: VersionCreateRequest): Promise<ApiResponse<any>> {
+    return this.post('/version/use', request);
   }
 
   // ============================================================================
@@ -630,12 +661,11 @@ export class ApiService {
    * Note: Backend doesn't have auth endpoints yet, using localStorage mock
    */
   async login(request: LoginRequest): Promise<ApiResponse<LoginResponse>> {
-    // For now, generate mock token locally (same as MockApiService)
+    // Local mock login (backend không có auth endpoint)
     const mockToken = `token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const mockUser = {
       id: `user_${Date.now()}`,
       email: request.email,
-      tier: 'pro' as const,
     };
 
     localStorage.setItem('midicoder_token', mockToken);
@@ -688,6 +718,13 @@ export class ApiService {
 
   async getActiveProject(): Promise<ApiResponse<{ project?: ProjectInfo }>> {
     return this.get<any>('/projects/active');
+  }
+
+  async getTechStacks(): Promise<ApiResponse<{
+    stacks: { infrastructure: any[]; backend: any[]; frontend: any[]; ui_framework: any[] };
+    prompt_domains: { value: string; label: string }[];
+  }>> {
+    return this.get<any>('/projects/techstacks');
   }
 
   async createProject(request: ProjectCreateRequest): Promise<ApiResponse<any>> {

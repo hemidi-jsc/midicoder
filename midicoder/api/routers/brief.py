@@ -275,6 +275,29 @@ async def freeze_brief(version: str = Query(None), request: Request = None):
     mgr.update_status(brief_id, "frozen")
     _log_lineage(mgr, brief_id, version, "frozen", "Brief frozen", old_hash=brief_hash, new_hash=brief_hash)
 
+    # Chuyển status version từ draft → active (brief đã được đóng)
+    try:
+        from midicoder.storage.projects import ProjectsManager
+        pm = ProjectsManager()
+        pm.init()
+        active_project = pm.get_active()
+        if active_project:
+            pm.version_update_status(active_project["project_id"], version, "inbuild")
+
+        # Cập nhật metadata.yml
+        from midicoder.api.config import _get_project_root
+        from pathlib import Path
+        import yaml
+        meta_file = Path(_get_project_root()) / ".midicoder" / "versions" / version / "metadata.yml"
+        if meta_file.exists():
+            with open(meta_file, "r", encoding="utf-8") as f:
+                meta = yaml.safe_load(f) or {}
+            meta["status"] = "inbuild"
+            with open(meta_file, "w", encoding="utf-8") as f:
+                yaml.dump(meta, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
     return ApiResponse(success=True, data={"brief_id": brief_id, "status": "frozen"}, message="Brief đã được đóng", language=language)
 
 
@@ -301,6 +324,30 @@ async def set_brief_status(request: Request):
     brief_hash = target.get("hash", "")
     mgr.update_status(brief_id, new_status)
     _log_lineage(mgr, brief_id, version, "status_change", f"Status changed to {new_status}", old_hash=brief_hash, new_hash=brief_hash)
+
+    # Nếu brief được frozen → chuyển status version sang active
+    if new_status == "frozen":
+        try:
+            from midicoder.storage.projects import ProjectsManager
+            pm = ProjectsManager()
+            pm.init()
+            active_project = pm.get_active()
+            if active_project:
+                pm.version_update_status(active_project["project_id"], version, "inbuild")
+
+            # Cập nhật metadata.yml
+            from midicoder.api.config import _get_project_root
+            from pathlib import Path
+            import yaml
+            meta_file = Path(_get_project_root()) / ".midicoder" / "versions" / version / "metadata.yml"
+            if meta_file.exists():
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    meta = yaml.safe_load(f) or {}
+                meta["status"] = "inbuild"
+                with open(meta_file, "w", encoding="utf-8") as f:
+                    yaml.dump(meta, f, default_flow_style=False, allow_unicode=True)
+        except Exception:
+            pass
 
     return ApiResponse(success=True, data={"brief_id": brief_id, "status": new_status}, message=f"Brief status: {new_status}", language=language)
 

@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Component Dashboard
  * Hiển thị tổng quan pipeline và các thao tác nhanh
  */
 
-import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -12,11 +12,23 @@ import { PipelineStore, PhaseStatus } from '../../core/pipeline.store';
 import { ApiService } from '../../core/api.service';
 import { VersionService, VersionInfo } from '../../core/version.service';
 import { Subscription } from 'rxjs';
+import { ProjectCreateFormComponent } from '../../components/shared/project-create-form/project-create-form';
+import { VersionCreateFormComponent } from '../../components/shared/version-create-form/version-create-form';
+
+export interface ProjectInfo {
+  id: number;
+  project_id: string;
+  name: string;
+  path: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule],
+  imports: [CommonModule, RouterLink, FormsModule, ProjectCreateFormComponent, VersionCreateFormComponent],
   template: `
     <div class="dashboard-container">
       <!-- Header -->
@@ -32,6 +44,17 @@ import { Subscription } from 'rxjs';
           }
         </p>
       </div>
+
+      <!-- No Project State — first time user -->
+      @if (!workspaceInitialized()) {
+        <div class="card init-card">
+          <div class="init-content">
+            <h2 class="init-title">🚀 Tạo hoặc Import Project</h2>
+            <p class="init-desc">Tạo project mới hoặc import project Midicoder hiện có để bắt đầu.</p>
+            <app-project-create-form />
+          </div>
+        </div>
+      }
 
       <!-- No Versions State (workspace exists, versions empty) -->
       @if (workspaceInitialized() && !pipelineInitialized()) {
@@ -124,91 +147,15 @@ import { Subscription } from 'rxjs';
             </div>
           </div>
         </div>
-
-        <!-- Quick Actions -->
-        <div class="actions-grid">
-          <a routerLink="/brief-editor" class="action-card">
-            <h3 class="action-title">Tạo brief mới</h3>
-            <p class="action-desc">Tạo và chỉnh sửa brief cho project</p>
-            <span class="action-arrow">→</span>
-          </a>
-          <a routerLink="/contract-viewer" class="action-card">
-            <h3 class="action-title">Tạo hợp đồng</h3>
-            <p class="action-desc">Tạo hợp đồng DSL từ brief</p>
-            <span class="action-arrow">→</span>
-          </a>
-          <a routerLink="/code-generator" class="action-card">
-            <h3 class="action-title">Xem mã đã tạo</h3>
-            <p class="action-desc">Xem và quản lý code đã tạo</p>
-            <span class="action-arrow">→</span>
-          </a>
-          <a routerLink="/preview" class="action-card">
-            <h3 class="action-title">Bắt đầu xem trước</h3>
-            <p class="action-desc">Khởi động preview project</p>
-            <span class="action-arrow">→</span>
-          </a>
-        </div>
-
-        <!-- Versions Card -->
-        <div class="dashboard-card">
-          <div class="card-header-row">
-            <h2 class="card-title">Phiên bản</h2>
-            <button class="btn-small" (click)="showCreateVersionModal = true">+ Tạo phiên bản mới</button>
-          </div>
-          <div class="version-list">
-            @for (v of versions(); track v.version) {
-              <div class="version-row" [class.active]="v.version === activeVersion()" (click)="switchVersion(v.version)">
-                <span class="version-name">{{ v.version }}</span>
-                <span class="version-status" [class]="getStatusClass(v.status)">{{ v.status }}</span>
-                <span class="version-progress">{{ versionService.calculateProgress(v) }}%</span>
-              </div>
-            } @empty {
-              <p class="empty-text">Chưa có phiên bản nào</p>
-            }
-          </div>
-        </div>
       }
 
       <!-- Create Version Modal -->
       @if (showCreateVersionModal) {
-        <div class="modal-overlay" (click)="closeCreateModal()">
-          <div class="modal" (click)="$event.stopPropagation()">
-            <div class="modal-header">
-              <h3>Tạo phiên bản mới</h3>
-              <button class="btn-close" (click)="closeCreateModal()">×</button>
-            </div>
-            <div class="modal-body">
-              <div class="form-group">
-                <label class="form-label" for="versionName">Tên phiên bản</label>
-                <input
-                  id="versionName"
-                  type="text"
-                  class="form-input"
-                  [(ngModel)]="newVersionName"
-                  placeholder="v1.0.1"
-                />
-              </div>
-              <div class="form-group">
-                <label class="form-label" for="fromVersion">Từ phiên bản (tùy chọn)</label>
-                <select id="fromVersion" [(ngModel)]="fromVersion" class="form-input">
-                  <option value="">Tạo mới hoàn toàn</option>
-                  @for (v of versions(); track v.version) {
-                    <option [value]="v.version">{{ v.version }}</option>
-                  }
-                </select>
-              </div>
-              @if (createVersionError) {
-                <p class="error-text">{{ createVersionError }}</p>
-              }
-            </div>
-            <div class="modal-footer">
-              <button class="btn-secondary" (click)="closeCreateModal()">Hủy</button>
-              <button class="btn-primary" (click)="createVersion()" [disabled]="!newVersionName || isCreatingVersion">
-                {{ isCreatingVersion ? 'Đang tạo...' : 'Tạo' }}
-              </button>
-            </div>
-          </div>
-        </div>
+        <app-version-create-form
+          [existingVersionCount]="versions().length"
+          (versionCreated)="closeCreateModal()"
+          (cancel)="closeCreateModal()"
+        />
       }
     </div>
   `,
@@ -466,128 +413,6 @@ import { Subscription } from 'rxjs';
       margin: 0;
     }
 
-    /* Actions Grid */
-    .actions-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-
-    .action-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      padding: 20px 24px;
-      text-decoration: none;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      transition: all 0.2s;
-      position: relative;
-    }
-
-    .action-card:hover {
-      border-color: var(--border-hover);
-      background: rgba(255, 255, 255, 0.05);
-    }
-
-    .action-title {
-      font-size: 1rem;
-      font-weight: 600;
-      color: var(--text-primary);
-      margin: 0;
-    }
-
-    .action-desc {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      margin: 0;
-    }
-
-    .action-arrow {
-      position: absolute;
-      top: 20px;
-      right: 24px;
-      font-size: 1.2rem;
-      color: var(--brand-color);
-      opacity: 0.7;
-    }
-
-    /* Versions */
-    .btn-small {
-      background: transparent;
-      border: 1px solid var(--border-subtle);
-      color: var(--text-secondary);
-      padding: 6px 12px;
-      font-size: 0.8rem;
-      cursor: pointer;
-      transition: all 0.2s;
-      border-radius: 4px;
-    }
-
-    .btn-small:hover {
-      border-color: var(--brand-color);
-      color: var(--brand-color);
-    }
-
-    .version-list {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .version-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 12px;
-      cursor: pointer;
-      transition: all 0.2s;
-      border-left: 3px solid transparent;
-    }
-
-    .version-row:hover {
-      background: var(--bg-card);
-    }
-
-    .version-row.active {
-      border-left-color: var(--brand-color);
-      background: rgba(252, 103, 103, 0.1);
-    }
-
-    .version-name {
-      font-weight: 500;
-      color: var(--text-primary);
-      font-size: 0.9rem;
-    }
-
-    .version-status {
-      font-size: 0.7rem;
-      padding: 2px 6px;
-      text-transform: uppercase;
-    }
-
-    .version-status.status-active {
-      background: rgba(63, 185, 80, 0.2);
-      color: var(--accent-success);
-    }
-
-    .version-status.status-draft {
-      background: rgba(210, 153, 34, 0.2);
-      color: var(--accent-warning);
-    }
-
-    .version-status.status-archived {
-      background: rgba(139, 148, 158, 0.2);
-      color: var(--text-tertiary);
-    }
-
-    .version-progress {
-      margin-left: auto;
-      font-size: 0.8rem;
-      color: var(--text-secondary);
-    }
-
     .empty-text {
       color: var(--text-tertiary);
       font-size: 0.85rem;
@@ -687,6 +512,95 @@ import { Subscription } from 'rxjs';
       box-shadow: var(--glow-md);
     }
 
+    /* Project create form */
+    .project-create-form {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      margin-top: 24px;
+      max-width: 480px;
+      text-align: left;
+    }
+
+    .project-create-form .form-row {
+      text-align: left;
+    }
+
+    .form-row label.form-label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .form-row input.form-input,
+    .form-row select.form-input {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+      font-size: 0.875rem;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      text-align: left;
+    }
+
+    .form-row input.form-input:focus,
+    .form-row select.form-input:focus {
+      outline: none;
+      border-color: var(--brand-color);
+      box-shadow: var(--glow-sm);
+    }
+
+    .form-row select.form-input {
+      appearance: none;
+      padding-right: 32px;
+      background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23fc6767' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+    }
+
+    .form-row select.form-input option {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+
+    /* Stack radio groups */
+
+    .form-actions {
+      margin-top: 8px;
+    }
+
+    .btn-primary-large {
+      width: 100%;
+      padding: 12px 20px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: white;
+      background: var(--brand-gradient);
+      border: none;
+      cursor: pointer;
+      transition: box-shadow 0.2s;
+    }
+
+    .btn-primary-large:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary-large:hover:not(:disabled) {
+      box-shadow: var(--glow-md);
+    }
+
+    .loading-text {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      margin-top: 32px;
+    }
+
     .form-group select.form-input {
       appearance: none;
     }
@@ -706,13 +620,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   // Reactive version list
   versions = signal<VersionInfo[]>([]);
+  activeVersion = signal<string>('');
 
   // Version creation
   showCreateVersionModal = false;
-  newVersionName = '';
-  fromVersion = '';
-  isCreatingVersion = false;
-  createVersionError = '';
 
   // Direct accessors
   initPhase() { return this.pipelineStore.getInitPhase(); }
@@ -722,14 +633,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
   codePhase() { return this.pipelineStore.getCodePhase(); }
   previewPhase() { return this.pipelineStore.getPreviewPhase(); }
   projectName() { return this.pipelineStore.getProjectName(); }
-  activeVersion() { return this.pipelineStore.getActiveVersion(); }
   overallProgress() { return this.pipelineStore.overallProgress(); }
-  workspaceInitialized() { return this.pipelineStore.isWorkspaceInitialized(); }
+
+  // Expose the PipelineStore's workspace signal directly for template reactivity
+  workspaceInitialized = this.pipelineStore.workspaceInitializedSignal;
 
   constructor() {
     // Subscribe to versions
     this.subscriptions.push(
       this.versionService.versions$.subscribe(v => this.versions.set(v))
+    );
+    this.subscriptions.push(
+      this.versionService.activeVersion$.subscribe(v => this.activeVersion.set(v))
     );
   }
 
@@ -746,6 +661,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.versionService.loadVersions();
   }
 
+  /**
+   * Switch version — calls versionService, no page reload
+   */
+  switchVersion(version: string): void {
+    this.versionService.setActiveVersion(version);
+  }
+
   ngOnDestroy(): void {
     this.subscriptions.forEach(sub => sub.unsubscribe());
   }
@@ -758,46 +680,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Create new version
-   */
-  async createVersion(): Promise<void> {
-    if (!this.newVersionName.trim()) return;
-
-    this.isCreatingVersion = true;
-    this.createVersionError = '';
-
-    try {
-      await this.versionService.createVersion({
-        name: this.newVersionName.trim(),
-        fromVersion: this.fromVersion || undefined,
-      });
-
-      this.showCreateVersionModal = false;
-      this.newVersionName = '';
-      this.fromVersion = '';
-      await this.pipelineStore.loadStatus();
-    } catch (error: any) {
-      this.createVersionError = error.message || 'Tạo phiên bản thất bại';
-    } finally {
-      this.isCreatingVersion = false;
-    }
-  }
-
-  /**
-   * Switch version
-   */
-  switchVersion(version: string): void {
-    this.versionService.setActiveVersion(version);
-  }
-
-  /**
    * Close create version modal
    */
   closeCreateModal(): void {
     this.showCreateVersionModal = false;
-    this.newVersionName = '';
-    this.fromVersion = '';
-    this.createVersionError = '';
   }
 
   /**

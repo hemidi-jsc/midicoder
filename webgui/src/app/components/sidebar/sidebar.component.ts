@@ -3,22 +3,30 @@
  * Hiển thị Projects, Versions, Pipeline progress
  */
 
-import { Component, OnInit, OnDestroy, Inject } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, Router, NavigationEnd } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import { DOCUMENT } from '@angular/common';
 import { Subscription, filter } from 'rxjs';
 
 import { VersionService, VersionInfo } from '../../core/version.service';
 import { ApiService, ProjectInfo } from '../../core/api.service';
+import { PipelineStore } from '../../core/pipeline.store';
+import { VersionCreateFormComponent } from '../shared/version-create-form/version-create-form';
+import { ProjectCreateFormComponent } from '../shared/project-create-form/project-create-form';
 
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule],
+  imports: [CommonModule, RouterLink, VersionCreateFormComponent, ProjectCreateFormComponent],
   template: `
     <aside class="sidebar">
+      <!-- Dashboard Link -->
+      <a routerLink="/dashboard" class="sidebar-dashboard-link">
+        <span class="dashboard-icon">⌂</span>
+        <span>Bảng điều khiển</span>
+      </a>
+      <hr class="sidebar-divider" />
+
       <!-- Projects Section -->
       <div class="sidebar-section">
         <div class="sidebar-header">
@@ -61,9 +69,11 @@ import { ApiService, ProjectInfo } from '../../core/api.service';
           @for (version of versions; track version.version) {
             <div
               class="version-item"
-              [class.active]="version.version === activeVersion"
+              [class.selected]="version.version === activeVersion"
               [class.archived]="version.status === 'archived'"
-              (click)="switchVersion(version.version)"
+              [class.disabled]="version.status === 'archived'"
+              (click)="version.status !== 'archived' && switchVersion(version.version)"
+              [title]="version.status === 'archived' ? 'Version đã bị archived, không thể truy cập' : ''"
             >
               <div class="version-info">
                 <span class="version-name">{{ version.version }}</span>
@@ -71,9 +81,6 @@ import { ApiService, ProjectInfo } from '../../core/api.service';
                   {{ version.status }}
                 </span>
               </div>
-              @if (version.version === activeVersion) {
-                <span class="version-active-indicator">✓</span>
-              }
             </div>
           } @empty {
             <p class="empty-text">Chưa có phiên bản nào</p>
@@ -217,74 +224,20 @@ import { ApiService, ProjectInfo } from '../../core/api.service';
 
     <!-- Create Version Modal -->
     @if (showCreateModal) {
-      <div class="modal-overlay" (click)="showCreateModal = false">
-        <div class="modal" (click)="$event.stopPropagation()">
-          <div class="modal-header">
-            <h3>Create New Version</h3>
-            <button class="btn-close" (click)="showCreateModal = false">×</button>
-          </div>
-          <div class="modal-body">
-            <div class="form-group">
-              <label for="versionName">Version Name</label>
-              <input
-                id="versionName"
-                type="text"
-                [(ngModel)]="newVersionName"
-                placeholder="v1.0.2"
-                class="input"
-              >
-            </div>
-            <div class="form-group">
-              <label for="fromVersion">Base Version (Optional)</label>
-              <select id="fromVersion" [(ngModel)]="fromVersion" class="input">
-                <option value="">Create from scratch</option>
-                @for (v of versions; track v.version) {
-                  <option [value]="v.version">{{ v.version }}</option>
-                }
-              </select>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showCreateModal = false">Cancel</button>
-            <button class="btn btn-primary" (click)="createVersion()" [disabled]="!newVersionName">Create</button>
-          </div>
-        </div>
-      </div>
+      <app-version-create-form
+        [existingVersionCount]="versions.length"
+        (versionCreated)="onVersionCreated()"
+        (cancel)="showCreateModal = false"
+      />
     }
 
     <!-- Create Project Modal -->
     @if (showCreateProjectModal) {
-      <div class="modal-overlay" (click)="showCreateProjectModal = false">
-        <div class="modal" (click)="$event.stopPropagation()">
-          <div class="modal-header">
-            <h3>Tạo Project Mới</h3>
-            <button class="btn-close" (click)="showCreateProjectModal = false">×</button>
-          </div>
-          <div class="modal-body">
-            <div class="form-group">
-              <label for="projectName">Tên Project *</label>
-              <input id="projectName" type="text" [(ngModel)]="newProjectName" placeholder="my-app" class="input">
-            </div>
-            <div class="form-group">
-              <label for="projectPath">Working Directory *</label>
-              <input id="projectPath" type="text" [(ngModel)]="newProjectPath" placeholder="D:\projects\my-app" class="input">
-            </div>
-            <div class="form-group">
-              <label for="projectStack">Tech Stack (optional)</label>
-              <input id="projectStack" type="text" [(ngModel)]="newProjectStack" placeholder="fastapi,angular" class="input">
-            </div>
-            @if (createProjectError) {
-              <p class="error-text">{{ createProjectError }}</p>
-            }
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="closeProjectModal()">Hủy</button>
-            <button class="btn btn-primary" (click)="createProject()" [disabled]="!newProjectName || !newProjectPath || isCreatingProject">
-              {{ isCreatingProject ? 'Đang tạo...' : 'Tạo' }}
-            </button>
-          </div>
-        </div>
-      </div>
+      <app-project-create-form
+        [useModal]="true"
+        (projectCreated)="onProjectCreated()"
+        (cancel)="showCreateProjectModal = false"
+      />
     }
   `,
   styles: [`
@@ -301,6 +254,41 @@ import { ApiService, ProjectInfo } from '../../core/api.service';
       overflow-x: hidden;
       padding: 16px 0;
       z-index: 30;
+    }
+
+    /* Dashboard link */
+    .sidebar-dashboard-link {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 20px;
+      margin: 0 12px 8px 12px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      transition: color 0.2s, background 0.2s;
+    }
+
+    .sidebar-dashboard-link:hover {
+      color: var(--brand-color);
+    }
+
+    .sidebar-dashboard-link.router-link-active {
+      color: var(--brand-color);
+    }
+
+    .dashboard-icon {
+      font-size: 1rem;
+    }
+
+    /* Divider below dashboard link */
+    .sidebar-divider {
+      height: 1px;
+      margin: 4px 16px 12px 16px;
+      border: none;
+      background: var(--border-subtle);
     }
 
     /* Custom scrollbar for sidebar */
@@ -446,17 +434,26 @@ import { ApiService, ProjectInfo } from '../../core/api.service';
       transition: all 0.2s;
     }
 
-    .version-item:hover {
+    .version-item:hover:not(.disabled) {
       background: var(--bg-card);
     }
 
-    .version-item.active {
+    .version-item.selected {
       border-left-color: var(--brand-color);
       background: rgba(252, 103, 103, 0.1);
     }
 
     .version-item.archived {
-      opacity: 0.6;
+      opacity: 0.4;
+    }
+
+    .version-item.disabled {
+      cursor: not-allowed;
+      pointer-events: all;
+    }
+
+    .version-item.disabled:hover {
+      background: transparent;
     }
 
     .version-info {
@@ -478,7 +475,7 @@ import { ApiService, ProjectInfo } from '../../core/api.service';
       letter-spacing: 0.03em;
     }
 
-    .version-status.active {
+    .version-status.inbuild {
       background: rgba(63, 185, 80, 0.2);
       color: var(--accent-success);
     }
@@ -491,11 +488,6 @@ import { ApiService, ProjectInfo } from '../../core/api.service';
     .version-status.archived {
       background: rgba(139, 148, 158, 0.2);
       color: var(--text-tertiary);
-    }
-
-    .version-active-indicator {
-      color: var(--brand-color);
-      font-weight: bold;
     }
 
     /* Pipeline Progress */
@@ -595,6 +587,10 @@ import { ApiService, ProjectInfo } from '../../core/api.service';
       box-shadow: var(--glow-md);
     }
 
+    .modal-wide {
+      max-width: 480px;
+    }
+
     .modal-header {
       display: flex;
       justify-content: space-between;
@@ -624,6 +620,25 @@ import { ApiService, ProjectInfo } from '../../core/api.service';
 
     .modal-body {
       padding: 20px;
+    }
+
+    .warning-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      background: rgba(210, 153, 34, 0.1);
+      border: 1px solid rgba(210, 153, 34, 0.3);
+      border-radius: 6px;
+      font-size: 0.8rem;
+      color: var(--accent-warning);
+      line-height: 1.4;
+    }
+
+    .warning-icon {
+      font-size: 1.1rem;
+      flex-shrink: 0;
     }
 
     .form-group {
@@ -744,17 +759,11 @@ export class SidebarComponent implements OnInit, OnDestroy {
   activeVersionInfo?: VersionInfo;
   showCreateModal = false;
   newVersionName = '';
-  fromVersion = '';
   currentPhase: 'init' | 'brief' | 'contract' | 'ir' | 'code' | 'preview' = 'init';
 
   // Projects
   projects: ProjectInfo[] = [];
   showCreateProjectModal = false;
-  newProjectName = '';
-  newProjectPath = '';
-  newProjectStack = '';
-  isCreatingProject = false;
-  createProjectError = '';
 
   private routerSub?: Subscription;
 
@@ -762,7 +771,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
     private versionService: VersionService,
     private router: Router,
     private api: ApiService,
-    @Inject(DOCUMENT) private document: Document,
+    private pipelineStore: PipelineStore,
   ) {}
 
   ngOnInit(): void {
@@ -813,48 +822,16 @@ export class SidebarComponent implements OnInit, OnDestroy {
     try {
       const result = await this.api.activateProject(project.project_id);
       if (result.success) {
+        // Update local state — không reload page (giữ nguyên thứ tự danh sách)
         await this.loadProjects();
-        // Reload page to pick up new project context
-        window.location.reload();
+        this.versionService.loadVersions();
+        this.pipelineStore.loadStatus();
+        // Notify other components to refresh
+        window.dispatchEvent(new CustomEvent('project-switched'));
       }
     } catch (e) {
       console.error('Failed to switch project:', e);
     }
-  }
-
-  async createProject(): Promise<void> {
-    if (!this.newProjectName.trim() || !this.newProjectPath.trim()) return;
-
-    this.isCreatingProject = true;
-    this.createProjectError = '';
-
-    try {
-      const result = await this.api.createProject({
-        name: this.newProjectName.trim(),
-        path: this.newProjectPath.trim(),
-        stack: this.newProjectStack.trim() || undefined,
-      });
-
-      if (result.success) {
-        this.closeProjectModal();
-        await this.loadProjects();
-        window.location.reload();
-      } else {
-        this.createProjectError = result.message || 'Tạo project thất bại';
-      }
-    } catch (e: any) {
-      this.createProjectError = e.message || 'Lỗi kết nối đến server';
-    } finally {
-      this.isCreatingProject = false;
-    }
-  }
-
-  closeProjectModal(): void {
-    this.showCreateProjectModal = false;
-    this.newProjectName = '';
-    this.newProjectPath = '';
-    this.newProjectStack = '';
-    this.createProjectError = '';
   }
 
   // ====================================================================
@@ -877,21 +854,17 @@ export class SidebarComponent implements OnInit, OnDestroy {
     return this.versionService.calculateProgress(this.activeVersionInfo);
   }
 
-  switchVersion(version: string): void {
-    this.versionService.setActiveVersion(version);
+  async switchVersion(version: string): Promise<void> {
+    await this.versionService.setActiveVersion(version);
     this.activeVersionInfo = this.versionService.getVersion(version);
   }
 
-  async createVersion(): Promise<void> {
-    if (!this.newVersionName) return;
-
-    await this.versionService.createVersion({
-      name: this.newVersionName,
-      fromVersion: this.fromVersion || undefined,
-    });
-
+  onVersionCreated(): void {
     this.showCreateModal = false;
-    this.newVersionName = '';
-    this.fromVersion = '';
+  }
+
+  onProjectCreated(): void {
+    this.showCreateProjectModal = false;
+    window.location.reload();
   }
 }

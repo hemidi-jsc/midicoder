@@ -1,4 +1,4 @@
-"""
+﻿"""
 API Server configuration.
 
 Project active path: ProjectsManager (SQLite projects.db)
@@ -84,6 +84,30 @@ def get_active_version() -> str | None:
     except Exception:
         pass
 
+    return None
+
+
+def get_version_status(version: str) -> str | None:
+    """
+    Get version status from projects.db.
+    
+    Returns 'archived', 'inbuild', 'draft' or None if version not found.
+    """
+    try:
+        from midicoder.storage.projects import ProjectsManager
+        mgr = ProjectsManager()
+        mgr.init()
+        active_project = mgr.get_active()
+        if not active_project:
+            return None
+        project_id = active_project["project_id"]
+        # Ensure 'v' prefix for lookup
+        vname = version if version.startswith("v") else "v" + version
+        ver = mgr.version_get(project_id, vname)
+        if ver:
+            return ver.get("status", "draft")
+    except Exception:
+        pass
     return None
 
 

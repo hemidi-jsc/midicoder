@@ -1,4 +1,4 @@
-"""
+﻿"""
 Projects Manager — lưu trữ registry projects trong SQLite.
 
 Database toàn cục: ~/.midicoder/data/projects.db
@@ -142,10 +142,10 @@ class ProjectsManager:
             return dict(row) if row else None
 
     def list_all(self) -> List[Dict[str, Any]]:
-        """Lấy tất cả projects."""
+        """Lấy tất cả projects — sort theo id (thứ tự tạo, không nhảy khi activate)."""
         with get_connection(self.db_path) as conn:
             cursor = conn.execute(
-                "SELECT * FROM projects ORDER BY updated_at DESC"
+                "SELECT * FROM projects ORDER BY id DESC"
             )
             return [dict(row) for row in cursor.fetchall()]
 
@@ -239,7 +239,10 @@ class ProjectsManager:
     ) -> Dict[str, Any]:
         """Tạo version mới cho project."""
         if set_active:
-            self.version_deactivate_all(project_id)
+            # 1. Archive các version có status='inbuild' (lifecycle)
+            self.version_archive_inbuild(project_id)
+            # 2. Deselect version đang chọn (selection pointer) — không đổi status
+            self.version_deselect_all(project_id)
 
         try:
             with get_connection(self.db_path) as conn:
@@ -301,7 +304,11 @@ class ProjectsManager:
         project_id: str,
         version_name: str,
     ) -> Optional[Dict[str, Any]]:
-        """Switch active version của project."""
+        """Switch active version của project.
+
+        Chỉ đổi active flag, KHÔNG tự động đổi status thành 'inbuild'.
+        Status chỉ được chuyển sang 'inbuild' khi brief của version đó được frozen.
+        """
         v = self.version_get(project_id, version_name)
         if not v:
             return None
@@ -312,8 +319,22 @@ class ProjectsManager:
                 (project_id,),
             )
             conn.execute(
-                "UPDATE versions SET active = 1, status = 'active', updated_at = datetime('now') WHERE project_id = ? AND version_name = ?",
+                "UPDATE versions SET active = 1, updated_at = datetime('now') WHERE project_id = ? AND version_name = ?",
                 (project_id, version_name),
+            )
+        return self.version_get(project_id, version_name)
+
+    def version_update_status(
+        self,
+        project_id: str,
+        version_name: str,
+        status: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Cập nhật status của version (draft → inbuild)."""
+        with get_connection(self.db_path) as conn:
+            conn.execute(
+                "UPDATE versions SET status = ?, updated_at = datetime('now') WHERE project_id = ? AND version_name = ?",
+                (status, project_id, version_name),
             )
         return self.version_get(project_id, version_name)
 
@@ -338,10 +359,23 @@ class ProjectsManager:
             )
             return cursor.rowcount > 0
 
-    def version_deactivate_all(self, project_id: str):
-        """Deactivate tất cả versions của project."""
+    def version_archive_inbuild(self, project_id: str):
+        """Archive các version có status='inbuild' — lifecycle rule."""
         with get_connection(self.db_path) as conn:
             conn.execute(
-                "UPDATE versions SET active = 0 WHERE project_id = ?",
+                "UPDATE versions SET active = 0, status = 'archived', updated_at = datetime('now') WHERE project_id = ? AND status = 'inbuild'",
                 (project_id,),
             )
+
+    def version_deselect_all(self, project_id: str):
+        """Deselect version đang chọn (active=1 → active=0) — không đổi status."""
+        with get_connection(self.db_path) as conn:
+            conn.execute(
+                "UPDATE versions SET active = 0, updated_at = datetime('now') WHERE project_id = ? AND active = 1",
+                (project_id,),
+            )
+
+    def version_deactivate_all(self, project_id: str):
+        """Legacy alias — keep for backward compatibility."""
+        self.version_archive_inbuild(project_id)
+        self.version_deselect_all(project_id)

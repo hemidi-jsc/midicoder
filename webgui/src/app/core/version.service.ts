@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Version Service
  * Quản lý thông tin và chuyển đổi giữa các version
  * Sử dụng API thực từ backend FastAPI
@@ -10,9 +10,8 @@ import { ApiService } from './api.service';
 
 export interface VersionInfo {
   version: string;
-  status: 'draft' | 'active' | 'archived';
+  status: 'draft' | 'inbuild' | 'archived';
   createdAt: string;
-  parentVersion?: string;
   progress: {
     init: 'pending' | 'in_progress' | 'complete' | 'error';
     brief: 'pending' | 'in_progress' | 'complete' | 'error';
@@ -26,7 +25,6 @@ export interface VersionInfo {
 
 export interface CreateVersionRequest {
   name: string;
-  fromVersion?: string;
 }
 
 @Injectable({
@@ -42,53 +40,71 @@ export class VersionService {
   readonly activeVersion$ = this.activeVersionSubject.asObservable();
 
   /**
-   * Load danh sách versions từ backend API
-   * Gọi GET /pipeline/versions + GET /pipeline/status
+   * Load danh sách tất cả versions từ backend API
+   * Gọi GET /version/list để lấy versions, GET /pipeline/status để lấy pipeline progress
    */
   async loadVersions(): Promise<void> {
     try {
-      // Load versions list
-      const versionsResult = await this.api.getPipelineStatus();
-      if (versionsResult.success && versionsResult.data) {
-        const data = versionsResult.data;
-        const activeVersion = data.active_version || '';
+      // Load versions list từ backend
+      const listResult = await this.api.listVersions();
+      const versions: VersionInfo[] = [];
 
-        // Build version info from pipeline progress
-        const progress = data.pipeline_progress || {};
+      if (listResult.success && listResult.data?.versions) {
+        const backendVersions = listResult.data.versions;
+        const activeVersionName = listResult.data.active_version;
 
-        const versionInfo: VersionInfo = {
-          version: activeVersion || '',
-          status: activeVersion ? 'active' : 'draft',
-          createdAt: new Date().toISOString(),
-          progress: {
-            init: (progress.init as any) || 'pending',
-            brief: (progress.brief as any) || 'pending',
-            contract: (progress.contract as any) || 'pending',
-            ir: (progress.ir as any) || 'pending',
-            code: (progress.code as any) || 'pending',
-            preview: ((progress as any).preview || 'pending') as any,
-          },
-          lastModified: new Date().toISOString(),
-        };
+        // Build VersionInfo cho từng version
+        for (const bv of backendVersions) {
+          const vname = bv.version || bv.name || '';
+          // Strip leading 'v' for display
+          const displayVersion = vname.startsWith('v') ? vname : 'v' + vname;
 
-        // Chỉ push version nếu có active_version thực sự
-        if (activeVersion) {
-          this.versionsSubject.next([versionInfo]);
-        } else {
-          this.versionsSubject.next([]);
+          const versionInfo: VersionInfo = {
+            version: displayVersion,
+            status: bv.status || 'draft',
+            createdAt: bv.created_at || '',
+            progress: {
+              init: 'pending',
+              brief: 'pending',
+              contract: 'pending',
+              ir: 'pending',
+              code: 'pending',
+              preview: 'pending',
+            },
+            lastModified: bv.updated_at || bv.created_at || '',
+          };
+
+          // Chỉ fill pipeline progress cho active version
+          if (displayVersion === activeVersionName) {
+            const statusResult = await this.api.getPipelineStatus();
+            if (statusResult.success && statusResult.data) {
+              const progress = statusResult.data.pipeline_progress || {};
+              versionInfo.progress = {
+                init: (progress.init as any) || 'pending',
+                brief: (progress.brief as any) || 'pending',
+                contract: (progress.contract as any) || 'pending',
+                ir: (progress.ir as any) || 'pending',
+                code: (progress.code as any) || 'pending',
+                preview: ((progress as any).preview || 'pending') as any,
+              };
+            }
+          }
+
+          versions.push(versionInfo);
         }
-        this.activeVersionSubject.next(activeVersion || '');
-        localStorage.setItem('midicoder_active_version', activeVersion || '');
+
+        this.versionsSubject.next(versions);
+        this.activeVersionSubject.next(activeVersionName || '');
+        if (activeVersionName) {
+          localStorage.setItem('midicoder_active_version', activeVersionName);
+        }
+      } else {
+        this.versionsSubject.next([]);
+        this.activeVersionSubject.next('');
       }
     } catch (error) {
       console.warn('Failed to load versions from backend:', error);
-      // Không fallback localStorage khi project mới — chỉ fallback nếu có stored version
-      const storedVersion = localStorage.getItem('midicoder_active_version') || '';
-      // Xóa stale localStorage để tránh version cũ bám theo project mới
-      localStorage.removeItem('midicoder_active_version');
-      if (storedVersion) {
-        this.activeVersionSubject.next(storedVersion);
-      }
+      this.versionsSubject.next([]);
     }
   }
 
@@ -125,13 +141,31 @@ export class VersionService {
   }
 
   /**
-   * Set active version
+   * Set active version — gọi backend API POST /version/use để switch SQLite + config file
+   * Block nếu version đã bị archived
    */
-  setActiveVersion(version: string): void {
-    this.activeVersionSubject.next(version);
-    localStorage.setItem('midicoder_active_version', version);
-    // Reload to get updated pipeline progress
-    this.loadVersions();
+  async setActiveVersion(version: string): Promise<boolean> {
+    // Block switch to archived version
+    const target = this.getVersion(version);
+    if (target && target.status === 'archived') {
+      console.warn(`Cannot switch to archived version '${version}'`);
+      return false;
+    }
+
+    try {
+      const result = await this.api.useVersion({ version });
+      if (result.success) {
+        this.activeVersionSubject.next(version);
+        localStorage.setItem('midicoder_active_version', version);
+        // Reload để lấy pipeline progress của version mới
+        await this.loadVersions();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Failed to switch version:', error);
+      return false;
+    }
   }
 
   /**
@@ -148,7 +182,6 @@ export class VersionService {
       version: request.name,
       status: 'draft',
       createdAt: new Date().toISOString(),
-      parentVersion: request.fromVersion,
       progress: {
         init: 'pending',
         brief: 'pending',
@@ -164,7 +197,11 @@ export class VersionService {
     currentVersions.unshift(newVersion);
     this.versionsSubject.next(currentVersions);
 
-    this.setActiveVersion(newVersion.version);
+    // Version mới đã active trong SQLite (backend set_active=True), chỉ update local state
+    this.activeVersionSubject.next(newVersion.version);
+    localStorage.setItem('midicoder_active_version', newVersion.version);
+    // Reload để sync toàn bộ danh sách versions + pipeline progress
+    await this.loadVersions();
 
     return newVersion;
   }
@@ -197,7 +234,7 @@ export class VersionService {
   /**
    * Update version status
    */
-  updateVersionStatus(version: string, status: 'draft' | 'active' | 'archived'): void {
+  updateVersionStatus(version: string, status: 'draft' | 'inbuild' | 'archived'): void {
     const versions = this.versionsSubject.getValue();
     const index = versions.findIndex(v => v.version === version);
 

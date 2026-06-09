@@ -43,12 +43,37 @@ def validate_version_name(name: str) -> bool:
 
 def _get_project_id() -> str:
     """Lấy project_id từ path của project hiện tại."""
-    cwd = str(Path.cwd().resolve())
+    project_root = _get_project_root()
+    cwd = str(project_root.resolve())
     return hashlib.md5(cwd.encode()).hexdigest()[:12]
 
 
+def _get_project_root() -> Path:
+    """Get the active project root directory.
+    
+    Priority: ConfigManager._project_path → active project from projects.db → Path.cwd()
+    """
+    try:
+        from midicoder.pipeline.config import get_config
+        cfg = get_config()
+        if cfg._project_path:
+            return Path(cfg._project_path)
+    except Exception:
+        pass
+    # Fallback: query projects.db for active project
+    try:
+        mgr = _get_manager()
+        active = mgr.get_active()
+        if active and active.get("path"):
+            return Path(active["path"])
+    except Exception:
+        pass
+    # Final fallback
+    return Path.cwd()
+
+
 def get_workspace_dir() -> Path:
-    workspace_dir = Path.cwd() / ".midicoder"
+    workspace_dir = _get_project_root() / ".midicoder"
     if not workspace_dir.exists():
         EM.raise_error(
             ErrorCode.CONFIG_READ_FAILED,
@@ -158,7 +183,10 @@ def list_versions() -> list[dict]:
 
 
 def create_version(name: str, from_version: Optional[str] = None) -> None:
-    """Tạo version mới — metadata SQLite + file system."""
+    """Tạo version mới — metadata SQLite + file system.
+
+    Note: from_version parameter kept for CLI backward compat but not used in WebGUI flow.
+    """
     # Validate
     if not validate_version_name(name):
         EM.raise_error(
@@ -174,42 +202,27 @@ def create_version(name: str, from_version: Optional[str] = None) -> None:
     if version_dir.exists():
         EM.raise_error(ErrorCode.VERSION_ALREADY_EXISTS, version=name)
 
-    # Copy parent source if --from specified
-    if from_version:
-        if not from_version.startswith("v"):
-            from_version = "v" + from_version
-        parent_dir = get_versions_dir() / from_version
-        if not parent_dir.exists():
-            EM.raise_error(ErrorCode.VERSION_NOT_FOUND, version=from_version)
-        parent_src = parent_dir / "src"
-        if parent_src.exists():
-            try:
-                shutil.copytree(parent_src, version_dir / "src")
-                click.echo(f"   ✓ Copied source from {from_version}")
-            except Exception as e:
-                click.echo(f"   ⚠️  Warning: Could not copy source from {from_version}: {e}")
-
     # 1. Save into SQLite (bắt buộc — fail thì.abort)
     mgr = _get_manager()
     project_id = _get_project_id()
     mgr.version_create(
         project_id=project_id,
         version_name=name,
-        parent_version=from_version,
+        parent_version=None,
         set_active=True,
     )
     click.echo("   ✓ Saved to SQLite")
 
     # 2. Create file system structure
     version_dir.mkdir(parents=True, exist_ok=True)
-    click.echo(f"   ✓ Created directory: {version_dir.relative_to(Path.cwd())}")
+    click.echo(f"   ✓ Created directory: {version_dir.relative_to(_get_project_root())}")
     (version_dir / "src").mkdir(parents=True, exist_ok=True)
 
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     metadata = {
         "version": name.lstrip("v"),
         "created_at": now,
-        "parent_version": from_version.lstrip("v") if from_version else None,
+        "parent_version": None,
         "status": "draft",
         "pipeline": {"brief": "none", "contract": "none", "ir": "none", "code": "none"},
         "artifacts": {"briefs": 0, "contracts": 0, "files": 0, "lines": 0},
@@ -217,7 +230,7 @@ def create_version(name: str, from_version: Optional[str] = None) -> None:
     mf = version_dir / "metadata.yml"
     with open(mf, "w", encoding="utf-8") as f:
         yaml.dump(metadata, f, default_flow_style=False, allow_unicode=True)
-    click.echo(f"   ✓ Created metadata: {mf.relative_to(Path.cwd())}")
+    click.echo(f"   ✓ Created metadata: {mf.relative_to(_get_project_root())}")
 
     # 3. Update config
     config = load_project_config()
@@ -249,13 +262,34 @@ def use_version(name: str) -> None:
     if not name.startswith("v"):
         name = "v" + name
 
-    version_dir = get_versions_dir() / name
-    if not version_dir.exists():
-        EM.raise_error(ErrorCode.VERSION_NOT_FOUND, version=name)
-
-    # SQLite switch (bắt buộc)
+    # Validate version tồn tại trong SQLite (không require directory trong filesystem)
     mgr = _get_manager()
     project_id = _get_project_id()
+    existing = mgr.version_get(project_id, name)
+    if not existing:
+        EM.raise_error(ErrorCode.VERSION_NOT_FOUND, version=name)
+
+    # Tạo metadata directory nếu chưa tồn tại (backward compat cho version legacy chỉ trong SQLite)
+    try:
+        version_dir = get_versions_dir() / name
+        if not version_dir.exists():
+            version_dir.mkdir(parents=True, exist_ok=True)
+            meta_file = version_dir / "metadata.yml"
+            if not meta_file.exists():
+                import yaml
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                meta = {
+                    "version": name,
+                    "status": existing.get("status", "draft"),
+                    "created_at": existing.get("created_at", now),
+                    "description": f"Version {name}",
+                    "parent_version": None,
+                }
+                with open(meta_file, "w", encoding="utf-8") as f:
+                    yaml.dump(meta, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
     mgr.version_use(project_id, name)
 
     # Config file
@@ -264,40 +298,25 @@ def use_version(name: str) -> None:
     config["active_version"] = name
     save_project_config(config)
 
-    # Update metadata files
-    if old_active and old_active != name:
-        old_meta = get_versions_dir() / old_active / "metadata.yml"
-        if old_meta.exists():
-            try:
-                with open(old_meta, "r", encoding="utf-8") as f:
-                    d = yaml.safe_load(f) or {}
-                d["status"] = "archived"
-                with open(old_meta, "w", encoding="utf-8") as f:
-                    yaml.dump(d, f, default_flow_style=False)
-            except Exception:
-                pass
+    # KHÔNG touch status metadata.yml khi switch version.
+    # Status chỉ thay đổi bởi:
+    #   - create_version() → archive tất cả version cũ
+    #   - freeze_brief()   → chuyển draft → active
 
-    new_meta = version_dir / "metadata.yml"
-    if new_meta.exists():
-        try:
-            with open(new_meta, "r", encoding="utf-8") as f:
-                d = yaml.safe_load(f) or {}
-            d["status"] = "active"
-            with open(new_meta, "w", encoding="utf-8") as f:
-                yaml.dump(d, f, default_flow_style=False)
-        except Exception:
-            pass
-
+    new_meta = get_versions_dir() / name / "metadata.yml"
     # Show info
-    with open(new_meta, "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f) or {}
-    click.echo(f"✓ Switched to {name}")
-    click.echo("─────────────────────────────")
-    click.echo(f"Version: {name}")
-    click.echo(f"Status: active")
-    click.echo(f"Created: {meta.get('created_at', 'unknown')}")
-    if meta.get("parent_version"):
-        click.echo(f"Parent: v{meta['parent_version']}")
+    try:
+        with open(new_meta, "r", encoding="utf-8") as f:
+            meta = yaml.safe_load(f) or {}
+        click.echo(f"✓ Switched to {name}")
+        click.echo("─────────────────────────────")
+        click.echo(f"Version: {name}")
+        click.echo(f"Status: {meta.get('status', 'draft')}")
+        click.echo(f"Created: {meta.get('created_at', 'unknown')}")
+        if meta.get("parent_version"):
+            click.echo(f"Parent: v{meta['parent_version']}")
+    except Exception:
+        click.echo(f"✓ Switched to {name}")
 
 
 def list_versions_command() -> None:
@@ -350,7 +369,7 @@ def delete_version(name: str, force: bool = False) -> None:
     try:
         shutil.rmtree(version_dir)
         click.echo(f"✓ Deleted version: {name}")
-        click.echo(f"  Removed: {version_dir.relative_to(Path.cwd())}")
+        click.echo(f"  Removed: {version_dir.relative_to(_get_project_root())}")
     except Exception as e:
         EM.raise_error(ErrorCode.VERSION_CLEANUP_FAILED, version=name, cause=e)
 
@@ -362,18 +381,8 @@ def delete_version(name: str, force: bool = False) -> None:
             new_active = versions[0]["name"]
             config["active_version"] = new_active
             save_project_config(config)
-            mgr = _get_manager()
             mgr.version_use(_get_project_id(), new_active)
-            new_meta = get_versions_dir() / new_active / "metadata.yml"
-            if new_meta.exists():
-                try:
-                    with open(new_meta, "r") as f:
-                        d = yaml.safe_load(f) or {}
-                    d["status"] = "active"
-                    with open(new_meta, "w") as f:
-                        yaml.dump(d, f, default_flow_style=False)
-                except Exception:
-                    pass
+            # KHÔNG set status='inbuild' — status chỉ đổi khi brief frozen
             click.echo(f"✓ Set new active version: {new_active}")
         else:
             if "active_version" in config:
@@ -396,7 +405,7 @@ def _auto_cleanup() -> None:
     def sort_key(v):
         status = v["metadata"].get("status", "")
         created = v["metadata"].get("created_at", "")
-        status_order = {"archived": 0, "draft": 1, "active": 2}.get(status, 3)
+        status_order = {"archived": 0, "draft": 1, "inbuild": 2}.get(status, 3)
         return (status_order, created)
 
     versions.sort(key=sort_key)
@@ -409,8 +418,18 @@ def _auto_cleanup() -> None:
             break
         to_delete.append(v["name"])
 
+    # Xóa cả SQLite entry lẫn file system
+    mgr = _get_manager()
+    project_id = _get_project_id()
     versions_dir = get_versions_dir()
     for vn in to_delete:
+        # SQLite delete
+        try:
+            mgr.version_delete(project_id, vn, force=True)
+            click.echo(f"   ✓ Auto-cleanup: removed SQLite entry {vn}")
+        except Exception:
+            pass
+        # File system delete
         vd = versions_dir / vn
         try:
             shutil.rmtree(vd, ignore_errors=True)
