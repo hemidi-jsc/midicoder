@@ -8,10 +8,13 @@ Test coverage:
 - Version list
 - Version delete
 - Auto-cleanup
+- _sync_metadata_from_sqlite: đồng bộ metadata.yml từ SQLite
+- check_create_version: validate + impact check
 
 SoT Reference: E01
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -31,8 +34,6 @@ from midicoder.pipeline.commands.version import (
     get_config_file,
     load_project_config,
     save_project_config,
-    load_version_metadata,
-    save_version_metadata,
     list_versions,
     get_active_version,
     get_max_versions,
@@ -197,63 +198,62 @@ class TestVersionCreate:
     """Tests cho version create."""
     
     def test_create_version_success(self, temp_workspace):
-        """Test tạo version mới thành công."""
-        create_version('v1.0.1')
-        
+        """Test tạo version mới thành công (phiên bản đầu tiên → không có parent)."""
+        create_version('v1.0.0')
+
         # Check version directory created
-        version_dir = Path(temp_workspace) / ".midicoder" / "versions" / "v1.0.1"
+        version_dir = Path(temp_workspace) / ".midicoder" / "versions" / "v1.0.0"
         assert version_dir.exists()
-        
+
         # Check src directory created
         src_dir = version_dir / "src"
         assert src_dir.exists()
-        
+
         # Check metadata.yml created
         metadata_file = version_dir / "metadata.yml"
         assert metadata_file.exists()
-        
+
         # Check metadata content
         with open(metadata_file) as f:
             metadata = yaml.safe_load(f)
-        assert metadata['version'] == '1.0.1'
+        assert metadata['version'] == '1.0.0'
         assert metadata['status'] == 'draft'
-        assert metadata['parent_version'] is None
-        
+        assert metadata['parent_version'] is None  # phiên bản đầu tiên
+
         # Check active version updated
         config_file = Path(temp_workspace) / ".midicoder" / "config" / "midicoder.yml"
         with open(config_file) as f:
             config = yaml.safe_load(f)
-        assert config['active_version'] == 'v1.0.1'
-    
-    def test_create_version_without_v_prefix(self, temp_workspace):
-        """Test tạo version không có v prefix (auto-add)."""
-        create_version('1.0.1')
-        
-        # Should auto-add v prefix
-        version_dir = Path(temp_workspace) / ".midicoder" / "versions" / "v1.0.1"
-        assert version_dir.exists()
-    
-    def test_create_version_from_parent(self, workspace_with_version):
-        """Test tạo version từ parent."""
-        # Tạo parent src với file
+        assert config['active_version'] == 'v1.0.0'
+
+    def test_create_version_auto_parent(self, workspace_with_version):
+        """Test tạo version mới tự động kế thừa từ version active (parent)."""
+        # Tạo src trong parent (v1.0.0 đang active)
         parent_src = Path(workspace_with_version) / ".midicoder" / "versions" / "v1.0.0" / "src"
         parent_src.mkdir(parents=True)
         test_file = parent_src / "test.txt"
         test_file.write_text("test content")
-        
-        create_version('v1.0.1', from_version='v1.0.0')
-        
-        # Check file copied
+        (parent_src / "subdir").mkdir(exist_ok=True)
+        (parent_src / "subdir" / "nested.txt").write_text("nested content")
+
+        # Tạo v1.0.1 — tự động lấy v1.0.0 làm parent
+        create_version('v1.0.1')
+
+        # Check file copied từ parent
         child_src = Path(workspace_with_version) / ".midicoder" / "versions" / "v1.0.1" / "src"
         copied_file = child_src / "test.txt"
         assert copied_file.exists()
         assert copied_file.read_text() == "test content"
-        
-        # Check metadata has parent
+        # Check nested file
+        assert (child_src / "subdir" / "nested.txt").exists()
+        assert (child_src / "subdir" / "nested.txt").read_text() == "nested content"
+
+        # Check metadata có parent_version
         metadata_file = Path(workspace_with_version) / ".midicoder" / "versions" / "v1.0.1" / "metadata.yml"
         with open(metadata_file) as f:
             metadata = yaml.safe_load(f)
         assert metadata['parent_version'] == '1.0.0'
+        assert metadata['status'] == 'draft'
     
     def test_create_version_invalid_name(self, temp_workspace):
         """Test tạo version với name không hợp lệ."""
@@ -266,15 +266,16 @@ class TestVersionCreate:
         """Test tạo version đã tồn tại."""
         with pytest.raises(MidicoderError) as exc_info:
             create_version('v1.0.0')
-        
+
         assert exc_info.value.code == ErrorCode.VERSION_ALREADY_EXISTS
-    
-    def test_create_version_nonexistent_parent(self, temp_workspace):
-        """Test tạo version với parent không tồn tại."""
-        with pytest.raises(MidicoderError) as exc_info:
-            create_version('v1.0.1', from_version='v9.9.9')
-        
-        assert exc_info.value.code == ErrorCode.VERSION_NOT_FOUND
+
+    def test_create_version_without_v_prefix(self, temp_workspace):
+        """Test tạo version không có v prefix (auto-add)."""
+        create_version('1.0.0')
+
+        # Should auto-add v prefix
+        version_dir = Path(temp_workspace) / ".midicoder" / "versions" / "v1.0.0"
+        assert version_dir.exists()
 
 
 class TestVersionUse:
@@ -543,15 +544,238 @@ class TestVersionIntegration:
         metadata_file = Path(temp_workspace) / ".midicoder" / "versions" / "v1.0.0" / "metadata.yml"
         with open(metadata_file) as f:
             metadata = yaml.safe_load(f)
-        
+
         # Update pipeline status
         metadata['pipeline']['brief'] = 'frozen'
         metadata['artifacts']['briefs'] = 1
-        
+
         with open(metadata_file, 'w') as f:
             yaml.dump(metadata, f)
-        
+
         # Verify
         versions = list_versions()
         assert versions[0]['metadata']['pipeline']['brief'] == 'frozen'
         assert versions[0]['metadata']['artifacts']['briefs'] == 1
+
+
+# ============================================================================
+# _sync_metadata_from_sqlite — SQLite là nguồn sự thật, sync ra metadata.yml
+# ============================================================================
+
+class TestSyncMetadataFromSQLite:
+    """Test đồng bộ metadata.yml từ SQLite status."""
+
+    @pytest.fixture
+    def workspace_with_sqlite_sync(self, temp_workspace):
+        """Tạo workspace có versions trong SQLite và metadata.yml."""
+        from midicoder.storage.projects import ProjectsManager
+        from unittest.mock import patch
+
+        versions_dir = Path(temp_workspace) / ".midicoder" / "versions"
+        config_dir = Path(temp_workspace) / ".midicoder" / "config"
+
+        # Tạo versions trên filesystem
+        for vname, status in [("v1.0.0", "inbuild"), ("v2.0.0", "draft")]:
+            vdir = versions_dir / vname
+            vdir.mkdir(parents=True, exist_ok=True)
+            (vdir / "src").mkdir(exist_ok=True)
+            meta = {
+                "version": vname.lstrip("v"),
+                "status": status,
+                "created_at": "2026-06-09T10:00:00Z",
+                "pipeline": {"brief": "none", "contract": "none", "ir": "none", "code": "none"},
+                "artifacts": {"briefs": 0, "contracts": 0, "files": 0, "lines": 0},
+            }
+            with open(vdir / "metadata.yml", "w") as f:
+                yaml.dump(meta, f)
+
+        # Config
+        with open(config_dir / "midicoder.yml", "w") as f:
+            yaml.dump({"active_version": "v2.0.0", "max_versions": 5}, f)
+
+        # Mock project path
+        project_id = hashlib.md5(str(Path(temp_workspace).resolve()).encode()).hexdigest()[:12]
+
+        return temp_workspace, project_id, versions_dir
+
+    def test_sync_archives_inbuild_versions(self, temp_workspace, workspace_with_sqlite_sync):
+        """Khi SQLite archive version inbuild, metadata.yml cũng được sync."""
+        from midicoder.pipeline.commands.version import _sync_metadata_from_sqlite
+        from midicoder.storage.projects import ProjectsManager
+        from unittest.mock import patch
+
+        temp_ws, project_id, versions_dir = workspace_with_sqlite_sync
+
+        # Tạo in-memory DB và insert versions với status khác
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        mgr = ProjectsManager(db_path=Path(tmp.name))
+        mgr.init()
+        mgr.version_create(project_id, "v1.0.0", set_active=False)
+        mgr.version_create(project_id, "v2.0.0", set_active=False)
+        # Set v1.0.0 = inbuild, v2.0.0 = archived
+        mgr.version_update_status(project_id, "v1.0.0", "inbuild")
+        mgr.version_update_status(project_id, "v2.0.0", "archived")
+
+        # Sync — metadata.yml phải khớp SQLite
+        with patch("midicoder.pipeline.commands.version._get_manager", return_value=mgr):
+            with patch("midicoder.pipeline.commands.version._get_project_id", return_value=project_id):
+                with patch("midicoder.pipeline.commands.version.get_versions_dir", return_value=versions_dir):
+                    _sync_metadata_from_sqlite(project_id)
+
+        # Verify: v1.0.0 metadata.yml status = inbuild
+        meta1 = yaml.safe_load((versions_dir / "v1.0.0" / "metadata.yml").read_text())
+        assert meta1["status"] == "inbuild"
+
+        # Verify: v2.0.0 metadata.yml status = archived
+        meta2 = yaml.safe_load((versions_dir / "v2.0.0" / "metadata.yml").read_text())
+        assert meta2["status"] == "archived"
+
+        # Cleanup
+        os.unlink(tmp.name)
+
+
+# ============================================================================
+# check_create_version — kiểm tra impact trước khi tạo
+# ============================================================================
+
+class TestCheckCreateVersion:
+    """Test validate + impact check trước khi tạo version."""
+
+    def test_validates_semver_format(self, temp_workspace):
+        """Reject tên version không đúng SemVer."""
+        from midicoder.pipeline.commands.version import check_create_version
+        from midicoder.storage.projects import ProjectsManager
+        from unittest.mock import patch
+
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        mgr = ProjectsManager(db_path=Path(tmp.name))
+        mgr.init()
+
+        with patch("midicoder.pipeline.commands.version._get_manager", return_value=mgr):
+            result = check_create_version("invalid-name!")
+
+        assert result["error"] is not None
+        assert "SemVer" in result["error"]
+        os.unlink(tmp.name)
+
+    def test_no_active_project(self, temp_workspace):
+        """Trả về empty khi không có project active."""
+        from midicoder.pipeline.commands.version import check_create_version
+        from midicoder.storage.projects import ProjectsManager
+        from unittest.mock import patch
+
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        mgr = ProjectsManager(db_path=Path(tmp.name))
+        mgr.init()
+
+        with patch("midicoder.pipeline.commands.version._get_manager", return_value=mgr):
+            result = check_create_version("v1.0.0")
+
+        assert result["error"] is None
+        assert result["current_count"] == 0
+        assert result["will_archive"] == []
+        assert result["will_delete"] == []
+        os.unlink(tmp.name)
+
+    def test_detects_inbuild_versions_to_archive(self, temp_workspace):
+        """Detect các version status=inbuild sẽ bị archive."""
+        from midicoder.pipeline.commands.version import check_create_version
+        from midicoder.storage.projects import ProjectsManager
+        from unittest.mock import patch
+
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        mgr = ProjectsManager(db_path=Path(tmp.name))
+        mgr.init()
+
+        project_id = "testpid123456"
+        mgr.create(project_id, "TestProject", "/tmp/test", set_active=True)
+        mgr.version_create(project_id, "v1.0.0", set_active=True)
+        mgr.version_update_status(project_id, "v1.0.0", "inbuild")
+
+        with patch("midicoder.pipeline.commands.version._get_manager", return_value=mgr):
+            with patch("midicoder.pipeline.commands.version.get_max_versions", return_value=5):
+                result = check_create_version("v2.0.0")
+
+        assert result["error"] is None
+        assert len(result["will_archive"]) == 1
+        assert result["will_archive"][0]["version"] == "v1.0.0"
+        assert result["will_archive"][0]["status"] == "inbuild"
+        os.unlink(tmp.name)
+
+    def test_version_already_exists(self, temp_workspace):
+        """Trả về error khi version đã tồn tại."""
+        from midicoder.pipeline.commands.version import check_create_version
+        from midicoder.storage.projects import ProjectsManager
+        from unittest.mock import patch
+
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        mgr = ProjectsManager(db_path=Path(tmp.name))
+        mgr.init()
+
+        project_id = "testpid123456"
+        mgr.create(project_id, "TestProject", "/tmp/test", set_active=True)
+        mgr.version_create(project_id, "v1.0.0", set_active=True)
+
+        with patch("midicoder.pipeline.commands.version._get_manager", return_value=mgr):
+            with patch("midicoder.pipeline.commands.version.get_max_versions", return_value=5):
+                result = check_create_version("v1.0.0")
+
+        assert result["error"] is not None
+        assert "đã tồn tại" in result["error"]
+        os.unlink(tmp.name)
+
+    def test_semver_must_be_greater(self, temp_workspace):
+        """Version mới phải lớn hơn version cao nhất hiện có."""
+        from midicoder.pipeline.commands.version import check_create_version
+        from midicoder.storage.projects import ProjectsManager
+        from unittest.mock import patch
+
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        mgr = ProjectsManager(db_path=Path(tmp.name))
+        mgr.init()
+
+        project_id = "testpid123456"
+        mgr.create(project_id, "TestProject", "/tmp/test", set_active=True)
+        mgr.version_create(project_id, "v2.0.0", set_active=True)
+
+        with patch("midicoder.pipeline.commands.version._get_manager", return_value=mgr):
+            with patch("midicoder.pipeline.commands.version.get_max_versions", return_value=5):
+                result = check_create_version("v1.5.0")
+
+        assert result["error"] is not None
+        assert "phải lớn hơn" in result["error"]
+        os.unlink(tmp.name)
+
+    def test_autocomplete_normalizes_prefix(self, temp_workspace):
+        """Tự động thêm 'v' prefix nếu thiếu."""
+        from midicoder.pipeline.commands.version import check_create_version
+        from midicoder.storage.projects import ProjectsManager
+        from unittest.mock import patch
+
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        mgr = ProjectsManager(db_path=Path(tmp.name))
+        mgr.init()
+
+        project_id = "testpid123456"
+        mgr.create(project_id, "TestProject", "/tmp/test", set_active=True)
+
+        with patch("midicoder.pipeline.commands.version._get_manager", return_value=mgr):
+            with patch("midicoder.pipeline.commands.version.get_max_versions", return_value=5):
+                result = check_create_version("1.0.0")  # thiếu 'v'
+
+        assert result["error"] is None
+        os.unlink(tmp.name)

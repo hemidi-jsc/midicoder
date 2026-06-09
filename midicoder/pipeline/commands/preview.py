@@ -19,10 +19,10 @@ import json
 import subprocess
 import time
 import webbrowser
-import click
 from pathlib import Path
 from typing import Optional, List, Tuple
 
+from midicoder.storage.sqlite import get_connection
 from midicoder.pipeline.config import get_config
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 
@@ -38,13 +38,37 @@ HEALTH_CHECK_INTERVAL = 2
 
 
 # ============================================================================
+# Activity Logger
+# ============================================================================
+
+def _log_activity(action: str, resource_type: str = "preview", resource_id: str = "", details: dict = None, status: str = "success") -> None:
+    """Ghi activity log vào artifacts.db activity_log table."""
+    data_dir = Path(".midicoder/data")
+    if not data_dir.exists():
+        data_dir = Path(".") / ".midicoder" / "data"
+    artifacts_db = data_dir / "artifacts.db"
+    if not artifacts_db.exists():
+        return
+    try:
+        with get_connection(artifacts_db) as conn:
+            conn.execute(
+                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (action, resource_type, resource_id,
+                 json.dumps(details) if details else None, status),
+            )
+    except Exception:
+        pass
+
+
+# ============================================================================
 # Docker Helper Functions
 # ============================================================================
 
 def check_docker_installed() -> bool:
     """
     Kiểm tra Docker CLI đã được cài đặt chưa.
-    
+
     Returns:
         True nếu Docker CLI có sẵn, False nếu không.
     """
@@ -63,7 +87,7 @@ def check_docker_installed() -> bool:
 def check_docker_running() -> bool:
     """
     Kiểm tra Docker daemon có đang chạy không.
-    
+
     Returns:
         True nếu Docker daemon đang chạy, False nếu không.
     """
@@ -82,10 +106,10 @@ def check_docker_running() -> bool:
 def find_docker_compose_cmd() -> List[str]:
     """
     Tìm Docker Compose command (mới: 'docker compose' hoặc legacy: 'docker-compose').
-    
+
     Returns:
         List command cho Docker Compose.
-        
+
     Raises:
         Exception: Nếu cả hai command đều không có.
     """
@@ -101,7 +125,7 @@ def find_docker_compose_cmd() -> List[str]:
             return ['docker', 'compose']
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
-    
+
     # Thử 'docker-compose' (legacy)
     try:
         result = subprocess.run(
@@ -114,27 +138,27 @@ def find_docker_compose_cmd() -> List[str]:
             return ['docker-compose']
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
-    
+
     raise Exception("Docker Compose không tìm thấy. Vui lòng cài đặt Docker Desktop.")
 
 
 def get_compose_file_path() -> Path:
     """
     Tìm đường dẫn đến docker-compose.yml file.
-    
+
     Path: .midicoder/versions/{active_version}/src/docker-compose.yml
-    
+
     Returns:
         Path đến docker-compose.yml file.
-        
+
     Raises:
         Exception: Nếu không tìm thấy file.
     """
     config = get_config()
     active_version = config.get("active_version", "v1.0.0")
-    
+
     compose_path = Path(f".midicoder/versions/{active_version}/src/docker-compose.yml")
-    
+
     if not compose_path.exists():
         EM.raise_error(
             ErrorCode.PREVIEW_COMPOSE_FILE_NOT_FOUND,
@@ -144,21 +168,21 @@ def get_compose_file_path() -> Path:
                 "Kiểm tra active_version trong config file"
             ]
         )
-    
+
     return compose_path
 
 
 def is_preview_running() -> bool:
     """
     Kiểm tra preview services có đang chạy không.
-    
+
     Returns:
         True nếu có services đang chạy, False nếu không.
     """
     try:
         compose_cmd = find_docker_compose_cmd()
         compose_file = get_compose_file_path()
-        
+
         result = subprocess.run(
             compose_cmd + ['ps', '--format', '{{.Name}} {{.Status}}'],
             capture_output=True,
@@ -166,22 +190,22 @@ def is_preview_running() -> bool:
             cwd=compose_file.parent,
             timeout=30
         )
-        
+
         if result.returncode != 0:
             return False
-        
+
         # Kiểm tra output có services running không
         output = result.stdout.strip()
         if not output:
             return False
-        
+
         # Có services nhưng kiểm tra status
         for line in output.split('\n'):
             if line.strip() and 'running' in line.lower():
                 return True
-        
+
         return False
-        
+
     except Exception:
         return False
 
@@ -189,23 +213,23 @@ def is_preview_running() -> bool:
 def wait_for_healthy(timeout: int = HEALTH_CHECK_TIMEOUT, interval: int = HEALTH_CHECK_INTERVAL) -> bool:
     """
     Chờ cho services healthy.
-    
+
     Poll Docker Compose ps cho đến khi tất cả services running hoặc timeout.
-    
+
     Args:
         timeout: Timeout tối đa (giây)
         interval: Poll interval (giây)
-        
+
     Returns:
         True nếu services healthy trong timeout.
-        
+
     Raises:
         Exception: Nếu timeout hết mà services vẫn không healthy.
     """
     start_time = time.time()
     compose_cmd = find_docker_compose_cmd()
     compose_file = get_compose_file_path()
-    
+
     while time.time() - start_time < timeout:
         try:
             result = subprocess.run(
@@ -215,16 +239,16 @@ def wait_for_healthy(timeout: int = HEALTH_CHECK_TIMEOUT, interval: int = HEALTH
                 cwd=compose_file.parent,
                 timeout=10
             )
-            
+
             if result.returncode != 0:
                 time.sleep(interval)
                 continue
-            
+
             output = result.stdout.strip()
             if not output:
                 time.sleep(interval)
                 continue
-            
+
             # Kiểm tra tất cả services đều running
             all_running = True
             for line in output.split('\n'):
@@ -232,16 +256,16 @@ def wait_for_healthy(timeout: int = HEALTH_CHECK_TIMEOUT, interval: int = HEALTH
                     if 'running' not in line.lower():
                         all_running = False
                         break
-            
+
             if all_running:
                 return True
-            
+
             time.sleep(interval)
-            
+
         except subprocess.TimeoutExpired:
             time.sleep(interval)
             continue
-    
+
     EM.raise_error(
         ErrorCode.PREVIEW_HEALTH_CHECK_TIMEOUT,
         timeout=timeout,
@@ -256,7 +280,7 @@ def wait_for_healthy(timeout: int = HEALTH_CHECK_TIMEOUT, interval: int = HEALTH
 def open_browser(url: str) -> None:
     """
     Mở URL trong default browser.
-    
+
     Args:
         url: URL để mở
     """
@@ -266,7 +290,7 @@ def open_browser(url: str) -> None:
 def log_activity(action: str, success: bool, details: Optional[dict] = None) -> None:
     """
     Log preview activity vào SQLite activity_log table.
-    
+
     Args:
         action: Action thực hiện (start, stop, restart, status)
         success: Có thành công không
@@ -274,10 +298,10 @@ def log_activity(action: str, success: bool, details: Optional[dict] = None) -> 
     """
     try:
         from midicoder.storage.sqlite import ActivityLogManager
-        
+
         logger = ActivityLogManager()
         logger.init()
-        
+
         logger.log(
             action=f"preview_{action}",
             module="preview",
@@ -285,18 +309,18 @@ def log_activity(action: str, success: bool, details: Optional[dict] = None) -> 
             message=f"Preview {action}: {'success' if success else 'failed'}",
             metadata=details or {}
         )
-    except Exception as e:
-        click.echo(f"⚠️  Không thể log activity: {e}")
+    except Exception:
+        pass
 
 
 # ============================================================================
 # Implementation Functions
 # ============================================================================
 
-def _execute_start(port: int = DEFAULT_FRONTEND_PORT, open_browser: bool = True, watch: bool = False) -> None:
+def _execute_start(port: int = DEFAULT_FRONTEND_PORT, open_browser_flag: bool = True, watch: bool = False) -> None:
     """
     Thực thi preview start command.
-    
+
     Process:
     1. Check Docker installed và running
     2. Check compose file tồn tại
@@ -305,14 +329,14 @@ def _execute_start(port: int = DEFAULT_FRONTEND_PORT, open_browser: bool = True,
     5. Wait for healthy
     6. Mở browser (nếu cần)
     7. Log activity
-    
+
     Args:
         port: Frontend port
         open_browser: Có mở browser không
         watch: Watch mode
     """
-    click.echo("🚀 Đang start preview services...")
-    
+    _log_activity("start_initiating", details={"port": port, "open_browser": open_browser_flag, "watch": watch})
+
     # Bước 1: Check Docker installed
     if not check_docker_installed():
         EM.raise_error(
@@ -322,9 +346,9 @@ def _execute_start(port: int = DEFAULT_FRONTEND_PORT, open_browser: bool = True,
                 "Sau khi cài đặt, restart terminal và thử lại"
             ]
         )
-    
-    click.echo("   ✓ Docker CLI đã cài đặt")
-    
+
+    _log_activity("start_docker_cli_verified")
+
     # Bước 2: Check Docker running
     if not check_docker_running():
         EM.raise_error(
@@ -335,13 +359,13 @@ def _execute_start(port: int = DEFAULT_FRONTEND_PORT, open_browser: bool = True,
                 "Kiểm tra Docker daemon: docker info"
             ]
         )
-    
-    click.echo("   ✓ Docker daemon đang chạy")
-    
+
+    _log_activity("start_docker_daemon_verified")
+
     # Bước 3: Get compose file
     compose_file = get_compose_file_path()
-    click.echo(f"   ✓ Docker Compose file: {compose_file}")
-    
+    _log_activity("start_compose_file_found", resource_id=str(compose_file), details={"compose_path": str(compose_file)})
+
     # Bước 4: Check đã đang chạy chưa
     if is_preview_running():
         EM.raise_error(
@@ -352,12 +376,12 @@ def _execute_start(port: int = DEFAULT_FRONTEND_PORT, open_browser: bool = True,
                 "Kiểm tra status: midicoder preview status"
             ]
         )
-    
+
     # Bước 5: Execute docker compose up -d
     compose_cmd = find_docker_compose_cmd()
-    
+
     try:
-        click.echo("   ▶️  Chạy: docker compose up -d")
+        _log_activity("start_compose_up_executing", details={"command": "docker compose up -d"})
         result = subprocess.run(
             compose_cmd + ['up', '-d'],
             capture_output=True,
@@ -365,9 +389,9 @@ def _execute_start(port: int = DEFAULT_FRONTEND_PORT, open_browser: bool = True,
             cwd=compose_file.parent,
             timeout=120
         )
-        
+
         if result.returncode != 0:
-            click.echo(f"   stderr: {result.stderr}")
+            _log_activity("start_compose_up_stderr", status="error", details={"stderr": result.stderr})
             EM.raise_error(
                 ErrorCode.PREVIEW_START_FAILED,
                 compose_output=result.stderr,
@@ -377,89 +401,87 @@ def _execute_start(port: int = DEFAULT_FRONTEND_PORT, open_browser: bool = True,
                     "Kiểm tra ports không bị占用"
                 ]
             )
-        
-        click.echo("   ✓ Docker Compose up completed")
-        
+
+        _log_activity("start_compose_up_completed")
+
     except subprocess.TimeoutExpired:
         EM.raise_error(
             ErrorCode.PREVIEW_START_FAILED,
             error="timeout",
             suggestions=["Kiểm tra Docker resources", "Thử lại sau"]
         )
-    
+
     # Bước 6: Wait for healthy
-    click.echo("   ⏳ Đang chờ services healthy...")
+    _log_activity("start_health_check_waiting")
     try:
         wait_for_healthy()
-        click.echo("   ✓ Tất cả services đang running")
+        _log_activity("start_health_check_passed", details={"all_services": "running"})
     except Exception as e:
-        click.echo(f"   ⚠️  Health check warning: {e}")
-    
+        _log_activity("start_health_check_warning", status="warning", details={"error": str(e)})
+
     # Bước 7: Mở browser
-    if open_browser:
+    if open_browser_flag:
         url = f"http://localhost:{port}"
-        click.echo(f"   🌐 Mở browser: {url}")
+        _log_activity("start_browser_opening", details={"url": url})
         open_browser(url)
-    
+
     # Bước 8: Log activity
-    log_activity("start", True, {"port": port, "browser": open_browser})
-    
-    click.echo("")
-    click.echo("✅ Preview đã start thành công!")
-    click.echo("")
-    click.echo("URLs:")
-    click.echo(f"  Frontend: http://localhost:{port}")
-    click.echo(f"  Backend:  http://localhost:{DEFAULT_BACKEND_PORT}")
-    click.echo("")
-    click.echo("Commands:")
-    click.echo("  midicoder preview status   # Xem status")
-    click.echo("  midicoder preview logs     # Xem logs")
-    click.echo("  midicoder preview stop     # Stop services")
+    log_activity("start", True, {"port": port, "browser": open_browser_flag})
+
+    _log_activity("start_completed", details={
+        "frontend_url": f"http://localhost:{port}",
+        "backend_url": f"http://localhost:{DEFAULT_BACKEND_PORT}",
+        "commands": {
+            "status": "midicoder preview status",
+            "logs": "midicoder preview logs",
+            "stop": "midicoder preview stop"
+        }
+    })
 
 
 def _execute_stop(remove_volumes: bool = False, force: bool = False) -> None:
     """
     Thực thi preview stop command.
-    
+
     Process:
     1. Check Docker running
     2. Check services có đang chạy không
     3. Execute docker compose down
     4. Log activity
-    
+
     Args:
         remove_volumes: Có xóa volumes không
         force: Force stop
     """
-    click.echo("🛑 Đang stop preview services...")
-    
+    _log_activity("stop_initiating", details={"remove_volumes": remove_volumes, "force": force})
+
     # Bước 1: Check Docker running
     if not check_docker_running():
         EM.raise_error(
             ErrorCode.PREVIEW_DOCKER_NOT_RUNNING,
             suggestions=["Start Docker Desktop"]
         )
-    
+
     # Bước 2: Get compose file
     compose_file = get_compose_file_path()
-    click.echo(f"   ✓ Docker Compose file: {compose_file}")
-    
+    _log_activity("stop_compose_file_found", resource_id=str(compose_file), details={"compose_path": str(compose_file)})
+
     # Bước 3: Check services đang chạy không
     if not is_preview_running():
-        click.echo("   ⚠️  Preview không đang chạy")
+        _log_activity("stop_not_running", status="warning")
         if not force:
-            click.echo("   ℹ️  Dùng --force để stop bất chấp")
+            _log_activity("stop_force_hint", status="info", details={"hint": "dùng --force để stop bất chấp"})
             raise SystemExit(0)
-    
+
     # Bước 4: Execute docker compose down
     compose_cmd = find_docker_compose_cmd()
-    
+
     cmd_args = ['down']
     if remove_volumes:
         cmd_args.append('--volumes')
-    
+
     try:
-        click.echo(f"   ▶️  Chạy: docker compose {' '.join(cmd_args)}")
+        _log_activity("stop_compose_down_executing", details={"command": f"docker compose {' '.join(cmd_args)}"})
         result = subprocess.run(
             compose_cmd + cmd_args,
             capture_output=True,
@@ -467,60 +489,59 @@ def _execute_stop(remove_volumes: bool = False, force: bool = False) -> None:
             cwd=compose_file.parent,
             timeout=120
         )
-        
+
         if result.returncode != 0:
-            click.echo(f"   stderr: {result.stderr}")
+            _log_activity("stop_compose_down_stderr", status="error", details={"stderr": result.stderr})
             EM.raise_error(
                 ErrorCode.PREVIEW_STOP_FAILED,
                 compose_output=result.stderr
             )
-        
-        click.echo("   ✓ Docker Compose down completed")
-        
+
+        _log_activity("stop_compose_down_completed")
+
     except subprocess.TimeoutExpired:
         EM.raise_error(
             ErrorCode.PREVIEW_STOP_FAILED,
             error="timeout"
         )
-    
+
     # Bước 5: Log activity
     log_activity("stop", True, {"volumes": remove_volumes})
-    
-    click.echo("")
-    click.echo("✅ Preview đã stop thành công!")
+
+    _log_activity("stop_completed")
 
 
 def _execute_restart(timeout: int = 60) -> None:
     """
     Thực thi preview restart command.
-    
+
     Process:
     1. Check Docker running
     2. Execute docker compose restart
     3. Wait for healthy
     4. Log activity
-    
+
     Args:
         timeout: Restart timeout
     """
-    click.echo("🔄 Đang restart preview services...")
-    
+    _log_activity("restart_initiating", details={"timeout": timeout})
+
     # Bước 1: Check Docker running
     if not check_docker_running():
         EM.raise_error(
             ErrorCode.PREVIEW_DOCKER_NOT_RUNNING,
             suggestions=["Start Docker Desktop"]
         )
-    
+
     # Bước 2: Get compose file
     compose_file = get_compose_file_path()
-    click.echo(f"   ✓ Docker Compose file: {compose_file}")
-    
+    _log_activity("restart_compose_file_found", resource_id=str(compose_file), details={"compose_path": str(compose_file)})
+
     # Bước 3: Execute docker compose restart
     compose_cmd = find_docker_compose_cmd()
-    
+
     try:
-        click.echo(f"   ▶️  Chạy: docker compose restart --timeout {timeout}")
+        _log_activity("restart_compose_restart_executing", details={"command": f"docker compose restart --timeout {timeout}"})
         result = subprocess.run(
             compose_cmd + ['restart', '--timeout', str(timeout)],
             capture_output=True,
@@ -528,68 +549,66 @@ def _execute_restart(timeout: int = 60) -> None:
             cwd=compose_file.parent,
             timeout=120
         )
-        
+
         if result.returncode != 0:
-            click.echo(f"   stderr: {result.stderr}")
+            _log_activity("restart_compose_restart_stderr", status="error", details={"stderr": result.stderr})
             EM.raise_error(
                 ErrorCode.PREVIEW_RESTART_FAILED,
                 compose_output=result.stderr
             )
-        
-        click.echo("   ✓ Docker Compose restart completed")
-        
+
+        _log_activity("restart_compose_restart_completed")
+
     except subprocess.TimeoutExpired:
         EM.raise_error(
             ErrorCode.PREVIEW_RESTART_FAILED,
             error="timeout"
         )
-    
+
     # Bước 4: Wait for healthy
-    click.echo("   ⏳ Đang chờ services healthy...")
+    _log_activity("restart_health_check_waiting")
     try:
         wait_for_healthy()
-        click.echo("   ✓ Tất cả services đang running")
+        _log_activity("restart_health_check_passed", details={"all_services": "running"})
     except Exception as e:
-        click.echo(f"   ⚠️  Health check warning: {e}")
-    
+        _log_activity("restart_health_check_warning", status="warning", details={"error": str(e)})
+
     # Bước 5: Log activity
     log_activity("restart", True, {"timeout": timeout})
-    
-    click.echo("")
-    click.echo("✅ Preview đã restart thành công!")
+
+    _log_activity("restart_completed")
 
 
 def _execute_status() -> None:
     """
     Thực thi preview status command.
-    
+
     Process:
     1. Check Docker running
     2. Execute docker compose ps
     3. Parse và hiển thị output
     4. Log activity
     """
-    click.echo("📊 Đang kiểm tra preview status...")
-    
+    _log_activity("status_initiating")
+
     # Bước 1: Check Docker running
     if not check_docker_running():
-        click.echo("❌ Docker daemon không chạy")
-        click.echo("💡 Vui lòng start Docker Desktop")
+        _log_activity("status_docker_not_running", status="error", details={"error": "docker_not_running", "hint": "vui lòng start Docker Desktop"})
         log_activity("status", False, {"error": "docker_not_running"})
         raise SystemExit(1)
-    
+
     # Bước 2: Get compose file
     try:
         compose_file = get_compose_file_path()
-        click.echo(f"   ✓ Docker Compose file: {compose_file}")
+        _log_activity("status_compose_file_found", resource_id=str(compose_file), details={"compose_path": str(compose_file)})
     except Exception as e:
-        click.echo(f"⚠️  {e}")
+        _log_activity("status_compose_file_error", status="error", details={"error": str(e)})
         log_activity("status", False, {"error": str(e)})
         raise SystemExit(3)
-    
+
     # Bước 3: Execute docker compose ps
     compose_cmd = find_docker_compose_cmd()
-    
+
     try:
         result = subprocess.run(
             compose_cmd + ['ps', '--format', 'table {{.Name}}\t{{.Status}}\t{{.Ports}}'],
@@ -598,42 +617,38 @@ def _execute_status() -> None:
             cwd=compose_file.parent,
             timeout=30
         )
-        
+
         if result.returncode != 0:
-            click.echo(f"⚠️  Không thể lấy status: {result.stderr}")
+            _log_activity("status_ps_error", status="error", details={"stderr": result.stderr})
             log_activity("status", False, {"error": result.stderr})
             raise SystemExit(1)
-        
+
         output = result.stdout.strip()
-        
+
     except subprocess.TimeoutExpired:
-        click.echo("⚠️  Timeout khi lấy status")
+        _log_activity("status_ps_timeout", status="error", details={"error": "timeout khi lấy status"})
         log_activity("status", False, {"error": "timeout"})
         raise SystemExit(1)
-    
+
     # Bước 4: Hiển thị output
-    click.echo("")
-    
     if output:
         # Kiểm tra có services running không
-        if is_preview_running():
-            click.echo("Preview Status: 🟢 RUNNING")
+        running = is_preview_running()
+        if running:
+            _log_activity("status_services", details={"status": "running", "services_output": output})
         else:
-            click.echo("Preview Status: 🔴 NOT RUNNING")
-        
-        click.echo("")
-        click.echo("Services:")
-        click.echo(output)
-        click.echo("")
-        click.echo("URLs:")
-        click.echo(f"  Frontend: http://localhost:{DEFAULT_FRONTEND_PORT}")
-        click.echo(f"  Backend:  http://localhost:{DEFAULT_BACKEND_PORT}")
+            _log_activity("status_services", details={"status": "not_running", "services_output": output})
+
+        _log_activity("status_urls", details={
+            "frontend": f"http://localhost:{DEFAULT_FRONTEND_PORT}",
+            "backend": f"http://localhost:{DEFAULT_BACKEND_PORT}"
+        })
     else:
-        click.echo("Preview Status: 🔴 NOT RUNNING")
-        click.echo("")
-        click.echo("Không có services nào đang chạy.")
-        click.echo("💡 Chạy 'midicoder preview start' để start services")
-    
+        _log_activity("status_no_services", status="warning", details={
+            "status": "not_running",
+            "hint": "chạy 'midicoder preview start' để start services"
+        })
+
     # Bước 5: Log activity
     log_activity("status", True, {"running": is_preview_running()})
 
@@ -642,19 +657,19 @@ def _execute_status() -> None:
 # Legacy Functions (deprecated)
 # ============================================================================
 
-def start_preview(port: int = DEFAULT_FRONTEND_PORT, open_browser: bool = True) -> None:
+def start_preview(port: int = DEFAULT_FRONTEND_PORT, open_browser_flag: bool = True) -> None:
     """
     Legacy function - gọi _execute_start.
-    
+
     Deprecated: Dùng CLI command thay thế.
     """
-    _execute_start(port=port, open_browser=open_browser, watch=False)
+    _execute_start(port=port, open_browser_flag=open_browser_flag, watch=False)
 
 
 def stop_preview(force: bool = False) -> None:
     """
     Legacy function - gọi _execute_stop.
-    
+
     Deprecated: Dùng CLI command thay thế.
     """
     _execute_stop(remove_volumes=False, force=force)
@@ -663,7 +678,7 @@ def stop_preview(force: bool = False) -> None:
 def restart_preview(timeout: int = 60) -> None:
     """
     Legacy function - gọi _execute_restart.
-    
+
     Deprecated: Dùng CLI command thay thế.
     """
     _execute_restart(timeout=timeout)
@@ -672,7 +687,7 @@ def restart_preview(timeout: int = 60) -> None:
 def get_preview_status() -> bool:
     """
     Legacy function - trả về preview running status.
-    
+
     Deprecated: Dùng CLI command thay thế.
     """
     return is_preview_running()

@@ -132,6 +132,7 @@ export interface ProjectInfo {
   active: boolean;
   created_at: string;
   updated_at: string;
+  repo_url?: string | null;
 }
 
 @Injectable({
@@ -393,6 +394,7 @@ export class ApiService {
     will_delete: { version: string; status: string; created_at: string }[];
     max_versions: number;
     current_count: number;
+    parent_version: string | null;
   }>> {
     return this.post('/version/check-create', { version: versionName });
   }
@@ -604,6 +606,13 @@ export class ApiService {
     return this.get('/pipeline/status');
   }
 
+  /**
+   * GET /artifacts/stats - Get artifact statistics for active version
+   */
+  async getArtifactStats(): Promise<ApiResponse<any>> {
+    return this.get('/artifacts/stats');
+  }
+
   // ============================================================================
   // PREVIEW ENDPOINTS (Docker Compose)
   // ============================================================================
@@ -650,6 +659,42 @@ export class ApiService {
    */
   async getNews(): Promise<ApiResponse<NewsResponse>> {
     return this.get('/news');
+  }
+
+  // ============================================================================
+  // System Logs
+  // ============================================================================
+
+  async getLogFiles(): Promise<ApiResponse<{ files: { filename: string; path: string; size: number; modified: string }[]; count: number }>> {
+    return this.get<any>('/system/log-files');
+  }
+
+  async getLogs(filename?: string, lines?: number): Promise<ApiResponse<{ lines: string[]; file: string | null; total: number }>> {
+    const params = [];
+    if (filename) params.push(`file=${filename}`);
+    if (lines) params.push(`lines=${lines}`);
+    return this.get<any>(`/system/logs?${params.join('&')}`);
+  }
+
+  // ============================================================================
+  // Activity Log — lịch sử hoạt động
+  // ============================================================================
+
+  async getActivityRecent(): Promise<ApiResponse<{
+    activities: { id: number; timestamp: string; user: string; action: string; resource_type: string; resource_id: string; details: string | null; status: string }[];
+    count: number;
+  }>> {
+    return this.get<any>('/activity/recent');
+  }
+
+  async getActivityAll(page: number = 1, perPage: number = 50): Promise<ApiResponse<{
+    activities: { id: number; timestamp: string; user: string; action: string; resource_type: string; resource_id: string; details: string | null; status: string }[];
+    total: number;
+    page: number;
+    per_page: number;
+    total_pages: number;
+  }>> {
+    return this.get<any>(`/activity/all?page=${page}&per_page=${perPage}`);
   }
 
   // ============================================================================

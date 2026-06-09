@@ -15,13 +15,12 @@ E07: Emitter & Scaffolder
 import json
 import os
 import shutil
-import click
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from midicoder.storage.sqlite import ArtifactsManager, ProvenanceManager
+from midicoder.storage.sqlite import ArtifactsManager, ProvenanceManager, get_connection
 from midicoder.pipeline.config import get_config, load_user_config
 from midicoder.pipeline.plan import ImplementationPlan, ModuleSpec, FileSpec
 from midicoder.pipeline.file_contributions_loader import (
@@ -72,6 +71,28 @@ class GeneratedFile:
 
 
 # ============================================================================
+# Activity Logging Helper
+# ============================================================================
+
+def _log_activity(action: str, resource_type: str = "code", resource_id: str = "", details: dict = None, status: str = "success") -> None:
+    """Ghi activity log vào artifacts.db activity_log table."""
+    data_dir = Path(".midicoder/data")
+    artifacts_db = data_dir / "artifacts.db"
+    if not artifacts_db.exists():
+        return
+    try:
+        with get_connection(artifacts_db) as conn:
+            conn.execute(
+                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (action, resource_type, resource_id,
+                 json.dumps(details) if details else None, status),
+            )
+    except Exception:
+        pass
+
+
+# ============================================================================
 # Implementation Functions
 # ============================================================================
 
@@ -95,18 +116,17 @@ def _execute_plan(
         status_filter: Nếu set, chỉ include packs có status tương ứng
     """
     if status_filter:
-        click.echo(f"📋 Đang tạo implementation plan (status_filter={status_filter})...")
+        _log_activity("code.plan.started", details={"status_filter": status_filter})
     else:
-        click.echo("📋 Đang tạo implementation plan...")
-    
+        _log_activity("code.plan.started")
+
     # Bước 1: Load MIR từ SQLite
     mir_data = _load_mir_from_artifacts()
     if mir_data is None:
-        click.echo("❌ MIR không tồn tại trong artifacts")
-        click.echo("💡 Chạy 'midicoder ir build' trước")
+        _log_activity("code.plan.failed", status="error", details={"reason": "MIR không tồn tại trong artifacts"})
         raise SystemExit(1)
-    
-    click.echo(f"   ✓ Đã load MIR: {len(mir_data.get('operations', []))} operations")
+
+    _log_activity("code.plan.mir_loaded", details={"operations_count": len(mir_data.get("operations", []))})
 
     # Bước 2: Lấy active_version
     config = get_config()
@@ -140,8 +160,8 @@ def _execute_plan(
             "plan_hash": plan.compute_hash(),
         },
     )
-    click.echo(f"   ✓ Plan đã lưu vào artifacts: plan-{active_version}")
-    
+    _log_activity("code.plan.saved", details={"artifact_id": f"plan-{active_version}"})
+
     # Bước 5: Record provenance
     try:
         provenance_manager = ProvenanceManager()
@@ -154,36 +174,31 @@ def _execute_plan(
             relationship="generated_from",
             metadata={"target": target},
         )
-        click.echo(f"   ✓ Provenance lineage đã record")
+        _log_activity("code.plan.provenance_recorded")
     except Exception as e:
-        click.echo(f"⚠️  Không thể record provenance: {e}")
-    
-    # Bước 6: Hiển thị summary
-    click.echo("")
-    click.echo("📊 Plan Summary:")
-    click.echo("=" * 60)
-    click.echo(f"   Target: {target}")
-    click.echo(f"   Backend modules: {len(plan.get_modules_by_type('backend'))}")
-    click.echo(f"   Frontend modules: {len(plan.get_modules_by_type('frontend'))}")
-    click.echo(f"   Infra modules: {len(plan.get_modules_by_type('infra'))}")
-    click.echo(f"   Plan hash: {plan.compute_hash()[:16]}...")
-    click.echo("=" * 60)
-    
+        _log_activity("code.plan.provenance_warning", status="warning", details={"error": str(e)})
+
+    # Bước 6: Log summary
+    _log_activity("code.plan.summary", details={
+        "target": target,
+        "backend_modules": len(plan.get_modules_by_type("backend")),
+        "frontend_modules": len(plan.get_modules_by_type("frontend")),
+        "infra_modules": len(plan.get_modules_by_type("infra")),
+        "plan_hash": plan.compute_hash()[:16],
+    })
+
     if verbose:
-        click.echo("")
-        click.echo("📄 Chi tiết modules:")
-        click.echo("-" * 40)
+        module_details = []
         for module in plan.modules:
-            click.echo(f"   • {module.name} ({module.module_type}): {len(module.files)} files")
-            for file_spec in module.files:
-                click.echo(f"     - {file_spec.path} ({file_spec.file_type})")
-    
-    click.echo("")
-    click.echo("✅ Plan tạo thành công!")
-    click.echo("")
-    click.echo("Tiếp theo:")
-    click.echo("  1. midicoder code gen --target backend  # Generate code")
-    click.echo("  2. midicoder code apply                 # Apply code")
+            module_details.append({
+                "name": module.name,
+                "type": module.module_type,
+                "file_count": len(module.files),
+                "files": [{"path": f.path, "type": f.file_type} for f in module.files],
+            })
+        _log_activity("code.plan.verbose_modules", details={"modules": module_details})
+
+    _log_activity("code.plan.completed")
 
 
 def _load_mir_from_artifacts() -> Optional[dict]:
@@ -208,7 +223,7 @@ def _load_mir_from_artifacts() -> Optional[dict]:
     try:
         return json.loads(content)
     except json.JSONDecodeError:
-        click.echo("⚠️  MIR content không phải JSON hợp lệ")
+        _log_activity("code.load.mir_json_error", status="warning", details={"reason": "MIR content không phải JSON hợp lệ"})
         return None
 
 
@@ -625,22 +640,21 @@ def _execute_gen(target: str = "all", dry_run: bool = False, status_filter: str 
         verify: Nếu True, chạy CodeVerifier cho từng file sau khi generate
     """
     if status_filter:
-        click.echo(f"🔨 Đang generate code (status_filter={status_filter})...")
+        _log_activity("code.gen.started", details={"status_filter": status_filter})
     else:
-        click.echo("🔨 Đang generate code...")
-    
+        _log_activity("code.gen.started")
+
     # Bước 1: Load plan từ SQLite
     config = get_config()
     active_version = config.get("active_version", "v1.0.0")
-    
+
     plan_data = _load_plan_from_artifacts(active_version)
     if plan_data is None:
-        click.echo("❌ Plan không tồn tại trong artifacts")
-        click.echo("💡 Chạy 'midicoder code plan' trước")
+        _log_activity("code.gen.failed", status="error", details={"reason": "Plan không tồn tại trong artifacts"})
         raise SystemExit(1)
-    
-    click.echo(f"   ✓ Đã load plan: {active_version}")
-    
+
+    _log_activity("code.gen.plan_loaded", details={"version": active_version})
+
     # Bước 2: Xác định output directory
     output_dir = Path(f".midicoder/versions/{active_version}/src")
     if not dry_run:
@@ -649,22 +663,22 @@ def _execute_gen(target: str = "all", dry_run: bool = False, status_filter: str 
         # Dry run: dùng thư mục tạm
         output_dir = Path("generated-dry-run")
         output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Bước 3: Load MIR từ SQLite để generate Docker Compose
     mir_data = _load_mir_from_artifacts()
     if mir_data is None:
-        click.echo("⚠️  MIR không tồn tại - Docker Compose generation bị skip")
+        _log_activity("code.gen.mir_missing", status="warning", details={"reason": "MIR không tồn tại - Docker Compose generation bị skip"})
         mir = None
     else:
         try:
             # Late import để tránh circular import
             from midicoder.pipeline.mir import MIR as MIRClass
             mir = MIRClass.from_dict(mir_data)
-            click.echo(f"   ✓ Đã load MIR: {len(mir.operations)} operations")
+            _log_activity("code.gen.mir_loaded", details={"operations_count": len(mir.operations)})
         except Exception as e:
-            click.echo(f"⚠️  Không thể parse MIR: {e}")
+            _log_activity("code.gen.mir_parse_error", status="warning", details={"error": str(e)})
             mir = None
-    
+
     # Bước 4: Generate files từ plan.modules (typed roundtrip)
     from midicoder.pipeline.plan import ImplementationPlan
     plan = ImplementationPlan.from_dict(plan_data)
@@ -679,37 +693,38 @@ def _execute_gen(target: str = "all", dry_run: bool = False, status_filter: str 
             generated = _generate_file(file_spec.to_dict(), output_dir, dry_run, mir_data)
             if generated:
                 files_generated.append(generated)
-    
-    click.echo(f"   ✓ Generated {len(files_generated)} files")
+
+    _log_activity("code.gen.files_generated", details={
+        "files_count": len(files_generated),
+        "file_paths": [f.path for f in files_generated],
+    })
 
     if dry_run:
-        click.echo(f"   ℹ️  Dry run - files trong: {output_dir}")
+        _log_activity("code.gen.dry_run", details={"output_dir": str(output_dir)})
     else:
-        click.echo(f"   ✓ Files đã lưu vào: {output_dir}")
+        _log_activity("code.gen.saved", details={"output_dir": str(output_dir)})
 
     # Bước 5: Verify compile/syntax (nếu --verify được bật)
     verification_report = None
     if verify and files_generated:
-        click.echo("")
-        click.echo("🔍 Đang kiểm tra compile/syntax...")
+        _log_activity("code.verify.started")
         from midicoder.pipeline.code_verifier import CodeVerifier
 
         verifier = CodeVerifier()
         file_paths = [output_dir / f.path for f in files_generated]
         verification_report = verifier.verify_batch(file_paths, check_imports=True)
 
-        click.echo("")
-        click.echo(f"   ✓ Passed: {verification_report.passed}")
-        click.echo(f"   ✗ Failed: {verification_report.failed}")
+        _log_activity("code.verify.completed", details={
+            "passed": verification_report.passed,
+            "failed": verification_report.failed,
+        })
 
         if verification_report.failed > 0:
-            click.echo("")
-            click.echo("❌ Files bị lỗi:")
+            failed_details = []
             for r in verification_report.results:
                 if not r.success:
-                    click.echo(f"  - {r.file_path}")
-                    for err in r.errors:
-                        click.echo(f"    → {err}")
+                    failed_details.append({"file": str(r.file_path), "errors": [str(e) for e in r.errors]})
+            _log_activity("code.verify.failed_files", status="error", details={"failed_files": failed_details})
 
     # Bước 6: Log vào artifacts (metadata)
     try:
@@ -731,20 +746,16 @@ def _execute_gen(target: str = "all", dry_run: bool = False, status_filter: str 
                 "verification_failed": verification_report.failed if verification_report else None,
             },
         )
-        click.echo(f"   ✓ Generated code metadata đã lưu vào artifacts")
+        _log_activity("code.gen.artifacts_logged")
     except Exception as e:
-        click.echo(f"⚠️  Không thể log vào artifacts: {e}")
+        _log_activity("code.gen.artifacts_error", status="warning", details={"error": str(e)})
 
-    click.echo("")
     if verify and verification_report and verification_report.failed > 0:
-        click.echo(f"⚠️  Code generation hoàn tất nhưng có {verification_report.failed} files bị lỗi compile")
+        _log_activity("code.gen.completed_with_errors", status="error", details={"failed_count": verification_report.failed})
         # Raise exit code để CI/CD detect failure
         raise SystemExit(1)
 
-    click.echo("✅ Code generation hoàn tất!")
-    click.echo("")
-    click.echo("Tiếp theo:")
-    click.echo("  1. midicoder code apply  # Apply code vào project")
+    _log_activity("code.gen.completed")
 
 
 def _load_plan_from_artifacts(active_version: str) -> Optional[dict]:
@@ -768,9 +779,9 @@ def _load_plan_from_artifacts(active_version: str) -> Optional[dict]:
             try:
                 return json.loads(content)
             except json.JSONDecodeError:
-                click.echo("⚠️  Plan content không phải JSON hợp lệ")
+                _log_activity("code.load.plan_json_error", status="warning", details={"reason": "Plan content không phải JSON hợp lệ"})
                 return None
-    
+
     return None
 
 
@@ -813,7 +824,7 @@ def _generate_file(file_plan: dict, output_dir: Path, dry_run: bool, mir_data: d
                 from midicoder.pipeline.mir import MIR as MIRClass
                 mir = MIRClass.from_dict(mir_data) if mir_data else None
                 if mir is None:
-                    click.echo(f"⚠️  MIR không tồn tại — skip {file_path}")
+                    _log_activity("code.gen.file.skipped", status="warning", details={"file": str(file_path), "reason": "MIR không tồn tại"})
                     return None
                 return _generate_iac_file(pack_emitter, mir, output_dir, file_path)
 
@@ -856,7 +867,7 @@ def _generate_file(file_plan: dict, output_dir: Path, dry_run: bool, mir_data: d
             template=template,
         )
     except Exception as e:
-        click.echo(f"⚠️  Không thể generate {file_path}: {e}")
+        _log_activity("code.gen.file.error", status="error", details={"file": str(file_path), "error": str(e)})
         return None
 
 
@@ -887,7 +898,7 @@ def _generate_iac_file(
             generator = DCG()
             infra_config = generator.generate(mir, full_path)
             content = full_path.read_text(encoding="utf-8")
-            click.echo(f"   ✓ Docker Compose generated với services: {', '.join(infra_config.services)}")
+            _log_activity("code.gen.iac.docker", details={"file": str(file_path), "services": infra_config.services})
             return GeneratedFile(
                 path=str(file_path),
                 content=content,
@@ -909,13 +920,11 @@ def _generate_iac_file(
                     template="pack_emitter:cp07.terraform",
                 )
 
-        click.echo(f"⚠️  Unknown IAC emitter: {pack_emitter}")
+        _log_activity("code.gen.iac.unknown_emitter", status="warning", details={"emitter": pack_emitter})
         return None
 
     except Exception as e:
-        click.echo(f"⚠️  IAC generation failed for {file_path}: {e}")
-        import traceback
-        click.echo(traceback.format_exc())
+        _log_activity("code.gen.iac.error", status="error", details={"file": str(file_path), "error": str(e)})
         return None
 
 
@@ -972,79 +981,74 @@ def _execute_apply(target_dir: str, dry_run: bool, backup: bool, force: bool) ->
         backup: Tạo backup trước khi overwrite
         force: Overwrite không hỏi confirmation
     """
-    click.echo("📦 Đang apply code vào target...")
-    
+    _log_activity("code.apply.started")
+
     # Bước 1: Lấy active_version và generated code path
     config = get_config()
     active_version = config.get("active_version", "v1.0.0")
-    
+
     src_dir = Path(f".midicoder/versions/{active_version}/src")
     if not src_dir.exists():
-        click.echo(f"❌ Generated code directory không tồn tại: {src_dir}")
-        click.echo("💡 Chạy 'midicoder code gen' trước")
+        _log_activity("code.apply.failed", status="error", details={"reason": f"Generated code directory không tồn tại: {src_dir}"})
         raise SystemExit(1)
-    
+
     target_path = Path(target_dir)
     target_path.mkdir(parents=True, exist_ok=True)
-    
-    click.echo(f"   ✓ Source: {src_dir}")
-    click.echo(f"   ✓ Target: {target_path.absolute()}")
-    
+
+    _log_activity("code.apply.paths_resolved", details={"source": str(src_dir), "target": str(target_path.absolute())})
+
     # Bước 2: Tìm tất cả files trong src
     files_to_apply = []
     for file_path in src_dir.rglob("*"):
         if file_path.is_file():
             relative_path = file_path.relative_to(src_dir)
             files_to_apply.append((file_path, relative_path))
-    
+
     if not files_to_apply:
-        click.echo("⚠️  Không có files nào để apply")
-        click.echo("💡 Chạy 'midicoder code gen' trước")
+        _log_activity("code.apply.failed", status="error", details={"reason": "Không có files nào để apply"})
         raise SystemExit(1)
-    
-    click.echo(f"   ✓ Found {len(files_to_apply)} files to apply")
-    
+
+    _log_activity("code.apply.files_discovered", details={"files_count": len(files_to_apply)})
+
     # Bước 3: Apply files
     applied_count = 0
     skipped_count = 0
-    
+
     for src_file, relative_path in files_to_apply:
         dest_file = target_path / relative_path
-        
+
         # Check conflicts
         if dest_file.exists():
             if dry_run:
-                click.echo(f"   ⚠️  Would overwrite: {relative_path}")
+                _log_activity("code.apply.file.would_overwrite", details={"file": str(relative_path)})
                 applied_count += 1
                 continue
-            
+
             if backup:
                 # Tạo backup
                 backup_file = dest_file.with_suffix(dest_file.suffix + ".backup")
                 shutil.copy2(src_file, backup_file)
-                click.echo(f"   ↻ Backup: {relative_path} → {backup_file.name}")
-            
+                _log_activity("code.apply.file.backed_up", details={"file": str(relative_path), "backup": backup_file.name})
+
             if not force:
-                click.echo(f"   ⚠️  File đã tồn tại: {relative_path} — skip (dùng --force để ghi đè)")
+                _log_activity("code.apply.file.skipped", status="warning", details={"file": str(relative_path), "reason": "File đã tồn tại, dùng --force để ghi đè"})
                 skipped_count += 1
                 continue
 
-            click.echo(f"   ↻ Overwrite: {relative_path}")
-        
+            _log_activity("code.apply.file.overwritten", details={"file": str(relative_path)})
+
         # Copy file
         dest_file.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src_file, dest_file)
-        click.echo(f"   ✓ Applied: {relative_path}")
+        _log_activity("code.apply.file.applied", details={"file": str(relative_path)})
         applied_count += 1
-    
-    click.echo("")
-    click.echo("📊 Apply Summary:")
-    click.echo("=" * 60)
-    click.echo(f"   Applied: {applied_count} files")
-    click.echo(f"   Skipped: {skipped_count} files")
-    click.echo(f"   Dry run: {dry_run}")
-    click.echo("=" * 60)
-    
+
+    _log_activity("code.apply.summary", details={
+        "applied_count": applied_count,
+        "skipped_count": skipped_count,
+        "dry_run": dry_run,
+    })
+
     # Bước 4: Log vào artifacts
     try:
         artifacts_manager = ArtifactsManager()
@@ -1062,16 +1066,11 @@ def _execute_apply(target_dir: str, dry_run: bool, backup: bool, force: bool) ->
                 "dry_run": dry_run,
             },
         )
-        click.echo(f"   ✓ Apply metadata đã lưu vào artifacts")
+        _log_activity("code.apply.artifacts_logged")
     except Exception as e:
-        click.echo(f"⚠️  Không thể log vào artifacts: {e}")
-    
-    click.echo("")
-    click.echo("✅ Code apply hoàn tất!")
-    click.echo("")
-    click.echo("Tiếp theo:")
-    click.echo("  1. Kiểm tra code đã apply")
-    click.echo("  2. midicoder preview start  # Start local preview")
+        _log_activity("code.apply.artifacts_error", status="warning", details={"error": str(e)})
+
+    _log_activity("code.apply.completed")
 
 
 # ============================================================================

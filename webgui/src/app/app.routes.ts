@@ -57,6 +57,14 @@ export const routes: Routes = [
         path: 'llm-config',
         loadComponent: () => import('./pages/llm-config/llm-config.component').then((m) => m.LlmConfigComponent),
       },
+      {
+        path: 'general-settings',
+        loadComponent: () => import('./pages/general-settings/general-settings.component').then((m) => m.GeneralSettingsComponent),
+      },
+      {
+        path: 'system-logs',
+        loadComponent: () => import('./pages/system-logs/system-logs.component').then((m) => m.SystemLogsComponent),
+      },
     ],
   },
 

@@ -15,7 +15,7 @@ from midicoder.api.i18n import i18n
 from midicoder.api.models import ApiResponse, ErrorResponse
 from midicoder.api.routers import (
     health, config, index, version, brief, contract, ir, code,
-    runtime, websocket, pipeline, patches, projects,
+    runtime, websocket, pipeline, patches, projects, artifact, activity, system,
 )
 
 
@@ -34,6 +34,9 @@ server = FastAPI(
         {"name": "Contract", "description": "Quản lý DSL contracts"},
         {"name": "IR", "description": "Build và quản lý MIR"},
         {"name": "Code", "description": "Generate và apply code"},
+        {"name": "Artifacts", "description": "Thống kê artifacts"},
+        {"name": "Activity", "description": "Lịch sử hoạt động"},
+        {"name": "System", "description": "System logs"},
         {"name": "Runtime", "description": "Test và fix runtime"},
     ],
 )
@@ -152,6 +155,9 @@ server.include_router(ir.router, prefix="/api")
 # Code
 server.include_router(code.router, prefix="/api")
 
+# Artifacts
+server.include_router(artifact.router, prefix="/api")
+
 # Runtime
 server.include_router(runtime.router, prefix="/api")
 
@@ -163,6 +169,12 @@ server.include_router(pipeline.router, prefix="/api")
 
 # Patches
 server.include_router(patches.router, prefix="/api")
+
+# Activity log
+server.include_router(activity.router, prefix="/api")
+
+# System logs
+server.include_router(system.router, prefix="/api")
 
 
 # Endpoint để lấy OpenAPI schema với prefix /api

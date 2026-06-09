@@ -87,12 +87,15 @@ class PipelineBridge:
         subcommand = cmd_parts[1].lower() if len(cmd_parts) > 1 else None
 
         dispatch = {
+            "project": lambda: self._dispatch_project(subcommand, kwargs),
+            "brief": lambda: self._dispatch_brief(subcommand, kwargs),
             "contract": lambda: self._dispatch_contract(subcommand, kwargs),
             "ir": lambda: self._dispatch_ir(subcommand, kwargs),
             "code": lambda: self._dispatch_code(subcommand, kwargs),
             "version": lambda: self._dispatch_version(subcommand, kwargs),
             "index": lambda: self._dispatch_index(subcommand, kwargs),
             "runtime": lambda: self._dispatch_runtime(subcommand, kwargs),
+            "artifact": lambda: self._dispatch_artifact(subcommand, kwargs),
         }
 
         handler = dispatch.get(command)
@@ -165,6 +168,43 @@ class PipelineBridge:
     #  Dispatchers
     # ------------------------------------------------------------------ #
 
+    def _dispatch_project(self, sub: str, kwargs) -> Dict[str, Any]:
+        if sub == "create":
+            from midicoder.pipeline.commands.project import project_create
+            name = kwargs.get("name")
+            path = kwargs.get("path")
+            tech_stack = kwargs.get("tech_stack", {})
+            prompt_domain = kwargs.get("prompt_domain", "default")
+            return _sync_wrap(
+                lambda: project_create(name, path, tech_stack, prompt_domain)
+            )
+        elif sub == "list":
+            from midicoder.pipeline.commands.project import project_list
+            return _sync_wrap(lambda: project_list())
+        elif sub == "active":
+            from midicoder.pipeline.commands.project import project_get_active
+            return _sync_wrap(lambda: project_get_active())
+        elif sub == "activate":
+            from midicoder.pipeline.commands.project import project_activate
+            project_id = kwargs.get("project_id") or kwargs.get("_positional")
+            return _sync_wrap(lambda: project_activate(project_id))
+        elif sub == "delete":
+            from midicoder.pipeline.commands.project import project_delete
+            project_id = kwargs.get("project_id") or kwargs.get("_positional")
+            return _sync_wrap(lambda: project_delete(project_id))
+        elif sub == "techstacks":
+            from midicoder.pipeline.commands.project import get_techstacks, get_prompt_domains
+            return _sync_wrap(lambda: {"stacks": get_techstacks(), "prompt_domains": get_prompt_domains()})
+        return _not_implemented("project", sub)
+
+    def _dispatch_brief(self, sub: str, kwargs) -> Dict[str, Any]:
+        if sub == "freeze":
+            from midicoder.pipeline.commands.brief import freeze_brief
+            version = kwargs.get("version", "v1.0.0")
+            project_cwd = kwargs.get("project_cwd", "")
+            return _sync_wrap(lambda: freeze_brief(version, project_cwd))
+        return _not_implemented("brief", sub)
+
     def _dispatch_contract(self, sub: str, kwargs) -> Dict[str, Any]:
         if sub == "gen":
             from midicoder.pipeline.commands.contract import generate_contracts
@@ -235,7 +275,42 @@ class PipelineBridge:
         elif sub == "delete":
             from midicoder.pipeline.commands.version import delete_version
             name = kwargs.get("name") or kwargs.get("_positional")
-            return _sync_wrap(lambda: delete_version(name))
+            force = kwargs.get("force", False)
+            return _sync_wrap(lambda: delete_version(name, force=force))
+        elif sub == "check-create":
+            from midicoder.pipeline.commands.version import check_create_version
+            name = kwargs.get("name") or kwargs.get("_positional")
+            return _sync_wrap(lambda: check_create_version(name))
+        elif sub == "list-json":
+            from midicoder.pipeline.commands.version import list_versions, get_active_version, _get_project_root
+            from midicoder.pipeline.commands.git_helper import get_git_branch
+            result = list_versions()
+            active = get_active_version()
+            # Detect current git branch for active version
+            project_root = _get_project_root()
+            current_branch = get_git_branch(str(project_root)) if project_root else None
+            versions = []
+            for v in result:
+                meta = v["metadata"]
+                vd = {
+                    "version": v["name"],
+                    "status": meta.get("status", "draft"),
+                    "active": meta.get("active", False),
+                    "parent_version": meta.get("parent_version"),
+                    "created_at": meta.get("created_at", ""),
+                    "pipeline": meta.get("pipeline"),
+                }
+                # Branch chỉ hiển thị cho version đang active
+                if meta.get("active", False):
+                    vd["branch"] = current_branch or "N/A"
+                versions.append(vd)
+            return {
+                "success": True,
+                "stdout": "",
+                "stderr": "",
+                "returncode": 0,
+                "_data": {"versions": versions, "active_version": active},
+            }
         return _not_implemented("version", sub)
 
     def _dispatch_index(self, sub: str, kwargs) -> Dict[str, Any]:
@@ -262,18 +337,28 @@ class PipelineBridge:
             "returncode": 0,
         }
 
+    def _dispatch_artifact(self, sub: str, kwargs) -> Dict[str, Any]:
+        if sub == "stats":
+            from midicoder.pipeline.commands.artifact_stats import get_artifact_stats
+            return _sync_wrap(lambda: get_artifact_stats())
+        return _not_implemented("artifact", sub)
+
 
 def _sync_wrap(func) -> Dict[str, Any]:
-    """Wrap a sync function call with click.echo capture."""
+    """Wrap a sync function call with click.echo capture + return data."""
     with _ClickOutputCapture() as cap:
         try:
-            func()
-            return {
+            result = func()
+            ret = {
                 "success": True,
                 "stdout": cap.get_output(),
                 "stderr": "",
                 "returncode": 0,
             }
+            # If function returns a dict, include as _data for caller
+            if isinstance(result, dict):
+                ret["_data"] = result
+            return ret
         except SystemExit as e:
             code = e.code if isinstance(e.code, int) else 1
             return {

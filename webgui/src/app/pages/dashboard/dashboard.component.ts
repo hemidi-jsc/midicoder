@@ -1,34 +1,40 @@
 ﻿/**
  * Component Dashboard
- * Hiển thị tổng quan pipeline và các thao tác nhanh
+ * Layout:
+ *   Row 1: ProjectInfoCard (50%) | VersionInfoCard (50%)
+ *   Row 2: Pipeline progress (khi có versions)
+ *   State: chưa có project → form tạo project
+ *   State: có project, chưa có version → card tạo version
  */
 
-import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
+import { Subscription } from 'rxjs';
 
 import { PipelineStore, PhaseStatus } from '../../core/pipeline.store';
-import { ApiService } from '../../core/api.service';
+import { ApiService, ProjectInfo } from '../../core/api.service';
 import { VersionService, VersionInfo } from '../../core/version.service';
-import { Subscription } from 'rxjs';
+import { ProjectInfoCardComponent } from '../../components/shared/project-info-card/project-info-card';
+import { VersionInfoCardComponent, VersionMetadata } from '../../components/shared/version-info-card/version-info-card';
 import { ProjectCreateFormComponent } from '../../components/shared/project-create-form/project-create-form';
 import { VersionCreateFormComponent } from '../../components/shared/version-create-form/version-create-form';
-
-export interface ProjectInfo {
-  id: number;
-  project_id: string;
-  name: string;
-  path: string;
-  active: boolean;
-  created_at: string;
-  updated_at: string;
-}
+import { ArtifactsStatsCardComponent, ArtifactStatsData } from '../../components/shared/artifacts-stats-card/artifacts-stats-card';
+import { ActivityHistoryCardComponent } from '../../components/shared/activity-history-card/activity-history-card';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule, ProjectCreateFormComponent, VersionCreateFormComponent],
+  imports: [
+    CommonModule, FormsModule, RouterLink,
+    ProjectInfoCardComponent,
+    VersionInfoCardComponent,
+    ProjectCreateFormComponent,
+    VersionCreateFormComponent,
+    ArtifactsStatsCardComponent,
+    ActivityHistoryCardComponent,
+  ],
   template: `
     <div class="dashboard-container">
       <!-- Header -->
@@ -45,7 +51,7 @@ export interface ProjectInfo {
         </p>
       </div>
 
-      <!-- No Project State — first time user -->
+      <!-- State 1: Chưa có project -->
       @if (!workspaceInitialized()) {
         <div class="card init-card">
           <div class="init-content">
@@ -56,7 +62,7 @@ export interface ProjectInfo {
         </div>
       }
 
-      <!-- No Versions State (workspace exists, versions empty) -->
+      <!-- State 2: Có project, chưa có version -->
       @if (workspaceInitialized() && !pipelineInitialized()) {
         <div class="card init-card">
           <div class="init-content">
@@ -69,29 +75,34 @@ export interface ProjectInfo {
         </div>
       }
 
-      <!-- Pipeline Progress (versions exist) -->
-      @if (pipelineInitialized()) {
-        <!-- Pipeline Progress Card -->
+      <!-- State 3: Có project + có versions → 2 cards + pipeline -->
+      @if (workspaceInitialized() && pipelineInitialized()) {
+
+        <!-- Row 1: Project + Version cards (50/50) -->
+        <div class="info-cards-row">
+          <app-project-info-card [project]="activeProject()" />
+          <app-version-info-card
+            [version]="activeVersionMetadata()"
+            (createVersion)="showCreateVersionModal = true"
+          />
+        </div>
+
+        <!-- Row 2: Pipeline Progress -->
         <div class="dashboard-card">
           <h2 class="card-title">Tiến độ Pipeline</h2>
 
-          <!-- Progress Bar -->
           <div class="progress-section">
             <div class="progress-header">
               <span class="progress-label">Tổng tiến độ</span>
               <span class="progress-value">{{ overallProgress() }}%</span>
             </div>
             <div class="progress-track">
-              <div
-                class="progress-fill"
-                [style.width.%]="overallProgress()"
-              ></div>
+              <div class="progress-fill" [style.width.%]="overallProgress()"></div>
             </div>
           </div>
 
-          <!-- Phase Status Grid -->
           <div class="phase-grid">
-            <div class="phase-item">
+            <a class="phase-item" routerLink="/dashboard">
               <div class="phase-icon" [ngClass]="'phase-' + initPhase().status">
                 @if (initPhase().status === 'complete') { ✓ }
                 @else if (initPhase().status === 'in_progress') { ◎ }
@@ -99,8 +110,8 @@ export interface ProjectInfo {
               </div>
               <p class="phase-name">Init</p>
               <p class="phase-status">{{ getPhaseStatusText(initPhase().status) }}</p>
-            </div>
-            <div class="phase-item">
+            </a>
+            <a class="phase-item" routerLink="/brief-editor">
               <div class="phase-icon" [ngClass]="'phase-' + briefPhase().status">
                 @if (briefPhase().status === 'complete') { ✓ }
                 @else if (briefPhase().status === 'in_progress') { ◎ }
@@ -108,8 +119,8 @@ export interface ProjectInfo {
               </div>
               <p class="phase-name">Brief</p>
               <p class="phase-status">{{ getPhaseStatusText(briefPhase().status) }}</p>
-            </div>
-            <div class="phase-item">
+            </a>
+            <a class="phase-item" routerLink="/contract-viewer">
               <div class="phase-icon" [ngClass]="'phase-' + contractPhase().status">
                 @if (contractPhase().status === 'complete') { ✓ }
                 @else if (contractPhase().status === 'in_progress') { ◎ }
@@ -117,8 +128,8 @@ export interface ProjectInfo {
               </div>
               <p class="phase-name">Contract</p>
               <p class="phase-status">{{ getPhaseStatusText(contractPhase().status) }}</p>
-            </div>
-            <div class="phase-item">
+            </a>
+            <a class="phase-item" routerLink="/ir-explorer">
               <div class="phase-icon" [ngClass]="'phase-' + irPhase().status">
                 @if (irPhase().status === 'complete') { ✓ }
                 @else if (irPhase().status === 'in_progress') { ◎ }
@@ -126,8 +137,8 @@ export interface ProjectInfo {
               </div>
               <p class="phase-name">IR</p>
               <p class="phase-status">{{ getPhaseStatusText(irPhase().status) }}</p>
-            </div>
-            <div class="phase-item">
+            </a>
+            <a class="phase-item" routerLink="/code-generator">
               <div class="phase-icon" [ngClass]="'phase-' + codePhase().status">
                 @if (codePhase().status === 'complete') { ✓ }
                 @else if (codePhase().status === 'in_progress') { ◎ }
@@ -135,8 +146,8 @@ export interface ProjectInfo {
               </div>
               <p class="phase-name">Code</p>
               <p class="phase-status">{{ getPhaseStatusText(codePhase().status) }}</p>
-            </div>
-            <div class="phase-item">
+            </a>
+            <a class="phase-item" routerLink="/preview">
               <div class="phase-icon" [ngClass]="'phase-' + previewPhase().status">
                 @if (previewPhase().status === 'complete') { ✓ }
                 @else if (previewPhase().status === 'in_progress') { ◎ }
@@ -144,9 +155,15 @@ export interface ProjectInfo {
               </div>
               <p class="phase-name">Preview</p>
               <p class="phase-status">{{ getPhaseStatusText(previewPhase().status) }}</p>
-            </div>
+            </a>
           </div>
         </div>
+
+        <!-- Row 3: Artifacts Stats -->
+        <app-artifacts-stats-card [data]="artifactStats()" />
+
+        <!-- Row 4: Activity History (full width) -->
+        <app-activity-history />
       }
 
       <!-- Create Version Modal -->
@@ -181,6 +198,13 @@ export interface ProjectInfo {
       margin: 0;
     }
 
+    /* Info Cards Row (50/50) */
+    .info-cards-row {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
     /* Init Card */
     .init-card {
       background: var(--bg-card);
@@ -206,67 +230,6 @@ export interface ProjectInfo {
       font-size: 0.95rem;
       color: var(--text-secondary);
       margin: 0 0 32px 0;
-    }
-
-    .init-loading {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
-      color: var(--text-secondary);
-    }
-
-    .spinner {
-      width: 32px;
-      height: 32px;
-      border: 3px solid var(--border-subtle);
-      border-top-color: var(--brand-color);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    .init-form {
-      text-align: left;
-      margin-top: 24px;
-    }
-
-    .form-group {
-      margin-bottom: 16px;
-    }
-
-    .form-label {
-      display: block;
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: var(--text-secondary);
-      margin-bottom: 6px;
-    }
-
-    .form-input {
-      width: 100%;
-      padding: 10px 12px;
-      font-size: 0.9rem;
-      border-radius: 4px;
-      outline: none;
-      transition: border-color 0.2s;
-      color: var(--text-primary);
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-subtle);
-      box-sizing: border-box;
-    }
-
-    .form-input:focus {
-      border-color: var(--brand-color) !important;
-      box-shadow: var(--glow-sm);
-    }
-
-    .form-input:focus {
-      border-color: var(--brand-color) !important;
-      box-shadow: var(--glow-sm);
     }
 
     .btn-primary-large {
@@ -305,17 +268,6 @@ export interface ProjectInfo {
       font-weight: 600;
       color: var(--text-primary);
       margin: 0 0 20px 0;
-    }
-
-    .card-header-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-
-    .card-header-row .card-title {
-      margin: 0;
     }
 
     /* Progress Section */
@@ -362,6 +314,14 @@ export interface ProjectInfo {
 
     .phase-item {
       text-align: center;
+      text-decoration: none;
+      color: inherit;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .phase-item:hover {
+      opacity: 0.8;
     }
 
     .phase-icon {
@@ -412,220 +372,31 @@ export interface ProjectInfo {
       color: var(--text-secondary);
       margin: 0;
     }
-
-    .empty-text {
-      color: var(--text-tertiary);
-      font-size: 0.85rem;
-      text-align: center;
-      padding: 16px;
-    }
-
-    .error-text {
-      color: var(--accent-error);
-      font-size: 0.85rem;
-      margin-top: 8px;
-    }
-
-    /* Modal */
-    .modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.7);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-    }
-
-    .modal {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border-subtle);
-      width: 100%;
-      max-width: 420px;
-    }
-
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .modal-header h3 {
-      margin: 0;
-      font-size: 1.1rem;
-      color: var(--text-primary);
-    }
-
-    .btn-close {
-      background: none;
-      border: none;
-      color: var(--text-secondary);
-      font-size: 1.5rem;
-      cursor: pointer;
-    }
-
-    .modal-body {
-      padding: 20px;
-    }
-
-    .modal-footer {
-      display: flex;
-      justify-content: flex-end;
-      gap: 12px;
-      padding: 16px 20px;
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .btn-secondary {
-      padding: 8px 16px;
-      background: var(--bg-card);
-      color: var(--text-secondary);
-      border: 1px solid var(--border-subtle);
-      cursor: pointer;
-      font-size: 0.9rem;
-      border-radius: 4px;
-    }
-
-    .btn-secondary:hover {
-      background: var(--border-subtle);
-    }
-
-    .btn-primary {
-      padding: 8px 16px;
-      background: var(--brand-gradient);
-      color: white;
-      border: none;
-      cursor: pointer;
-      font-size: 0.9rem;
-      font-weight: 500;
-      border-radius: 4px;
-    }
-
-    .btn-primary:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      box-shadow: var(--glow-md);
-    }
-
-    /* Project create form */
-    .project-create-form {
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
-      margin-top: 24px;
-      max-width: 480px;
-      text-align: left;
-    }
-
-    .project-create-form .form-row {
-      text-align: left;
-    }
-
-    .form-row label.form-label {
-      display: block;
-      font-size: 0.8rem;
-      color: var(--text-secondary);
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-
-    .form-row input.form-input,
-    .form-row select.form-input {
-      width: 100%;
-      padding: 10px 12px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      color: var(--text-primary);
-      font-size: 0.875rem;
-      font-family: 'JetBrains Mono', 'Fira Code', monospace;
-      text-align: left;
-    }
-
-    .form-row input.form-input:focus,
-    .form-row select.form-input:focus {
-      outline: none;
-      border-color: var(--brand-color);
-      box-shadow: var(--glow-sm);
-    }
-
-    .form-row select.form-input {
-      appearance: none;
-      padding-right: 32px;
-      background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23fc6767' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 12px center;
-    }
-
-    .form-row select.form-input option {
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-    }
-
-    /* Stack radio groups */
-
-    .form-actions {
-      margin-top: 8px;
-    }
-
-    .btn-primary-large {
-      width: 100%;
-      padding: 12px 20px;
-      font-size: 1rem;
-      font-weight: 600;
-      color: white;
-      background: var(--brand-gradient);
-      border: none;
-      cursor: pointer;
-      transition: box-shadow 0.2s;
-    }
-
-    .btn-primary-large:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .btn-primary-large:hover:not(:disabled) {
-      box-shadow: var(--glow-md);
-    }
-
-    .loading-text {
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 0.875rem;
-      margin-top: 32px;
-    }
-
-    .form-group select.form-input {
-      appearance: none;
-    }
-
-    .form-group select.form-input option {
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-    }
   `]
 })
-export class DashboardComponent implements OnInit, OnDestroy {
+export class DashboardComponent implements OnInit {
   private pipelineStore = inject(PipelineStore);
   private api = inject(ApiService);
-  public versionService = inject(VersionService);
+  private versionService = inject(VersionService);
 
-  private subscriptions: Subscription[] = [];
+  private subscriptions = new Subscription();
 
-  // Reactive version list
+  // Data
   versions = signal<VersionInfo[]>([]);
   activeVersion = signal<string>('');
+  activeProject = signal<ProjectInfo | null>(null);
+  artifactStats = signal<ArtifactStatsData>({
+    pipeline: { brief: 'none', contract: 'none', ir: 'none', code: 'none' },
+    briefs: { count: 0, status: '', title: '', word_count: 0, clarification_count: 0, change_count: 0, updated_at: '', types: {} },
+    contracts: { count: 0, categories: {}, total_entities: 0, total_commands: 0, total_queries: 0, total_events: 0 },
+    ir: { operations: 0, data_flows: 0, effect_flows: 0, boundaries: 0, entities: 0 },
+    code: { total_files: 0, total_lines: 0, total_size: 0, file_types: {} },
+  });
 
-  // Version creation
+  // UI
   showCreateVersionModal = false;
 
-  // Direct accessors
+  // Pipeline phases
   initPhase() { return this.pipelineStore.getInitPhase(); }
   briefPhase() { return this.pipelineStore.getBriefPhase(); }
   contractPhase() { return this.pipelineStore.getContractPhase(); }
@@ -634,61 +405,90 @@ export class DashboardComponent implements OnInit, OnDestroy {
   previewPhase() { return this.pipelineStore.getPreviewPhase(); }
   projectName() { return this.pipelineStore.getProjectName(); }
   overallProgress() { return this.pipelineStore.overallProgress(); }
-
-  // Expose the PipelineStore's workspace signal directly for template reactivity
   workspaceInitialized = this.pipelineStore.workspaceInitializedSignal;
 
+  /** Version metadata cho card — xây từ version service data */
+  activeVersionMetadata = computed<VersionMetadata | null>(() => {
+    const vname = this.activeVersion();
+    const versions = this.versions();
+    const v = versions.find(vi => vi.version === vname);
+    if (!v) return null;
+
+    return {
+      version: v.version,
+      status: v.status,
+      active: true,
+      parent_version: v.parentVersion || null,
+      created_at: v.createdAt,
+      updated_at: v.lastModified || v.createdAt,
+      branch: v.branch,
+      pipeline: v.pipeline,
+    };
+  });
+
   constructor() {
-    // Subscribe to versions
-    this.subscriptions.push(
+    this.subscriptions.add(
       this.versionService.versions$.subscribe(v => this.versions.set(v))
     );
-    this.subscriptions.push(
+    this.subscriptions.add(
       this.versionService.activeVersion$.subscribe(v => this.activeVersion.set(v))
     );
-  }
 
-  /**
-   * Check if pipeline has been initialized
-   */
-  pipelineInitialized(): boolean {
-    const versions = this.versions();
-    return versions.length > 0;
+    // Khi active version thay đổi, refresh project + artifact stats
+    effect(() => {
+      this.activeVersion();
+      this.loadActiveProject();
+      this.loadArtifactStats();
+    });
   }
 
   ngOnInit(): void {
     this.pipelineStore.loadStatus();
     this.versionService.loadVersions();
+    this.loadActiveProject();
+    this.loadArtifactStats();
   }
 
-  /**
-   * Switch version — calls versionService, no page reload
-   */
+  /** Lấy project active từ API */
+  loadActiveProject(): void {
+    this.api.getActiveProject().then(resp => {
+      if (resp.success && resp.data?.project) {
+        this.activeProject.set(resp.data.project);
+      } else {
+        this.activeProject.set(null);
+      }
+    }).catch(() => {
+      this.activeProject.set(null);
+    });
+  }
+
+  /** Lấy artifact stats từ API */
+  loadArtifactStats(): void {
+    this.api.getArtifactStats().then(resp => {
+      if (resp.success && resp.data) {
+        this.artifactStats.set(resp.data);
+      }
+    }).catch(() => {
+      // silent — card sẽ hiện trạng thái mặc định "Chưa xử lý"
+    });
+  }
+
+  pipelineInitialized(): boolean {
+    return this.versions().length > 0;
+  }
+
   switchVersion(version: string): void {
     this.versionService.setActiveVersion(version);
   }
 
   ngOnDestroy(): void {
-    this.subscriptions.forEach(sub => sub.unsubscribe());
+    this.subscriptions.unsubscribe();
   }
 
-  /**
-   * Get CSS class for version status
-   */
-  getStatusClass(status: string): string {
-    return `version-status status-${status}`;
-  }
-
-  /**
-   * Close create version modal
-   */
   closeCreateModal(): void {
     this.showCreateVersionModal = false;
   }
 
-  /**
-   * Get status text
-   */
   getPhaseStatusText(status: PhaseStatus): string {
     switch (status) {
       case 'complete': return 'Hoàn thành';

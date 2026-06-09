@@ -11,6 +11,7 @@ import { RouterLink, Router } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
 import { PipelineStore } from '../../core/pipeline.store';
+import { formatDateLocal } from '../../core/date.util';
 
 interface SectionOpenState {
   entities: boolean;
@@ -545,7 +546,7 @@ interface SectionOpenState {
                                   : 'badge-gray'">
                       {{ entry.change_type }}
                     </span>
-                    <span class="text-xs font-mono text-text-secondary">{{ entry.created_at || '' }}</span>
+                    <span class="text-xs font-mono text-text-secondary">{{ formatDate(entry.created_at || '') }}</span>
                   </div>
                   <p class="history-description">{{ entry.change_description }}</p>
                   @if (entry.old_content_hash && entry.new_content_hash) {
@@ -570,7 +571,7 @@ interface SectionOpenState {
           <!-- Footer -->
           @if (lineage.length > 0) {
             <div class="history-footer">
-              <span class="text-xs text-text-tertiary">Cập nhật cuối: {{ lineage[0]?.created_at || 'unknown' }}</span>
+              <span class="text-xs text-text-tertiary">Cập nhật cuối: {{ formatDate(lineage[0]?.created_at || 'unknown') }}</span>
               <button (click)="showHistory = false" class="btn btn-secondary text-xs">Đóng</button>
             </div>
           }
@@ -893,6 +894,10 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
     events: false,
     ui_components: false,
   };
+
+  formatDate(iso: string): string {
+    return formatDateLocal(iso);
+  }
 
   // Clarification inline session — batch mode
   clarificationActive = false;

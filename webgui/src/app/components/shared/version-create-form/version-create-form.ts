@@ -3,12 +3,14 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { VersionService } from '../../../core/version.service';
 import { ApiService } from '../../../core/api.service';
+import { formatDateLocal } from '../../../core/date.util';
 
 export interface ImpactInfo {
   will_archive: { version: string; status: string }[];
   will_delete: { version: string; status: string; created_at: string }[];
   max_versions: number;
   current_count: number;
+  parent_version: string | null;
 }
 
 @Component({
@@ -35,6 +37,11 @@ export class VersionCreateFormComponent {
   @Input() existingVersionCount: number = 0;
   @Output() versionCreated = new EventEmitter<void>();
   @Output() cancel = new EventEmitter<void>();
+
+  /** Parent version name (read-only) — fetched after click "Tạo" */
+  getParentVersion(): string | null {
+    return this.impact?.parent_version || null;
+  }
 
   /** Step 1: Kiểm tra impact từ backend, hiện dialog confirm */
   async onCheckCreate(): Promise<void> {
@@ -91,5 +98,11 @@ export class VersionCreateFormComponent {
   get hasImpact(): boolean {
     if (!this.impact) return false;
     return this.impact.will_archive.length > 0 || this.impact.will_delete.length > 0;
+  }
+
+  /** Format datetime to local, return only date part "YYYY-MM-DD" */
+  formatDateShort(iso: string): string {
+    if (!iso) return '';
+    return formatDateLocal(iso).split(' ')[0];
   }
 }

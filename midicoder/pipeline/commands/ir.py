@@ -18,12 +18,12 @@ Version: 2.0.0 (Refactored: contract artifacts input)
 
 from __future__ import annotations
 
-import click
+import json
 from pathlib import Path
 from typing import Any
 
 from midicoder.errors import MidicoderErrorManager as EM, ErrorCode
-from midicoder.storage.sqlite import ArtifactsManager
+from midicoder.storage.sqlite import ArtifactsManager, get_connection
 from midicoder.pipeline.mir import (
     MIR, Operation, DataFlow, EffectFlow, Boundary, MIRBuilder
 )
@@ -39,6 +39,24 @@ _REQUIRED_CATEGORIES = {
 }
 # Roles là optional — có warnings nếu thiếu
 _OPTIONAL_CATEGORIES = {"roles"}
+
+
+def _log_activity(action: str, resource_type: str = "ir", resource_id: str = "", details: dict = None, status: str = "success") -> None:
+    """Ghi activity log vào artifacts.db activity_log table."""
+    data_dir = Path(".midicoder/data")
+    artifacts_db = data_dir / "artifacts.db"
+    if not artifacts_db.exists():
+        return
+    try:
+        with get_connection(artifacts_db) as conn:
+            conn.execute(
+                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (action, resource_type, resource_id,
+                 json.dumps(details) if details else None, status),
+            )
+    except Exception:
+        pass
 
 
 def build_mir(verbose: bool = False) -> MIR:
@@ -62,7 +80,7 @@ def build_mir(verbose: bool = False) -> MIR:
     Raises:
         MidicoderError: Nếu thiếu contracts, parse fail, validation fail, hoặc save fail
     """
-    click.echo("🏗️  Đang build MIR từ contract artifacts...")
+    _log_activity("ir.build.started")
 
     # Bước 1: Load contract artifacts từ SQLite
     artifacts_manager = ArtifactsManager()
@@ -71,11 +89,10 @@ def build_mir(verbose: bool = False) -> MIR:
     # Tìm tất cả contract artifacts
     contracts = artifacts_manager.list_by_type("contract")
     if not contracts:
-        click.echo("❌ Không tìm thấy contract artifacts trong artifacts")
-        click.echo("💡 Chạy 'midicoder contract gen' trước")
+        _log_activity("ir.contracts_not_found", status="error", details={"hint": "run midicoder contract gen first"})
         EM.raise_error(ErrorCode.MIR_GRAPH_NOT_FOUND)
 
-    click.echo(f"   → Found {len(contracts)} contract artifacts")
+    _log_activity("ir.contracts_loaded", details={"count": len(contracts)})
 
     # Bước 2: Phân loại contracts theo category
     # artifact_id naming convention: "contract_<category>" (ví dụ: "contract_entities")
@@ -88,45 +105,56 @@ def build_mir(verbose: bool = False) -> MIR:
             if category in _REQUIRED_CATEGORIES:
                 yaml_content = artifact.get("content", "")
                 yaml_dict[category] = yaml_content
-                click.echo(f"   → Loaded contract: {category}")
+                _log_activity("ir.contracts_loaded", resource_id=category)
 
     # Bước 3: Validate tất cả categories present (strict mode)
     missing_categories = _REQUIRED_CATEGORIES - set(yaml_dict.keys())
     if missing_categories:
-        click.echo(f"❌ Thiếu contract categories: {', '.join(sorted(missing_categories))}")
-        click.echo("💡 Đảm bảo tất cả 7 categories đều được tạo bởi 'contract gen'")
+        _log_activity(
+            "ir.validation_failed",
+            status="error",
+            details={"missing_categories": sorted(missing_categories)}
+        )
         EM.raise_error(
             ErrorCode.MIR_DSL_PARSE_FAILED,
             missing_categories=sorted(missing_categories)
         )
 
-    click.echo(f"   ✓ Tất cả {len(_REQUIRED_CATEGORIES)} categories present")
+    _log_activity("ir.validation_passed", details={"categories_count": len(_REQUIRED_CATEGORIES)})
 
     # Bước 4: Parse YAML strings → ProjectionTree
     dsl_parser = DSLParser()
     projection_tree = dsl_parser.build_projection_tree(yaml_dict)
-    click.echo(f"   → ProjectionTree: {projection_tree.node_count()} nodes")
+    _log_activity("ir.projection_tree_built", details={"node_count": projection_tree.node_count()})
 
     # Bước 5: Validate ProjectionTree
     validator = Validator()
     validation_result = validator.validate(projection_tree)
     if validation_result.total_errors > 0:
-        click.echo(f"⚠️  Validation warnings/errors: {validation_result.total_errors}")
-        # Log first 5 errors for visibility, then proceed
-        for error in validation_result.get_errors()[:5]:
-            click.echo(f"   - {error.message}")
-        if validation_result.total_errors > 5:
-            click.echo(f"   ... and {validation_result.total_errors - 5} more")
-        click.echo("   ℹ️  Continuing despite validation issues (auto-fix in progress)")
+        error_messages = [e.message for e in validation_result.get_errors()[:5]]
+        _log_activity(
+            "ir.validation_failed",
+            status="warning",
+            details={
+                "total_errors": validation_result.total_errors,
+                "errors": error_messages,
+                "truncated": validation_result.total_errors > 5,
+            }
+        )
     else:
-        click.echo(f"   ✓ Validation passed ({validation_result.total_warnings} warnings)")
+        _log_activity("ir.validation_passed", details={"warnings": validation_result.total_warnings})
 
     # Bước 6: Build MIR từ ProjectionTree
     mir = _build_mir_from_projection_tree(projection_tree)
-    click.echo(f"   → MIR: {len(mir.operations)} operations, "
-               f"{len(mir.data_flows)} data flows, "
-               f"{len(mir.effect_flows)} effect flows, "
-               f"{len(mir.boundaries)} boundaries")
+    _log_activity(
+        "ir.operations_count",
+        details={
+            "operations": len(mir.operations),
+            "data_flows": len(mir.data_flows),
+            "effect_flows": len(mir.effect_flows),
+            "boundaries": len(mir.boundaries),
+        }
+    )
 
     # Bước 7: Save MIR vào SQLite
     mir_json = mir.to_json()
@@ -147,19 +175,15 @@ def build_mir(verbose: bool = False) -> MIR:
                 "boundary_count": len(mir.boundaries),
             }
         )
-        click.echo(f"   ✓ MIR saved to artifacts (hash: {mir_hash[:16]}...)")
+        _log_activity("ir.mir_saved", resource_id="mir-v1.0.0", details={"hash": mir_hash[:16] + "..."})
     except Exception as e:
+        _log_activity("ir.mir_save_failed", status="error", details={"error": str(e)})
         EM.raise_error(
             ErrorCode.MIR_SAVE_FAILED,
             error=str(e)
         )
 
-    click.echo("")
-    click.echo("✅ MIR build hoàn tất!")
-    click.echo("")
-    click.echo("Tiếp theo:")
-    click.echo("  1. Chạy: midicoder code plan (create implementation plan)")
-    click.echo("  2. Chạy: midicoder code gen (generate code)")
+    _log_activity("ir.build.completed")
 
     return mir
 

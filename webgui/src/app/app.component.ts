@@ -12,7 +12,7 @@ import { SidebarComponent } from './components/sidebar/sidebar.component';
 const APP_VERSION = '1.0.0';
 
 /** Docs base URL theo version */
-const DOCS_BASE = `https://docs.midicoder.com/${APP_VERSION}/ce`;
+const DOCS_BASE = `https://docs.midicoder.com/ce/${APP_VERSION}`;
 
 @Component({
   selector: 'app-root',

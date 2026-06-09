@@ -19,6 +19,8 @@ from fastapi import APIRouter, Query, Request
 
 from midicoder.api.i18n import i18n
 from midicoder.api.models import ApiResponse
+from midicoder.api.pipeline_bridge import pipeline_bridge
+from midicoder.api.config import get_project_cwd
 
 router = APIRouter(prefix="/brief", tags=["Brief"])
 
@@ -251,54 +253,37 @@ async def save_brief(request_data: BriefSaveRequest = None, request: Request = N
 
 
 @router.post("/freeze", response_model=ApiResponse)
-async def freeze_brief(version: str = Query(None), request: Request = None):
-    """Đóng brief — status clarified/draft → frozen."""
+async def freeze_brief_ep(version: str = Query(None), request: Request = None):
+    """Đóng brief — delegate vào pipeline (status sync SQLite + filesystem)."""
     language = i18n.get_language_from_request(request)
 
     if not version:
         body = await request.json()
         version = body.get("version", "v1.0.0")
 
-    from midicoder.storage.sqlite import BriefsManager
-    mgr = BriefsManager(db_path=_get_project_db_path("briefs.db"))
-    mgr.init()
+    project_cwd = get_project_cwd()
+    if not project_cwd:
+        return ApiResponse(success=False, data=None, message="Không có project active", language=language)
 
-    target = _get_working_brief(mgr, version)
-    if not target:
-        return ApiResponse(success=False, data=None, message="Không tìm thấy brief", language=language)
+    result = await pipeline_bridge.execute_command(
+        "brief", "freeze", version=version, project_cwd=project_cwd
+    )
 
-    if target.get("status") == "frozen":
-        return ApiResponse(success=False, data=None, message="Brief đã được đóng rồi", language=language)
+    if result["success"]:
+        data = result.get("_data", {})
+        return ApiResponse(
+            success=True,
+            data={"brief_id": data.get("brief_id"), "status": "frozen"},
+            message="Brief đã được đóng",
+            language=language,
+        )
 
-    brief_id = target.get("brief_id")
-    brief_hash = target.get("hash", "")
-    mgr.update_status(brief_id, "frozen")
-    _log_lineage(mgr, brief_id, version, "frozen", "Brief frozen", old_hash=brief_hash, new_hash=brief_hash)
-
-    # Chuyển status version từ draft → active (brief đã được đóng)
-    try:
-        from midicoder.storage.projects import ProjectsManager
-        pm = ProjectsManager()
-        pm.init()
-        active_project = pm.get_active()
-        if active_project:
-            pm.version_update_status(active_project["project_id"], version, "inbuild")
-
-        # Cập nhật metadata.yml
-        from midicoder.api.config import _get_project_root
-        from pathlib import Path
-        import yaml
-        meta_file = Path(_get_project_root()) / ".midicoder" / "versions" / version / "metadata.yml"
-        if meta_file.exists():
-            with open(meta_file, "r", encoding="utf-8") as f:
-                meta = yaml.safe_load(f) or {}
-            meta["status"] = "inbuild"
-            with open(meta_file, "w", encoding="utf-8") as f:
-                yaml.dump(meta, f, default_flow_style=False, allow_unicode=True)
-    except Exception:
-        pass
-
-    return ApiResponse(success=True, data={"brief_id": brief_id, "status": "frozen"}, message="Brief đã được đóng", language=language)
+    return ApiResponse(
+        success=False,
+        data=None,
+        message=result.get("stderr", "Không thể đóng brief"),
+        language=language,
+    )
 
 
 @router.post("/set-status", response_model=ApiResponse)

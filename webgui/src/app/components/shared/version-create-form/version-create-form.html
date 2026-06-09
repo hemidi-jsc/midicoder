@@ -50,6 +50,29 @@
           <span class="confirm-version">{{ versionName }}</span>
         </div>
 
+        @if (getParentVersion()) {
+          <div class="inheritance-info">
+            <div class="inheritance-header">
+              <span class="inheritance-icon">🔗</span>
+              <strong>Kế thừa từ:</strong>
+              <span class="inheritance-parent">{{ getParentVersion() }}</span>
+            </div>
+            <p class="inheritance-note">
+              Phiên bản mới sẽ thừa hưởng toàn bộ mã nguồn (src/) và dữ liệu từ phiên bản đang selected.
+            </p>
+          </div>
+        } @else {
+          <div class="inheritance-info no-parent">
+            <div class="inheritance-header">
+              <span class="inheritance-icon">📄</span>
+              <strong>Phiên bản gốc</strong>
+            </div>
+            <p class="inheritance-note">
+              Đây là phiên bản đầu tiên — không kế thừa từ phiên bản nào.
+            </p>
+          </div>
+        }
+
         @if (impact.will_archive.length > 0) {
           <div class="impact-section">
             <div class="impact-header">
@@ -81,7 +104,7 @@
                 <div class="impact-item deleted">
                   <span class="impact-version-name">{{ v.version }}</span>
                   <span class="impact-status-badge status-{{ v.status }}">{{ v.status }}</span>
-                  <span class="impact-date">{{ v.created_at ? (v.created_at | slice:0:10) : '' }}</span>
+                  <span class="impact-date">{{ formatDateShort(v.created_at) }}</span>
                 </div>
               }
             </div>

@@ -1,6 +1,6 @@
 /**
  * Sidebar Component
- * Hiển thị Projects, Versions, Pipeline progress
+ * Hiển thị Projects, Versions
  */
 
 import { Component, OnInit, OnDestroy } from '@angular/core';
@@ -10,7 +10,6 @@ import { Subscription, filter } from 'rxjs';
 
 import { VersionService, VersionInfo } from '../../core/version.service';
 import { ApiService, ProjectInfo } from '../../core/api.service';
-import { PipelineStore } from '../../core/pipeline.store';
 import { VersionCreateFormComponent } from '../shared/version-create-form/version-create-form';
 import { ProjectCreateFormComponent } from '../shared/project-create-form/project-create-form';
 
@@ -88,135 +87,23 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
         </div>
       </div>
 
-      <!-- Pipeline Progress Section -->
-      <div class="sidebar-section">
-        <div class="sidebar-header">
-          <h3>Pipeline</h3>
-        </div>
-
-        <div class="pipeline-progress">
-          @if (activeVersionInfo) {
-            <div 
-              class="pipeline-phase" 
-              [class.complete]="activeVersionInfo.progress.init === 'complete'"
-              [class.in-progress]="activeVersionInfo.progress.init === 'in_progress'"
-              [class.current]="currentPhase === 'init'"
-              [class.error]="activeVersionInfo.progress.init === 'error'"
-              routerLink="/dashboard"
-            >
-              <span class="phase-icon">
-                @if (activeVersionInfo.progress.init === 'complete') { ✓ }
-                @else if (activeVersionInfo.progress.init === 'in_progress') { ◎ }
-                @else { ○ }
-              </span>
-              <span class="phase-name">Init</span>
-            </div>
-
-            <div 
-              class="pipeline-phase" 
-              [class.complete]="activeVersionInfo.progress.brief === 'complete'"
-              [class.in-progress]="activeVersionInfo.progress.brief === 'in_progress'"
-              [class.current]="currentPhase === 'brief'"
-              [class.error]="activeVersionInfo.progress.brief === 'error'"
-              routerLink="/brief-editor"
-            >
-              <span class="phase-icon">
-                @if (activeVersionInfo.progress.brief === 'complete') { ✓ }
-                @else if (activeVersionInfo.progress.brief === 'in_progress') { ◎ }
-                @else { ○ }
-              </span>
-              <span class="phase-name">Brief</span>
-            </div>
-
-            <div 
-              class="pipeline-phase" 
-              [class.complete]="activeVersionInfo.progress.contract === 'complete'"
-              [class.in-progress]="activeVersionInfo.progress.contract === 'in_progress'"
-              [class.current]="currentPhase === 'contract'"
-              [class.error]="activeVersionInfo.progress.contract === 'error'"
-              routerLink="/contract-viewer"
-            >
-              <span class="phase-icon">
-                @if (activeVersionInfo.progress.contract === 'complete') { ✓ }
-                @else if (activeVersionInfo.progress.contract === 'in_progress') { ◎ }
-                @else { ○ }
-              </span>
-              <span class="phase-name">Contract</span>
-            </div>
-
-            <div 
-              class="pipeline-phase" 
-              [class.complete]="activeVersionInfo.progress.ir === 'complete'"
-              [class.in-progress]="activeVersionInfo.progress.ir === 'in_progress'"
-              [class.current]="currentPhase === 'ir'"
-              [class.error]="activeVersionInfo.progress.ir === 'error'"
-              routerLink="/ir-explorer"
-            >
-              <span class="phase-icon">
-                @if (activeVersionInfo.progress.ir === 'complete') { ✓ }
-                @else if (activeVersionInfo.progress.ir === 'in_progress') { ◎ }
-                @else { ○ }
-              </span>
-              <span class="phase-name">IR</span>
-            </div>
-
-            <div 
-              class="pipeline-phase" 
-              [class.complete]="activeVersionInfo.progress.code === 'complete'"
-              [class.in-progress]="activeVersionInfo.progress.code === 'in_progress'"
-              [class.current]="currentPhase === 'code'"
-              [class.error]="activeVersionInfo.progress.code === 'error'"
-              routerLink="/code-generator"
-            >
-              <span class="phase-icon">
-                @if (activeVersionInfo.progress.code === 'complete') { ✓ }
-                @else if (activeVersionInfo.progress.code === 'in_progress') { ◎ }
-                @else { ○ }
-              </span>
-              <span class="phase-name">Code</span>
-            </div>
-
-            <div 
-              class="pipeline-phase" 
-              [class.complete]="activeVersionInfo.progress.preview === 'complete'"
-              [class.in-progress]="activeVersionInfo.progress.preview === 'in_progress'"
-              [class.current]="currentPhase === 'preview'"
-              [class.error]="activeVersionInfo.progress.preview === 'error'"
-              routerLink="/preview"
-            >
-              <span class="phase-icon">
-                @if (activeVersionInfo.progress.preview === 'complete') { ✓ }
-                @else if (activeVersionInfo.progress.preview === 'in_progress') { ◎ }
-                @else { ○ }
-              </span>
-              <span class="phase-name">Preview</span>
-            </div>
-          }
-        </div>
-
-        <!-- Progress Bar -->
-        @if (activeVersionInfo) {
-          <div class="progress-section">
-            <div class="progress-labels">
-              <span>Progress</span>
-              <span>{{ overallProgress }}%</span>
-            </div>
-            <div class="progress-bar">
-              <div class="progress-fill" [style.width.%]="overallProgress"></div>
-            </div>
-          </div>
-        }
-      </div>
-
       <!-- Settings Section -->
       <div class="sidebar-section">
         <div class="sidebar-header">
           <h3>Settings</h3>
         </div>
         <div class="settings-list">
+          <a routerLink="/general-settings" class="settings-item">
+            <span class="settings-icon">🛠️</span>
+            <span class="settings-name">General</span>
+          </a>
           <a routerLink="/llm-config" class="settings-item">
             <span class="settings-icon">⚙️</span>
             <span class="settings-name">LLM Config</span>
+          </a>
+          <a routerLink="/system-logs" class="settings-item">
+            <span class="settings-icon">📋</span>
+            <span class="settings-name">System Logs</span>
           </a>
         </div>
       </div>
@@ -490,83 +377,6 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
       color: var(--text-tertiary);
     }
 
-    /* Pipeline Progress */
-    .pipeline-progress {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .pipeline-phase {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 12px;
-      cursor: pointer;
-      transition: all 0.2s;
-      border: 1px solid transparent;
-    }
-
-    .pipeline-phase:hover {
-      background: var(--bg-card);
-      border-color: var(--border-subtle);
-    }
-
-    .pipeline-phase.complete {
-      color: var(--accent-success);
-    }
-
-    .pipeline-phase.in-progress {
-      color: var(--brand-color);
-    }
-
-    .pipeline-phase.current {
-      background: rgba(252, 103, 103, 0.1);
-      border-color: var(--border-hover);
-      box-shadow: var(--glow-sm);
-    }
-
-    .pipeline-phase.error {
-      color: var(--accent-error);
-    }
-
-    .phase-icon {
-      font-size: 0.9rem;
-    }
-
-    .phase-name {
-      font-size: 0.85rem;
-      font-weight: 500;
-    }
-
-    /* Progress Section */
-    .progress-section {
-      margin-top: 16px;
-      padding-top: 16px;
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .progress-labels {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 8px;
-      font-size: 0.8rem;
-      color: var(--text-secondary);
-    }
-
-    .progress-bar {
-      height: 6px;
-      background: var(--bg-card);
-      overflow: hidden;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: var(--brand-gradient);
-      transition: width 0.5s ease;
-      box-shadow: var(--glow-sm);
-    }
-
     /* Modal */
     .modal-overlay {
       position: fixed;
@@ -759,8 +569,6 @@ export class SidebarComponent implements OnInit, OnDestroy {
   activeVersionInfo?: VersionInfo;
   showCreateModal = false;
   newVersionName = '';
-  currentPhase: 'init' | 'brief' | 'contract' | 'ir' | 'code' | 'preview' = 'init';
-
   // Projects
   projects: ProjectInfo[] = [];
   showCreateProjectModal = false;
@@ -771,7 +579,6 @@ export class SidebarComponent implements OnInit, OnDestroy {
     private versionService: VersionService,
     private router: Router,
     private api: ApiService,
-    private pipelineStore: PipelineStore,
   ) {}
 
   ngOnInit(): void {
@@ -789,12 +596,9 @@ export class SidebarComponent implements OnInit, OnDestroy {
     // Load projects from backend
     this.loadProjects();
 
-    // Determine current phase based on URL
-    this.updateCurrentPhase();
-
-    // Subscribe to navigation events
+    // Subscribe to navigation events to refresh sidebar state
     this.routerSub = this.router.events.pipe(filter(event => event instanceof NavigationEnd)).subscribe(() => {
-      this.updateCurrentPhase();
+      // navigation event — nothing extra needed
     });
   }
 
@@ -825,7 +629,6 @@ export class SidebarComponent implements OnInit, OnDestroy {
         // Update local state — không reload page (giữ nguyên thứ tự danh sách)
         await this.loadProjects();
         this.versionService.loadVersions();
-        this.pipelineStore.loadStatus();
         // Notify other components to refresh
         window.dispatchEvent(new CustomEvent('project-switched'));
       }
@@ -837,22 +640,6 @@ export class SidebarComponent implements OnInit, OnDestroy {
   // ====================================================================
   // Existing methods
   // ====================================================================
-
-  private updateCurrentPhase(): void {
-    const url = this.router.url;
-    if (url.includes('brief')) this.currentPhase = 'brief';
-    else if (url.includes('contract')) this.currentPhase = 'contract';
-    else if (url.includes('ir')) this.currentPhase = 'ir';
-    else if (url.includes('code')) this.currentPhase = 'code';
-    else if (url.includes('preview')) this.currentPhase = 'preview';
-    else if (url.includes('feedback')) this.currentPhase = 'preview';
-    else this.currentPhase = 'init';
-  }
-
-  get overallProgress(): number {
-    if (!this.activeVersionInfo) return 0;
-    return this.versionService.calculateProgress(this.activeVersionInfo);
-  }
 
   async switchVersion(version: string): Promise<void> {
     await this.versionService.setActiveVersion(version);

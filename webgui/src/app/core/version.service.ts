@@ -12,6 +12,9 @@ export interface VersionInfo {
   version: string;
   status: 'draft' | 'inbuild' | 'archived';
   createdAt: string;
+  parentVersion?: string | null;
+  branch?: string;
+  pipeline?: { brief: string; contract: string; ir: string; code: string };
   progress: {
     init: 'pending' | 'in_progress' | 'complete' | 'error';
     brief: 'pending' | 'in_progress' | 'complete' | 'error';
@@ -63,6 +66,9 @@ export class VersionService {
             version: displayVersion,
             status: bv.status || 'draft',
             createdAt: bv.created_at || '',
+            parentVersion: bv.parent_version || null,
+            branch: bv.branch || undefined,
+            pipeline: bv.pipeline,
             progress: {
               init: 'pending',
               brief: 'pending',

@@ -16,14 +16,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-import click
 import yaml
 
 from midicoder.errors import MidicoderErrorManager as EM, ErrorCode
 from midicoder.storage.sqlite import (
-    BriefsManager, 
-    ArtifactsManager, 
-    DB_BRIEFS, 
+    BriefsManager,
+    ArtifactsManager,
+    DB_BRIEFS,
     DB_ARTIFACTS,
     get_connection
 )
@@ -33,6 +32,24 @@ from midicoder.storage.sqlite import (
 # ============================================================================
 
 logger = logging.getLogger(__name__)
+
+
+def _log_activity(action: str, resource_type: str = "system", resource_id: str = "", details: dict = None, status: str = "success") -> None:
+    """Ghi activity log vào artifacts.db activity_log table."""
+    data_dir = Path(".midicoder/data")
+    artifacts_db = data_dir / "artifacts.db"
+    if not artifacts_db.exists():
+        return
+    try:
+        with get_connection(artifacts_db) as conn:
+            conn.execute(
+                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (action, resource_type, resource_id,
+                 json.dumps(details) if details else None, status),
+            )
+    except Exception:
+        pass
 
 # ============================================================================
 # Config Schema
@@ -642,7 +659,7 @@ def config_show():
     cfg = get_config()
     all_settings = cfg.load_global_config().get_all()
 
-    click.echo(json.dumps(all_settings, indent=2, default=str))
+    _log_activity("settings.displayed", "config", details={"settings_count": len(all_settings)})
 
 
 def config_set(key: str, value: str):
@@ -677,7 +694,7 @@ def config_set(key: str, value: str):
     
     try:
         cfg.set(key, value)
-        click.echo(f"Set {key} = {value}")
+        _log_activity("settings.set", "config", details={"key": key, "value": value})
     except Exception as e:
         raise EM.wrap_exception(
             e, ErrorCode.UTIL_CONFIG_WRITE_FAILED,
@@ -698,7 +715,7 @@ def config_reset(key: Optional[str] = None):
     
     try:
         cfg.reset(key)
-        click.echo(f"Reset {'all' if key is None else key} to defaults")
+        _log_activity("settings.reset", "config", details={"key": key if key else "all"})
     except Exception as e:
         raise EM.wrap_exception(
             e, ErrorCode.CONFIG_WRITE_FAILED,
@@ -718,11 +735,8 @@ def run_status(json_output: bool = False):
         json_output: Nếu True, output JSON format
     """
     status = get_status(json_output=json_output)
-    
-    if json_output:
-        click.echo(json.dumps(status, indent=2, default=str))
-    else:
-        click.echo(format_status_human(status))
+
+    _log_activity("status.displayed", "system", details={"json_output": json_output})
 
 
 def run_feedback(
@@ -749,16 +763,17 @@ def run_feedback(
             message=message,
             auto_apply=auto_apply
         )
-        
-        click.echo(f"✓ Feedback đã được lưu (ID: {feedback_id})")
-        
+
+        _log_activity("feedback.saved", "feedback", str(feedback_id),
+                      details={"feedback_id": feedback_id, "type": feedback_type, "auto_apply": auto_apply})
+
         if auto_apply:
-            click.echo("ℹ Auto-apply enabled: Pipeline sẽ được trigger tự động.")
+            _log_activity("feedback.auto_apply_info", "feedback", str(feedback_id))
         else:
-            click.echo("ℹ Auto-apply disabled: Chạy `midicoder feedback apply` để áp dụng.")
-            
+            _log_activity("feedback.manual_apply_info", "feedback", str(feedback_id))
+
     except MidicoderError as e:
-        click.echo(f"✗ Lỗi: {e}", err=True)
+        _log_activity("feedback.error", "feedback", details={"error": str(e)}, status="error")
         raise SystemExit(1)
 
 

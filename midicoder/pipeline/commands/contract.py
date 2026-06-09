@@ -21,14 +21,13 @@ Version: 4.0.0 (LLM Contract Generation)
 from __future__ import annotations
 
 import json
-import click
 import yaml
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from midicoder.errors import MidicoderErrorManager as EM, ErrorCode
-from midicoder.storage.sqlite import BriefsManager, ArtifactsManager
+from midicoder.storage.sqlite import BriefsManager, ArtifactsManager, get_connection
 from midicoder.dsl.projection import ProjectionTree
 from midicoder.dsl.validator import validate_tree, ValidationStatus, ValidationReport
 from midicoder.pipeline.dsl_parser import DSLParser
@@ -48,6 +47,26 @@ REQUIRED_CATEGORIES = [
 
 # Số lần thử tối đa để LLM fix contracts
 MAX_REPAIR_ATTEMPTS = 5
+
+
+def _log_activity(action: str, resource_type: str = "contract", resource_id: str = "", details: dict = None, status: str = "success") -> None:
+    """Ghi activity log vào artifacts.db activity_log table."""
+    data_dir = Path(".midicoder/data")
+    if not data_dir.exists():
+        data_dir = Path(".") / ".midicoder" / "data"
+    artifacts_db = data_dir / "artifacts.db"
+    if not artifacts_db.exists():
+        return
+    try:
+        with get_connection(artifacts_db) as conn:
+            conn.execute(
+                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (action, resource_type, resource_id,
+                 json.dumps(details) if details else None, status),
+            )
+    except Exception:
+        pass
 
 
 # ============================================================================
@@ -283,13 +302,17 @@ def _generate_category_with_retry(
 
         except yaml.YAMLError:
             # LLM output không phải valid YAML → retry
-            click.echo(f"      ⚠️  {category}: LLM output not valid YAML (attempt {attempt}/{max_retries}), retrying...")
+            _log_activity("contract.gen.retry", resource_id=category,
+                         details={"reason": "invalid_yaml", "attempt": attempt, "max_retries": max_retries},
+                         status="warning")
             if attempt >= max_retries:
                 raise RuntimeError(f"Failed to generate valid YAML for {category} after {max_retries} attempts")
             continue
         except Exception as e:
             # Loại lỗi khác (API error, ...) → retry
-            click.echo(f"      ⚠️  {category}: LLM error (attempt {attempt}/{max_retries}): {e}, retrying...")
+            _log_activity("contract.gen.retry", resource_id=category,
+                         details={"reason": str(e), "attempt": attempt, "max_retries": max_retries},
+                         status="warning")
             if attempt >= max_retries:
                 raise RuntimeError(f"LLM failed for {category} after {max_retries} attempts: {e}")
             continue
@@ -321,7 +344,8 @@ def _generate_contracts_with_llm(
     result = {}
 
     for category in REQUIRED_CATEGORIES:
-        click.echo(f"   → Generating {category}...")
+        _log_activity("contract.gen.started", resource_id=category,
+                     details={"category": category})
 
         system, user = _build_category_prompt(
             category, analysis_data, clarifications, brief_content
@@ -332,7 +356,8 @@ def _generate_contracts_with_llm(
         )
 
         result[category] = yaml_content
-        click.echo(f"      ✓ {category} generated")
+        _log_activity("contract.category.generated", resource_id=category,
+                     details={"category": category})
 
     return result
 
@@ -364,22 +389,21 @@ def _auto_fix_contracts(
     dsl_parser = DSLParser()
 
     for iteration in range(1, MAX_REPAIR_ATTEMPTS + 1):
-        click.echo("")
-        click.echo(f"   → Auto-fix iteration {iteration}/{MAX_REPAIR_ATTEMPTS}")
+        _log_activity("contract.auto_fix.iteration", details={"iteration": iteration, "max": MAX_REPAIR_ATTEMPTS})
 
         # Build ProjectionTree và validate
         try:
             tree = dsl_parser.build_projection_tree(yaml_dict)
             report = validate_tree(tree)
         except Exception as e:
-            click.echo(f"      ⚠️  Validation error: {e}")
+            _log_activity("contract.auto_fix.error", details={"error": str(e)}, status="error")
             break
 
         if report.total_errors == 0:
-            click.echo(f"      ✓ Contracts valid sau {iteration} iteration(s)")
+            _log_activity("contract.auto_fix.valid", details={"iterations": iteration}, status="success")
             return True
 
-        click.echo(f"      → Vẫn có {report.total_errors} errors, fix...")
+        _log_activity("contract.auto_fix.errors_remain", details={"total_errors": report.total_errors})
 
         # Fix các categories có lỗi
         errors_by_node = report.get_errors_by_node()
@@ -427,10 +451,10 @@ Fix the YAML. Output ONLY the fixed YAML content."""
                 # Validate là fixed YAML hợp lệ
                 yaml.safe_load(fixed_yaml)
                 yaml_dict[category] = fixed_yaml
-                click.echo(f"      ✓ Fixed {category}")
+                _log_activity("contract.auto_fix.fixed", resource_id=category, details={"category": category})
 
             except Exception as e:
-                click.echo(f"      ⚠️  Failed to fix {category}: {e}")
+                _log_activity("contract.auto_fix.fail", resource_id=category, details={"category": category, "error": str(e)}, status="error")
 
         # Update artifacts trong SQLite
         for category, content in yaml_dict.items():
@@ -466,15 +490,14 @@ def generate_contracts(force: bool = False):
     Args:
         force: Force regenerate even if exists
     """
-    click.echo("📝 Đang generate DSL contracts...")
+    _log_activity("contract.gen.started", details={"force": force})
 
     # Step 1: Check if brief exists
     briefs_manager = BriefsManager()
     briefs = briefs_manager.list()
 
     if not briefs:
-        click.echo("❌ Không có brief nào được phân tích")
-        click.echo("💡 Chạy 'midicoder brief analyze' trước")
+        _log_activity("contract.gen.no_brief", details={}, status="error")
         return
 
     # Get latest analyzed brief
@@ -486,11 +509,12 @@ def generate_contracts(force: bool = False):
 
     if not active_brief:
         active_brief = briefs[0]
-        click.echo(f"ℹ️  Sử dụng brief: {active_brief.get('brief_id')}")
+        _log_activity("contract.brief_loaded", resource_id=active_brief.get('brief_id'),
+                     details={"brief_id": active_brief.get('brief_id'), "status": active_brief.get('status')})
 
     brief_id = active_brief.get('brief_id')
-    click.echo(f"   → Brief ID: {brief_id}")
-    click.echo(f"   → Title: {active_brief.get('title')}")
+    _log_activity("contract.brief_loaded", resource_id=brief_id,
+                 details={"brief_id": brief_id, "title": active_brief.get('title')})
 
     # Step 2: Check if contracts already exist
     artifacts_manager = ArtifactsManager()
@@ -498,39 +522,33 @@ def generate_contracts(force: bool = False):
     existing = artifacts_manager.list_by_type("contract")
 
     if existing and not force:
-        click.echo(f"⚠️  Contracts đã tồn tại ({len(existing)} artifacts)")
-        click.echo("   → Không ghi đè (dùng --force để ghi đè)")
+        _log_activity("contract.gen.exists", details={"count": len(existing)}, status="warning")
         return
 
     # Step 3: Delegate đến _generate_contracts_to_sqlite (có placeholder fallback)
-    click.echo("")
-    click.echo("   → Đang generate contracts...")
+    _log_activity("contract.gen.in_progress", resource_id=brief_id)
     _generate_contracts_to_sqlite(brief_id)
 
     # Step 4: Self-validate + auto-fix
-    click.echo("")
-    click.echo("   → Self-validating contracts...")
+    _log_activity("contract.validate.self", resource_id=brief_id)
 
     try:
         tree = _load_contracts_from_sqlite()
         if tree is not None:
             report = validate_tree(tree)
             if report.status == ValidationStatus.VALID:
-                click.echo("   ✓ Contracts valid")
+                _log_activity("contract.validate.valid", resource_id=brief_id)
             elif report.status == ValidationStatus.WARNINGS:
-                click.echo(f"   ⚠️  Contracts valid với {report.total_warnings} warnings")
+                _log_activity("contract.validate.warnings", resource_id=brief_id,
+                             details={"total_warnings": report.total_warnings}, status="warning")
             else:
-                click.echo(f"   → Contracts có {report.total_errors} errors")
+                _log_activity("contract.validate.errors", resource_id=brief_id,
+                             details={"total_errors": report.total_errors}, status="warning")
     except Exception as e:
-        click.echo(f"   ⚠️  Validation error: {e}")
+        _log_activity("contract.validate.error", details={"error": str(e)}, status="error")
 
     # Done
-    click.echo("")
-    click.echo("✅ Contracts generated!")
-    click.echo("")
-    click.echo("Tiếp theo:")
-    click.echo("  1. Chạy: midicoder contract check (validate contracts)")
-    click.echo("  2. Chạy: midicoder ir build (build MIR)")
+    _log_activity("contract.gen.completed", resource_id=brief_id, details={"status": "success"})
 
 
 def _generate_contracts_to_sqlite(brief_id: str) -> None:
@@ -586,8 +604,11 @@ def _generate_contracts_to_sqlite(brief_id: str) -> None:
         yaml_content = yaml_dict[category]
         _upsert_contract_artifact(artifacts_manager, category, yaml_content, brief_id)
         saved_count += 1
+        _log_activity("contract.saved", resource_id=f"contract_{category}",
+                     details={"category": category, "brief_id": brief_id})
 
-    click.echo(f"   ✓ Saved {saved_count}/7 contract artifacts to SQLite")
+    _log_activity("contract.gen.saved_all", resource_id=brief_id,
+                 details={"saved_count": saved_count, "total": len(REQUIRED_CATEGORIES)})
 
 
 def _build_placeholder_yaml(brief_id: str, generated_at: str) -> Dict[str, str]:
@@ -925,7 +946,7 @@ def check_contracts(auto_fix: bool = False, strict: bool = False):
         auto_fix: Attempt to fix errors automatically
         strict: Treat warnings as errors
     """
-    click.echo("🔍 Đang kiểm tra contracts...")
+    _log_activity("contract.check.started", details={"auto_fix": auto_fix, "strict": strict})
 
     # Step 1: Load contract artifacts từ SQLite
     artifacts_manager = ArtifactsManager()
@@ -933,11 +954,10 @@ def check_contracts(auto_fix: bool = False, strict: bool = False):
 
     contracts = artifacts_manager.list_by_type("contract")
     if not contracts:
-        click.echo("❌ Không có contract artifacts nào")
-        click.echo("💡 Chạy 'midicoder contract gen' trước")
+        _log_activity("contract.check.no_artifacts", details={}, status="error")
         return
 
-    click.echo(f"   → Found {len(contracts)} contract artifacts")
+    _log_activity("contract.check.loaded", details={"count": len(contracts)})
 
     # Step 2: Build yaml_dict từ artifacts
     yaml_dict = {}
@@ -947,104 +967,82 @@ def check_contracts(auto_fix: bool = False, strict: bool = False):
             category = artifact_id[len("contract_"):]
             yaml_content = artifact.get("content", "")
             yaml_dict[category] = yaml_content
-            click.echo(f"   → Loaded: {category}")
+            _log_activity("contract.check.category_loaded", resource_id=category,
+                         details={"category": category})
 
     # Check missing categories
     missing = set(REQUIRED_CATEGORIES) - set(yaml_dict.keys())
     if missing:
-        click.echo(f"   ⚠️  Thiếu categories: {', '.join(sorted(missing))}")
+        _log_activity("contract.check.missing_categories",
+                     details={"missing": sorted(missing)}, status="warning")
 
     # Step 3: Parse YAML strings → ProjectionTree
-    click.echo("")
-    click.echo("   → Loading vào ProjectionTree...")
+    _log_activity("contract.check.parsing")
 
     try:
         dsl_parser = DSLParser()
         tree = dsl_parser.build_projection_tree(yaml_dict)
-        click.echo(f"      ✓ Loaded {tree.node_count()} nodes")
+        _log_activity("contract.check.parsed", details={"node_count": tree.node_count()})
     except Exception as e:
-        click.echo(f"      ❌ Failed to parse: {e}")
+        _log_activity("contract.check.parse_failed", details={"error": str(e)}, status="error")
         return
 
     # Step 4: Validate với DSL validator
-    click.echo("")
-    click.echo("   → Running DSL validation...")
+    _log_activity("contract.check.validating")
 
     try:
         report = validate_tree(tree)
 
-        click.echo(f"      ✓ Validation complete")
-        click.echo(f"        - Errors: {report.total_errors}")
-        click.echo(f"        - Warnings: {report.total_warnings}")
-        click.echo(f"        - Info: {report.total_info}")
+        _log_activity("contract.check.complete", details={
+            "total_errors": report.total_errors,
+            "total_warnings": report.total_warnings,
+            "total_info": report.total_info
+        })
 
         # Report errors by node
         if report.total_errors > 0:
-            click.echo("")
-            click.echo("   Errors by node:")
             errors_by_node = report.get_errors_by_node()
+            error_details = {}
             for node_id, node_errors in errors_by_node.items():
-                click.echo(f"     - {node_id}: {len(node_errors)} errors")
+                error_details[node_id] = len(node_errors)
                 for error in node_errors[:3]:
-                    click.echo(f"       • {error.message}")
+                    error_details.setdefault(node_id, [])
+            _log_activity("contract.check.errors", details=error_details, status="error")
 
         # Report warnings
         if report.total_warnings > 0:
-            click.echo("")
-            click.echo("   Warnings:")
+            warning_details = []
             for warning in report.get_warnings()[:5]:
-                click.echo(f"     • {warning.node_id}: {warning.message}")
+                warning_details.append({"node_id": warning.node_id, "message": warning.message})
+            _log_activity("contract.check.warnings", details={"warnings": warning_details}, status="warning")
 
         # Report dependency cycles
         if report.dependency_analysis and report.dependency_analysis.cycles:
-            click.echo("")
-            click.echo("   Dependency cycles detected:")
+            cycle_details = []
             for cycle in report.dependency_analysis.cycles[:3]:
-                cycle_str = " → ".join(cycle.nodes)
-                click.echo(f"     • {cycle_str}")
+                cycle_details.append(" → ".join(cycle.nodes))
+            _log_activity("contract.check.cycles", details={"cycles": cycle_details}, status="warning")
 
     except Exception as e:
-        click.echo(f"      ❌ Validation failed: {e}")
+        _log_activity("contract.check.validation_failed", details={"error": str(e)}, status="error")
         return
 
     # Final report
-    click.echo("")
-
     if report.status == ValidationStatus.VALID:
-        click.echo("✅ Contracts validation passed!")
-        click.echo("")
-        click.echo("Tiếp theo:")
-        click.echo("  1. Chạy: midicoder ir build (build MIR from contracts)")
+        _log_activity("contract.check.valid", details={"status": "passed"})
     elif report.status == ValidationStatus.WARNINGS:
         if strict:
-            click.echo("⚠️  Warnings found (strict mode = error)")
-            click.echo("")
-            click.echo("Tiếp theo:")
-            click.echo("  1. Sửa warnings hoặc chạy: midicoder contract check --auto-fix")
+            _log_activity("contract.check.warnings_strict", details={"status": "error_in_strict_mode"}, status="error")
         else:
-            click.echo("⚠️  Contracts valid with warnings")
-            click.echo("")
-            click.echo("Tiếp theo:")
-            click.echo("  1. Chạy: midicoder contract check --strict")
-            click.echo("  2. Hoặc: midicoder ir build")
+            _log_activity("contract.check.warnings", details={"status": "valid_with_warnings"}, status="warning")
     elif report.status == ValidationStatus.ERRORS:
-        click.echo("❌ Contracts có errors")
+        _log_activity("contract.check.errors_found", details={"auto_fix": auto_fix}, status="error")
 
         if auto_fix:
-            click.echo("")
-            click.echo("🔧 Tự động repair với LLM...")
-            click.echo("")
+            _log_activity("contract.check.auto_fix_triggered")
             repair_contracts()
-        else:
-            click.echo("")
-            click.echo("Tiếp theo:")
-            click.echo("  1. Sửa errors thủ công hoặc chạy: midicoder contract repair")
-            click.echo("  2. Hoặc: midicoder contract check --auto-fix")
     else:  # FATAL
-        click.echo("❌ Fatal validation errors")
-        click.echo("")
-        click.echo("Tiếp theo:")
-        click.echo("  1. Sửa errors nghiêm trọng hoặc chạy lại: midicoder contract gen")
+        _log_activity("contract.check.fatal", details={"status": "fatal_validation_errors"}, status="error")
 
 
 def _load_contracts_from_sqlite() -> Optional[ProjectionTree]:
@@ -1092,7 +1090,7 @@ def repair_contracts():
     5. Upsert fixed artifacts vào SQLite
     6. Retry tối đa MAX_REPAIR_ATTEMPTS lần
     """
-    click.echo("🔧 Đang repair contracts bằng LLM...")
+    _log_activity("contract.repair.started")
 
     # Step 1: Load contracts từ SQLite
     artifacts_manager = ArtifactsManager()
@@ -1100,18 +1098,16 @@ def repair_contracts():
 
     contracts = artifacts_manager.list_by_type("contract")
     if not contracts:
-        click.echo("❌ Không có contract artifacts nào")
-        click.echo("💡 Chạy 'midicoder contract gen' trước")
+        _log_activity("contract.repair.no_artifacts", details={}, status="error")
         return
 
-    click.echo(f"   → Found {len(contracts)} contract artifacts")
+    _log_activity("contract.repair.loaded", details={"count": len(contracts)})
 
     # Load LLM config
     try:
         config = load_llm_config()
     except Exception as e:
-        click.echo(f"❌ Không thể load LLM config: {e}")
-        click.echo("💡 Kiểm tra LLM config trong Settings")
+        _log_activity("contract.repair.llm_config_failed", details={"error": str(e)}, status="error")
         return
 
     # Build yaml_dict
@@ -1124,18 +1120,17 @@ def repair_contracts():
             yaml_dict[category] = yaml_content
 
     # Step 2: Validate để tìm errors
-    click.echo("")
-    click.echo("   → Đang validate contracts...")
+    _log_activity("contract.repair.validating")
 
     dsl_parser = DSLParser()
     tree = dsl_parser.build_projection_tree(yaml_dict)
     report = validate_tree(tree)
 
     if report.total_errors == 0:
-        click.echo("✅ Tất cả contracts đã valid, không cần repair!")
+        _log_activity("contract.repair.already_valid", details={}, status="success")
         return
 
-    click.echo(f"   → Found {report.total_errors} errors")
+    _log_activity("contract.repair.errors_found", details={"total_errors": report.total_errors})
 
     # Step 3: Repair bằng LLM
     errors_by_node = report.get_errors_by_node()
@@ -1160,18 +1155,20 @@ def repair_contracts():
             category_errors.extend(node_errors)
 
         if not category_errors:
-            click.echo(f"      ✓ {category}: no errors")
+            _log_activity("contract.repair.no_errors", resource_id=category,
+                         details={"category": category})
             continue
 
-        click.echo(f"")
-        click.echo(f"   → Repairing: {category}")
+        _log_activity("contract.repair.category.started", resource_id=category,
+                     details={"category": category})
 
         success = False
         fixed_content = None
 
         for attempt in range(1, MAX_REPAIR_ATTEMPTS + 1):
             if attempt > 1:
-                click.echo(f"      → Retry attempt {attempt}/{MAX_REPAIR_ATTEMPTS}")
+                _log_activity("contract.repair.retry", resource_id=category,
+                             details={"attempt": attempt, "max": MAX_REPAIR_ATTEMPTS})
 
             result, fixed = _try_fix_with_llm(
                 config, category, parsed_data, category_errors
@@ -1191,15 +1188,19 @@ def repair_contracts():
 
                 if temp_report.total_errors == 0:
                     success = True
-                    click.echo(f"      ✓ Fixed after {attempt} attempt(s)")
+                    _log_activity("contract.repair.category.fixed", resource_id=category,
+                                 details={"category": category, "attempts": attempt})
                     break
                 else:
                     category_errors = []
                     for node_id, node_errors in temp_report.get_errors_by_node().items():
                         category_errors.extend(node_errors)
-                    click.echo(f"      ⚠️  Still {temp_report.total_errors} errors, retrying...")
+                    _log_activity("contract.repair.still_errors", resource_id=category,
+                                 details={"remaining_errors": temp_report.total_errors},
+                                 status="warning")
             except Exception as e:
-                click.echo(f"      ⚠️  Validation error: {e}")
+                _log_activity("contract.repair.validation_error", resource_id=category,
+                             details={"error": str(e)}, status="warning")
 
         if success and fixed_content is not None:
             fixed_yaml = yaml.dump(fixed_content, default_flow_style=False, allow_unicode=True)
@@ -1210,26 +1211,21 @@ def repair_contracts():
             )
             repaired_count += 1
         else:
-            click.echo(f"      ❌ Failed to repair after {MAX_REPAIR_ATTEMPTS} attempts")
+            _log_activity("contract.repair.category.failed", resource_id=category,
+                         details={"category": category, "max_attempts": MAX_REPAIR_ATTEMPTS},
+                         status="error")
             failed_categories.append(category)
 
     # Final report
-    click.echo("")
-
     if repaired_count > 0:
-        click.echo(f"✅ Repaired {repaired_count} category(s)")
+        _log_activity("contract.repair.completed", details={"repaired_count": repaired_count})
 
     if failed_categories:
-        click.echo(f"")
-        click.echo(f"⚠️  Failed to repair {len(failed_categories)} category(s):")
-        for name in failed_categories:
-            click.echo(f"    - {name}")
-        click.echo("💡 Vui lòng sửa thủ công hoặc chạy lại 'midicoder contract repair'")
+        _log_activity("contract.repair.partial_failure",
+                     details={"failed_categories": failed_categories, "failed_count": len(failed_categories)},
+                     status="warning")
     else:
-        click.echo("")
-        click.echo("Tiếp theo:")
-        click.echo("  1. Chạy: midicoder contract check (verify repairs)")
-        click.echo("  2. Chạy: midicoder ir build (build MIR)")
+        _log_activity("contract.repair.all_success", details={"repaired_count": repaired_count})
 
 
 def _build_repair_prompt(
@@ -1305,19 +1301,23 @@ def _try_fix_with_llm(
         fixed_content = yaml.safe_load(yaml_content)
 
         if not isinstance(fixed_content, dict):
-            click.echo(f"      ⚠️  LLM output không phải dict")
+            _log_activity("contract.repair.not_dict", resource_id=category,
+                         details={"category": category}, status="warning")
             return False, None
 
         return True, fixed_content
 
     except APIError as e:
-        click.echo(f"      ❌ LLM error: {e}")
+        _log_activity("contract.repair.llm_error", resource_id=category,
+                     details={"category": category, "error": str(e)}, status="error")
         return False, None
     except yaml.YAMLError as e:
-        click.echo(f"      ❌ LLM output không phải valid YAML: {e}")
+        _log_activity("contract.repair.invalid_yaml", resource_id=category,
+                     details={"category": category, "error": str(e)}, status="error")
         return False, None
     except Exception as e:
-        click.echo(f"      ❌ Error processing LLM response: {e}")
+        _log_activity("contract.repair.processing_error", resource_id=category,
+                     details={"category": category, "error": str(e)}, status="error")
         return False, None
 
 
