@@ -1,126 +1,313 @@
 /**
- * Component trang đăng nhập
+ * Login / Welcome screen — full-screen split layout.
+ *
+ * Left  (75%): brand, tagline, mascot + benefits
+ * Right (25%): "Bắt đầu" button + trial link + footer
  */
 
-import { Component, OnInit, inject } from '@angular/core';
+import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { Observable } from 'rxjs';
 
 import { AuthService } from '../../core/auth.service';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule],
   template: `
-    <div class="min-h-screen flex items-center justify-center bg-bg-primary">
-      <!-- Login Card -->
-      <div class="card w-full max-w-md">
-        <!-- Logo -->
-        <div class="text-center mb-8">
-          <h1 class="text-3xl font-bold text-accent-primary mb-2">Midicoder</h1>
-          <p class="text-text-secondary">Chào mừng trở lại</p>
+    <div class="login-fullscreen">
+      <!-- ======== LEFT COLUMN (brand) ======== -->
+      <div class="login-left">
+        <div class="login-left-inner">
+
+          <!-- Logo + title -->
+          <div class="brand-header">
+            <img src="logo.png" alt="Midicoder" class="brand-logo" />
+            <h1 class="brand-title">Midi Coder</h1>
+            <p class="brand-tagline">Contract coding platform</p>
+          </div>
+
+          <!-- Mascot + benefits -->
+          <div class="brand-body">
+            <img src="mascot_1.png" alt="Mascot" class="brand-mascot" />
+            <ul class="brand-benefits">
+              <li>
+                <span class="benefit-icon">&#10003;</span>
+                <span>Giảm ~90% lượng token so với cách viết code trực tiếp bằng AI</span>
+              </li>
+              <li>
+                <span class="benefit-icon">&#10003;</span>
+                <span>Giảm 95% thời gian so với Vibe Code nhờ khả năng biên dịch mã không dùng LLM</span>
+              </li>
+              <li>
+                <span class="benefit-icon">&#10003;</span>
+                <span>Sản phẩm đầu ra đạt chuẩn Enterprise và ISO 27001/ISMS và SOC2</span>
+              </li>
+              <li>
+                <span class="benefit-icon">&#10003;</span>
+                <span>Một nguồn sự thật duy nhất &mdash; mọi thay đổi đều bám theo contract, dễ review và truy vết</span>
+              </li>
+            </ul>
+          </div>
+
         </div>
+      </div>
 
-        <!-- Error Message -->
-        @if (errorMessage$ | async) {
-          <div class="mb-4 p-3 bg-accent-error bg-opacity-10 border border-accent-error rounded text-accent-error text-sm">
-            {{ errorMessage$ | async }}
-          </div>
-        }
+      <!-- ======== RIGHT COLUMN (action) ======== -->
+      <div class="login-right">
+        <div class="login-right-inner">
 
-        <!-- Login Form -->
-        <form (ngSubmit)="handleLogin()" class="space-y-4">
-          <!-- Email -->
-          <div>
-            <label class="block text-text-secondary mb-2">Email</label>
-            <input
-              type="email"
-              [(ngModel)]="email"
-              name="email"
-              class="input"
-              placeholder="test@example.com"
-              required
-            />
-          </div>
-
-          <!-- Password -->
-          <div>
-            <label class="block text-text-secondary mb-2">Mật khẩu</label>
-            <input
-              type="password"
-              [(ngModel)]="password"
-              name="password"
-              class="input"
-              placeholder="password"
-              required
-            />
-          </div>
-
-          <!-- Loading Spinner -->
-          @if (isLoading$ | async) {
-            <div class="flex justify-center py-4">
-              <div class="spinner"></div>
-            </div>
-          }
-
-          <!-- Submit Button -->
-          <button
-            type="submit"
-            class="btn btn-primary w-full"
-            [disabled]="isLoading$ | async"
-          >
-            {{ (isLoading$ | async) ? 'Đang tải...' : 'Đăng nhập' }}
+          <!-- Primary CTA -->
+          <button class="btn-start" (click)="handleStart()">
+            Bắt đầu
           </button>
-        </form>
 
-        <!-- Signup Link -->
-        <div class="mt-6 text-center">
-          <p class="text-text-tertiary text-sm">
-            Bạn chưa có tài khoản? Đăng ký tại midicoder.com
-          </p>
-          <a
-            href="https://midicoder.com/register"
-            target="_blank"
-            class="text-accent-primary hover:underline text-sm mt-1 inline-block"
-          >
-            Đăng ký tài khoản →
+          <!-- Trial link -->
+          <a class="btn-trial" href="https://midicoder.com" target="_blank" rel="noopener noreferrer">
+            Dùng thử Midi Coder EE
           </a>
-        </div>
 
-        <!-- Demo Credentials -->
-        <div class="mt-6 p-3 bg-bg-secondary rounded border border-border-primary">
-          <p class="text-text-tertiary text-xs mb-2">Lưu ý: Demo credentials</p>
-          <p class="text-text-secondary text-xs">Email: test@example.com</p>
-          <p class="text-text-secondary text-xs">Password: password</p>
+          <!-- Spacer pushes footer to bottom -->
+          <div class="login-spacer"></div>
+
+          <!-- Footer -->
+          <footer class="login-footer">
+            <div class="footer-links">
+              <a href="https://midicoder.com" target="_blank" rel="noopener noreferrer">midicoder.com</a>
+              <a href="https://hemidi.com/legal" target="_blank" rel="noopener noreferrer">Legal</a>
+            </div>
+            <p class="footer-copyright">&copy; 2026 &mdash; Hemidi JSC</p>
+          </footer>
+
         </div>
       </div>
     </div>
   `,
-  styles: [],
+  styles: [`
+    /* ---- Full-screen split ---- */
+    .login-fullscreen {
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg-primary);
+    }
+
+    /* ---- Left column (75%) ---- */
+    .login-left {
+      flex: 3 3 75%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 64px 80px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Subtle radial glow behind brand area */
+    .login-left::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 30% 50%,
+          rgba(252, 103, 103, 0.06) 0%,
+          transparent 70%);
+      pointer-events: none;
+    }
+
+    .login-left-inner {
+      position: relative;
+      z-index: 1;
+      max-width: 720px;
+    }
+
+    /* Brand header */
+    .brand-header {
+      margin-bottom: 56px;
+    }
+
+    .brand-logo {
+      height: 56px;
+      width: auto;
+      margin-bottom: 20px;
+      filter: drop-shadow(0 0 18px rgba(252, 103, 103, 0.25));
+    }
+
+    .brand-title {
+      font-size: 3rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin: 0 0 8px 0;
+      background: var(--brand-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .brand-tagline {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      margin: 0;
+      font-weight: 400;
+    }
+
+    /* Body: mascot + benefits side-by-side */
+    .brand-body {
+      display: flex;
+      align-items: center;
+      gap: 48px;
+    }
+
+    .brand-mascot {
+      flex-shrink: 0;
+      width: 200px;
+      height: auto;
+      filter: drop-shadow(0 0 24px rgba(252, 103, 103, 0.12));
+    }
+
+    /* Benefits list */
+    .brand-benefits {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .brand-benefits li {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    .benefit-icon {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: rgba(252, 103, 103, 0.12);
+      color: var(--brand-color);
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    /* ---- Right column (25%) ---- */
+    .login-right {
+      flex: 1 1 25%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 48px 48px 0;
+      border-left: 1px solid var(--border-subtle);
+      background: var(--bg-secondary);
+    }
+
+    .login-right-inner {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    /* Start button */
+    .btn-start {
+      width: 100%;
+      padding: 16px 24px;
+      font-size: 1.0625rem;
+      font-weight: 600;
+      color: #fff;
+      background: var(--brand-gradient);
+      border: none;
+      cursor: pointer;
+      transition: box-shadow 0.2s, transform 0.15s;
+      letter-spacing: 0.01em;
+    }
+
+    .btn-start:hover {
+      box-shadow: var(--glow-md);
+      transform: translateY(-1px);
+    }
+
+    .btn-start:active {
+      transform: translateY(0);
+    }
+
+    /* Trial button */
+    .btn-trial {
+      display: block;
+      width: 100%;
+      padding: 14px 24px;
+      margin-top: 14px;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: transparent;
+      border: 1px solid var(--border-subtle);
+      text-align: center;
+      text-decoration: none;
+      transition: border-color 0.2s, color 0.2s;
+    }
+
+    .btn-trial:hover {
+      border-color: var(--brand-color);
+      color: var(--brand-color);
+    }
+
+    /* Spacer pushes footer to bottom */
+    .login-spacer {
+      flex: 1 1 auto;
+    }
+
+    /* Footer */
+    .login-footer {
+      padding: 32px 0;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 12px;
+    }
+
+    .footer-links a {
+      color: var(--text-muted);
+      font-size: 0.8125rem;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+      color: var(--brand-color);
+    }
+
+    .footer-copyright {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      margin: 0;
+    }
+  `],
 })
-export class LoginComponent implements OnInit {
-  email = '';
-  password = '';
-  isLoading$: Observable<boolean> = new Observable();
-  errorMessage$: Observable<string | null> = new Observable();
+export class LoginComponent {
+  constructor(
+    private authService: AuthService,
+    private router: Router,
+  ) {}
 
-  private authService = inject(AuthService);
-  private router = inject(Router);
-
-  ngOnInit(): void {
-    this.isLoading$ = this.authService.isLoading$;
-    this.errorMessage$ = this.authService.errorMessage$;
-  }
-
-  async handleLogin(): Promise<void> {
-    const result = await this.authService.login(this.email, this.password);
-
+  /**
+   * "Bắt đầu" — auto-login with mock credentials and navigate to dashboard.
+   */
+  async handleStart(): Promise<void> {
+    const result = await this.authService.login('bighero@midicoder.com', 'demo2026');
     if (result.success) {
       this.router.navigate(['/dashboard']);
     }
-    // Error đã được handle trong AuthService
   }
 }

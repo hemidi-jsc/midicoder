@@ -7,12 +7,11 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { ApiService } from './api.service';
-import { ApiResponse, LoginRequest, LoginResponse, UserResponse } from './mock-api.service';
+import { ApiResponse, LoginRequest, LoginResponse, UserResponse } from './api.types';
 
 export interface User {
   id: string;
   email: string;
-  tier: 'free' | 'pro' | 'enterprise';
 }
 
 @Injectable({
@@ -75,7 +74,6 @@ export class AuthService {
       const mockUser: User = {
         id: `user_${Date.now()}`,
         email: email,
-        tier: 'pro',
       };
 
       const mockResponse: LoginResponse = {

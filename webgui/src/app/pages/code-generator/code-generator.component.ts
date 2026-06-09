@@ -9,7 +9,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
-import { CodeFile } from '../../core/mock-api.service';
+import { CodeFile } from '../../core/api.types';
 
 @Component({
   selector: 'app-code-generator',

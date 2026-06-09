@@ -6,7 +6,7 @@
 
 import { Injectable, signal, computed, inject } from '@angular/core';
 import { ApiService } from './api.service';
-import { PipelineStatus } from './mock-api.service';
+import { PipelineStatus } from './api.types';
 
 export type PhaseStatus = 'pending' | 'in_progress' | 'complete' | 'error';
 
@@ -38,7 +38,9 @@ export class PipelineStore {
    */
   private projectName = signal<string>('');
   private activeVersion = signal<string>('');
-  private workspaceInitialized = signal<boolean>(false);
+  private _workspaceInitialized = signal<boolean>(false);
+  /** Expose as readonly signal for effect() tracking in components */
+  readonly workspaceInitializedSignal = this._workspaceInitialized.asReadonly();
 
   /**
    * Loading state
@@ -96,14 +98,12 @@ export class PipelineStore {
 
   /**
    * Load pipeline status từ backend FastAPI
-   * Fallback sang mock data nếu backend chưa sẵn sàng
    */
   async loadStatus(): Promise<void> {
     this.isLoading.set(true);
     try {
-      // Use /pipeline/status which returns pipeline_progress from disk artifacts
       const result = await this.api.getPipelineStatus();
-      if (result.success && result.data) {
+      if (result.data) {
         this.updateFromBackend(result.data);
       } else {
         this.setFallbackStatus();
@@ -122,7 +122,8 @@ export class PipelineStore {
   private updateFromBackend(data: any): void {
     this.projectName.set(data.project_name || data.cwd || '');
     this.activeVersion.set(data.active_version || '');
-    this.workspaceInitialized.set(!!data.workspace_initialized);
+    // workspace_initialized defaults to false when field is missing (no active project)
+    this._workspaceInitialized.set(data.workspace_initialized === true);
 
     const progress = data.pipeline_progress || {};
 
@@ -229,7 +230,7 @@ export class PipelineStore {
   }
 
   isWorkspaceInitialized(): boolean {
-    return this.workspaceInitialized();
+    return this._workspaceInitialized();
   }
 
   isLoadingData(): boolean {

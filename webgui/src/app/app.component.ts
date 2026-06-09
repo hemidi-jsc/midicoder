@@ -240,5 +240,6 @@ export class AppComponent implements OnInit, OnDestroy {
    */
   async handleLogout(): Promise<void> {
     await this.authService.logout();
+    this.router.navigate(['/login']);
   }
 }

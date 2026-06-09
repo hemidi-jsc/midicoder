@@ -33,10 +33,73 @@ def _reset_config_project_path() -> None:
         pass
 
 
+# ============================================================================
+# Tech stack options — read from contracts/registry.py + packs/models.py
+# ============================================================================
+
+def _get_tech_stacks():
+    """Return supported tech stacks grouped by category, read from contracts/registry."""
+    from midicoder.contracts.registry import (
+        BACKEND_STACKS,
+        FRONTEND_STACKS,
+        INFRA_STACK,
+    )
+    from midicoder.packs.models import PresetType
+
+    # Labels cho user
+    STACK_LABELS = {
+        "fastapi": "FastAPI (Python)",
+        "nestjs": "NestJS (TypeScript)",
+        "angular": "Angular",
+        "react": "React",
+        "infrastructure": "Infrastructure (Docker/K8s)",
+    }
+
+    return {
+        "infrastructure": [{"value": INFRA_STACK, "label": STACK_LABELS.get(INFRA_STACK, INFRA_STACK)}],
+        "backend": [{"value": s, "label": STACK_LABELS.get(s, s)} for s in sorted(BACKEND_STACKS)],
+        "frontend": [{"value": s, "label": STACK_LABELS.get(s, s)} for s in sorted(FRONTEND_STACKS)],
+        "ui_framework": [{"value": p.value, "label": p.value.capitalize()} for p in PresetType],
+    }
+
+
+def _get_prompt_domains():
+    """Scan midicoder/pipeline/prompts/ for domain subdirs + default."""
+    prompts_dir = Path(__file__).parent.parent.parent / "pipeline" / "prompts"
+    domains = [{"value": "default", "label": "Default"}]
+    if prompts_dir.is_dir():
+        for entry in sorted(prompts_dir.iterdir()):
+            if entry.is_dir() and not entry.name.startswith("__"):
+                domains.append({"value": entry.name, "label": entry.name.replace("_", " ").title()})
+    return domains
+
+
+# ============================================================================
+# GET /projects/techstacks — return available stacks + prompt domains
+# ============================================================================
+
+@router.get("/techstacks", response_model=ApiResponse)
+async def get_techstacks(request: Request):
+    """Lấy danh sách tech stack và prompt domain hỗ trợ."""
+    language = i18n.get_language_from_request(request)
+    try:
+        return ApiResponse(
+            success=True,
+            data={
+                "stacks": _get_tech_stacks(),
+                "prompt_domains": _get_prompt_domains(),
+            },
+            language=language,
+        )
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
+
+
 class ProjectCreateRequest(BaseModel):
     name: str = Field(..., description="Tên project")
     path: str = Field(..., description="Đường dẫn tuyệt đối đến folder project")
-    stack: str = Field(default="", description="Tech stack (tùy chọn)")
+    tech_stack: dict = Field(..., description="Tech stack selection: { infrastructure, backend, frontend, ui_framework }")
+    prompt_domain: str = Field(..., description="Prompt engineering domain (default, ecommerce, ...)")
 
 
 class ProjectUpdateRequest(BaseModel):
@@ -174,12 +237,14 @@ async def create_project(request_data: ProjectCreateRequest, request: Request):
         init_database(data_dir / "provenance.db", SCHEMA_PROVENANCE)
         init_database(data_dir / "context.db", SCHEMA_CONTEXT)
 
-        # 3. Tạo project config file (không set active_version - sẽ set khi tạo version đầu tiên)
+        # 3. Tạo project config file
         config_file = workspace_dir / "config" / "midicoder.yml"
         config_data = {
             "midicoder_version": "1.0.0",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "max_versions": 5,
+            "tech_stack": request_data.tech_stack,
+            "prompt_domain": request_data.prompt_domain,
             "capabilities": {"enabled": []},
         }
         config_file.write_text(

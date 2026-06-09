@@ -176,10 +176,24 @@ async def get_pipeline_status(request: Request):
         versions = _get_versions_for_project(project_cwd)
         active_version = _get_active_version_for_project(project_cwd)
 
-        # Đánh dấu version active
+        # Đánh dấu version active + lọc status archived
+        from midicoder.api.config import get_version_status
         for v in versions:
-            if v["version"] == active_version:
-                v["active"] = True
+            vname = v["version"]
+            v["active"] = vname == active_version
+            status = get_version_status(vname) or "draft"
+            v["status"] = status
+            v["is_archived"] = status == "archived"
+
+        # Nếu active version bị archived → block pipeline progress
+        active_status = get_version_status(active_version) if active_version else None
+        if active_status == "archived":
+            return ApiResponse(
+                success=False,
+                data=None,
+                message=f"Version '{active_version}' đã bị archived và không thể truy cập nữa. Hãy switch sang version đang active.",
+                language=language,
+            )
 
         # Project name từ ProjectsManager (multi-project registry)
         projects_mgr = ProjectsManager()

@@ -38,6 +38,31 @@ server = FastAPI(
     ],
 )
 
+# Alias for uvicorn CLI
+app = server
+
+
+# Startup hook — auto-activate active project from projects.db
+@server.on_event("startup")
+async def _auto_activate_active_project():
+    """Load active project path from projects.db into ConfigManager on startup.
+
+    This ensures ConfigManager always knows the correct project path after backend restart,
+    so endpoints like /version/create don't fail with MDC-CONFIG-001.
+    """
+    try:
+        from midicoder.storage.projects import ProjectsManager
+        from midicoder.pipeline.config import get_config
+
+        mgr = ProjectsManager()
+        mgr.init()
+        active = mgr.get_active()
+        if active and active.get("path"):
+            cfg = get_config()
+            cfg.set_project_path(active["path"])
+    except Exception:
+        pass  # Non-fatal — endpoints will still work, just no auto-activated project
+
 
 # Thiết lập CORS cho frontend Angular trên cùng máy
 server.add_middleware(

@@ -9,7 +9,18 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .config import get_project_cwd, get_active_version
+from .config import get_project_cwd, get_active_version, get_version_status
+
+
+def _check_version_not_archived(version: Optional[str]) -> None:
+    """Block access if version is archived. Raises ValueError if archived."""
+    if version:
+        status = get_version_status(version)
+        if status == "archived":
+            raise ValueError(
+                f"Version '{version}' đã bị archived và không thể truy cập nữa. "
+                f"Hãy switch sang version đang active."
+            )
 
 
 def _version_root(version: Optional[str] = None) -> Path | None:
@@ -17,7 +28,9 @@ def _version_root(version: Optional[str] = None) -> Path | None:
     Lấy path root của version directory.
     Nếu không có version, lấy active version.
     Returns None nếu không có project active.
+    Raises ValueError nếu version bị archived.
     """
+    _check_version_not_archived(version)
     project_cwd = get_project_cwd()
     if not project_cwd:
         return None
