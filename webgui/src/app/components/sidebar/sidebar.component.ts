@@ -10,27 +10,28 @@ import { Subscription, filter } from 'rxjs';
 
 import { VersionService, VersionInfo } from '../../core/version.service';
 import { ApiService, ProjectInfo } from '../../core/api.service';
+import { I18nPipe } from '../../core/i18n.pipe';
 import { VersionCreateFormComponent } from '../shared/version-create-form/version-create-form';
 import { ProjectCreateFormComponent } from '../shared/project-create-form/project-create-form';
 
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [CommonModule, RouterLink, VersionCreateFormComponent, ProjectCreateFormComponent],
+  imports: [CommonModule, RouterLink, I18nPipe, VersionCreateFormComponent, ProjectCreateFormComponent],
   template: `
     <aside class="sidebar">
       <!-- Dashboard Link -->
       <a routerLink="/dashboard" class="sidebar-dashboard-link">
         <span class="dashboard-icon">⌂</span>
-        <span>Bảng điều khiển</span>
+        <span>{{ 'nav.dashboard' | i18n }}</span>
       </a>
       <hr class="sidebar-divider" />
 
       <!-- Projects Section -->
       <div class="sidebar-section">
         <div class="sidebar-header">
-          <h3>Projects</h3>
-          <button class="btn-icon" (click)="showCreateProjectModal = true" title="Create new project">
+          <h3>{{ 'nav.projects' | i18n }}</h3>
+          <button class="btn-icon" (click)="showCreateProjectModal = true" title="{{ 'nav.createProject' | i18n }}">
             +
           </button>
         </div>
@@ -45,12 +46,12 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
               <div class="project-info">
                 <span class="project-name">{{ project.name }}</span>
                 @if (project.active) {
-                  <span class="project-active-badge">ACTIVE</span>
+                  <span class="project-active-badge">{{ 'nav.active' | i18n }}</span>
                 }
               </div>
             </div>
           } @empty {
-            <p class="empty-text">Chưa có project nào</p>
+            <p class="empty-text">{{ 'project.empty' | i18n }}</p>
           }
         </div>
       </div>
@@ -58,8 +59,8 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
       <!-- Versions Section -->
       <div class="sidebar-section">
         <div class="sidebar-header">
-          <h3>Versions</h3>
-          <button class="btn-icon" (click)="showCreateModal = true" title="Create new version">
+          <h3>{{ 'nav.versions' | i18n }}</h3>
+          <button class="btn-icon" (click)="showCreateModal = true" title="{{ 'nav.createVersion' | i18n }}">
             +
           </button>
         </div>
@@ -72,7 +73,7 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
               [class.archived]="version.status === 'archived'"
               [class.disabled]="version.status === 'archived'"
               (click)="version.status !== 'archived' && switchVersion(version.version)"
-              [title]="version.status === 'archived' ? 'Version đã bị archived, không thể truy cập' : ''"
+              [title]="version.status === 'archived' ? ('version.archivedTitle' | i18n) : ''"
             >
               <div class="version-info">
                 <span class="version-name">{{ version.version }}</span>
@@ -82,7 +83,7 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
               </div>
             </div>
           } @empty {
-            <p class="empty-text">Chưa có phiên bản nào</p>
+            <p class="empty-text">{{ 'version.empty' | i18n }}</p>
           }
         </div>
       </div>
@@ -90,20 +91,20 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
       <!-- Settings Section -->
       <div class="sidebar-section">
         <div class="sidebar-header">
-          <h3>Settings</h3>
+          <h3>{{ 'nav.settings' | i18n }}</h3>
         </div>
         <div class="settings-list">
           <a routerLink="/general-settings" class="settings-item">
             <span class="settings-icon">🛠️</span>
-            <span class="settings-name">General</span>
+            <span class="settings-name">{{ 'nav.general' | i18n }}</span>
           </a>
           <a routerLink="/llm-config" class="settings-item">
             <span class="settings-icon">⚙️</span>
-            <span class="settings-name">LLM Config</span>
+            <span class="settings-name">{{ 'nav.llmConfig' | i18n }}</span>
           </a>
           <a routerLink="/system-logs" class="settings-item">
             <span class="settings-icon">📋</span>
-            <span class="settings-name">System Logs</span>
+            <span class="settings-name">{{ 'nav.systemLogs' | i18n }}</span>
           </a>
         </div>
       </div>

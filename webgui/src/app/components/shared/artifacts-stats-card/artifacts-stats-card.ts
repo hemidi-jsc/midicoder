@@ -5,6 +5,7 @@
 
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { I18nPipe } from '../../../core/i18n.pipe';
 
 export interface PipelineStatus {
   brief: string;
@@ -59,46 +60,46 @@ export interface ArtifactStatsData {
 @Component({
   selector: 'app-artifacts-stats-card',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, I18nPipe],
   template: `
     <div class="dashboard-card">
-      <h2 class="card-title">📊 Artifacts</h2>
+      <h2 class="card-title">{{ 'artifacts.heading' | i18n }}</h2>
       <div class="artifact-grid">
 
         <!-- Column 1: Briefs -->
         <div class="artifact-col" [class.done]="isDone('brief')">
           <div class="artifact-header">
             <span class="artifact-icon" [class.done]="isDone('brief')">📝</span>
-            <span class="artifact-name">Briefs</span>
+            <span class="artifact-name">{{ 'artifacts.briefs' | i18n }}</span>
           </div>
           @if (!isDone('brief')) {
-            <p class="artifact-empty">Chưa xử lý</p>
+            <p class="artifact-empty">{{ 'artifacts.notProcessed' | i18n }}</p>
           } @else {
             <div class="artifact-details">
               <div class="detail-row">
-                <span class="detail-label">Số lượng</span>
+                <span class="detail-label">{{ 'artifacts.count' | i18n }}</span>
                 <span class="detail-value">{{ data.briefs.count }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Trạng thái</span>
+                <span class="detail-label">{{ 'artifacts.status' | i18n }}</span>
                 <span class="detail-value"><span [class]="'status-badge status-' + data.briefs.status">{{ data.briefs.status | uppercase }}</span></span>
               </div>
               @if (data.briefs.title) {
                 <div class="detail-row">
-                  <span class="detail-label">Tiêu đề</span>
+                  <span class="detail-label">{{ 'artifacts.title' | i18n }}</span>
                   <span class="detail-value truncate" [title]="data.briefs.title">{{ data.briefs.title }}</span>
                 </div>
               }
               <div class="detail-row">
-                <span class="detail-label">Số từ</span>
+                <span class="detail-label">{{ 'artifacts.wordCount' | i18n }}</span>
                 <span class="detail-value">{{ data.briefs.word_count | number }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Làm rõ</span>
+                <span class="detail-label">{{ 'artifacts.clarifications' | i18n }}</span>
                 <span class="detail-value">{{ data.briefs.clarification_count }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Thay đổi</span>
+                <span class="detail-label">{{ 'artifacts.changes' | i18n }}</span>
                 <span class="detail-value">{{ data.briefs.change_count }}</span>
               </div>
             </div>
@@ -109,30 +110,30 @@ export interface ArtifactStatsData {
         <div class="artifact-col" [class.done]="isDone('contract')">
           <div class="artifact-header">
             <span class="artifact-icon" [class.done]="isDone('contract')">📋</span>
-            <span class="artifact-name">Contracts</span>
+            <span class="artifact-name">{{ 'artifacts.contracts' | i18n }}</span>
           </div>
           @if (!isDone('contract')) {
-            <p class="artifact-empty">Chưa xử lý</p>
+            <p class="artifact-empty">{{ 'artifacts.notProcessed' | i18n }}</p>
           } @else {
             <div class="artifact-details">
               <div class="detail-row">
-                <span class="detail-label">Tổng số</span>
+                <span class="detail-label">{{ 'artifacts.total' | i18n }}</span>
                 <span class="detail-value">{{ data.contracts.count }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Entities</span>
+                <span class="detail-label">{{ 'artifacts.entities' | i18n }}</span>
                 <span class="detail-value">{{ data.contracts.total_entities }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Commands</span>
+                <span class="detail-label">{{ 'artifacts.commands' | i18n }}</span>
                 <span class="detail-value">{{ data.contracts.total_commands }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Queries</span>
+                <span class="detail-label">{{ 'artifacts.queries' | i18n }}</span>
                 <span class="detail-value">{{ data.contracts.total_queries }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Events</span>
+                <span class="detail-label">{{ 'artifacts.events' | i18n }}</span>
                 <span class="detail-value">{{ data.contracts.total_events }}</span>
               </div>
               @for (cat of categories(); track cat.key) {
@@ -152,30 +153,30 @@ export interface ArtifactStatsData {
         <div class="artifact-col" [class.done]="isDone('ir')">
           <div class="artifact-header">
             <span class="artifact-icon" [class.done]="isDone('ir')">🔗</span>
-            <span class="artifact-name">IR</span>
+            <span class="artifact-name">{{ 'artifacts.ir' | i18n }}</span>
           </div>
           @if (!isDone('ir')) {
-            <p class="artifact-empty">Chưa xử lý</p>
+            <p class="artifact-empty">{{ 'artifacts.notProcessed' | i18n }}</p>
           } @else {
             <div class="artifact-details">
               <div class="detail-row">
-                <span class="detail-label">Operations</span>
+                <span class="detail-label">{{ 'artifacts.operations' | i18n }}</span>
                 <span class="detail-value">{{ data.ir.operations }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Data Flows</span>
+                <span class="detail-label">{{ 'artifacts.dataFlows' | i18n }}</span>
                 <span class="detail-value">{{ data.ir.data_flows }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Effect Flows</span>
+                <span class="detail-label">{{ 'artifacts.effectFlows' | i18n }}</span>
                 <span class="detail-value">{{ data.ir.effect_flows }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Boundaries</span>
+                <span class="detail-label">{{ 'artifacts.boundaries' | i18n }}</span>
                 <span class="detail-value">{{ data.ir.boundaries }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Entities (IR)</span>
+                <span class="detail-label">{{ 'artifacts.irEntities' | i18n }}</span>
                 <span class="detail-value">{{ data.ir.entities }}</span>
               </div>
             </div>
@@ -186,22 +187,22 @@ export interface ArtifactStatsData {
         <div class="artifact-col" [class.done]="isDone('code')">
           <div class="artifact-header">
             <span class="artifact-icon" [class.done]="isDone('code')">💻</span>
-            <span class="artifact-name">Code</span>
+            <span class="artifact-name">{{ 'artifacts.code' | i18n }}</span>
           </div>
           @if (!isDone('code')) {
-            <p class="artifact-empty">Chưa xử lý</p>
+            <p class="artifact-empty">{{ 'artifacts.notProcessed' | i18n }}</p>
           } @else {
             <div class="artifact-details">
               <div class="detail-row">
-                <span class="detail-label">File sinh ra</span>
+                <span class="detail-label">{{ 'artifacts.files' | i18n }}</span>
                 <span class="detail-value">{{ data.code.total_files }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Dòng code</span>
+                <span class="detail-label">{{ 'artifacts.lines' | i18n }}</span>
                 <span class="detail-value">{{ data.code.total_lines | number }}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Dung lượng</span>
+                <span class="detail-label">{{ 'artifacts.size' | i18n }}</span>
                 <span class="detail-value">{{ formatSize(data.code.total_size) }}</span>
               </div>
               @for (ft of fileTypes(); track ft.key) {

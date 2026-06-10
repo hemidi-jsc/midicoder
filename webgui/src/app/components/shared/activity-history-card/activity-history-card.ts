@@ -8,6 +8,8 @@ import { CommonModule } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { ApiService } from '../../../core/api.service';
 import { formatDateLocal } from '../../../core/date.util';
+import { I18nPipe } from '../../../core/i18n.pipe';
+import { I18nService } from '../../../core/i18n.service';
 
 export interface ActivityLog {
   id: number;
@@ -23,18 +25,18 @@ export interface ActivityLog {
 @Component({
   selector: 'app-activity-history',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, I18nPipe],
   template: `
     <div class="dashboard-card activity-card">
       <div class="activity-card-header">
-        <h2 class="card-title">Lịch sử hoạt động</h2>
+        <h2 class="card-title">{{ 'activity.title' | i18n }}</h2>
         <div class="activity-tabs">
           <button
             class="activity-tab"
             [class.active]="mode === 'recent'"
             (click)="switchMode('recent')"
           >
-            Gần đây
+            {{ 'activity.recent' | i18n }}
             @if (recentCount > 0) {
               <span class="tab-count">{{ recentCount }}</span>
             }
@@ -44,7 +46,7 @@ export interface ActivityLog {
             [class.active]="mode === 'all'"
             (click)="switchMode('all')"
           >
-            Tất cả
+            {{ 'activity.all' | i18n }}
             @if (totalAll > 0) {
               <span class="tab-count">{{ totalAll }}</span>
             }
@@ -71,7 +73,7 @@ export interface ActivityLog {
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z"/>
               </svg>
             </div>
-            <span>Chưa có hoạt động nào trong 3 ngày gần đây</span>
+            <span>{{ 'activity.recentEmpty' | i18n }}</span>
           </div>
         } @else {
           <div class="activity-timeline">
@@ -106,7 +108,7 @@ export interface ActivityLog {
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z"/>
               </svg>
             </div>
-            <span>Chưa có hoạt động nào</span>
+            <span>{{ 'activity.empty' | i18n }}</span>
           </div>
         } @else {
           <div class="activity-timeline">
@@ -485,7 +487,7 @@ export class ActivityHistoryCardComponent implements OnInit, OnDestroy {
   totalPages = 0;
   pageNumbers: number[] = [];
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private i18n: I18nService) {}
 
   ngOnInit(): void {
     this.loadRecent();
@@ -569,10 +571,10 @@ export class ActivityHistoryCardComponent implements OnInit, OnDestroy {
 
   statusLabel(status: string): string {
     switch (status) {
-      case 'success': return 'Thành công';
-      case 'error': return 'Lỗi';
-      case 'warning': return 'Cảnh báo';
-      case 'info': return 'Thông tin';
+      case 'success': return this.i18n.t('activity.success');
+      case 'error': return this.i18n.t('activity.error');
+      case 'warning': return this.i18n.t('activity.warning');
+      case 'info': return this.i18n.t('activity.info');
       default: return status;
     }
   }
@@ -586,10 +588,10 @@ export class ActivityHistoryCardComponent implements OnInit, OnDestroy {
       const diffHr = Math.floor(diffMin / 60);
       const diffDay = Math.floor(diffHr / 24);
 
-      if (diffMin < 1) return 'vừa xong';
-      if (diffMin < 60) return `${diffMin}p trước`;
-      if (diffHr < 24) return `${diffHr}h trước`;
-      if (diffDay < 7) return `${diffDay}n trước`;
+      if (diffMin < 1) return this.i18n.t('activity.justNow');
+      if (diffMin < 60) return this.i18n.t('activity.minutesAgo', { count: diffMin });
+      if (diffHr < 24) return this.i18n.t('activity.hoursAgo', { count: diffHr });
+      if (diffDay < 7) return this.i18n.t('activity.daysAgo', { count: diffDay });
       return formatDateLocal(d.toISOString()).split(' ')[0];
     } catch {
       return ts;

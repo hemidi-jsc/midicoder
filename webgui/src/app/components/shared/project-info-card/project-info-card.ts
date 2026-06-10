@@ -7,23 +7,24 @@ import { Component, Input, Output, EventEmitter, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ApiService, ProjectInfo } from '../../../core/api.service';
 import { formatDateLocal } from '../../../core/date.util';
+import { I18nPipe } from '../../../core/i18n.pipe';
+import { DOCS_BASE } from '../../../core/app.constants';
 
-const APP_VERSION = '1.0.0';
-const DOCS_URL = `https://docs.midicoder.com/ce/${APP_VERSION}/project-management`;
+const DOCS_URL = `${DOCS_BASE}/project-management`;
 
 @Component({
   selector: 'app-project-info-card',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, I18nPipe],
   template: `
     <div class="info-card">
       <div class="card-header">
         <h3 class="card-title">📁 Project</h3>
-        <a [href]="docsUrl" target="_blank" rel="noopener noreferrer" class="help-icon" title="Hướng dẫn quản lý project">❓</a>
+        <a [href]="docsUrl" target="_blank" rel="noopener noreferrer" class="help-icon" attr.title="{{ 'project.helpTitle' | i18n }}">❓</a>
       </div>
 
       @if (!project) {
-        <p class="empty-state">Chưa có project active</p>
+        <p class="empty-state">{{ 'project.noActive' | i18n }}</p>
       } @else {
         <div class="field-list">
           <div class="field-row">
@@ -40,16 +41,18 @@ const DOCS_URL = `https://docs.midicoder.com/ce/${APP_VERSION}/project-managemen
           </div>
           <div class="field-row">
             <span class="field-label">active</span>
-            <span class="field-value"><span class="status-dot" title="Đang active"></span></span>
+            <span class="field-value"><span class="status-dot" attr.title="{{ 'project.active' | i18n }}"></span></span>
           </div>
-          @if (project!.repo_url) {
-            <div class="field-row">
-              <span class="field-label">repo_url</span>
-              <span class="field-value">
+          <div class="field-row">
+            <span class="field-label">repo_url</span>
+            <span class="field-value">
+              @if (project!.repo_url) {
                 <a [href]="project!.repo_url" target="_blank" rel="noopener noreferrer" class="repo-link">{{ getRepoHost(project!.repo_url) }}</a>
-              </span>
-            </div>
-          }
+              } @else {
+                <span class="field-value-null">null</span>
+              }
+            </span>
+          </div>
           <div class="field-row">
             <span class="field-label">created_at</span>
             <span class="field-value monospace">{{ formatDate(project!.created_at) }}</span>
@@ -61,8 +64,8 @@ const DOCS_URL = `https://docs.midicoder.com/ce/${APP_VERSION}/project-managemen
         </div>
 
         <div class="card-actions">
-          <button class="btn-open-ide" (click)="openInIde()" [attr.title]="'Mở trong VS Code'">
-            📂 Mở dự án trong IDE
+          <button class="btn-open-ide" (click)="openInIde()" attr.title="{{ 'project.openIdeTitle' | i18n }}">
+            📂 {{ 'project.openIde' | i18n }}
           </button>
         </div>
       }
@@ -140,6 +143,13 @@ const DOCS_URL = `https://docs.midicoder.com/ce/${APP_VERSION}/project-managemen
     .field-value {
       color: var(--text-primary);
       word-break: break-all;
+    }
+
+    .field-value-null {
+      color: var(--text-tertiary);
+      font-style: italic;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
     }
 
     .field-value.monospace {

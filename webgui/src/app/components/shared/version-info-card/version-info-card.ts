@@ -3,12 +3,14 @@
  * Dữ liệu lấy từ VersionService.
  */
 
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, inject, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { formatDateLocal } from '../../../core/date.util';
+import { I18nPipe } from '../../../core/i18n.pipe';
+import { I18nService } from '../../../core/i18n.service';
+import { DOCS_BASE } from '../../../core/app.constants';
 
-const APP_VERSION = '1.0.0';
-const DOCS_URL = `https://docs.midicoder.com/ce/${APP_VERSION}/version-management`;
+const DOCS_URL = `${DOCS_BASE}/version-management`;
 
 export interface VersionMetadata {
   version: string;
@@ -24,16 +26,16 @@ export interface VersionMetadata {
 @Component({
   selector: 'app-version-info-card',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, I18nPipe],
   template: `
     <div class="info-card">
       <div class="card-header">
-        <h3 class="card-title">🔖 Version</h3>
-        <a [href]="docsUrl" target="_blank" rel="noopener noreferrer" class="help-icon" title="Hướng dẫn quản lý version">❓</a>
+        <h3 class="card-title">{{ 'version.heading' | i18n }}</h3>
+        <a [href]="docsUrl" target="_blank" rel="noopener noreferrer" class="help-icon" attr.title="{{ 'version.helpTitle' | i18n }}">❓</a>
       </div>
 
       @if (!version) {
-        <p class="empty-state">Chưa có version active</p>
+        <p class="empty-state">{{ 'version.noActive' | i18n }}</p>
       } @else {
         <div class="field-list">
           <div class="field-row">
@@ -50,15 +52,25 @@ export interface VersionMetadata {
             <span class="field-label">active</span>
             <span class="field-value">
               @if (version!.active) {
-                <span class="status-dot" title="Đang selected"></span>
+                <span class="status-dot" attr.title="{{ 'version.selected' | i18n }}"></span>
               } @else {
-                <span class="status-dot status-dot-inactive" title="Không active"></span>
+                <span class="status-dot status-dot-inactive" attr.title="{{ 'version.notActive' | i18n }}"></span>
               }
             </span>
           </div>
           <div class="field-row">
             <span class="field-label">parent_version</span>
             <span class="field-value monospace">{{ version!.parent_version || 'null' }}</span>
+          </div>
+          <div class="field-row">
+            <span class="field-label">branch</span>
+            <span class="field-value">
+              @if (version!.branch && version!.branch !== 'N/A') {
+                <span class="repo-link">{{ version!.branch }}</span>
+              } @else {
+                <span class="field-value-null">null</span>
+              }
+            </span>
           </div>
           <div class="field-row">
             <span class="field-label">created_at</span>
@@ -68,18 +80,11 @@ export interface VersionMetadata {
             <span class="field-label">updated_at</span>
             <span class="field-value monospace">{{ formatDate(version!.updated_at) }}</span>
           </div>
-
-          @if (version!.branch) {
-            <div class="field-row">
-              <span class="field-label">branch</span>
-              <span class="field-value"><span class="branch-tag">🔀 {{ version!.branch }}</span></span>
-            </div>
-          }
         </div>
 
         <div class="card-actions">
           <button class="btn-create-version" (click)="createVersion.emit()" [disabled]="isArchived()">
-            ＋ Tạo phiên bản mới
+            ＋ {{ 'version.createNew' | i18n }}
           </button>
         </div>
       }
@@ -164,6 +169,26 @@ export interface VersionMetadata {
       font-size: 0.75rem;
     }
 
+    .field-value-null {
+      color: var(--text-tertiary);
+      font-style: italic;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+    }
+
+    .repo-link {
+      color: var(--brand-color);
+      text-decoration: none;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      transition: color 0.2s;
+    }
+
+    .repo-link:hover {
+      color: #fb6363;
+      text-decoration: underline;
+    }
+
     .badge {
       display: inline-block;
       padding: 2px 8px;
@@ -216,19 +241,6 @@ export interface VersionMetadata {
       box-shadow: none;
     }
 
-    .branch-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 2px 8px;
-      background: rgba(100, 181, 246, 0.12);
-      border: 1px solid rgba(100, 181, 246, 0.25);
-      border-radius: 4px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.72rem;
-      color: #64b5f6;
-    }
-
     .card-actions {
       margin-top: 16px;
       padding-top: 16px;
@@ -262,6 +274,7 @@ export class VersionInfoCardComponent {
   @Input() version: VersionMetadata | null = null;
   @Output() createVersion = new EventEmitter<void>();
 
+  private i18n = inject(I18nService);
   docsUrl = DOCS_URL;
 
   /** Format ISO datetime → local timezone "YYYY-MM-DD HH:MM:SS" */
@@ -271,9 +284,9 @@ export class VersionInfoCardComponent {
 
   getStatusLabel(status: string): string {
     switch (status) {
-      case 'draft': return 'DRAFT';
-      case 'inbuild': return 'INBUILD';
-      case 'archived': return 'ARCHIVED';
+      case 'draft': return this.i18n.t('version.statusDraft');
+      case 'inbuild': return this.i18n.t('version.statusInbuild');
+      case 'archived': return this.i18n.t('version.statusArchived');
       default: return status.toUpperCase();
     }
   }

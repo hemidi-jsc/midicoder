@@ -5,6 +5,7 @@
 
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { I18nService } from './i18n.service';
 
 // Re-export types — shared API type definitions
 import {
@@ -140,15 +141,18 @@ export interface ProjectInfo {
 })
 export class ApiService {
   private readonly http = inject(HttpClient);
+  private readonly i18n = inject(I18nService);
   private readonly baseUrl = 'http://localhost:6868/api';
 
   /**
    * Build HTTP headers với auth token và language
    */
   private buildHeaders(extraHeaders?: { [key: string]: string }): HttpHeaders {
+    const lang = this.i18n.getLanguage();
     let headers = new HttpHeaders({
       'Content-Type': 'application/json',
-      'Accept-Language': 'vi',
+      'X-Language': lang,
+      'Accept-Language': lang,
     });
 
     const token = localStorage.getItem('midicoder_token');
@@ -187,7 +191,7 @@ export class ApiService {
             success: false,
             error: {
               code: 'NETWORK_ERROR',
-              message: err.error?.message || err.message || 'Lỗi kết nối',
+              message: err.error?.message || err.message || 'Connection error',
             },
             timestamp: new Date().toISOString(),
           });
@@ -218,7 +222,7 @@ export class ApiService {
             success: false,
             error: {
               code: 'NETWORK_ERROR',
-              message: err.error?.message || err.message || 'Lỗi kết nối',
+              message: err.error?.message || err.message || 'Connection error',
             },
             timestamp: new Date().toISOString(),
           });
@@ -745,7 +749,7 @@ export class ApiService {
     }
     return {
       success: false,
-      error: { code: 'NOT_AUTHENTICATED', message: 'Chưa đăng nhập' },
+      error: { code: 'NOT_AUTHENTICATED', message: this.i18n.t('auth.notAuthenticated') },
       timestamp: new Date().toISOString(),
     };
   }
@@ -789,7 +793,7 @@ export class ApiService {
     localStorage.removeItem('midicoder_user');
     return {
       success: true,
-      message: 'Đăng xuất thành công',
+      message: this.i18n.t('auth.logoutSuccess'),
       timestamp: new Date().toISOString(),
     };
   }

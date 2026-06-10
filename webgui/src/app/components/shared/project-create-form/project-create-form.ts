@@ -2,16 +2,19 @@ import { Component, Input, OnInit, Output, EventEmitter, inject } from '@angular
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../../core/api.service';
+import { I18nPipe } from '../../../core/i18n.pipe';
+import { I18nService } from '../../../core/i18n.service';
 
 @Component({
   selector: 'app-project-create-form',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, I18nPipe],
   templateUrl: './project-create-form.html',
   styleUrls: ['./project-create-form.css'],
 })
 export class ProjectCreateFormComponent {
   private api = inject(ApiService);
+  private i18n = inject(I18nService);
 
   // When true, render inside a modal overlay (for sidebar use)
   @Input() useModal = false;
@@ -93,10 +96,10 @@ export class ProjectCreateFormComponent {
         this.projectCreated.emit();
         window.location.reload();
       } else {
-        this.createError = result.message || 'Tạo project thất bại';
+        this.createError = result.message || this.i18n.t('project.createError');
       }
     } catch (error: any) {
-      this.createError = error.message || 'Tạo project thất bại';
+      this.createError = error.message || this.i18n.t('project.createError');
     } finally {
       this.isCreating = false;
     }

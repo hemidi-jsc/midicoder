@@ -3,13 +3,15 @@
  * Yêu cầu tối thiểu 1366px width
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
+import { I18nService } from './i18n.service';
 
 @Injectable({
   providedIn: 'root',
 })
 export class ScreenCheckService {
+  private i18n = inject(I18nService);
   private readonly MIN_WIDTH = 1366;
 
   private isSupportedSubject = new BehaviorSubject<boolean>(true);
@@ -49,7 +51,7 @@ export class ScreenCheckService {
    */
   getWarningMessage(): string {
     const currentWidth = window.innerWidth;
-    return `Màn hình hiện tại: ${currentWidth}px. Yêu cầu tối thiểu: ${this.MIN_WIDTH}px`;
+    return this.i18n.t('screen.warning', { current: currentWidth, min: this.MIN_WIDTH });
   }
 
   /**

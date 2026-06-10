@@ -4,9 +4,10 @@
  * Dùng ApiService để kết nối với backend (auth hiện tại local/mock)
  */
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { ApiService } from './api.service';
+import { I18nService } from './i18n.service';
 import { ApiResponse, LoginRequest, LoginResponse, UserResponse } from './api.types';
 
 export interface User {
@@ -18,6 +19,8 @@ export interface User {
   providedIn: 'root',
 })
 export class AuthService {
+  private i18n = inject(I18nService);
+
   /**
    * Trạng thái đăng nhập
    */
@@ -61,10 +64,10 @@ export class AuthService {
 
     try {
       if (!email || !password) {
-        this.errorMessageSubject.next('Vui lòng nhập email và mật khẩu');
+        this.errorMessageSubject.next(this.i18n.t('auth.enterCredentials'));
         return {
           success: false,
-          error: { code: 'INVALID_CREDENTIALS', message: 'Vui lòng nhập email và mật khẩu' },
+          error: { code: 'INVALID_CREDENTIALS', message: this.i18n.t('auth.enterCredentials') },
           timestamp: new Date().toISOString(),
         };
       }
@@ -96,10 +99,10 @@ export class AuthService {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.errorMessageSubject.next('Lỗi đăng nhập');
+      this.errorMessageSubject.next(this.i18n.t('auth.loginError'));
       return {
         success: false,
-        error: { code: 'UNKNOWN_ERROR', message: 'Lỗi đăng nhập' },
+        error: { code: 'UNKNOWN_ERROR', message: this.i18n.t('auth.loginError') },
         timestamp: new Date().toISOString(),
       };
     } finally {
@@ -120,7 +123,7 @@ export class AuthService {
 
     return {
       success: true,
-      message: 'Đăng xuất thành công',
+      message: this.i18n.t('auth.logoutSuccess'),
       timestamp: new Date().toISOString(),
     };
   }
@@ -143,7 +146,7 @@ export class AuthService {
     }
     return {
       success: false,
-      error: { code: 'NO_TOKEN', message: 'Không có token để refresh' },
+      error: { code: 'NO_TOKEN', message: this.i18n.t('auth.noToken') },
       timestamp: new Date().toISOString(),
     };
   }

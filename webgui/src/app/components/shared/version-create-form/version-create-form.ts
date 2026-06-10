@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { VersionService } from '../../../core/version.service';
 import { ApiService } from '../../../core/api.service';
 import { formatDateLocal } from '../../../core/date.util';
+import { I18nPipe } from '../../../core/i18n.pipe';
+import { I18nService } from '../../../core/i18n.service';
 
 export interface ImpactInfo {
   will_archive: { version: string; status: string }[];
@@ -16,13 +18,14 @@ export interface ImpactInfo {
 @Component({
   selector: 'app-version-create-form',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, I18nPipe],
   templateUrl: './version-create-form.html',
   styleUrls: ['./version-create-form.css'],
 })
 export class VersionCreateFormComponent {
   private versionService = inject(VersionService);
   private api = inject(ApiService);
+  private i18n = inject(I18nService);
 
   versionName = '';
   isCreating = false;
@@ -56,10 +59,10 @@ export class VersionCreateFormComponent {
         this.impact = result.data;
         this.showConfirm = true;
       } else {
-        this.createError = result.message || 'Không thể kiểm tra trạng thái version';
+        this.createError = result.message || this.i18n.t('version.checkError');
       }
     } catch (error: any) {
-      this.createError = error.message || 'Lỗi kết nối đến server';
+      this.createError = error.message || this.i18n.t('version.connectError');
     } finally {
       this.isChecking = false;
     }
@@ -79,7 +82,7 @@ export class VersionCreateFormComponent {
       this.impact = null;
       this.versionCreated.emit();
     } catch (error: any) {
-      this.createError = error.message || 'Tạo phiên bản thất bại';
+      this.createError = error.message || this.i18n.t('version.createError');
     } finally {
       this.isCreating = false;
     }

@@ -2,24 +2,24 @@
   <div class="modal-overlay" (click)="onCancel()">
     <div class="modal" (click)="$event.stopPropagation()">
       <div class="modal-header">
-        <h3>Tạo project mới</h3>
+        <h3>{{ 'project.createTitle' | i18n }}</h3>
         <button class="btn-close" (click)="onCancel()">×</button>
       </div>
       <div class="modal-body">
         @if (isLoadedTechStacks) {
           <div class="project-create-form">
             <div class="form-row">
-              <label class="form-label" for="pcfProjectName">Tên project</label>
-              <input id="pcfProjectName" type="text" class="form-input" [(ngModel)]="projectName" placeholder="my-app" />
+              <label class="form-label" for="pcfProjectName">{{ 'project.name' | i18n }}</label>
+              <input id="pcfProjectName" type="text" class="form-input" [(ngModel)]="projectName" placeholder="{{ 'project.placeholder' | i18n }}" />
             </div>
 
             <div class="form-row">
-              <label class="form-label" for="pcfProjectPath">Đường dẫn thư mục</label>
-              <input id="pcfProjectPath" type="text" class="form-input" [(ngModel)]="projectPath" [placeholder]="projectPathPlaceholder" title="Đường dẫn tuyệt đối đến thư mục project" />
+              <label class="form-label" for="pcfProjectPath">{{ 'project.path' | i18n }}</label>
+              <input id="pcfProjectPath" type="text" class="form-input" [(ngModel)]="projectPath" [placeholder]="projectPathPlaceholder" [title]="'project.pathHint' | i18n" />
             </div>
 
             <div class="form-row">
-              <label class="form-label" for="pcfStackInfra">Infrastructure</label>
+              <label class="form-label" for="pcfStackInfra">{{ 'project.infrastructure' | i18n }}</label>
               <select id="pcfStackInfra" class="form-input" [(ngModel)]="stackSelection.infrastructure">
                 @for (opt of techStackOptions.infrastructure; track opt.value) {
                   <option [value]="opt.value">{{ opt.label }}</option>
@@ -28,7 +28,7 @@
             </div>
 
             <div class="form-row">
-              <label class="form-label" for="pcfStackBackend">Backend</label>
+              <label class="form-label" for="pcfStackBackend">{{ 'project.backend' | i18n }}</label>
               <select id="pcfStackBackend" class="form-input" [(ngModel)]="stackSelection.backend">
                 @for (opt of techStackOptions.backend; track opt.value) {
                   <option [value]="opt.value">{{ opt.label }}</option>
@@ -37,7 +37,7 @@
             </div>
 
             <div class="form-row">
-              <label class="form-label" for="pcfStackFrontend">Frontend</label>
+              <label class="form-label" for="pcfStackFrontend">{{ 'project.frontend' | i18n }}</label>
               <select id="pcfStackFrontend" class="form-input" [(ngModel)]="stackSelection.frontend">
                 @for (opt of techStackOptions.frontend; track opt.value) {
                   <option [value]="opt.value">{{ opt.label }}</option>
@@ -46,7 +46,7 @@
             </div>
 
             <div class="form-row">
-              <label class="form-label" for="pcfStackUi">UI System</label>
+              <label class="form-label" for="pcfStackUi">{{ 'project.uiSystem' | i18n }}</label>
               <select id="pcfStackUi" class="form-input" [(ngModel)]="stackSelection.ui_framework">
                 @for (opt of techStackOptions.ui_framework; track opt.value) {
                   <option [value]="opt.value">{{ opt.label }}</option>
@@ -55,7 +55,7 @@
             </div>
 
             <div class="form-row">
-              <label class="form-label" for="pcfPromptDomain">Domain</label>
+              <label class="form-label" for="pcfPromptDomain">{{ 'project.domain' | i18n }}</label>
               <select id="pcfPromptDomain" class="form-input" [(ngModel)]="selectedPromptDomain">
                 @for (d of promptDomains; track d.value) {
                   <option [value]="d.value">{{ d.label }}</option>
@@ -68,12 +68,12 @@
             }
             <div class="form-actions">
               <button class="btn-primary-large" (click)="onCreate()" [disabled]="!isFormValid || isCreating">
-                {{ isCreating ? 'Đang tạo...' : 'Tạo project' }}
+                {{ isCreating ? ('project.creating' | i18n) : ('project.create' | i18n) }}
               </button>
             </div>
           </div>
         } @else {
-          <p class="loading-text">Đang tải thông tin tech stack...</p>
+          <p class="loading-text">{{ 'project.loadingStack' | i18n }}</p>
         }
       </div>
     </div>
@@ -82,17 +82,17 @@
   @if (isLoadedTechStacks) {
     <div class="project-create-form">
       <div class="form-row">
-        <label class="form-label" for="pcfProjectName">Tên project</label>
-        <input id="pcfProjectName" type="text" class="form-input" [(ngModel)]="projectName" placeholder="my-app" />
+        <label class="form-label" for="pcfProjectName">{{ 'project.name' | i18n }}</label>
+        <input id="pcfProjectName" type="text" class="form-input" [(ngModel)]="projectName" placeholder="{{ 'project.placeholder' | i18n }}" />
       </div>
 
       <div class="form-row">
-        <label class="form-label" for="pcfProjectPath">Đường dẫn thư mục</label>
-        <input id="pcfProjectPath" type="text" class="form-input" [(ngModel)]="projectPath" [placeholder]="projectPathPlaceholder" title="Đường dẫn tuyệt đối đến thư mục project" />
+        <label class="form-label" for="pcfProjectPath">{{ 'project.path' | i18n }}</label>
+        <input id="pcfProjectPath" type="text" class="form-input" [(ngModel)]="projectPath" [placeholder]="projectPathPlaceholder" [title]="'project.pathHint' | i18n" />
       </div>
 
       <div class="form-row">
-        <label class="form-label" for="pcfStackInfra">Infrastructure</label>
+        <label class="form-label" for="pcfStackInfra">{{ 'project.infrastructure' | i18n }}</label>
         <select id="pcfStackInfra" class="form-input" [(ngModel)]="stackSelection.infrastructure">
           @for (opt of techStackOptions.infrastructure; track opt.value) {
             <option [value]="opt.value">{{ opt.label }}</option>
@@ -101,7 +101,7 @@
       </div>
 
       <div class="form-row">
-        <label class="form-label" for="pcfStackBackend">Backend</label>
+        <label class="form-label" for="pcfStackBackend">{{ 'project.backend' | i18n }}</label>
         <select id="pcfStackBackend" class="form-input" [(ngModel)]="stackSelection.backend">
           @for (opt of techStackOptions.backend; track opt.value) {
             <option [value]="opt.value">{{ opt.label }}</option>
@@ -110,7 +110,7 @@
       </div>
 
       <div class="form-row">
-        <label class="form-label" for="pcfStackFrontend">Frontend</label>
+        <label class="form-label" for="pcfStackFrontend">{{ 'project.frontend' | i18n }}</label>
         <select id="pcfStackFrontend" class="form-input" [(ngModel)]="stackSelection.frontend">
           @for (opt of techStackOptions.frontend; track opt.value) {
             <option [value]="opt.value">{{ opt.label }}</option>
@@ -119,7 +119,7 @@
       </div>
 
       <div class="form-row">
-        <label class="form-label" for="pcfStackUi">UI System</label>
+        <label class="form-label" for="pcfStackUi">{{ 'project.uiSystem' | i18n }}</label>
         <select id="pcfStackUi" class="form-input" [(ngModel)]="stackSelection.ui_framework">
           @for (opt of techStackOptions.ui_framework; track opt.value) {
             <option [value]="opt.value">{{ opt.label }}</option>
@@ -128,7 +128,7 @@
       </div>
 
       <div class="form-row">
-        <label class="form-label" for="pcfPromptDomain">Domain</label>
+        <label class="form-label" for="pcfPromptDomain">{{ 'project.domain' | i18n }}</label>
         <select id="pcfPromptDomain" class="form-input" [(ngModel)]="selectedPromptDomain">
           @for (d of promptDomains; track d.value) {
             <option [value]="d.value">{{ d.label }}</option>
@@ -141,11 +141,11 @@
       }
       <div class="form-actions">
         <button class="btn-primary-large" (click)="onCreate()" [disabled]="!isFormValid || isCreating">
-          {{ isCreating ? 'Đang tạo...' : 'Tạo project' }}
+          {{ isCreating ? ('project.creating' | i18n) : ('project.create' | i18n) }}
         </button>
       </div>
     </div>
   } @else {
-    <p class="loading-text">Đang tải thông tin tech stack...</p>
+    <p class="loading-text">{{ 'project.loadingStack' | i18n }}</p>
   }
 }

@@ -4,17 +4,17 @@
     <!-- ====== STEP 1: Form điền tên version ====== -->
     @if (!showConfirm) {
       <div class="modal-header">
-        <h3>Tạo phiên bản mới</h3>
+        <h3>{{ 'version.createTitle' | i18n }}</h3>
         <button class="btn-close" (click)="onCancel()">×</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label for="versionName">Tên phiên bản</label>
+          <label for="versionName">{{ 'version.name' | i18n }}</label>
           <input
             id="versionName"
             type="text"
             [(ngModel)]="versionName"
-            placeholder="v1.0.0"
+            placeholder="{{ 'version.placeholder' | i18n }}"
             class="form-input"
             (keyup.enter)="onCheckCreate()"
             autofocus
@@ -26,13 +26,13 @@
         }
       </div>
       <div class="modal-footer">
-        <button class="btn-secondary" (click)="onCancel()">Hủy</button>
+        <button class="btn-secondary" (click)="onCancel()">{{ 'common.cancel' | i18n }}</button>
         <button
           class="btn-primary"
           (click)="onCheckCreate()"
           [disabled]="!versionName.trim() || isChecking"
         >
-          {{ isChecking ? 'Đang kiểm tra...' : 'Tạo' }}
+          {{ isChecking ? ('version.checking' | i18n) : ('version.create' | i18n) }}
         </button>
       </div>
     }
@@ -40,13 +40,13 @@
     <!-- ====== STEP 2: Confirmation Dialog ====== -->
     @if (showConfirm && impact) {
       <div class="modal-header confirm-header">
-        <h3>Xác nhận tạo phiên bản</h3>
+        <h3>{{ 'version.confirmTitle' | i18n }}</h3>
         <button class="btn-close" (click)="onConfirmCancel()">×</button>
       </div>
 
       <div class="modal-body">
         <div class="confirm-target">
-          <span class="confirm-label">Phiên bản mới:</span>
+          <span class="confirm-label">{{ 'version.newVersion' | i18n }}</span>
           <span class="confirm-version">{{ versionName }}</span>
         </div>
 
@@ -54,21 +54,21 @@
           <div class="inheritance-info">
             <div class="inheritance-header">
               <span class="inheritance-icon">🔗</span>
-              <strong>Kế thừa từ:</strong>
+              <strong>{{ 'version.inheritFrom' | i18n }}</strong>
               <span class="inheritance-parent">{{ getParentVersion() }}</span>
             </div>
             <p class="inheritance-note">
-              Phiên bản mới sẽ thừa hưởng toàn bộ mã nguồn (src/) và dữ liệu từ phiên bản đang selected.
+              {{ 'version.inheritNote' | i18n }}
             </p>
           </div>
         } @else {
           <div class="inheritance-info no-parent">
             <div class="inheritance-header">
               <span class="inheritance-icon">📄</span>
-              <strong>Phiên bản gốc</strong>
+              <strong>{{ 'version.original' | i18n }}</strong>
             </div>
             <p class="inheritance-note">
-              Đây là phiên bản đầu tiên — không kế thừa từ phiên bản nào.
+              {{ 'version.firstNote' | i18n }}
             </p>
           </div>
         }
@@ -77,7 +77,7 @@
           <div class="impact-section">
             <div class="impact-header">
               <span class="impact-icon">📦</span>
-              <strong>Version bị archived</strong>
+              <strong>{{ 'version.archived' | i18n }}</strong>
               <span class="impact-count">{{ impact.will_archive.length }}</span>
             </div>
             <div class="impact-list">
@@ -88,7 +88,7 @@
                 </div>
               }
             </div>
-            <p class="impact-note">Archived version sẽ không thể truy cập nữa.</p>
+            <p class="impact-note">{{ 'version.archivedNote' | i18n }}</p>
           </div>
         }
 
@@ -96,7 +96,7 @@
           <div class="impact-section danger-section">
             <div class="impact-header">
               <span class="impact-icon">🗑️</span>
-              <strong>Version bị xóa (quá cũ)</strong>
+              <strong>{{ 'version.deleted' | i18n }}</strong>
               <span class="impact-count danger">{{ impact.will_delete.length }}</span>
             </div>
             <div class="impact-list">
@@ -108,14 +108,14 @@
                 </div>
               }
             </div>
-            <p class="impact-note danger">Số version vượt quá giới hạn {{ impact.max_versions }}, versions cũ nhất bị xóa vĩnh viễn.</p>
+            <p class="impact-note danger">{{ 'version.deletedNote' | i18n:{max_versions: impact.max_versions} }}</p>
           </div>
         }
 
         @if (!hasImpact) {
           <div class="no-impact">
             <span class="no-impact-icon">✅</span>
-            <p>Tạo phiên bản mới không ảnh hưởng đến version nào.</p>
+            <p>{{ 'version.noImpact' | i18n }}</p>
           </div>
         }
 
@@ -126,7 +126,7 @@
 
       <div class="modal-footer">
         <button class="btn-secondary" (click)="onConfirmCancel()">
-          @if (!hasImpact) { Quay lại } @else { Hủy }
+          @if (!hasImpact) { {{ 'version.back' | i18n }} } @else { {{ 'common.cancel' | i18n }} }
         </button>
         <button
           class="btn-primary"
@@ -134,7 +134,7 @@
           (click)="onConfirmCreate()"
           [disabled]="isCreating"
         >
-          {{ isCreating ? 'Đang tạo...' : (hasImpact ? 'Xác nhận tạo' : 'Tạo') }}
+          {{ isCreating ? ('version.creating' | i18n) : (hasImpact ? ('version.confirmCreate' | i18n) : ('version.create' | i18n)) }}
         </button>
       </div>
     }
