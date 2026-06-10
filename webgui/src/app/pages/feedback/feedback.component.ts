@@ -9,17 +9,19 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
+import { I18nPipe } from '../../core/i18n.pipe';
+import { I18nService } from '../../core/i18n.service';
 
 @Component({
   selector: 'app-feedback',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, I18nPipe],
   template: `
     <div class="container mx-auto px-6 py-8">
       <!-- Header -->
       <div class="mb-6">
-        <h1 class="text-2xl font-bold">Phản hồi</h1>
-        <p class="text-text-secondary mt-1">Gửi phản hồi để cải thiện project</p>
+        <h1 class="text-2xl font-bold">{{ 'feedback.title' | i18n }}</h1>
+        <p class="text-text-secondary mt-1">{{ 'feedback.subtitle' | i18n }}</p>
       </div>
 
       <!-- Success Message -->
@@ -28,7 +30,7 @@ import { ApiService } from '../../core/api.service';
           ✓ {{ successMessage }}
           @if (isPipelineTriggered) {
             <br/>
-            <span class="text-sm">Pipeline đã được kích hoạt</span>
+            <span class="text-sm">{{ 'feedback.pipelineTriggered' | i18n }}</span>
           }
         </div>
       }
@@ -38,23 +40,23 @@ import { ApiService } from '../../core/api.service';
         <form (ngSubmit)="handleSubmit()" class="space-y-4">
           <!-- Feedback Type -->
           <div>
-            <label class="block text-text-secondary mb-2">Loại</label>
+            <label class="block text-text-secondary mb-2">{{ 'feedback.type' | i18n }}</label>
             <select [(ngModel)]="feedbackType" name="type" class="input" required>
-              <option value="" disabled>Chọn loại</option>
-              <option value="bug">Lỗi</option>
-              <option value="enhancement">Cải tiến</option>
-              <option value="clarification">Làm rõ</option>
+              <option value="" disabled>{{ 'feedback.selectType' | i18n }}</option>
+              <option value="bug">{{ 'feedback.bug' | i18n }}</option>
+              <option value="enhancement">{{ 'feedback.enhancement' | i18n }}</option>
+              <option value="clarification">{{ 'feedback.clarification' | i18n }}</option>
             </select>
           </div>
 
           <!-- Feedback Text -->
           <div>
-            <label class="block text-text-secondary mb-2">Nội dung phản hồi</label>
+            <label class="block text-text-secondary mb-2">{{ 'feedback.content' | i18n }}</label>
             <textarea
               [(ngModel)]="feedbackText"
               name="feedback"
               class="input h-40 resize-none"
-              placeholder="Mô tả chi tiết phản hồi của bạn..."
+              [placeholder]="'feedback.contentPlaceholder' | i18n"
               required
             ></textarea>
           </div>
@@ -68,7 +70,7 @@ import { ApiService } from '../../core/api.service';
               id="autoApply"
               class="w-4 h-4"
             />
-            <label for="autoApply" class="text-text-secondary">Tự động kích hoạt pipeline</label>
+            <label for="autoApply" class="text-text-secondary">{{ 'feedback.autoPipeline' | i18n }}</label>
           </div>
 
           <!-- Submit Button -->
@@ -78,7 +80,7 @@ import { ApiService } from '../../core/api.service';
               class="btn btn-primary"
               [disabled]="isSubmitting"
             >
-              {{ isSubmitting ? 'Đang tải...' : 'Gửi phản hồi' }}
+              {{ isSubmitting ? ('common.loading' | i18n) : ('feedback.submit' | i18n) }}
             </button>
           </div>
         </form>
@@ -87,40 +89,40 @@ import { ApiService } from '../../core/api.service';
       <!-- Pipeline Progress (if triggered) -->
       @if (pipelineProgress) {
         <div class="card mt-6">
-          <h2 class="font-semibold mb-4">Pipeline Progress</h2>
+          <h2 class="font-semibold mb-4">{{ 'feedback.pipelineProgress' | i18n }}</h2>
           <div class="space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-text-secondary">Contract Generation</span>
+              <span class="text-text-secondary">{{ 'feedback.pipelineContractGen' | i18n }}</span>
               <span class="text-sm" [ngClass]="getProgressClass(pipelineProgress?.contract_gen)">
                 {{ pipelineProgress?.contract_gen }}
               </span>
             </div>
             <div class="flex items-center justify-between">
-              <span class="text-text-secondary">Contract Validation</span>
+              <span class="text-text-secondary">{{ 'feedback.pipelineContractCheck' | i18n }}</span>
               <span class="text-sm" [ngClass]="getProgressClass(pipelineProgress?.contract_check)">
                 {{ pipelineProgress?.contract_check }}
               </span>
             </div>
             <div class="flex items-center justify-between">
-              <span class="text-text-secondary">IR Build</span>
+              <span class="text-text-secondary">{{ 'feedback.pipelineIrBuild' | i18n }}</span>
               <span class="text-sm" [ngClass]="getProgressClass(pipelineProgress?.ir_build)">
                 {{ pipelineProgress?.ir_build }}
               </span>
             </div>
             <div class="flex items-center justify-between">
-              <span class="text-text-secondary">Code Plan</span>
+              <span class="text-text-secondary">{{ 'feedback.pipelineCodePlan' | i18n }}</span>
               <span class="text-sm" [ngClass]="getProgressClass(pipelineProgress?.code_plan)">
                 {{ pipelineProgress?.code_plan }}
               </span>
             </div>
             <div class="flex items-center justify-between">
-              <span class="text-text-secondary">Code Generation</span>
+              <span class="text-text-secondary">{{ 'feedback.pipelineCodeGen' | i18n }}</span>
               <span class="text-sm" [ngClass]="getProgressClass(pipelineProgress?.code_gen)">
                 {{ pipelineProgress?.code_gen }}
               </span>
             </div>
             <div class="flex items-center justify-between">
-              <span class="text-text-secondary">Code Apply</span>
+              <span class="text-text-secondary">{{ 'feedback.pipelineCodeApply' | i18n }}</span>
               <span class="text-sm" [ngClass]="getProgressClass(pipelineProgress?.code_apply)">
                 {{ pipelineProgress?.code_apply }}
               </span>
@@ -132,7 +134,7 @@ import { ApiService } from '../../core/api.service';
       <!-- Back Button -->
       <div class="mt-6 flex justify-start">
         <a routerLink="/dashboard" class="btn btn-secondary">
-          Quay lại Dashboard
+          {{ 'feedback.backDashboard' | i18n }}
         </a>
       </div>
     </div>
@@ -141,6 +143,7 @@ import { ApiService } from '../../core/api.service';
 })
 export class FeedbackComponent {
   private api = inject(ApiService);
+  private i18n = inject(I18nService);
 
   feedbackType: 'bug' | 'enhancement' | 'clarification' = 'bug';
   feedbackText = '';
@@ -166,7 +169,7 @@ export class FeedbackComponent {
     });
 
     if (result.success && result.data) {
-      this.successMessage = 'Gửi phản hồi thành công';
+      this.successMessage = this.i18n.t('feedback.submitSuccess');
       this.isPipelineTriggered = result.data.pipeline_triggered;
       this.pipelineProgress = result.data.pipeline_progress;
 

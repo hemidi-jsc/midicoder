@@ -10,6 +10,8 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink, Router } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
+import { I18nPipe } from '../../core/i18n.pipe';
+import { I18nService } from '../../core/i18n.service';
 import { PipelineStore } from '../../core/pipeline.store';
 import { formatDateLocal } from '../../core/date.util';
 
@@ -24,7 +26,7 @@ interface SectionOpenState {
 @Component({
   selector: 'app-brief-editor',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, I18nPipe],
   template: `
     <div class="container mx-auto px-6 py-8">
       <!-- Toast Notification -->
@@ -59,15 +61,15 @@ interface SectionOpenState {
       <!-- Header -->
       <div class="mb-6 flex items-center justify-between">
         <div>
-          <h1 class="text-2xl font-bold">Brief Editor</h1>
-          <p class="text-text-secondary mt-1">Viết brief cho project của bạn</p>
+          <h1 class="text-2xl font-bold">{{ 'brief.title' | i18n }}</h1>
+          <p class="text-text-secondary mt-1">{{ 'brief.subtitle' | i18n }}</p>
 
           <!-- Status Badges + Version -->
           @if (briefInfo) {
             <div class="flex items-center space-x-2 mt-3">
               <span class="text-xs px-2 py-1 rounded font-medium"
                     [class]="getStatusBadgeClass(briefInfo.status)"
-                    [title]="'Trạng thái: ' + briefInfo.status">
+                    [title]="('brief.status' | i18n) + ' ' + briefInfo.status">
                 {{ briefInfo.status | titlecase }}
               </span>
               @if (activeVersion) {
@@ -87,36 +89,36 @@ interface SectionOpenState {
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              Đang lưu...
+              {{ 'brief.saving' | i18n }}
             } @else if (saveStatus === 'saved') {
               <svg class="mr-2 h-4 w-4 text-green-400" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
               </svg>
-              Đã lưu
+              {{ 'brief.saved' | i18n }}
             } @else if (hasUnsavedChanges) {
-              <span class="text-yellow-400">● Có thay đổi chưa lưu</span>
+              <span class="text-yellow-400">{{ 'brief.unsaved' | i18n }}</span>
             }
           </span>
 
           <!-- Freeze Button - chỉ hiện khi status === clarified -->
           @if (briefInfo && briefInfo.status === 'clarified') {
             <button (click)="handleFreeze()" class="btn btn-secondary" [disabled]="isFreezing">
-              {{ isFreezing ? '⏳ Đang xử lý...' : '🔒 Đóng (Freeze)' }}
+              {{ isFreezing ? ('brief.processing' | i18n) : ('brief.freeze' | i18n) }}
             </button>
           }
 
           <!-- Analyze Button - chỉ hiện khi status !== frozen -->
           @if (!briefInfo || briefInfo.status !== 'frozen') {
             <button (click)="handleAnalyze()" class="btn btn-primary" [disabled]="isAnalyzing || !briefContent.trim()">
-              {{ isAnalyzing ? '⏳ Đang phân tích...' : '🔍 Phân tích' }}
+              {{ isAnalyzing ? ('brief.analyzing' | i18n) : ('brief.analyze' | i18n) }}
             </button>
           } @else {
-            <span class="text-xs text-text-tertiary italic">Brief đã được đóng</span>
+            <span class="text-xs text-text-tertiary italic">{{ 'brief.frozen' | i18n }}</span>
           }
 
           <!-- History Toggle -->
           <button (click)="toggleHistory()" class="btn btn-secondary text-xs" [disabled]="isFrozen">
-            📋 Lịch sử
+            {{ 'brief.history' | i18n }}
           </button>
         </div>
       </div>
@@ -124,8 +126,8 @@ interface SectionOpenState {
       <!-- Frozen Banner -->
       @if (briefInfo && briefInfo.status === 'frozen') {
         <div class="mb-4 p-3 bg-orange-900 bg-opacity-30 border border-orange-500 rounded">
-          <span class="text-orange-300 font-semibold">🔒 Brief đã đóng (frozen)</span>
-          <span class="text-orange-200 text-sm ml-2">— không thể chỉnh sửa. Tạo version mới để inherit.</span>
+          <span class="text-orange-300 font-semibold">{{ 'brief.frozenBanner' | i18n }}</span>
+          <span class="text-orange-200 text-sm ml-2">{{ 'brief.frozenBannerDesc' | i18n }}</span>
         </div>
       }
 
@@ -137,7 +139,7 @@ interface SectionOpenState {
           [readonly]="isFrozen"
           class="w-full h-96 bg-bg-secondary border border-border-primary rounded p-4 text-text-primary font-mono text-sm resize-none focus:outline-none focus:border-accent-primary"
           [class.opacity-50]="isFrozen"
-          placeholder="Viết brief của bạn ở đây..."
+          placeholder="{{ 'brief.placeholder' | i18n }}"
         ></textarea>
       </div>
 
@@ -145,13 +147,13 @@ interface SectionOpenState {
       @if (analysisResult) {
         <div class="card mt-6 analysis-card">
           <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-semibold">📊 Kết quả phân tích</h2>
+            <h2 class="text-lg font-semibold">{{ 'brief.analysis' | i18n }}</h2>
             <div class="flex items-center gap-2">
               <span class="text-xs px-2 py-1 rounded font-medium"
                     [class]="analysisResult.status === 'needs_clarification'
                       ? 'bg-yellow-900 bg-opacity-40 text-yellow-300 border border-yellow-700'
                       : 'bg-green-900 bg-opacity-40 text-green-300 border border-green-700'">
-                {{ analysisResult.status === 'needs_clarification' ? '⚠️ Cần clarify' : '✅ Sẵn sàng contract' }}
+                {{ analysisResult.status === 'needs_clarification' ? ('brief.needClarify' | i18n) : ('brief.readyContract' | i18n) }}
               </span>
               @if (analysisResult?.metadata?.brief_id) {
                 <span class="text-xs text-text-tertiary font-mono">{{ analysisResult.metadata.brief_id }}</span>
@@ -169,19 +171,19 @@ interface SectionOpenState {
           <!-- Intent + Confidence -->
           <div class="mb-4 grid grid-cols-4 gap-4">
             <div>
-              <span class="text-text-secondary text-xs">Domain</span>
+              <span class="text-text-secondary text-xs">{{ 'brief.domain' | i18n }}</span>
               <p class="text-sm font-medium text-text-primary">{{ analysisResult?.analysis?.intent?.domain }}</p>
             </div>
             <div>
-              <span class="text-text-secondary text-xs">Type</span>
+              <span class="text-text-secondary text-xs">{{ 'brief.type' | i18n }}</span>
               <p class="text-sm font-medium text-text-primary">{{ analysisResult?.analysis?.intent?.type }}</p>
             </div>
             <div>
-              <span class="text-text-secondary text-xs">Scale</span>
+              <span class="text-text-secondary text-xs">{{ 'brief.scale' | i18n }}</span>
               <p class="text-sm font-medium text-text-primary">{{ analysisResult?.analysis?.intent?.scale }}</p>
             </div>
             <div>
-              <span class="text-text-tertiary text-xs">Confidence</span>
+              <span class="text-text-tertiary text-xs">{{ 'brief.confidence' | i18n }}</span>
               <div class="flex items-center gap-2">
                 <div class="flex-1 h-2 bg-bg-secondary rounded-full overflow-hidden">
                   <div class="h-full rounded-full transition-all duration-500"
@@ -206,27 +208,27 @@ interface SectionOpenState {
 
           <!-- Extracted Resources Grid -->
           <div class="mb-4">
-            <h3 class="font-medium text-accent-primary mb-2">📦 Resources extracted</h3>
+            <h3 class="font-medium text-accent-primary mb-2">📦 {{ 'brief.resourcesExtracted' | i18n }}</h3>
             <div class="grid grid-cols-5 gap-3">
               <div class="p-3 bg-bg-secondary rounded text-center border border-border-primary">
                 <p class="text-2xl font-bold text-blue-400">{{ analysisResult?.metadata?.entities }}</p>
-                <p class="text-xs text-text-secondary mt-1">Entities</p>
+                <p class="text-xs text-text-secondary mt-1">{{ 'brief.entities' | i18n }}</p>
               </div>
               <div class="p-3 bg-bg-secondary rounded text-center border border-border-primary">
                 <p class="text-2xl font-bold text-orange-400">{{ analysisResult?.metadata?.commands }}</p>
-                <p class="text-xs text-text-secondary mt-1">Commands</p>
+                <p class="text-xs text-text-secondary mt-1">{{ 'brief.commands' | i18n }}</p>
               </div>
               <div class="p-3 bg-bg-secondary rounded text-center border border-border-primary">
                 <p class="text-2xl font-bold text-cyan-400">{{ analysisResult?.metadata?.queries }}</p>
-                <p class="text-xs text-text-secondary mt-1">Queries</p>
+                <p class="text-xs text-text-secondary mt-1">{{ 'brief.queries' | i18n }}</p>
               </div>
               <div class="p-3 bg-bg-secondary rounded text-center border border-border-primary">
                 <p class="text-2xl font-bold text-purple-400">{{ analysisResult?.metadata?.events }}</p>
-                <p class="text-xs text-text-secondary mt-1">Events</p>
+                <p class="text-xs text-text-secondary mt-1">{{ 'brief.events' | i18n }}</p>
               </div>
               <div class="p-3 bg-bg-secondary rounded text-center border border-border-primary">
                 <p class="text-2xl font-bold text-teal-400">{{ analysisResult?.metadata?.ui_components }}</p>
-                <p class="text-xs text-text-secondary mt-1">UI Components</p>
+                <p class="text-xs text-text-secondary mt-1">{{ 'brief.uiComponents' | i18n }}</p>
               </div>
             </div>
           </div>
@@ -237,14 +239,14 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.entities?.length) {
               <div class="border border-border-primary rounded overflow-hidden">
                 <button (click)="toggleSection('entities')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary">📋 Entities ({{ analysisResult.analysis.entities.length }})</span>
+                  <span class="font-medium text-sm text-text-primary">📦 {{ 'brief.entities' | i18n }} ({{ analysisResult.analysis.entities.length }})</span>
                   <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.entities" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.entities) {
                   <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                       <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
-                        <tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Description</th></tr>
+                        <tr><th class="px-4 py-2 text-left">{{ 'brief.name' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.entityType' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.description' | i18n }}</th></tr>
                       </thead>
                       <tbody>
                         @for (e of analysisResult.analysis.entities; track e.name) {
@@ -265,14 +267,14 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.commands?.length) {
               <div class="border border-border-primary rounded overflow-hidden">
                 <button (click)="toggleSection('commands')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary">⚡ Commands ({{ analysisResult.analysis.commands.length }})</span>
+                  <span class="font-medium text-sm text-text-primary">⚡ {{ 'brief.commands' | i18n }} ({{ analysisResult.analysis.commands.length }})</span>
                   <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.commands" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.commands) {
                   <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                       <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
-                        <tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Target</th><th class="px-4 py-2 text-left">Description</th></tr>
+                        <tr><th class="px-4 py-2 text-left">{{ 'brief.name' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.target' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.description' | i18n }}</th></tr>
                       </thead>
                       <tbody>
                         @for (c of analysisResult.analysis.commands; track c.name) {
@@ -293,14 +295,14 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.queries?.length) {
               <div class="border border-border-primary rounded overflow-hidden">
                 <button (click)="toggleSection('queries')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary">🔍 Queries ({{ analysisResult.analysis.queries.length }})</span>
+                  <span class="font-medium text-sm text-text-primary">🔍 {{ 'brief.queries' | i18n }} ({{ analysisResult.analysis.queries.length }})</span>
                   <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.queries" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.queries) {
                   <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                       <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
-                        <tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Entity</th><th class="px-4 py-2 text-left">Filter</th></tr>
+                        <tr><th class="px-4 py-2 text-left">{{ 'brief.name' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.entities' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.filter' | i18n }}</th></tr>
                       </thead>
                       <tbody>
                         @for (q of analysisResult.analysis.queries; track q.name) {
@@ -321,14 +323,14 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.events?.length) {
               <div class="border border-border-primary rounded overflow-hidden">
                 <button (click)="toggleSection('events')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary">🔔 Events ({{ analysisResult.analysis.events.length }})</span>
+                  <span class="font-medium text-sm text-text-primary">📡 {{ 'brief.events' | i18n }} ({{ analysisResult.analysis.events.length }})</span>
                   <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.events" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.events) {
                   <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                       <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
-                        <tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Source</th><th class="px-4 py-2 text-left">Description</th></tr>
+                        <tr><th class="px-4 py-2 text-left">{{ 'brief.name' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.source' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.description' | i18n }}</th></tr>
                       </thead>
                       <tbody>
                         @for (ev of analysisResult.analysis.events; track ev.name) {
@@ -349,14 +351,14 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.ui_components?.length) {
               <div class="border border-border-primary rounded overflow-hidden">
                 <button (click)="toggleSection('ui_components')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary">🎨 UI Components ({{ analysisResult.analysis.ui_components.length }})</span>
+                  <span class="font-medium text-sm text-text-primary">🧩 {{ 'brief.uiComponents' | i18n }} ({{ analysisResult.analysis.ui_components.length }})</span>
                   <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.ui_components" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.ui_components) {
                   <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                       <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
-                        <tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Type</th><th class="px-4 py-2 text-left">Description</th></tr>
+                        <tr><th class="px-4 py-2 text-left">{{ 'brief.name' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.componentType' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.description' | i18n }}</th></tr>
                       </thead>
                       <tbody>
                         @for (uc of analysisResult.analysis.ui_components; track uc.name) {
@@ -377,7 +379,7 @@ interface SectionOpenState {
           <!-- Ambiguities -->
           @if (analysisResult?.analysis?.ambiguities?.length) {
             <div class="mb-4">
-              <h3 class="font-medium text-yellow-400 mb-2">⚠️ Ambiguities ({{ analysisResult?.analysis?.ambiguities?.length }})</h3>
+              <h3 class="font-medium text-yellow-400 mb-2">⚠️ {{ 'brief.needClarify' | i18n }} ({{ analysisResult?.analysis?.ambiguities?.length }})</h3>
               <div class="space-y-2">
                 @for (ambiguity of analysisResult?.analysis?.ambiguities; track ambiguity.id) {
                   <div class="p-3 bg-yellow-900 bg-opacity-20 rounded border-l-2 border-yellow-500">
@@ -394,12 +396,12 @@ interface SectionOpenState {
             @if (analysisResult?.status === 'needs_clarification') {
               @if (!clarificationActive) {
                 <button (click)="startBatchClarification()" class="btn btn-primary" [disabled]="isStartingClarification">
-                  {{ isStartingClarification ? '⏳ Đang bắt đầu...' : '💬 Làm rõ yêu cầu →' }}
+                  {{ isStartingClarification ? ('brief.clarifying' | i18n) : ('brief.clarifyTitle' | i18n) }}
                 </button>
               }
             } @else {
               <a routerLink="/contract-viewer" class="btn btn-primary">
-                Generate Contract →
+                {{ 'contract.generate' | i18n }} →
               </a>
             }
           </div>
@@ -408,8 +410,8 @@ interface SectionOpenState {
           @if (clarificationActive) {
             <div class="clarification-batch-section">
               <div class="clarification-batch-header">
-                <h3 class="clarification-batch-title">💬 Làm rõ các điểm chưa rõ</h3>
-                <p class="clarification-batch-subtitle">{{ clarificationAmbiguities.length }} điểm cần làm rõ — hãy điền câu trả lời cho từng mục</p>
+                <h3 class="clarification-batch-title">{{ 'brief.clarify' | i18n }}</h3>
+                <p class="clarification-batch-subtitle">{{ 'brief.clarifyCount' | i18n:{count: clarificationAmbiguities.length} }}</p>
               </div>
 
               <div class="clarification-batch-questions">
@@ -431,7 +433,7 @@ interface SectionOpenState {
                     }
                     <textarea
                       [(ngModel)]="clarificationAnswers[amb.id || amb.type]"
-                      placeholder="Điền câu trả lời của bạn..."
+                      placeholder="{{ 'brief.answerPlaceholder' | i18n }}"
                       rows="2"
                       class="ambiguity-textarea"
                     ></textarea>
@@ -443,17 +445,17 @@ interface SectionOpenState {
               <div class="clarification-progress-bar">
                 <div class="clarification-progress-fill" [style.width.%]="clarificationProgressPct"></div>
               </div>
-              <p class="clarification-progress-text">{{ answeredCount }}/{{ clarificationAmbiguities.length }} câu đã trả lời</p>
+              <p class="clarification-progress-text">{{ 'brief.answered' | i18n:{count: answeredCount} }}</p>
 
               <!-- Submit button -->
               <div class="clarification-submit-row">
-                <button (click)="cancelClarification()" class="clarification-cancel-btn">Hủy</button>
+                <button (click)="cancelClarification()" class="clarification-cancel-btn">{{ 'brief.cancel' | i18n }}</button>
                 <button (click)="submitBatchAnswers()" class="btn btn-primary clarification-submit-btn"
                         [disabled]="answeredCount < clarificationAmbiguities.length || isSubmittingAnswers">
                   @if (isSubmittingAnswers) {
-                    ⏳ Đang gửi...
+                    {{ 'brief.sending' | i18n }}
                   } @else {
-                    ✅ Gửi tất cả ({{ answeredCount }}/{{ clarificationAmbiguities.length }})
+                    ✅ {{ 'brief.sendAll' | i18n }} ({{ answeredCount }}/{{ clarificationAmbiguities.length }})
                   }
                 </button>
               </div>
@@ -465,21 +467,21 @@ interface SectionOpenState {
       <!-- Clarification History -->
       @if (clarifications.length > 0) {
         <div class="card mt-6">
-          <h2 class="text-lg font-semibold mb-4">💬 Lịch sử Clarification ({{ clarifications.length }})</h2>
+          <h2 class="text-lg font-semibold mb-4">{{ 'brief.clarifyHistory' | i18n }} ({{ clarifications.length }})</h2>
           <div class="space-y-4">
             @for (cl of clarifications; track cl.id) {
               <div class="p-4 bg-bg-secondary rounded border-l-2" [class]="cl.is_memo ? 'border-yellow-500' : 'border-border-primary'">
                 <div class="flex items-start justify-between mb-2">
-                  <span class="text-xs font-mono text-text-tertiary">Round {{ cl.round }}</span>
+                  <span class="text-xs font-mono text-text-tertiary">{{ 'brief.round' | i18n }} {{ cl.round }}</span>
                   @if (cl.is_memo) {
-                    <span class="text-xs bg-yellow-900 bg-opacity-40 text-yellow-300 px-2 py-0.5 rounded">Memo</span>
+                    <span class="text-xs bg-yellow-900 bg-opacity-40 text-yellow-300 px-2 py-0.5 rounded">{{ 'brief.memo' | i18n }}</span>
                   }
                 </div>
                 <p class="text-sm text-text-primary mb-2">
-                  <span class="text-blue-400 font-medium">Q:</span> {{ cl.question }}
+                  <span class="text-blue-400 font-medium">{{ 'brief.questionPrefix' | i18n }}</span> {{ cl.question }}
                 </p>
                 <p class="text-sm text-text-secondary">
-                  <span class="text-green-400 font-medium">A:</span> {{ cl.answer }}
+                  <span class="text-green-400 font-medium">{{ 'brief.answerPrefix' | i18n }}</span> {{ cl.answer }}
                 </p>
               </div>
             }
@@ -496,9 +498,9 @@ interface SectionOpenState {
           <!-- Header -->
           <div class="history-header">
             <div>
-              <h2 class="text-xl font-semibold text-white">📋 Lịch sử thay đổi</h2>
+              <h2 class="text-xl font-semibold text-white">{{ 'brief.historyTitle' | i18n }}</h2>
               @if (lineage.length > 0) {
-                <p class="text-sm text-text-secondary mt-1">{{ lineage.length }} thay đổi đã được ghi nhận</p>
+                <p class="text-sm text-text-secondary mt-1">{{ 'brief.historyCount' | i18n:{count: lineage.length} }}</p>
               }
             </div>
             <button (click)="showHistory = false" class="text-text-secondary hover:text-white text-2xl leading-none px-2 py-1 rounded hover:bg-bg-secondary transition-colors close-btn" type="button">✕</button>
@@ -508,8 +510,8 @@ interface SectionOpenState {
             @if (lineage.length === 0) {
               <div class="text-center py-16">
                 <p class="text-4xl mb-3">📝</p>
-                <p class="text-text-secondary text-base">Chưa có lịch sử thay đổi nào</p>
-                <p class="text-text-tertiary text-sm mt-1">Lịch sử sẽ tự động ghi nhận khi bạn chỉnh sửa brief</p>
+                <p class="text-text-secondary text-base">{{ 'brief.historyEmpty' | i18n }}</p>
+                <p class="text-text-tertiary text-sm mt-1">{{ 'brief.historyHint' | i18n }}</p>
               </div>
             }
             @for (entry of lineage; track entry.id; let idx = $index) {
@@ -571,8 +573,8 @@ interface SectionOpenState {
           <!-- Footer -->
           @if (lineage.length > 0) {
             <div class="history-footer">
-              <span class="text-xs text-text-tertiary">Cập nhật cuối: {{ formatDate(lineage[0]?.created_at || 'unknown') }}</span>
-              <button (click)="showHistory = false" class="btn btn-secondary text-xs">Đóng</button>
+              <span class="text-xs text-text-tertiary">{{ 'brief.lastUpdate' | i18n }} {{ formatDate(lineage[0]?.created_at || 'unknown') }}</span>
+              <button (click)="showHistory = false" class="btn btn-secondary text-xs">{{ 'common.close' | i18n }}</button>
             </div>
           }
         </div>
@@ -942,6 +944,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   private pipelineStore = inject(PipelineStore);
   private cdr = inject(ChangeDetectorRef);
   private router = inject(Router);
+  private i18n = inject(I18nService);
   private saveTimer: any = null;
   private toastTimer: any = null;
 
@@ -1051,7 +1054,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
 
   async handleAnalyze(): Promise<void> {
     if (!this.briefContent.trim()) {
-      this.showToast('Vui lòng nhập brief', 'error');
+      this.showToast(this.i18n.t('brief.enterBrief'), 'error');
       return;
     }
     if (this.hasUnsavedChanges) await this.autoSave();
@@ -1063,7 +1066,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
     const timeoutId = setTimeout(() => {
       if (this.isAnalyzing) {
         this.isAnalyzing = false;
-        this.showToast('Phân tích quá lâu, vui lòng thử lại', 'error');
+        this.showToast(this.i18n.t('brief.analyzeTimeout'), 'error');
         this.cdr.detectChanges();
       }
     }, 120000);
@@ -1079,13 +1082,13 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
         this.analysisResult = result.data;
         await this.loadBrief();
         await this.loadLineage();
-        this.showToast('Phân tích thành công! Đã extract ' + (result.data.metadata?.entities || 0) + ' entities', 'success');
+        this.showToast(this.i18n.t('brief.analyzeSuccess', { count: result.data.metadata?.entities || 0 }), 'success');
       } else {
-        this.showToast(result.error?.message || 'Phân tích thất bại', 'error');
+        this.showToast(result.error?.message || this.i18n.t('brief.analyzeError'), 'error');
       }
     } catch (e) {
       clearTimeout(timeoutId);
-      this.showToast('Lỗi kết nối server', 'error');
+      this.showToast(this.i18n.t('brief.connectError'), 'error');
     } finally {
       this.isAnalyzing = false;
       this.cdr.detectChanges();
@@ -1100,13 +1103,13 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
       const result = await this.api.freezeBrief(this.activeVersion);
 
       if (result.success) {
-        this.showToast('Brief đã được đóng (frozen)', 'success');
+        this.showToast(this.i18n.t('brief.frozenMsg'), 'success');
         await this.loadBrief();
       } else {
-        this.showToast(result.error?.message || 'Không thể đóng brief', 'error');
+        this.showToast(result.error?.message || this.i18n.t('brief.freezeError'), 'error');
       }
     } catch {
-      this.showToast('Lỗi kết nối server', 'error');
+      this.showToast(this.i18n.t('brief.connectError'), 'error');
     } finally {
       this.isFreezing = false;
       this.cdr.detectChanges();
@@ -1139,7 +1142,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
     // Lấy ambiguities từ analysisResult hiện tại
     const ambiguities = this.analysisResult?.analysis?.ambiguities || [];
     if (ambiguities.length === 0) {
-      this.showToast('Không có ambiguity cần làm rõ', 'error');
+      this.showToast(this.i18n.t('brief.noAmbiguity'), 'error');
       return;
     }
 
@@ -1159,7 +1162,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
 
   async submitBatchAnswers(): Promise<void> {
     if (this.answeredCount < this.clarificationAmbiguities.length) {
-      this.showToast('Vui lòng trả lời tất cả các câu hỏi', 'error');
+      this.showToast(this.i18n.t('brief.answerAll'), 'error');
       return;
     }
 
@@ -1172,7 +1175,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
         .map(amb => `[${amb.type}]: ${this.clarificationAnswers[amb.id] || ''}`)
         .join('\n');
 
-      const updatedContent = this.briefContent + '\n\n--- Câu trả lời làm rõ ---\n' + answersText;
+      const updatedContent = this.briefContent + '\n\n--- Clarification Answers ---\n' + answersText;
 
       // Re-analyze brief with clarified content
       const result = await this.api.analyzeBrief({
@@ -1188,15 +1191,15 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
         // Set status thành clarified sau khi làm rõ xong
         await this.api.setBriefStatus(this.activeVersion, 'clarified');
 
-        this.showToast('Làm rõ yêu cầu thành công! Brief đã chuyển sang status clarified', 'success');
+        this.showToast(this.i18n.t('brief.clarifySuccess'), 'success');
         this.cancelClarification();
         await this.loadBrief();
         await this.loadLineage();
       } else {
-        this.showToast(result.error?.message || 'Lỗi khi xử lý clarification', 'error');
+        this.showToast(result.error?.message || this.i18n.t('brief.clarifyError'), 'error');
       }
     } catch {
-      this.showToast('Lỗi kết nối server', 'error');
+      this.showToast(this.i18n.t('brief.connectError'), 'error');
     } finally {
       this.isSubmittingAnswers = false;
       this.cdr.detectChanges();

@@ -7,18 +7,20 @@ import { Component, inject, OnInit, ViewChild, ElementRef, AfterViewInit, NgZone
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
+import { I18nPipe } from '../../core/i18n.pipe';
+import { I18nService } from '../../core/i18n.service';
 import { ApiService } from '../../core/api.service';
 
 @Component({
   selector: 'app-system-logs',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, I18nPipe],
   template: `
     <div class="container mx-auto px-6 py-8">
       <!-- Header -->
       <div class="mb-6">
-        <h1 class="text-2xl font-bold">Nhật ký hệ thống</h1>
-        <p class="text-text-secondary mt-1">Xem log hệ thống và báo cáo lỗi</p>
+        <h1 class="text-2xl font-bold">{{ 'logs.title' | i18n }}</h1>
+        <p class="text-text-secondary mt-1">{{ 'logs.subtitle' | i18n }}</p>
       </div>
 
       <!-- Status Messages -->
@@ -36,7 +38,7 @@ import { ApiService } from '../../core/api.service';
       <!-- Log Viewer Card -->
       <div class="card">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-semibold">Log Viewer</h2>
+          <h2 class="text-lg font-semibold">{{ 'logs.viewer' | i18n }}</h2>
           <div class="flex items-center space-x-3">
             <!-- File Selector -->
             <select
@@ -54,7 +56,7 @@ import { ApiService } from '../../core/api.service';
               class="btn btn-secondary text-sm"
               [disabled]="loadingLogs"
             >
-              {{ loadingLogs ? 'Đang tải...' : 'Nạp lại' }}
+              {{ loadingLogs ? ('common.loading' | i18n) : ('logs.refresh' | i18n) }}
             </button>
           </div>
         </div>
@@ -64,7 +66,7 @@ import { ApiService } from '../../core/api.service';
           <input
             [(ngModel)]="searchFilter"
             type="text"
-            placeholder="Lọc log (nhập từ khóa...)"
+            [placeholder]="'logs.filter' | i18n"
             class="w-full bg-bg-secondary border border-border-primary rounded p-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent-primary"
           />
         </div>
@@ -73,7 +75,7 @@ import { ApiService } from '../../core/api.service';
         <div class="relative">
           @if (loadingLogs) {
             <div class="flex items-center justify-center h-[400px] text-text-tertiary">
-              Đang tải log...
+              {{ 'logs.loadingLogs' | i18n }}
             </div>
           } @else {
             <div
@@ -83,7 +85,7 @@ import { ApiService } from '../../core/api.service';
             >
               @if (filteredLines.length === 0) {
                 <div class="p-4 text-text-tertiary" style="font-family: 'Courier New', Courier, monospace">
-                  {{ logLines.length === 0 ? 'Không có log hoặc không thể kết nối đến hệ thống' : 'Không tìm thấy log phù hợp với bộ lọc' }}
+                  {{ logLines.length === 0 ? ('logs.noLogs' | i18n) : ('logs.noMatch' | i18n) }}
                 </div>
               } @else {
                 @for (line of filteredLines; track $index) {
@@ -99,27 +101,26 @@ import { ApiService } from '../../core/api.service';
         <!-- Footer info -->
         @if (logLines.length > 0) {
           <div class="mt-2 text-xs text-text-tertiary flex justify-between">
-            <span>{{ logLines.length }} dòng ({{ filteredLines.length }} sau khi lọc)</span>
-            <span>Tập tin: {{ selectedFile }}</span>
+            <span>{{ 'logs.linesCount' | i18n:{count: logLines.length, filtered: filteredLines.length} }}</span>
+            <span>{{ 'logs.file' | i18n }} {{ selectedFile }}</span>
           </div>
         }
       </div>
 
       <!-- Report Bug Card -->
       <div class="card mt-6">
-        <h2 class="text-lg font-semibold mb-3">Báo cáo lỗi</h2>
+        <h2 class="text-lg font-semibold mb-3">{{ 'logs.bugReport' | i18n }}</h2>
         <p class="text-sm text-text-secondary mb-4">
-          Mô tả lỗi bạn gặp phải. Khi nhấn "Gửi báo cáo lỗi", nội dung log + mô tả sẽ được sao chép vào bảng tạm,
-          sau đó mở trang tạo issue mới trên GitHub — bạn chỉ cần dán (Ctrl+V) vào ô mô tả.
+          {{ 'logs.bugDesc' | i18n }}
         </p>
 
         <div class="mb-4">
           <label class="block text-sm font-medium text-text-secondary mb-1">
-            Mô tả lỗi <span class="text-accent-error">*</span>
+            {{ 'logs.bugTitle' | i18n }}<span class="text-accent-error">*</span>
           </label>
           <textarea
             [(ngModel)]="bugDescription"
-            placeholder="Mô tả chi tiết lỗi bạn gặp phải, các bước để tái hiện..."
+            [placeholder]="'logs.bugPlaceholder' | i18n"
             rows="5"
             class="w-full bg-bg-secondary border border-border-primary rounded p-3 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent-primary resize-vertical"
           ></textarea>
@@ -131,10 +132,10 @@ import { ApiService } from '../../core/api.service';
             class="btn btn-primary"
             [disabled]="!bugDescription.trim()"
           >
-            Gửi báo cáo lỗi
+            {{ 'logs.submitReport' | i18n }}
           </button>
           <span class="text-xs text-text-tertiary">
-            Sao chép log → mở GitHub Issue → dán (Ctrl+V)
+            {{ 'logs.reportTip' | i18n }}
           </span>
         </div>
       </div>
@@ -172,6 +173,7 @@ import { ApiService } from '../../core/api.service';
 export class SystemLogsComponent implements OnInit, AfterViewInit {
   private api = inject(ApiService);
   private zone = inject(NgZone);
+  private i18n = inject(I18nService);
 
   @ViewChild('logContainer') logContainer!: ElementRef;
 
@@ -217,7 +219,7 @@ export class SystemLogsComponent implements OnInit, AfterViewInit {
             this.loadLogs();
           }
         } else {
-          this.errorMessage = result.message || 'Không thể tải danh sách log';
+          this.errorMessage = result.message || this.i18n.t('logs.listError');
         }
       });
     } catch (e) {
@@ -242,14 +244,14 @@ export class SystemLogsComponent implements OnInit, AfterViewInit {
           this.searchFilter = '';
           setTimeout(() => this.scrollToBottom(), 50);
         } else {
-          this.errorMessage = result.message || 'Không thể tải log';
+          this.errorMessage = result.message || this.i18n.t('logs.loadError');
           this.logLines = [];
         }
       });
     } catch (e) {
       console.error('Failed to load logs:', e);
       this.zone.run(() => {
-        this.errorMessage = 'Lỗi khi tải log: ' + (e as Error).message;
+        this.errorMessage = this.i18n.t('logs.loadErrorPrefix') + ' ' + (e as Error).message;
         this.logLines = [];
       });
     } finally {
@@ -291,7 +293,7 @@ export class SystemLogsComponent implements OnInit, AfterViewInit {
    */
   submitBugReport(): void {
     if (!this.bugDescription.trim()) {
-      this.errorMessage = 'Vui lòng mô tả lỗi trước khi gửi báo cáo';
+      this.errorMessage = this.i18n.t('logs.describeFirst');
       return;
     }
 
@@ -301,51 +303,51 @@ export class SystemLogsComponent implements OnInit, AfterViewInit {
     // Limit log content to last 200 lines
     const lines = logContent.split('\n');
     if (lines.length > 200) {
-      logContent = '...(truncated - showing last 200 lines)\n' + lines.slice(-200).join('\n');
+      logContent = this.i18n.t('logs.reportTruncated') + '\n' + lines.slice(-200).join('\n');
     }
 
-    const body = `## Mô tả lỗi
+    const body = `${this.i18n.t('logs.reportBodyDescription')}
 
 ${this.bugDescription}
 
-## Log hệ thống
+${this.i18n.t('logs.reportBodyLog')}
 
 \`\`\`
 ${logContent}
 \`\`\`
 
-## Thông tin
+${this.i18n.t('logs.reportBodyInfo')}
 
-- Tập tin log: ${this.selectedFile}
-- Số dòng log: ${this.logLines.length}
-- Thời gian: ${new Date().toISOString()}`;
+- ${this.i18n.t('logs.reportLogFile')} ${this.selectedFile}
+- ${this.i18n.t('logs.reportLineCount')} ${this.logLines.length}
+- ${this.i18n.t('logs.reportTimestamp')} ${new Date().toISOString()}`;
 
     // Copy full body to clipboard first
     navigator.clipboard.writeText(body).then(() => {
       // Open GitHub issue with a short body instructing user to paste
       const pasteBody = encodeURIComponent(
-        `## Mô tả lỗi
+        `${this.i18n.t('logs.reportBodyDescription')}
 
-_(Nội dung chi tiết + log đã được sao chép vào bảng tạm — hãy nhấn Ctrl+V để dán)_
+_${this.i18n.t('logs.reportPasteHint')}_
 
-## Log hệ thống
+${this.i18n.t('logs.reportBodyLog')}
 
-_(Đang chờ dán từ bảng tạm — nhấn Ctrl+V)_
+_${this.i18n.t('logs.reportClipboardPending')}_
 
 ---
-- Tập tin log: ${this.selectedFile}
-- Thời gian: ${new Date().toISOString()}`
+- ${this.i18n.t('logs.reportLogFile')} ${this.selectedFile}
+- ${this.i18n.t('logs.reportTimestamp')} ${new Date().toISOString()}`
       );
-      const title = encodeURIComponent(`Báo cáo lỗi: ${this.bugDescription.trim().substring(0, 80)}`);
+      const title = encodeURIComponent(`${this.i18n.t('logs.reportTitlePrefix')} ${this.bugDescription.trim().substring(0, 80)}`);
       const url = `https://github.com/hemidi-jsc/midicoder/issues/new?labels=bug&title=${title}&body=${pasteBody}`;
       window.open(url, '_blank');
-      this.successMessage = '✅ Nội dung báo cáo đã được sao chép — hãy dán (Ctrl+V) vào ô mô tả issue trên GitHub';
+      this.successMessage = this.i18n.t('logs.copied');
     }).catch(() => {
       // Fallback: open without clipboard
-      const title = encodeURIComponent(`Báo cáo lỗi: ${this.bugDescription.trim().substring(0, 80)}`);
+      const title = encodeURIComponent(`${this.i18n.t('logs.reportTitlePrefix')} ${this.bugDescription.trim().substring(0, 80)}`);
       const url = `https://github.com/hemidi-jsc/midicoder/issues/new?labels=bug&title=${title}`;
       window.open(url, '_blank');
-      this.errorMessage = 'Không thể sao chép nội dung — vui lòng mô tả lỗi thủ công trên GitHub';
+      this.errorMessage = this.i18n.t('logs.copyError');
     });
   }
 }

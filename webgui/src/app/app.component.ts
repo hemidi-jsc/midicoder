@@ -4,20 +4,22 @@ import { RouterOutlet, Router, NavigationEnd } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { Subscription, filter } from 'rxjs';
 
+import { APP_VERSION, DOCS_BASE } from './core/app.constants';
+import { I18nPipe } from './core/i18n.pipe';
 import { AuthService } from './core/auth.service';
 import { ScreenCheckService } from './core/screen-check.service';
+import { UpdateService } from './core/update.service';
 import { SidebarComponent } from './components/sidebar/sidebar.component';
+import type { UpdateStatus } from './core/api.types';
 
-/** Application version — lấy từ package.json build-time, fallback nếu dev */
-const APP_VERSION = '1.0.0';
+/** Application version — import từ shared constants */
 
 /** Docs base URL theo version */
-const DOCS_BASE = `https://docs.midicoder.com/ce/${APP_VERSION}`;
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, FormsModule, SidebarComponent],
+  imports: [CommonModule, RouterOutlet, FormsModule, SidebarComponent, I18nPipe],
   template: `
     <div class="min-h-screen bg-bg-primary text-text-primary">
       <!-- Screen Warning Overlay -->
@@ -25,13 +27,13 @@ const DOCS_BASE = `https://docs.midicoder.com/ce/${APP_VERSION}`;
         <div class="fixed inset-0 z-50 bg-bg-primary bg-opacity-95 flex items-center justify-center">
           <div class="card max-w-md text-center">
             <h2 class="text-xl font-bold text-accent-warning mb-4">
-              ⚠️ Cảnh báo màn hình
+              ⚠️ {{ 'screen.title' | i18n }}
             </h2>
             <p class="text-text-secondary mb-4">
               {{ screenWarningMessage }}
             </p>
             <p class="text-text-tertiary text-sm">
-              Ứng dụng có thể không hiển thị đúng trên màn hình nhỏ.
+              {{ 'screen.description' | i18n }}
             </p>
           </div>
         </div>
@@ -48,7 +50,7 @@ const DOCS_BASE = `https://docs.midicoder.com/ce/${APP_VERSION}`;
               target="_blank"
               rel="noopener noreferrer"
               class="app-version-badge"
-              title="Xem release trên GitHub"
+              title="{{ 'header.viewRelease' | i18n }}"
             >
               v{{ appVersion }}
             </a>
@@ -58,9 +60,9 @@ const DOCS_BASE = `https://docs.midicoder.com/ce/${APP_VERSION}`;
                 target="_blank"
                 rel="noopener noreferrer"
                 class="header-link"
-                title="Changelog"
+                title="{{ 'update.changelog' | i18n }}"
               >
-                Changelog
+                {{ 'update.changelog' | i18n }}
               </a>
               <span class="header-separator">·</span>
               <a
@@ -68,9 +70,9 @@ const DOCS_BASE = `https://docs.midicoder.com/ce/${APP_VERSION}`;
                 target="_blank"
                 rel="noopener noreferrer"
                 class="header-link"
-                title="Tài liệu"
+                title="{{ 'header.documentation' | i18n }}"
               >
-                Docs
+                {{ 'header.documentation' | i18n }}
               </a>
             </div>
           </div>
@@ -79,10 +81,29 @@ const DOCS_BASE = `https://docs.midicoder.com/ce/${APP_VERSION}`;
           <div class="flex items-center space-x-4">
             <span class="text-text-secondary text-sm">{{ currentUser?.email }}</span>
             <button (click)="handleLogout()" class="logout-btn">
-              Logout
+              {{ 'auth.logout' | i18n }}
             </button>
           </div>
         </header>
+
+        <!-- Update Banner — hiện khi có phiên bản mới -->
+        @if (updateStatus && updateStatus.has_update && !isUpgrading) {
+          <div class="update-banner" style="position:fixed;top:65px;left:0;right:0;z-index:40;background:linear-gradient(90deg,var(--brand-color),#ff4da6);color:#fff;display:flex;align-items:center;justify-content:center;padding:10px 48px;gap:16px;box-shadow:0 2px 12px rgba(233,0,137,0.25);">
+            <span style="font-size:0.9rem;font-weight:500;">🎉 {{ 'update.banner' | i18n }} <strong>v{{ updateStatus.latest_version }}</strong> {{ 'update.currentVersion' | i18n:{current: updateStatus.current_version} }}</span>
+            <a [attr.href]="updateStatus.download_url" target="_blank" rel="noopener noreferrer" style="color:#fff;text-decoration:underline;cursor:pointer;font-size:0.85rem;margin-left:4px;">{{ 'update.changelog' | i18n }}</a>
+            <button (click)="handleUpgrade()" style="background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.6);color:#fff;padding:5px 16px;border-radius:4px;cursor:pointer;font-size:0.85rem;font-weight:600;transition:background 0.2s;" title="{{ 'update.upgradeTitle' | i18n }}">
+              ⬆ {{ 'update.upgrade' | i18n }}
+            </button>
+          </div>
+        }
+
+        <!-- Upgrading Overlay — hiện khi đang restart -->
+        @if (isUpgrading) {
+          <div style="position:fixed;inset:0;z-index:60;background:rgba(15,15,23,0.9);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+            <div style="font-size:2rem;animation:spin 1s linear infinite;">⏳</div>
+            <p style="color:var(--text-primary);font-size:1.1rem;font-weight:500;">{{ 'update.upgrading' | i18n }}</p>
+          </div>
+        }
 
         <!-- Sidebar -->
         <app-sidebar *ngIf="isAuthenticated && !isLoginPage"></app-sidebar>
@@ -195,6 +216,10 @@ export class AppComponent implements OnInit, OnDestroy {
   docsChangelogUrl = `${DOCS_BASE}/changelog`;
   docsGettingStartedUrl = `${DOCS_BASE}/getting-started`;
 
+  /** Update state */
+  updateStatus: UpdateStatus | null = null;
+  isUpgrading = false;
+
   private authSub?: Subscription;
   private routerSub?: Subscription;
 
@@ -202,6 +227,7 @@ export class AppComponent implements OnInit, OnDestroy {
     private authService: AuthService,
     private router: Router,
     private screenCheck: ScreenCheckService,
+    private updateService: UpdateService,
   ) {
     // Subscribe to auth state changes
     this.authSub = this.authService.isAuthenticated$.subscribe((auth) => {
@@ -228,6 +254,14 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.screenSupported = this.screenCheck.isSupported();
     this.screenWarningMessage = this.screenCheck.getWarningMessage();
+
+    // Subscribe to update status
+    this.updateService.status$.subscribe((status) => {
+      this.updateStatus = status;
+      this.isUpgrading = status?.upgrading ?? false;
+    });
+    // Initial check + start polling
+    this.updateService.startPolling(120000); // every 2 minutes
   }
 
   ngOnDestroy(): void {
@@ -241,5 +275,34 @@ export class AppComponent implements OnInit, OnDestroy {
   async handleLogout(): Promise<void> {
     await this.authService.logout();
     this.router.navigate(['/login']);
+  }
+
+  /**
+   * Xử lý upgrade phiên bản mới
+   */
+  handleUpgrade(): void {
+    this.updateService.upgrade().subscribe({
+      next: (success) => {
+        if (success) {
+          // Frontend sẽ mất kết nối khi backend shutdown
+          // Hiện overlay "đang khởi động lại"
+          this.isUpgrading = true;
+          // Auto reload khi backend quay lại
+          setTimeout(() => {
+            window.location.reload();
+          }, 5000);
+        }
+      },
+      error: () => {
+        console.error('Upgrade failed');
+      },
+    });
+  }
+
+  /**
+   * Force kiểm tra phiên bản mới ngay
+   */
+  handleCheckUpdate(): void {
+    this.updateService.forceCheck().subscribe();
   }
 }

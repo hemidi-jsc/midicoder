@@ -6,7 +6,10 @@
 import { Component, OnInit, inject, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { APP_VERSION } from '../../core/app.constants';
 import { ApiService } from '../../core/api.service';
+import { I18nService } from '../../core/i18n.service';
+import { I18nPipe } from '../../core/i18n.pipe';
 
 interface SettingsData {
   [key: string]: any;
@@ -15,16 +18,16 @@ interface SettingsData {
 @Component({
   selector: 'app-general-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, I18nPipe],
   template: `
     <div class="container mx-auto px-6 py-8">
       <!-- Header -->
       <div class="mb-6">
-        <h1 class="text-2xl font-bold">Cài đặt chung</h1>
-        <p class="text-text-secondary mt-1">Quản lý cài đặt hệ thống, giao diện và dịch vụ</p>
+        <h1 class="text-2xl font-bold">{{ 'settings.title' | i18n }}</h1>
+        <p class="text-text-secondary mt-1">{{ 'settings.subtitle' | i18n }}</p>
         <div class="info-notice">
           <span class="notice-icon">ℹ️</span>
-          <span>Các chức năng dưới đây chưa hoàn thiện trong version này của Midicoder, hiện chỉ có thể điều chỉnh mà không có tác dụng thực tế</span>
+          <span>{{ 'settings.comingSoon' | i18n }}</span>
         </div>
       </div>
 
@@ -41,145 +44,145 @@ interface SettingsData {
       }
 
       @if (loading) {
-        <div class="flex items-center justify-center h-40 text-text-tertiary">Đang tải...</div>
+        <div class="flex items-center justify-center h-40 text-text-tertiary">{{ 'settings.loading' | i18n }}</div>
       } @else {
 
         <!-- General / Language -->
         <div class="card">
-          <h2 class="text-lg font-semibold mb-4">🌐 Ngôn ngữ</h2>
+          <h2 class="text-lg font-semibold mb-4">{{ 'settings.language' | i18n }}</h2>
           <div class="setting-item">
-            <label class="setting-label">Ngôn ngữ giao diện</label>
-            <select [(ngModel)]="settings['cli.language']" class="setting-select" (change)="markDirty()">
-              <option value="vi">Tiếng Việt</option>
-              <option value="en">English</option>
+            <label class="setting-label">{{ 'settings.interfaceLang' | i18n }}</label>
+            <select [(ngModel)]="settings['cli.language']" class="setting-select" (change)="onLanguageChange()">
+              <option value="vi">{{ 'settings.vietnamese' | i18n }}</option>
+              <option value="en">{{ 'settings.english' | i18n }}</option>
             </select>
-            <span class="setting-desc">Ngôn ngữ mặc định cho giao diện</span>
+            <span class="setting-desc">{{ 'settings.interfaceLangDesc' | i18n }}</span>
           </div>
           <div class="card-actions">
             <button class="btn btn-primary text-sm" (click)="saveSection('cli.language')" [disabled]="saving">
-              {{ saving ? 'Đang lưu...' : 'Lưu' }}
+              {{ saving ? ('settings.saving' | i18n) : ('settings.save' | i18n) }}
             </button>
           </div>
         </div>
 
         <!-- WebGUI -->
         <div class="card">
-          <h2 class="text-lg font-semibold mb-4">🖥️ WebGUI Server</h2>
+          <h2 class="text-lg font-semibold mb-4">{{ 'settings.webgui' | i18n }}</h2>
           <div class="setting-grid">
             <div class="setting-item">
-              <label class="setting-label">Backend Host</label>
+              <label class="setting-label">{{ 'settings.backendHost' | i18n }}</label>
               <input [(ngModel)]="settings['webgui.host']" class="setting-input" (change)="markDirty()" />
             </div>
             <div class="setting-item">
-              <label class="setting-label">Backend Port</label>
+              <label class="setting-label">{{ 'settings.backendPort' | i18n }}</label>
               <input type="number" [(ngModel)]="settings['webgui.port']" class="setting-input" (change)="markDirty()" />
             </div>
             <div class="setting-item">
-              <label class="setting-label">Frontend Port</label>
+              <label class="setting-label">{{ 'settings.frontendPort' | i18n }}</label>
               <input type="number" [(ngModel)]="settings['webgui.frontend_port']" class="setting-input" (change)="markDirty()" />
             </div>
           </div>
           <div class="setting-item">
-            <label class="setting-label">Auto-start Server</label>
+            <label class="setting-label">{{ 'settings.autoStart' | i18n }}</label>
             <label class="toggle">
               <input type="checkbox" [(ngModel)]="settings['webgui.auto_start']" (change)="markDirty()" />
               <span class="toggle-slider"></span>
             </label>
-            <span class="setting-desc">Tự động khởi động backend/frontend khi mở ứng dụng</span>
+            <span class="setting-desc">{{ 'settings.autoStartDesc' | i18n }}</span>
           </div>
           <div class="setting-item">
-            <label class="setting-label">Open Browser</label>
+            <label class="setting-label">{{ 'settings.openBrowser' | i18n }}</label>
             <label class="toggle">
               <input type="checkbox" [(ngModel)]="settings['webgui.open_browser']" (change)="markDirty()" />
               <span class="toggle-slider"></span>
             </label>
-            <span class="setting-desc">Tự động mở trình duyệt sau khi khởi động</span>
+            <span class="setting-desc">{{ 'settings.openBrowserDesc' | i18n }}</span>
           </div>
           <div class="card-actions">
             <button class="btn btn-primary text-sm" (click)="saveSection('webgui')" [disabled]="saving">
-              {{ saving ? 'Đang lưu...' : 'Lưu' }}
+              {{ saving ? ('settings.saving' | i18n) : ('settings.save' | i18n) }}
             </button>
           </div>
         </div>
 
         <!-- Version -->
         <div class="card">
-          <h2 class="text-lg font-semibold mb-4">🏷️ Phiên bản</h2>
+          <h2 class="text-lg font-semibold mb-4">{{ 'settings.version' | i18n }}</h2>
           <div class="setting-item">
-            <label class="setting-label">Số phiên bản tối đa</label>
+            <label class="setting-label">{{ 'settings.maxVersions' | i18n }}</label>
             <input type="number" [(ngModel)]="settings['version.max_versions']" class="setting-input" min="3" max="20" (change)="markDirty()" />
-            <span class="setting-desc">Khi vượt quá giới hạn, các phiên bản cũ nhất sẽ bị xóa tự động (tối thiểu 3, tối đa 20)</span>
+            <span class="setting-desc">{{ 'settings.maxVersionsDesc' | i18n }}</span>
           </div>
           <div class="card-actions">
             <button class="btn btn-primary text-sm" (click)="saveSection('version.max_versions')" [disabled]="saving">
-              {{ saving ? 'Đang lưu...' : 'Lưu' }}
+              {{ saving ? ('settings.saving' | i18n) : ('settings.save' | i18n) }}
             </button>
           </div>
         </div>
 
         <!-- Neo4j -->
         <div class="card">
-          <h2 class="text-lg font-semibold mb-4">🔗 Neo4j Database</h2>
+          <h2 class="text-lg font-semibold mb-4">{{ 'settings.neo4j' | i18n }}</h2>
           <div class="setting-grid">
             <div class="setting-item">
-              <label class="setting-label">Host</label>
+              <label class="setting-label">{{ 'settings.host' | i18n }}</label>
               <input [(ngModel)]="settings['neo4j.host']" class="setting-input" (change)="markDirty()" />
             </div>
             <div class="setting-item">
-              <label class="setting-label">Port</label>
+              <label class="setting-label">{{ 'settings.port' | i18n }}</label>
               <input type="number" [(ngModel)]="settings['neo4j.port']" class="setting-input" (change)="markDirty()" />
             </div>
             <div class="setting-item">
-              <label class="setting-label">Username</label>
+              <label class="setting-label">{{ 'settings.username' | i18n }}</label>
               <input [(ngModel)]="settings['neo4j.username']" class="setting-input" (change)="markDirty()" />
             </div>
             <div class="setting-item">
-              <label class="setting-label">Password</label>
+              <label class="setting-label">{{ 'settings.password' | i18n }}</label>
               <input type="password" [(ngModel)]="settings['neo4j.password']" class="setting-input" (change)="markDirty()" />
             </div>
           </div>
           <div class="setting-item">
-            <label class="setting-label">Docker Auto-start</label>
+            <label class="setting-label">{{ 'settings.dockerAutoStart' | i18n }}</label>
             <label class="toggle">
               <input type="checkbox" [(ngModel)]="settings['neo4j.docker_auto_start']" (change)="markDirty()" />
               <span class="toggle-slider"></span>
             </label>
-            <span class="setting-desc">Tự động khởi động Neo4j trong Docker container</span>
+            <span class="setting-desc">{{ 'settings.dockerAutoStartDesc' | i18n }}</span>
           </div>
           <div class="card-actions">
             <button class="btn btn-primary text-sm" (click)="saveSection('neo4j')" [disabled]="saving">
-              {{ saving ? 'Đang lưu...' : 'Lưu' }}
+              {{ saving ? ('settings.saving' | i18n) : ('settings.save' | i18n) }}
             </button>
           </div>
         </div>
 
         <!-- MCP -->
         <div class="card">
-          <h2 class="text-lg font-semibold mb-4">🔧 MCP Server</h2>
+          <h2 class="text-lg font-semibold mb-4">{{ 'settings.mcp' | i18n }}</h2>
           <div class="setting-grid">
             <div class="setting-item">
-              <label class="setting-label">Host</label>
+              <label class="setting-label">{{ 'settings.host' | i18n }}</label>
               <input [(ngModel)]="settings['mcp.host']" class="setting-input" (change)="markDirty()" />
             </div>
             <div class="setting-item">
-              <label class="setting-label">Port</label>
+              <label class="setting-label">{{ 'settings.port' | i18n }}</label>
               <input type="number" [(ngModel)]="settings['mcp.port']" class="setting-input" (change)="markDirty()" />
             </div>
           </div>
           <div class="card-actions">
             <button class="btn btn-primary text-sm" (click)="saveSection('mcp')" [disabled]="saving">
-              {{ saving ? 'Đang lưu...' : 'Lưu' }}
+              {{ saving ? ('settings.saving' | i18n) : ('settings.save' | i18n) }}
             </button>
           </div>
         </div>
 
         <!-- System Info -->
         <div class="card">
-          <h2 class="text-lg font-semibold mb-4">ℹ️ Thông tin hệ thống</h2>
+          <h2 class="text-lg font-semibold mb-4">{{ 'settings.systemInfo' | i18n }}</h2>
           <div class="info-grid">
             <div class="info-row">
-              <span class="info-label">Phiên bản Midicoder</span>
-              <span class="info-value">{{ settings['version'] || '1.0.0' }}</span>
+              <span class="info-label">{{ 'settings.midicoderVersion' | i18n }}</span>
+              <span class="info-value">{{ settings['version'] || appVersion }}</span>
             </div>
           </div>
         </div>
@@ -384,8 +387,10 @@ interface SettingsData {
 })
 export class GeneralSettingsComponent implements OnInit {
   private api = inject(ApiService);
+  private i18n = inject(I18nService);
   private zone = inject(NgZone);
 
+  readonly appVersion = APP_VERSION;
   settings: SettingsData = {};
   loading = false;
   saving = false;
@@ -403,18 +408,30 @@ export class GeneralSettingsComponent implements OnInit {
       if (resp.success && resp.data) {
         this.zone.run(() => {
           this.settings = resp.data as SettingsData;
+          // Sync backend language with frontend I18nService
+          if (this.settings['cli.language']) {
+            this.i18n.setLanguage(this.settings['cli.language']);
+          }
         });
       } else {
         this.zone.run(() => {
-          this.errorMessage = 'Không thể tải cài đặt';
+          this.errorMessage = this.i18n.t('settings.loadError');
         });
       }
     }).catch(() => {
       this.loading = false;
       this.zone.run(() => {
-        this.errorMessage = 'Lỗi kết nối đến server';
+        this.errorMessage = this.i18n.t('settings.connectError');
       });
     });
+  }
+
+  /** User changed language — apply immediately, then prompt to save */
+  onLanguageChange(): void {
+    const lang = this.settings['cli.language'];
+    if (lang) {
+      this.i18n.setLanguage(lang);
+    }
   }
 
   markDirty(): void {
@@ -455,9 +472,9 @@ export class GeneralSettingsComponent implements OnInit {
       this.saving = false;
       this.zone.run(() => {
         if (saved === keysToSave.length) {
-          this.successMessage = `Đã lưu cài đặt (${saved}/${keysToSave.length})`;
+          this.successMessage = this.i18n.t('settings.saved');
         } else {
-          this.errorMessage = `Lưu thành công ${saved}/${keysToSave.length} mục`;
+          this.errorMessage = this.i18n.t('settings.savedCount', { saved: String(saved), total: String(keysToSave.length) });
         }
         // Clear message after 3s
         setTimeout(() => {
@@ -470,7 +487,7 @@ export class GeneralSettingsComponent implements OnInit {
     }).catch(() => {
       this.saving = false;
       this.zone.run(() => {
-        this.errorMessage = 'Lỗi khi lưu cài đặt';
+        this.errorMessage = this.i18n.t('settings.saveError');
       });
     });
   }

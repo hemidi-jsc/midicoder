@@ -8,21 +8,23 @@ import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
+import { I18nPipe } from '../../core/i18n.pipe';
+import { I18nService } from '../../core/i18n.service';
 
 @Component({
   selector: 'app-ir-explorer',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, I18nPipe],
   template: `
     <div class="container mx-auto px-6 py-8">
       <!-- Header -->
       <div class="mb-6 flex items-center justify-between">
         <div>
-          <h1 class="text-2xl font-bold">Khám phá IR</h1>
-          <p class="text-text-secondary mt-1">Khám phá MIR và Symbol Table</p>
+          <h1 class="text-2xl font-bold">{{ 'ir.title' | i18n }}</h1>
+          <p class="text-text-secondary mt-1">{{ 'ir.subtitle' | i18n }}</p>
         </div>
         <button (click)="handleBuild()" class="btn btn-primary" [disabled]="isBuilding">
-          {{ isBuilding ? 'Đang tải...' : 'Build IR' }}
+          {{ isBuilding ? ('common.loading' | i18n) : ('ir.build' | i18n) }}
         </button>
       </div>
 
@@ -38,17 +40,17 @@ import { ApiService } from '../../core/api.service';
         <div class="grid grid-cols-2 gap-6">
           <!-- MIR -->
           <div class="card">
-            <h2 class="font-semibold mb-4 text-accent-primary">MIR</h2>
-            
+            <h2 class="font-semibold mb-4 text-accent-primary">{{ 'ir.mirHeading' | i18n }}</h2>
+
             <!-- Metadata -->
             <div class="mb-4 space-y-2 text-sm">
-              <div><span class="text-text-tertiary">Schema:</span> <span class="text-text-primary">{{ mirData?.schema }}</span></div>
-              <div><span class="text-text-tertiary">Version:</span> <span class="text-text-primary">{{ mirData?.version }}</span></div>
-              <div><span class="text-text-tertiary">Generated:</span> <span class="text-text-primary">{{ mirData?.generated_at }}</span></div>
+              <div><span class="text-text-tertiary">{{ 'ir.schema' | i18n }}</span> <span class="text-text-primary">{{ mirData?.schema }}</span></div>
+              <div><span class="text-text-tertiary">{{ 'ir.versionLabel' | i18n }}</span> <span class="text-text-primary">{{ mirData?.version }}</span></div>
+              <div><span class="text-text-tertiary">{{ 'ir.generated' | i18n }}</span> <span class="text-text-primary">{{ mirData?.generated_at }}</span></div>
             </div>
 
             <!-- Modules -->
-            <h3 class="font-medium text-sm text-text-secondary mb-2">Modules</h3>
+            <h3 class="font-medium text-sm text-text-secondary mb-2">{{ 'ir.modulesLabel' | i18n }}</h3>
             @if (mirData?.modules) {
               <div class="space-y-2">
                 @for (module of mirData?.modules; track module.name) {
@@ -56,7 +58,7 @@ import { ApiService } from '../../core/api.service';
                     <div class="font-medium text-accent-primary">{{ module.name }}</div>
                     @if (module.entities) {
                       <div class="mt-2">
-                        <span class="text-xs text-text-tertiary">Entities:</span>
+                        <span class="text-xs text-text-tertiary">{{ 'ir.entities' | i18n }}</span>
                         <div class="flex flex-wrap gap-1 mt-1">
                           @for (entity of module.entities; track entity.id) {
                             <span class="text-xs bg-bg-tertiary px-2 py-1 rounded">{{ entity.name }}</span>
@@ -71,14 +73,14 @@ import { ApiService } from '../../core/api.service';
 
             <!-- Raw MIR -->
             <details class="mt-4">
-              <summary class="text-sm text-accent-primary cursor-pointer">Xem raw JSON</summary>
+              <summary class="text-sm text-accent-primary cursor-pointer">{{ 'ir.viewRaw' | i18n }}</summary>
               <pre class="mt-2 text-xs text-text-secondary overflow-auto max-h-64 p-2 bg-bg-tertiary rounded">{{ mirData | json }}</pre>
             </details>
           </div>
 
           <!-- Symbol Table -->
           <div class="card">
-            <h2 class="font-semibold mb-4 text-accent-primary">Bảng ký hiệu</h2>
+            <h2 class="font-semibold mb-4 text-accent-primary">{{ 'ir.symbolTable' | i18n }}</h2>
 
             @if (symbolTable.length > 0) {
               <div class="space-y-3">
@@ -109,7 +111,7 @@ import { ApiService } from '../../core/api.service';
                 }
               </div>
             } @else {
-              <p class="text-text-tertiary text-sm">Chưa có symbol table. Hãy build IR trước.</p>
+              <p class="text-text-tertiary text-sm">{{ 'ir.noTable' | i18n }}</p>
             }
           </div>
         </div>
@@ -118,7 +120,7 @@ import { ApiService } from '../../core/api.service';
       <!-- Next Action -->
       <div class="mt-6 flex justify-end">
         <a routerLink="/code-generator" class="btn btn-primary">
-          Mã nguồn →
+          {{ 'ir.source' | i18n }}
         </a>
       </div>
     </div>
@@ -132,6 +134,7 @@ export class IRExplorerComponent implements OnInit {
   successMessage = '';
 
   private api = inject(ApiService);
+  private i18n = inject(I18nService);
 
   async ngOnInit(): Promise<void> {
     await this.loadMIR();
@@ -162,7 +165,7 @@ export class IRExplorerComponent implements OnInit {
     await this.loadMIR();
     await this.loadSymbolTable();
 
-    this.successMessage = 'Build IR thành công';
+    this.successMessage = this.i18n.t('ir.buildSuccess');
     this.isBuilding = false;
   }
 }

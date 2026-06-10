@@ -13,6 +13,8 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 
+import { I18nPipe } from '../../core/i18n.pipe';
+import { I18nService } from '../../core/i18n.service';
 import { PipelineStore, PhaseStatus } from '../../core/pipeline.store';
 import { ApiService, ProjectInfo } from '../../core/api.service';
 import { VersionService, VersionInfo } from '../../core/version.service';
@@ -27,7 +29,7 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
   selector: 'app-dashboard',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, RouterLink,
+    CommonModule, FormsModule, RouterLink, I18nPipe,
     ProjectInfoCardComponent,
     VersionInfoCardComponent,
     ProjectCreateFormComponent,
@@ -39,14 +41,14 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
     <div class="dashboard-container">
       <!-- Header -->
       <div class="dashboard-header">
-        <h1 class="dashboard-title">Bảng điều khiển</h1>
+        <h1 class="dashboard-title">{{ 'dashboard.title' | i18n }}</h1>
         <p class="dashboard-subtitle">
-          Project: <span class="text-white">{{ projectName() || 'chưa khởi tạo' }}</span>
+          {{ 'dashboard.project' | i18n }}<span class="text-white">{{ projectName() || ('dashboard.notInitialized' | i18n) }}</span>
           @if (activeVersion()) {
             &nbsp;— {{ activeVersion() }}
           }
           @if (pipelineInitialized()) {
-            &nbsp;|&nbsp; Tiến độ: <span class="text-white">{{ overallProgress() }}</span>%
+            &nbsp;|&nbsp; {{ 'dashboard.progress' | i18n }}<span class="text-white">{{ overallProgress() }}</span>%
           }
         </p>
       </div>
@@ -55,8 +57,8 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
       @if (!workspaceInitialized()) {
         <div class="card init-card">
           <div class="init-content">
-            <h2 class="init-title">🚀 Tạo hoặc Import Project</h2>
-            <p class="init-desc">Tạo project mới hoặc import project Midicoder hiện có để bắt đầu.</p>
+            <h2 class="init-title">{{ 'dashboard.createImport' | i18n }}</h2>
+            <p class="init-desc">{{ 'dashboard.createImportDesc' | i18n }}</p>
             <app-project-create-form />
           </div>
         </div>
@@ -66,10 +68,10 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
       @if (workspaceInitialized() && !pipelineInitialized()) {
         <div class="card init-card">
           <div class="init-content">
-            <h2 class="init-title">📋 Tạo phiên bản đầu tiên</h2>
-            <p class="init-desc">Project đã được khởi tạo. Tạo phiên bản đầu tiên để bắt đầu pipeline.</p>
+            <h2 class="init-title">{{ 'dashboard.createFirstVersion' | i18n }}</h2>
+            <p class="init-desc">{{ 'dashboard.createFirstVersionDesc' | i18n }}</p>
             <button class="btn-primary-large" (click)="showCreateVersionModal = true">
-              Tạo phiên bản
+              {{ 'dashboard.createVersion' | i18n }}
             </button>
           </div>
         </div>
@@ -89,11 +91,11 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
 
         <!-- Row 2: Pipeline Progress -->
         <div class="dashboard-card">
-          <h2 class="card-title">Tiến độ Pipeline</h2>
+          <h2 class="card-title">{{ 'dashboard.pipelineProgress' | i18n }}</h2>
 
           <div class="progress-section">
             <div class="progress-header">
-              <span class="progress-label">Tổng tiến độ</span>
+              <span class="progress-label">{{ 'dashboard.totalProgress' | i18n }}</span>
               <span class="progress-value">{{ overallProgress() }}%</span>
             </div>
             <div class="progress-track">
@@ -108,7 +110,7 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
                 @else if (initPhase().status === 'in_progress') { ◎ }
                 @else { 1 }
               </div>
-              <p class="phase-name">Init</p>
+              <p class="phase-name">{{ 'dashboard.phaseInit' | i18n }}</p>
               <p class="phase-status">{{ getPhaseStatusText(initPhase().status) }}</p>
             </a>
             <a class="phase-item" routerLink="/brief-editor">
@@ -117,7 +119,7 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
                 @else if (briefPhase().status === 'in_progress') { ◎ }
                 @else { 2 }
               </div>
-              <p class="phase-name">Brief</p>
+              <p class="phase-name">{{ 'dashboard.phaseBrief' | i18n }}</p>
               <p class="phase-status">{{ getPhaseStatusText(briefPhase().status) }}</p>
             </a>
             <a class="phase-item" routerLink="/contract-viewer">
@@ -126,7 +128,7 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
                 @else if (contractPhase().status === 'in_progress') { ◎ }
                 @else { 3 }
               </div>
-              <p class="phase-name">Contract</p>
+              <p class="phase-name">{{ 'dashboard.phaseContract' | i18n }}</p>
               <p class="phase-status">{{ getPhaseStatusText(contractPhase().status) }}</p>
             </a>
             <a class="phase-item" routerLink="/ir-explorer">
@@ -135,7 +137,7 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
                 @else if (irPhase().status === 'in_progress') { ◎ }
                 @else { 4 }
               </div>
-              <p class="phase-name">IR</p>
+              <p class="phase-name">{{ 'dashboard.phaseIR' | i18n }}</p>
               <p class="phase-status">{{ getPhaseStatusText(irPhase().status) }}</p>
             </a>
             <a class="phase-item" routerLink="/code-generator">
@@ -144,7 +146,7 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
                 @else if (codePhase().status === 'in_progress') { ◎ }
                 @else { 5 }
               </div>
-              <p class="phase-name">Code</p>
+              <p class="phase-name">{{ 'dashboard.phaseCode' | i18n }}</p>
               <p class="phase-status">{{ getPhaseStatusText(codePhase().status) }}</p>
             </a>
             <a class="phase-item" routerLink="/preview">
@@ -153,7 +155,7 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
                 @else if (previewPhase().status === 'in_progress') { ◎ }
                 @else { 6 }
               </div>
-              <p class="phase-name">Preview</p>
+              <p class="phase-name">{{ 'dashboard.phasePreview' | i18n }}</p>
               <p class="phase-status">{{ getPhaseStatusText(previewPhase().status) }}</p>
             </a>
           </div>
@@ -378,6 +380,7 @@ export class DashboardComponent implements OnInit {
   private pipelineStore = inject(PipelineStore);
   private api = inject(ApiService);
   private versionService = inject(VersionService);
+  private i18n = inject(I18nService);
 
   private subscriptions = new Subscription();
 
@@ -491,10 +494,10 @@ export class DashboardComponent implements OnInit {
 
   getPhaseStatusText(status: PhaseStatus): string {
     switch (status) {
-      case 'complete': return 'Hoàn thành';
-      case 'in_progress': return 'Đang xử lý';
-      case 'error': return 'Lỗi';
-      default: return 'Chờ xử lý';
+      case 'complete': return this.i18n.t('dashboard.complete');
+      case 'in_progress': return this.i18n.t('dashboard.inProgress');
+      case 'error': return this.i18n.t('dashboard.error');
+      default: return this.i18n.t('dashboard.pending');
     }
   }
 }

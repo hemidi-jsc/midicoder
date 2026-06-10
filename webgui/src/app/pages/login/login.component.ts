@@ -10,11 +10,12 @@ import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 
 import { AuthService } from '../../core/auth.service';
+import { I18nPipe } from '../../core/i18n.pipe';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, I18nPipe],
   template: `
     <div class="login-fullscreen">
       <!-- ======== LEFT COLUMN (brand) ======== -->
@@ -34,19 +35,19 @@ import { AuthService } from '../../core/auth.service';
             <ul class="brand-benefits">
               <li>
                 <span class="benefit-icon">&#10003;</span>
-                <span>Giảm ~90% lượng token so với cách viết code trực tiếp bằng AI</span>
+                <span>{{ 'auth.benefit1' | i18n }}</span>
               </li>
               <li>
                 <span class="benefit-icon">&#10003;</span>
-                <span>Giảm 95% thời gian so với Vibe Code nhờ khả năng biên dịch mã không dùng LLM</span>
+                <span>{{ 'auth.benefit2' | i18n }}</span>
               </li>
               <li>
                 <span class="benefit-icon">&#10003;</span>
-                <span>Sản phẩm đầu ra đạt chuẩn Enterprise và ISO 27001/ISMS và SOC2</span>
+                <span>{{ 'auth.benefit3' | i18n }}</span>
               </li>
               <li>
                 <span class="benefit-icon">&#10003;</span>
-                <span>Một nguồn sự thật duy nhất &mdash; mọi thay đổi đều bám theo contract, dễ review và truy vết</span>
+                <span>{{ 'auth.benefit4' | i18n }}</span>
               </li>
             </ul>
           </div>
@@ -60,12 +61,12 @@ import { AuthService } from '../../core/auth.service';
 
           <!-- Primary CTA -->
           <button class="btn-start" (click)="handleStart()">
-            Bắt đầu
+            {{ 'auth.start' | i18n }}
           </button>
 
           <!-- Trial link -->
           <a class="btn-trial" href="https://midicoder.com" target="_blank" rel="noopener noreferrer">
-            Dùng thử Midi Coder EE
+            {{ 'auth.trial' | i18n }}
           </a>
 
           <!-- Spacer pushes footer to bottom -->
