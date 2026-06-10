@@ -368,5 +368,21 @@ export interface NewsResponse {
 }
 
 // ============================================================================
+// UPDATE TYPES
+// ============================================================================
+
+export interface UpdateStatus {
+  has_update: boolean;
+  current_version: string;
+  latest_version: string;
+  upgrading?: boolean;
+  release_notes: string;
+  download_url: string;
+  checked_at: string;
+  assets: Record<string, string>;
+  error?: string;
+}
+
+// ============================================================================
 // END OF TYPES
 // ============================================================================

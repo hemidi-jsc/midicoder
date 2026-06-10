@@ -39,6 +39,9 @@ from typing import List, Optional
 # Brand color
 BRAND_COLOR = "#e90089"
 
+# App version
+from midicoder import __version__ as APP_VERSION
+
 # Server ports
 BACKEND_PORT = 6868
 FRONTEND_PORT = 7272
@@ -496,6 +499,7 @@ def _show_toast(title: str, message: str) -> None:
 
 _servers: List[ServerHandle] = []
 _shutdown_event = threading.Event()
+_tray_icon: Optional["Icon"] = None  # pystray Icon reference
 
 
 def _shutdown_servers() -> None:
@@ -508,6 +512,16 @@ def _shutdown_servers() -> None:
         if s.thread and s.thread.is_alive():
             s.thread.join(timeout=3)
     _log("Tất cả servers đã dừng.")
+
+
+def _stop_tray_icon() -> None:
+    """Stop the tray icon (called by upgrade flow)."""
+    global _tray_icon
+    if _tray_icon:
+        try:
+            _tray_icon.stop()
+        except Exception:
+            pass
 
 
 # =============================================================================
@@ -529,12 +543,19 @@ def run() -> int:
     # 1. Init logging
     log_path = _init_logging()
     _log("=" * 60)
-    _log("Midicoder CE v1.0.0 — Contract Coding Platform")
+    _log(f"Midicoder CE v{APP_VERSION} — Contract Coding Platform")
     _log(f"Log file: {log_path}")
     _log(f"Windowed mode: {is_windowed}")
 
     # 1b. Initialize global SQLite databases
     _init_databases()
+
+    # 1c. Start update checker scheduler (background, non-blocking)
+    try:
+        from midicoder.update_checker import set_shutdown_callbacks
+        set_shutdown_callbacks(_shutdown_servers, _stop_tray_icon)
+    except Exception as e:
+        _log(f"Update checker init error (non-fatal): {e}")
 
     # 1c. Ensure ports are free before starting
     _ensure_ports_free()
@@ -584,8 +605,16 @@ def run() -> int:
     _log(f"SQLite Viewer: http://localhost:{SQLITE_VIEWER_PORT}" if has_sqlite else "SQLite Viewer: [x]")
 
     # 5. Toast notification
-    _show_toast("Midicoder v1.0.0", "All servers ready — http://localhost:7272")
+    _show_toast(f"Midicoder v{APP_VERSION}", "All servers ready — http://localhost:7272")
     _log("All servers ready")
+
+    # 5b. Start update checker background scheduler
+    try:
+        from midicoder.update_checker import get_checker
+        get_checker().start()
+        _log("Update checker started")
+    except Exception as e:
+        _log(f"Update checker start error (non-fatal): {e}")
 
     # 6. Start system tray icon
     if is_windowed:
@@ -656,10 +685,11 @@ def _run_tray() -> None:
     )
 
     icon_img = _make_icon()
-    tray = Icon("midicoder", icon_img, "Midicoder", menu=tray_menu)
+    global _tray_icon
+    _tray_icon = Icon("midicoder", icon_img, "Midicoder", menu=tray_menu)
 
     # Run — this blocks until stop() is called
-    tray.run()
+    _tray_icon.run()
 
 
 # Keep backward compatibility for __main__.py

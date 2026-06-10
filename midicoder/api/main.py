@@ -15,7 +15,7 @@ from midicoder.api.i18n import i18n
 from midicoder.api.models import ApiResponse, ErrorResponse
 from midicoder.api.routers import (
     health, config, index, version, brief, contract, ir, code,
-    runtime, websocket, pipeline, patches, projects, artifact, activity, system,
+    runtime, websocket, pipeline, patches, projects, artifact, activity, system, update,
 )
 
 
@@ -175,6 +175,9 @@ server.include_router(activity.router, prefix="/api")
 
 # System logs
 server.include_router(system.router, prefix="/api")
+
+# Update checker
+server.include_router(update.router, prefix="/api")
 
 
 # Endpoint để lấy OpenAPI schema với prefix /api
