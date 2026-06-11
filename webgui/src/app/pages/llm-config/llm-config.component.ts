@@ -10,16 +10,20 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/api.service';
 import { I18nPipe } from '../../core/i18n.pipe';
 import { I18nService } from '../../core/i18n.service';
+import { DOCS_BASE } from '../../core/app.constants';
 
 @Component({
   selector: 'app-llm-config',
   standalone: true,
   imports: [CommonModule, FormsModule, I18nPipe],
   template: `
-    <div class="container mx-auto px-6 py-8">
+    <div class="py-8">
       <!-- Header -->
       <div class="mb-6">
-        <h1 class="text-2xl font-bold">{{ 'llm.title' | i18n }}</h1>
+        <div class="page-header-row">
+          <h1 class="text-2xl font-bold">{{ 'llm.title' | i18n }}</h1>
+          <a href="{{ docsUrl }}" target="_blank" rel="noopener" class="docs-link">{{ 'common.readGuide' | i18n }}</a>
+        </div>
         <p class="text-text-secondary mt-1">{{ 'llm.subtitle' | i18n }}</p>
       </div>
 
@@ -209,6 +213,27 @@ import { I18nService } from '../../core/i18n.service';
     </div>
   `,
   styles: [`
+    /* Page header docs link */
+    .page-header-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .docs-link {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--accent-primary, #fc6767);
+      text-decoration: none;
+      letter-spacing: 0.04em;
+      transition: color 0.2s;
+    }
+
+    .docs-link:hover {
+      text-decoration: underline;
+    }
+
     /* Select with custom caret — same as project create form */
     select {
       appearance: none;
@@ -254,6 +279,8 @@ import { I18nService } from '../../core/i18n.service';
 export class LlmConfigComponent implements OnInit {
   private api = inject(ApiService);
   private i18n = inject(I18nService);
+
+  readonly docsUrl = `${DOCS_BASE}/llm`;
 
   // Form state
   llm = {

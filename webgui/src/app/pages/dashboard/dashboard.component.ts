@@ -15,6 +15,7 @@ import { Subscription } from 'rxjs';
 
 import { I18nPipe } from '../../core/i18n.pipe';
 import { I18nService } from '../../core/i18n.service';
+import { DOCS_BASE } from '../../core/app.constants';
 import { PipelineStore, PhaseStatus } from '../../core/pipeline.store';
 import { ApiService, ProjectInfo } from '../../core/api.service';
 import { VersionService, VersionInfo } from '../../core/version.service';
@@ -41,7 +42,10 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
     <div class="dashboard-container">
       <!-- Header -->
       <div class="dashboard-header">
-        <h1 class="dashboard-title">{{ 'dashboard.title' | i18n }}</h1>
+        <div class="page-header-row">
+          <h1 class="dashboard-title">{{ 'dashboard.title' | i18n }}</h1>
+          <a href="{{ docsUrl }}" target="_blank" rel="noopener" class="docs-link">{{ 'common.readGuide' | i18n }}</a>
+        </div>
         <p class="dashboard-subtitle">
           {{ 'dashboard.project' | i18n }}<span class="text-white">{{ projectName() || ('dashboard.notInitialized' | i18n) }}</span>
           @if (activeVersion()) {
@@ -179,8 +183,29 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
     </div>
   `,
   styles: [`
+    /* Page header docs link */
+    .page-header-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .docs-link {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--accent-primary, #fc6767);
+      text-decoration: none;
+      letter-spacing: 0.04em;
+      transition: color 0.2s;
+    }
+
+    .docs-link:hover {
+      text-decoration: underline;
+    }
+
     .dashboard-container {
-      padding: 32px 32px 32px 0;
+      padding: 32px 0;
     }
 
     .dashboard-header {
@@ -383,6 +408,8 @@ export class DashboardComponent implements OnInit {
   private i18n = inject(I18nService);
 
   private subscriptions = new Subscription();
+
+  readonly docsUrl = `${DOCS_BASE}/dashboard`;
 
   // Data
   versions = signal<VersionInfo[]>([]);

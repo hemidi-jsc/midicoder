@@ -6,7 +6,7 @@
 import { Component, OnInit, inject, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { APP_VERSION } from '../../core/app.constants';
+import { APP_VERSION, DOCS_BASE } from '../../core/app.constants';
 import { ApiService } from '../../core/api.service';
 import { I18nService } from '../../core/i18n.service';
 import { I18nPipe } from '../../core/i18n.pipe';
@@ -20,10 +20,13 @@ interface SettingsData {
   standalone: true,
   imports: [CommonModule, FormsModule, I18nPipe],
   template: `
-    <div class="container mx-auto px-6 py-8">
+    <div class="py-8">
       <!-- Header -->
       <div class="mb-6">
-        <h1 class="text-2xl font-bold">{{ 'settings.title' | i18n }}</h1>
+        <div class="page-header-row">
+          <h1 class="text-2xl font-bold">{{ 'settings.title' | i18n }}</h1>
+          <a href="{{ docsUrl }}" target="_blank" rel="noopener" class="docs-link">{{ 'common.readGuide' | i18n }}</a>
+        </div>
         <p class="text-text-secondary mt-1">{{ 'settings.subtitle' | i18n }}</p>
         <div class="info-notice">
           <span class="notice-icon">ℹ️</span>
@@ -190,6 +193,27 @@ interface SettingsData {
     </div>
   `,
   styles: [`
+    /* Page header docs link */
+    .page-header-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .docs-link {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--accent-primary, #fc6767);
+      text-decoration: none;
+      letter-spacing: 0.04em;
+      transition: color 0.2s;
+    }
+
+    .docs-link:hover {
+      text-decoration: underline;
+    }
+
     .card {
       background: var(--bg-card);
       border: 1px solid var(--border-subtle);
@@ -391,6 +415,8 @@ export class GeneralSettingsComponent implements OnInit {
   private zone = inject(NgZone);
 
   readonly appVersion = APP_VERSION;
+  readonly docsUrl = `${DOCS_BASE}/settings`;
+
   settings: SettingsData = {};
   loading = false;
   saving = false;
