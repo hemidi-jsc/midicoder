@@ -42,6 +42,20 @@
   padding: 0;
 }
 
+/* IBM Carbon: no border-radius anywhere — sharp corners only */
+* {
+  border-radius: 0 !important;
+}
+
+/* Exceptions: elements that must remain circular */
+.spinner,
+.step-circle,
+.active-dot,
+.phase-icon,
+.pipeline-step .step-circle {
+  border-radius: 50% !important;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   background-color: var(--bg-primary);
