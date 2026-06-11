@@ -14,7 +14,6 @@ Tất cả thao tác ghi vào SQLite (projects.db) ĐỀU đồng bộ với fil
 """
 
 import hashlib
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -32,29 +31,7 @@ from midicoder.storage.sqlite import (
     get_connection,
     init_database,
 )
-
-
-# ============================================================================
-# Activity logging helper
-# ============================================================================
-
-
-def _log_activity(action: str, resource_type: str = "project", resource_id: str = "", details: dict = None, status: str = "success") -> None:
-    """Ghi activity log vào artifacts.db activity_log table."""
-    data_dir = Path(".midicoder/data")
-    artifacts_db = data_dir / "artifacts.db"
-    if not artifacts_db.exists():
-        return
-    try:
-        with get_connection(artifacts_db) as conn:
-            conn.execute(
-                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (action, resource_type, resource_id,
-                 json.dumps(details) if details else None, status),
-            )
-    except Exception:
-        pass
+from midicoder.storage.activity import log as _log_activity
 
 
 # ============================================================================

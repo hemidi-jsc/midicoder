@@ -1,10 +1,12 @@
 ﻿"""
-Router cho brief — 1 version = 1 brief duy nhất, status là progress.
+Router cho brief — 1 version = 1 brief duy nhất, 2 status: draft / freezed.
 
 Kiến trúc:
-- Mỗi version có đúng 1 brief (type=working)
-- Status progression: draft → clarified → frozen → archived
-- Mỗi lần thay đổi content → log vào brief_lineage table
+- Mỗi version có đúng 1 brief
+- Status: draft (có thể chỉnh sửa) → freezed (readonly, không thể chỉnh sửa)
+- Status chỉ đổi khi user bấm nút freeze trên WebGUI (delegate qua pipeline_bridge)
+- Không có auto-transition status
+- Mỗi lần thay đổi content → log vào brief_revisions table
 - Tất cả DB paths dùng explicit project path từ get_project_cwd()
 """
 
@@ -44,50 +46,42 @@ def _get_project_db_path(db_name: str) -> Path | None:
     return Path(project_cwd) / ".midicoder" / "data" / db_name
 
 
-def _get_working_brief(mgr, version: str):
+def _get_brief(mgr, version: str):
     """Lấy brief duy nhất cho version này."""
     for b in mgr.list(version=version):
-        if b.get("type") == "working":
-            return b
+        return b
     return None
 
 
-def _log_lineage(mgr, brief_id: str, version: str, change_type: str, change_description: str, old_hash: str = None, new_hash: str = None):
-    """Log thay đổi vào brief_lineage table."""
+def _add_revision(mgr, brief_id: str, version: str, event: str, diff_summary: str, content: str = None):
+    """Thêm revision vào brief_revisions table."""
     try:
-        with mgr._get_connection() as conn:
-            # Kiểm tra schema có columns hash không (backward compat với DB cũ)
-            cursor = conn.execute("PRAGMA table_info(brief_lineage)")
-            columns = [row["name"] for row in cursor.fetchall()]
-            if "old_content_hash" in columns:
-                conn.execute(
-                    "INSERT INTO brief_lineage (brief_id, parent_brief_id, version, change_type, change_description, old_content_hash, new_content_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (brief_id, brief_id, version, change_type, change_description, old_hash, new_hash),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO brief_lineage (brief_id, parent_brief_id, version, change_type, change_description) VALUES (?, ?, ?, ?, ?)",
-                    (brief_id, brief_id, version, change_type, change_description),
-                )
+        mgr.add_revision(brief_id, version, event, diff_summary, content)
     except Exception:
         pass
 
 
 def _upsert_brief(mgr, version: str, content: str, title: str = None, change_description: str = "Auto-save"):
-    """Upsert brief: update nếu tồn tại (log lineage), tạo mới nếu chưa có."""
-    existing = _get_working_brief(mgr, version)
+    """Upsert brief: update nếu tồn tại (log revision), tạo mới nếu chưa có.
+
+    Raises ValueError nếu brief đã freezed.
+    """
+    existing = _get_brief(mgr, version)
     content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     if existing:
         brief_id = existing.get("brief_id")
-        old_hash = existing.get("hash", "")
+        if existing.get("status") == "freezed":
+            raise ValueError("Brief đã được đóng băng, không thể chỉnh sửa")
+        old_hash = existing.get("content_hash", "")
         if old_hash != content_hash:
-            _log_lineage(mgr, brief_id, version, "content_update", f"Content updated: {change_description}", old_hash=old_hash, new_hash=content_hash)
+            pass  # revision is logged below
         with mgr._get_connection() as conn:
             conn.execute(
-                "UPDATE briefs SET content = ?, hash = ?, title = ?, updated_at = datetime('now') WHERE brief_id = ?",
+                "UPDATE briefs SET content = ?, content_hash = ?, title = ?, updated_at = datetime('now') WHERE brief_id = ?",
                 (content, content_hash, title or existing.get("title", ""), brief_id),
             )
+        _add_revision(mgr, brief_id, version, "content_updated", change_description, content)
         return brief_id, True
     else:
         brief_id = f"brief-{uuid.uuid4().hex[:8]}"
@@ -97,9 +91,8 @@ def _upsert_brief(mgr, version: str, content: str, title: str = None, change_des
                 version=version,
                 content=content,
                 title=title or content.split("\n")[0].strip()[:100],
-                brief_type="working",
             )
-            _log_lineage(mgr, brief_id, version, "created", "Brief created", old_hash=None, new_hash=content_hash)
+            _add_revision(mgr, brief_id, version, "created", "Brief created", content)
             return brief_id, False
         except Exception:
             return None, False
@@ -107,7 +100,7 @@ def _upsert_brief(mgr, version: str, content: str, title: str = None, change_des
 
 @router.post("/analyze", response_model=ApiResponse)
 async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Request = None):
-    """Phân tích brief — upsert SQLite + reuse _analyze_with_llm() từ CLI pipeline."""
+    """Phân tích brief — upsert SQLite + LLM analysis. KHÔNG đổi status tự động."""
     if request_data is None:
         request_data = BriefAnalyzeRequest(brief_content="")
 
@@ -115,18 +108,21 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
     version = request_data.version or "v1.0.0"
 
     if not request_data.brief_content.strip():
-        return ApiResponse(success=False, data=None, message="Brief content không được để trống", language=language)
+        return ApiResponse(success=False, data=None, message=i18n.t("brief.emptyContent", language), language=language)
 
     from midicoder.storage.sqlite import BriefsManager, ArtifactsManager
 
     briefs_manager = BriefsManager(db_path=_get_project_db_path("briefs.db"))
     briefs_manager.init()
 
-    brief_id, _ = _upsert_brief(briefs_manager, version, request_data.brief_content)
-    if not brief_id:
-        return ApiResponse(success=False, data=None, message="Không thể lưu brief vào SQLite", language=language)
+    try:
+        brief_id, _ = _upsert_brief(briefs_manager, version, request_data.brief_content)
+    except ValueError as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
 
-    # Reuse 100% CLI pipeline function — import từ pure module
+    if not brief_id:
+        return ApiResponse(success=False, data=None, message=i18n.t("brief.saveFailed", language), language=language)
+
     from midicoder.pipeline.analyze import analyze_brief_with_llm
 
     try:
@@ -137,6 +133,8 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
         )
     except Exception as e:
         return ApiResponse(success=False, data=None, message=f"LLM analysis failed: {str(e)}", language=language)
+
+    _add_revision(briefs_manager, brief_id, version, "analyzed", "LLM analysis completed", request_data.brief_content)
 
     json_data = analysis.json_data
     entities = json_data.get("entities", [])
@@ -164,7 +162,6 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
         "ui_component_count": len(ui_components),
     }
 
-    # Upsert: update nếu artifact đã tồn tại, tạo mới nếu chưa
     existing_artifact = artifacts_manager.get(artifact_id)
     if existing_artifact:
         artifacts_manager.update_content(artifact_id, content_json)
@@ -181,22 +178,6 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
 
     ambiguities = json_data.get("ambiguities", [])
 
-    # Cập nhật status brief sau analyze
-    if confidence >= 0.8 and len(ambiguities) == 0:
-        # Đủ rõ, không có ambiguity → clarified
-        try:
-            briefs_manager.update_status(brief_id, "clarified")
-        except Exception:
-            pass
-    else:
-        # Có ambiguity hoặc confidence thấp → analyzed (chờ clarify)
-        try:
-            briefs_manager.update_status(brief_id, "analyzed")
-        except Exception:
-            pass
-
-    # Luôn trả về "needs_clarification" sau khi analyze
-    # User có thể skip clarify nếu brief đã đủ rõ (clarify done=True ngay lập tức)
     return ApiResponse(
         success=True,
         data={
@@ -221,14 +202,14 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
                 "brief_id": brief_id,
             },
         },
-        message="Phân tích brief thành công",
+        message=i18n.t("brief.analyzeSuccess", language),
         language=language,
     )
 
 
 @router.post("/save", response_model=ApiResponse)
 async def save_brief(request_data: BriefSaveRequest = None, request: Request = None):
-    """Upsert brief cho version — 1 version = 1 brief duy nhất."""
+    """Upsert brief cho version. Block nếu brief đã freezed."""
     if request_data is None:
         request_data = BriefSaveRequest()
 
@@ -239,22 +220,26 @@ async def save_brief(request_data: BriefSaveRequest = None, request: Request = N
         mgr = BriefsManager(db_path=_get_project_db_path("briefs.db"))
         mgr.init()
 
-        brief_id, updated = _upsert_brief(mgr, request_data.version, request_data.brief_content, change_description="Auto-save")
+        try:
+            brief_id, updated = _upsert_brief(mgr, request_data.version, request_data.brief_content, change_description="Auto-save")
+        except ValueError as e:
+            return ApiResponse(success=False, data=None, message=str(e), language=language)
+
         if brief_id:
             return ApiResponse(
                 success=True,
                 data={"saved": True, "brief_id": brief_id, "updated": updated},
-                message="Brief updated" if updated else "Brief saved",
+                message=i18n.t("brief.updated" if updated else "brief.saved", language),
                 language=language,
             )
-        return ApiResponse(success=False, data=None, message="Failed to save brief", language=language)
+        return ApiResponse(success=False, data=None, message=i18n.t("brief.saveFailed", language), language=language)
 
     return ApiResponse(success=True, data={"saved": True}, message="OK", language=language)
 
 
 @router.post("/freeze", response_model=ApiResponse)
 async def freeze_brief_ep(version: str = Query(None), request: Request = None):
-    """Đóng brief — delegate vào pipeline (status sync SQLite + filesystem)."""
+    """Đóng băng brief — delegate vào pipeline (status → freezed, version → inbuild)."""
     language = i18n.get_language_from_request(request)
 
     if not version:
@@ -263,7 +248,7 @@ async def freeze_brief_ep(version: str = Query(None), request: Request = None):
 
     project_cwd = get_project_cwd()
     if not project_cwd:
-        return ApiResponse(success=False, data=None, message="Không có project active", language=language)
+        return ApiResponse(success=False, data=None, message=i18n.t("brief.noActiveProject", language), language=language)
 
     result = await pipeline_bridge.execute_command(
         "brief", "freeze", version=version, project_cwd=project_cwd
@@ -273,68 +258,17 @@ async def freeze_brief_ep(version: str = Query(None), request: Request = None):
         data = result.get("_data", {})
         return ApiResponse(
             success=True,
-            data={"brief_id": data.get("brief_id"), "status": "frozen"},
-            message="Brief đã được đóng",
+            data={"brief_id": data.get("brief_id"), "status": "freezed"},
+            message=i18n.t("brief.freezedMsg", language),
             language=language,
         )
 
     return ApiResponse(
         success=False,
         data=None,
-        message=result.get("stderr", "Không thể đóng brief"),
+        message=result.get("stderr", i18n.t("brief.freezeError", language)),
         language=language,
     )
-
-
-@router.post("/set-status", response_model=ApiResponse)
-async def set_brief_status(request: Request):
-    """Set status của brief (draft → analyzed → clarified → frozen).
-
-    Request body: {"version": "v1.0.0", "status": "clarified"}
-    """
-    language = i18n.get_language_from_request(request)
-    body = await request.json()
-    version = body.get("version", "v1.0.0")
-    new_status = body.get("status", "clarified")
-
-    from midicoder.storage.sqlite import BriefsManager
-    mgr = BriefsManager(db_path=_get_project_db_path("briefs.db"))
-    mgr.init()
-
-    target = _get_working_brief(mgr, version)
-    if not target:
-        return ApiResponse(success=False, data=None, message="Không tìm thấy brief", language=language)
-
-    brief_id = target.get("brief_id")
-    brief_hash = target.get("hash", "")
-    mgr.update_status(brief_id, new_status)
-    _log_lineage(mgr, brief_id, version, "status_change", f"Status changed to {new_status}", old_hash=brief_hash, new_hash=brief_hash)
-
-    # Nếu brief được frozen → chuyển status version sang active
-    if new_status == "frozen":
-        try:
-            from midicoder.storage.projects import ProjectsManager
-            pm = ProjectsManager()
-            pm.init()
-            active_project = pm.get_active()
-            if active_project:
-                pm.version_update_status(active_project["project_id"], version, "inbuild")
-
-            # Cập nhật metadata.yml
-            from midicoder.api.config import _get_project_root
-            from pathlib import Path
-            import yaml
-            meta_file = Path(_get_project_root()) / ".midicoder" / "versions" / version / "metadata.yml"
-            if meta_file.exists():
-                with open(meta_file, "r", encoding="utf-8") as f:
-                    meta = yaml.safe_load(f) or {}
-                meta["status"] = "inbuild"
-                with open(meta_file, "w", encoding="utf-8") as f:
-                    yaml.dump(meta, f, default_flow_style=False, allow_unicode=True)
-        except Exception:
-            pass
-
-    return ApiResponse(success=True, data={"brief_id": brief_id, "status": new_status}, message=f"Brief status: {new_status}", language=language)
 
 
 @router.get("/get", response_model=ApiResponse)
@@ -346,14 +280,13 @@ async def get_brief(version: str = Query(None), request: Request = None):
         mgr = BriefsManager(db_path=_get_project_db_path("briefs.db"))
         mgr.init()
 
-        brief = _get_working_brief(mgr, version)
+        brief = _get_brief(mgr, version)
         if not brief:
             return ApiResponse(success=False, data=None, message="Brief not found", language=language)
 
         brief_id = brief.get("brief_id")
         clarifications = mgr.get_clarifications(brief_id)
 
-        # Load analysis artifact nếu có (explicit project DB path)
         analysis_data = None
         try:
             artifacts_mgr = ArtifactsManager(db_path=_get_project_db_path("artifacts.db"))
@@ -361,7 +294,6 @@ async def get_brief(version: str = Query(None), request: Request = None):
             for art in artifacts_mgr.list(artifact_type="analysis", brief_id=brief_id):
                 try:
                     content = json.loads(art.get("content") or "{}")
-                    # metadata trong SQLite là JSON string — phải parse
                     metadata_raw = {}
                     raw_metadata = art.get("metadata")
                     if raw_metadata:
@@ -370,15 +302,12 @@ async def get_brief(version: str = Query(None), request: Request = None):
                         elif isinstance(raw_metadata, dict):
                             metadata_raw = raw_metadata
 
-                    # LLM trả domain/type/scale ở gốc JSON — không phải trong intent object
                     intent = content.get("intent") or {
                         "domain": content.get("domain", ""),
                         "type": content.get("type", "api"),
                         "scale": content.get("scale", "medium"),
                     }
 
-                    # Normalize metadata keys: artifact DB lưu entity_count, command_count...
-                    # nhưng frontend template đọc metadata.entities, metadata.commands...
                     normalized_metadata = {
                         "domain": metadata_raw.get("domain", intent.get("domain", "")),
                         "confidence": metadata_raw.get("confidence", 0.5),
@@ -417,7 +346,6 @@ async def get_brief(version: str = Query(None), request: Request = None):
             data={
                 "brief_id": brief_id,
                 "version": brief.get("version"),
-                "type": brief.get("type", "working"),
                 "status": brief.get("status", "draft"),
                 "title": brief.get("title", ""),
                 "content": brief.get("content", ""),
@@ -441,7 +369,7 @@ async def get_clarifications(version: str = Query(None), request: Request = None
         mgr = BriefsManager(db_path=_get_project_db_path("briefs.db"))
         mgr.init()
 
-        brief = _get_working_brief(mgr, version)
+        brief = _get_brief(mgr, version)
         if not brief:
             return ApiResponse(success=True, data={"clarifications": [], "count": 0}, language=language)
 
@@ -463,24 +391,22 @@ async def get_clarifications(version: str = Query(None), request: Request = None
         return ApiResponse(success=False, data=None, message=str(e), language=language)
 
 
-@router.get("/lineage", response_model=ApiResponse)
-async def get_brief_lineage(version: str = Query(None), request: Request = None):
-    """Lấy lịch sử thay đổi của brief (từ brief_lineage table)."""
+@router.get("/revisions", response_model=ApiResponse)
+async def get_brief_revisions(version: str = Query(None), request: Request = None):
+    """Lấy lịch sử revision của brief (từ brief_revisions table)."""
     language = i18n.get_language_from_request(request)
     try:
         from midicoder.storage.sqlite import BriefsManager
         mgr = BriefsManager(db_path=_get_project_db_path("briefs.db"))
         mgr.init()
 
-        brief = _get_working_brief(mgr, version)
+        brief = _get_brief(mgr, version)
         if not brief:
-            return ApiResponse(success=True, data={"lineage": [], "count": 0}, language=language)
+            return ApiResponse(success=True, data={"revisions": [], "count": 0}, language=language)
 
         brief_id = brief.get("brief_id")
-        with mgr._get_connection() as conn:
-            cursor = conn.execute("SELECT * FROM brief_lineage WHERE brief_id = ? ORDER BY created_at", (brief_id,))
-            lineage = [dict(row) for row in cursor.fetchall()]
+        revisions = mgr.get_revisions(brief_id)
 
-        return ApiResponse(success=True, data={"lineage": lineage, "count": len(lineage)}, language=language)
+        return ApiResponse(success=True, data={"revisions": revisions, "count": len(revisions)}, language=language)
     except Exception as e:
         return ApiResponse(success=False, data=None, message=str(e), language=language)

@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 
 from midicoder.errors import MidicoderErrorManager as EM, ErrorCode
 from midicoder.storage.sqlite import BriefsManager, ArtifactsManager, get_connection
+from midicoder.storage.activity import log
 from midicoder.dsl.projection import ProjectionTree
 from midicoder.dsl.validator import validate_tree, ValidationStatus, ValidationReport
 from midicoder.pipeline.dsl_parser import DSLParser
@@ -51,22 +52,7 @@ MAX_REPAIR_ATTEMPTS = 5
 
 def _log_activity(action: str, resource_type: str = "contract", resource_id: str = "", details: dict = None, status: str = "success") -> None:
     """Ghi activity log vào artifacts.db activity_log table."""
-    data_dir = Path(".midicoder/data")
-    if not data_dir.exists():
-        data_dir = Path(".") / ".midicoder" / "data"
-    artifacts_db = data_dir / "artifacts.db"
-    if not artifacts_db.exists():
-        return
-    try:
-        with get_connection(artifacts_db) as conn:
-            conn.execute(
-                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (action, resource_type, resource_id,
-                 json.dumps(details) if details else None, status),
-            )
-    except Exception:
-        pass
+    log(action=action, resource_type=resource_type, resource_id=resource_id, details=details, status=status)
 
 
 # ============================================================================
@@ -492,29 +478,28 @@ def generate_contracts(force: bool = False):
     """
     _log_activity("contract.gen.started", details={"force": force})
 
-    # Step 1: Check if brief exists
+    # Step 1: Check if brief exists và đã freezed
     briefs_manager = BriefsManager()
     briefs = briefs_manager.list()
 
     if not briefs:
         _log_activity("contract.gen.no_brief", details={}, status="error")
-        return
+        raise SystemExit("Không có brief nào")
 
-    # Get latest analyzed brief
+    # Tìm brief có status = freezed
     active_brief = None
     for brief in briefs:
-        if brief.get('status') == 'analyzed':
+        if brief.get('status') == 'freezed':
             active_brief = brief
             break
 
     if not active_brief:
-        active_brief = briefs[0]
-        _log_activity("contract.brief_loaded", resource_id=active_brief.get('brief_id'),
-                     details={"brief_id": active_brief.get('brief_id'), "status": active_brief.get('status')})
+        _log_activity("contract.gen.no_freezed_brief", details={}, status="error")
+        raise SystemExit("Chưa có brief nào được freeze. Hãy freeze brief trước khi generate contract.")
 
     brief_id = active_brief.get('brief_id')
     _log_activity("contract.brief_loaded", resource_id=brief_id,
-                 details={"brief_id": brief_id, "title": active_brief.get('title')})
+                 details={"brief_id": brief_id, "title": active_brief.get('title'), "status": "freezed"})
 
     # Step 2: Check if contracts already exist
     artifacts_manager = ArtifactsManager()

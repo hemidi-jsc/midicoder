@@ -148,7 +148,7 @@ def _collect_brief_stats(version: str) -> Dict[str, Any]:
 
                 # Change history count
                 lineage_count = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM brief_lineage WHERE brief_id = ?",
+                    "SELECT COUNT(*) as cnt FROM brief_revisions WHERE brief_id = ?",
                     (b.get("brief_id"),),
                 ).fetchone()["cnt"]
                 result["change_count"] = lineage_count

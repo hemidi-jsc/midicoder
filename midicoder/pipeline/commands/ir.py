@@ -24,6 +24,7 @@ from typing import Any
 
 from midicoder.errors import MidicoderErrorManager as EM, ErrorCode
 from midicoder.storage.sqlite import ArtifactsManager, get_connection
+from midicoder.storage.activity import log as _log_activity_raw
 from midicoder.pipeline.mir import (
     MIR, Operation, DataFlow, EffectFlow, Boundary, MIRBuilder
 )
@@ -42,21 +43,8 @@ _OPTIONAL_CATEGORIES = {"roles"}
 
 
 def _log_activity(action: str, resource_type: str = "ir", resource_id: str = "", details: dict = None, status: str = "success") -> None:
-    """Ghi activity log vào artifacts.db activity_log table."""
-    data_dir = Path(".midicoder/data")
-    artifacts_db = data_dir / "artifacts.db"
-    if not artifacts_db.exists():
-        return
-    try:
-        with get_connection(artifacts_db) as conn:
-            conn.execute(
-                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (action, resource_type, resource_id,
-                 json.dumps(details) if details else None, status),
-            )
-    except Exception:
-        pass
+    """Ghi activity log qua shared module."""
+    _log_activity_raw(action=action, resource_type=resource_type, resource_id=resource_id, details=details, status=status)
 
 
 def build_mir(verbose: bool = False) -> MIR:

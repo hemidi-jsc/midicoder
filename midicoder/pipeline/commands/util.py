@@ -36,20 +36,7 @@ logger = logging.getLogger(__name__)
 
 def _log_activity(action: str, resource_type: str = "system", resource_id: str = "", details: dict = None, status: str = "success") -> None:
     """Ghi activity log vào artifacts.db activity_log table."""
-    data_dir = Path(".midicoder/data")
-    artifacts_db = data_dir / "artifacts.db"
-    if not artifacts_db.exists():
-        return
-    try:
-        with get_connection(artifacts_db) as conn:
-            conn.execute(
-                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (action, resource_type, resource_id,
-                 json.dumps(details) if details else None, status),
-            )
-    except Exception:
-        pass
+    log(action=action, resource_type=resource_type, resource_id=resource_id, details=details, status=status)
 
 # ============================================================================
 # Config Schema
@@ -454,15 +441,14 @@ def get_versions_list() -> List[Dict[str, Any]]:
 def get_last_activity() -> Optional[Dict[str, Any]]:
     """
     Lấy last activity log.
-    
+
     Returns:
         Last activity record hoặc None
     """
     try:
-        from midicoder.storage.sqlite import ActivityLogger
-        logger_mgr = ActivityLogger(DB_ARTIFACTS)
-        logs = logger_mgr.query(limit=1)
-        
+        from midicoder.storage import activity
+        logs = activity.query_recent(days=365)
+
         if logs:
             log = logs[0]
             return {
@@ -471,7 +457,7 @@ def get_last_activity() -> Optional[Dict[str, Any]]:
             }
     except Exception as e:
         logger.warning(f"Could not get last activity: {e}")
-    
+
     return None
 
 

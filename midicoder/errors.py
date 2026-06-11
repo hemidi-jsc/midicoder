@@ -53,7 +53,6 @@ class ErrorCode(str, Enum):
     # =========================================================================
     # Brief/DSL Errors
     # =========================================================================
-    MASTER_BRIEF_MISSING = "MDC-BRIEF-001"
 
     # =========================================================================
     # Contract/Compilation Errors
@@ -1367,7 +1366,6 @@ class MidicoderErrorManager:
         ErrorCode.NO_CURRENT_VERSION: "Không có version hiện tại. Hãy chạy `version create` trước.",
 
         # Brief Errors
-        ErrorCode.MASTER_BRIEF_MISSING: "Thiếu `master-brief.md` nên không thể biên dịch.",
 
         # Contract Errors
         ErrorCode.CONTRACT_GRAPH_NOT_FOUND: "Không tìm thấy contract graph để biên dịch.",

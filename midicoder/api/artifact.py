@@ -203,16 +203,6 @@ def get_generated_file_content(version: Optional[str], file_path: str) -> Option
     return read_text_file(version, "code", "generated", file_path)
 
 
-def get_brief_master(version: Optional[str] = None) -> Optional[str]:
-    """Read briefs/master-brief.md"""
-    return read_text_file(version, "briefs", "master-brief.md")
-
-
-def get_brief_working(version: Optional[str] = None) -> Optional[str]:
-    """Read briefs/working-brief.md"""
-    return read_text_file(version, "briefs", "working-brief.md")
-
-
 def get_brief_raw(version: Optional[str] = None) -> Optional[str]:
     """Read brief.md (root brief file used by CLI)"""
     return read_text_file(version, "brief.md")

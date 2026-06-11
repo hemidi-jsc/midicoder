@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from midicoder.storage.sqlite import ArtifactsManager, ProvenanceManager, get_connection
+from midicoder.storage.activity import log as _log_activity
 from midicoder.pipeline.config import get_config, load_user_config
 from midicoder.pipeline.plan import ImplementationPlan, ModuleSpec, FileSpec
 from midicoder.pipeline.file_contributions_loader import (
@@ -40,7 +41,7 @@ from midicoder.pipeline.file_contributions_loader import (
 class CodePlan:
     """
     Implementation Plan - Kế hoạch code generation.
-    
+
     Attributes:
         meta: Meta thông tin (version, created_at, target)
         backend_files: Danh sách backend files cần generate
@@ -57,7 +58,7 @@ class CodePlan:
 class GeneratedFile:
     """
     Generated File - File đã generate.
-    
+
     Attributes:
         path: Đường dẫn file
         content: Nội dung file
@@ -68,28 +69,6 @@ class GeneratedFile:
     content: str
     type: str
     template: str
-
-
-# ============================================================================
-# Activity Logging Helper
-# ============================================================================
-
-def _log_activity(action: str, resource_type: str = "code", resource_id: str = "", details: dict = None, status: str = "success") -> None:
-    """Ghi activity log vào artifacts.db activity_log table."""
-    data_dir = Path(".midicoder/data")
-    artifacts_db = data_dir / "artifacts.db"
-    if not artifacts_db.exists():
-        return
-    try:
-        with get_connection(artifacts_db) as conn:
-            conn.execute(
-                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (action, resource_type, resource_id,
-                 json.dumps(details) if details else None, status),
-            )
-    except Exception:
-        pass
 
 
 # ============================================================================

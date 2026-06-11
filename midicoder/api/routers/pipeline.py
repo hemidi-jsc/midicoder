@@ -159,7 +159,7 @@ async def get_pipeline_status(request: Request):
 
     try:
         from midicoder.pipeline.config import get_config
-        from midicoder.storage.projects import ProjectsManager
+        from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
         from midicoder.api.config import get_project_cwd
 
         # Lấy project path active
@@ -196,7 +196,7 @@ async def get_pipeline_status(request: Request):
             )
 
         # Project name từ ProjectsManager (multi-project registry)
-        projects_mgr = ProjectsManager()
+        projects_mgr = ProjectsManager(db_path=DB_PROJECTS)
         projects_mgr.init()
         active_project = projects_mgr.get_active()
         if active_project:

@@ -30,6 +30,7 @@ import yaml
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
 from midicoder.storage.projects import ProjectsManager
 from midicoder.storage.sqlite import get_connection
+from midicoder.storage.activity import log
 
 
 # SemVer regex pattern (strict)
@@ -44,20 +45,7 @@ def validate_version_name(name: str) -> bool:
 
 def _log_activity(action: str, resource_type: str = "version", resource_id: str = "", details: dict = None, status: str = "success") -> None:
     """Ghi activity log vào artifacts.db activity_log table."""
-    data_dir = _get_data_dir()
-    artifacts_db = data_dir / "artifacts.db"
-    if not artifacts_db.exists():
-        return
-    try:
-        with get_connection(artifacts_db) as conn:
-            conn.execute(
-                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (action, resource_type, resource_id,
-                 json.dumps(details) if details else None, status),
-            )
-    except Exception:
-        pass  # non-fatal — log failure should not break operations
+    log(action=action, resource_type=resource_type, resource_id=resource_id, details=details, status=status)
 
 
 def _get_project_id() -> str:
@@ -129,7 +117,9 @@ def save_project_config(config: dict) -> None:
 
 
 def _get_manager() -> ProjectsManager:
-    mgr = ProjectsManager()
+    """Lấy ProjectsManager với đúng DB path absolute."""
+    from midicoder.storage.projects import DB_PROJECTS
+    mgr = ProjectsManager(db_path=DB_PROJECTS)
     mgr.init()
     return mgr
 
@@ -656,7 +646,7 @@ def _delete_sqlite_data(version_name: str) -> None:
 
     Xóa theo đúng thứ tự để tôn trọng foreign key constraints:
     1. clarifications (FK → briefs.brief_id) — xóa theo brief_ids của version
-    2. brief_lineage (không có FK constraint) — xóa theo version
+    2. brief_revisions (không có FK constraint) — xóa theo version
     3. briefs (FK → artifacts.brief_id via CASCADE) — xóa theo version
     4. artifacts — xóa theo version (CASCADE xóa clarifications đã được xóa ở trên)
     5. decisions — xóa theo related_version
@@ -664,7 +654,7 @@ def _delete_sqlite_data(version_name: str) -> None:
     data_dir = _get_data_dir()
     vname = version_name.lstrip("v")
 
-    # 1. briefs.db: xóa clarifications → brief_lineage → briefs
+    # 1. briefs.db: xóa clarifications → brief_revisions → briefs
     briefs_db = data_dir / "briefs.db"
     if briefs_db.exists():
         from midicoder.storage.sqlite import get_connection
@@ -684,9 +674,9 @@ def _delete_sqlite_data(version_name: str) -> None:
                         f"DELETE FROM clarifications WHERE brief_id IN ({placeholders})",
                         brief_ids
                     )
-                    # Xóa brief_lineage theo version
+                    # Xóa brief_revisions theo version
                     conn.execute(
-                        "DELETE FROM brief_lineage WHERE version = ? OR version = ?",
+                        "DELETE FROM brief_revisions WHERE version = ? OR version = ?",
                         (version_name, vname)
                     )
 
@@ -798,9 +788,9 @@ def _clone_sqlite_data(parent_version: str, new_version: str) -> None:
                                 )
                             )
 
-                        # Clone brief_lineage (tạo record mới ghi nhận là clone)
+                        # Clone brief_revisions (tạo record mới ghi nhận là clone)
                         conn.execute(
-                            """INSERT INTO brief_lineage
+                            """INSERT INTO brief_revisions
                             (brief_id, parent_brief_id, version, change_type, change_description)
                             VALUES (?, ?, ?, ?, ?)""",
                             (new_brief_id, new_brief_id, new_version, "cloned", f"Cloned from {parent_version}")

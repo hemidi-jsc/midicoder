@@ -23,8 +23,14 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 
 from midicoder.storage.sqlite import get_connection
+from midicoder.storage.activity import log as _log_activity_raw
 from midicoder.pipeline.config import get_config
 from midicoder.errors import ErrorCode, MidicoderErrorManager as EM
+
+
+def _log_activity(action: str, resource_type: str = "preview", resource_id: str = "", details: dict = None, status: str = "success") -> None:
+    """Ghi activity log qua shared module."""
+    _log_activity_raw(action=action, resource_type=resource_type, resource_id=resource_id, details=details, status=status)
 
 
 # ============================================================================
@@ -35,30 +41,6 @@ DEFAULT_FRONTEND_PORT = 7272
 DEFAULT_BACKEND_PORT = 8000
 HEALTH_CHECK_TIMEOUT = 60
 HEALTH_CHECK_INTERVAL = 2
-
-
-# ============================================================================
-# Activity Logger
-# ============================================================================
-
-def _log_activity(action: str, resource_type: str = "preview", resource_id: str = "", details: dict = None, status: str = "success") -> None:
-    """Ghi activity log vào artifacts.db activity_log table."""
-    data_dir = Path(".midicoder/data")
-    if not data_dir.exists():
-        data_dir = Path(".") / ".midicoder" / "data"
-    artifacts_db = data_dir / "artifacts.db"
-    if not artifacts_db.exists():
-        return
-    try:
-        with get_connection(artifacts_db) as conn:
-            conn.execute(
-                """INSERT INTO activity_log (action, resource_type, resource_id, details, status)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (action, resource_type, resource_id,
-                 json.dumps(details) if details else None, status),
-            )
-    except Exception:
-        pass
 
 
 # ============================================================================
