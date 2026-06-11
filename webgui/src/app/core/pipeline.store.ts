@@ -288,7 +288,7 @@ export class PipelineStore implements OnDestroy {
   async runBriefAnalyze(): Promise<boolean> {
     this.briefPhaseState.set({ status: 'in_progress' });
     try {
-      const result = await this.api.analyzeBrief({ brief_content: '' });
+      const result = await this.api.analyzeBrief({});
       if (result.success) {
         this.briefPhaseState.set({ status: 'complete', completedAt: new Date().toISOString() });
         return true;

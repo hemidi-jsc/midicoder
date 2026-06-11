@@ -21,10 +21,12 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
   template: `
     <aside class="sidebar">
       <!-- Dashboard Link -->
-      <a routerLink="/dashboard" class="sidebar-dashboard-link">
-        <span class="dashboard-icon">⌂</span>
-        <span>{{ 'nav.dashboard' | i18n }}</span>
-      </a>
+      <div class="sidebar-dashboard-wrapper">
+        <button class="sidebar-dashboard-btn" routerLink="/dashboard">
+          <i class="fa-solid fa-house"></i>
+          <span>{{ 'nav.dashboard' | i18n }}</span>
+        </button>
+      </div>
       <hr class="sidebar-divider" />
 
       <!-- Projects Section -->
@@ -142,31 +144,38 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
       z-index: 30;
     }
 
-    /* Dashboard link */
-    .sidebar-dashboard-link {
+    /* Dashboard button */
+    .sidebar-dashboard-wrapper {
+      padding: 8px 12px 4px 12px;
+    }
+
+    .sidebar-dashboard-btn {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      padding: 12px 20px;
-      margin: 0 12px 8px 12px;
-      color: var(--text-secondary);
-      text-decoration: none;
-      font-size: 0.8125rem;
-      font-weight: 500;
-      transition: color 0.2s, background 0.2s;
-    }
-
-    .sidebar-dashboard-link:hover {
-      color: var(--brand-color);
-    }
-
-    .sidebar-dashboard-link.router-link-active {
-      color: var(--brand-color);
-    }
-
-    .dashboard-icon {
+      gap: 10px;
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
       font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .sidebar-dashboard-btn i {
+      font-size: 1.25rem;
+      color: var(--brand-color);
+    }
+
+    .sidebar-dashboard-btn:hover {
+      background: var(--bg-secondary);
+      border-color: var(--brand-color);
+      color: var(--brand-color);
+      box-shadow: 0 0 10px rgba(252, 103, 103, 0.15);
     }
 
     /* Divider below dashboard link */

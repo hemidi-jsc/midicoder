@@ -6,14 +6,16 @@ CLI (`brief.py`) wrap các functions này thêm click.echo, artifact saving, v.v
 WebGUI backend có thể import trực tiếp HOẶC call CLI command qua subprocess.
 
 Các public function:
-- analyze_brief_with_llm()      → BriefAnalysis
+- analyze_brief_with_llm()         → BriefAnalysis (legacy — auto-detect domain via LLM)
+- analyze_brief_with_llm_sync()    → BriefAnalysis (domain explicit, KHÔNG gọi LLM để detect)
+- analyze_brief_with_llm_stream()  → async generator (streaming LLM chunks)
 """
 
 import json
 import re
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, AsyncIterator
 
 
 @dataclass
@@ -27,24 +29,79 @@ class BriefAnalysis:
     latency_ms: int = 0
 
 
+@dataclass
+class StreamChunk:
+    """Chunk từ streaming LLM response."""
+    type: str  # "thinking" | "content" | "metadata" | "complete" | "error"
+    data: str | dict = ""
+    accumulated: str = ""
+
+
+def _parse_llm_response(llm_content: str) -> tuple[str, dict]:
+    """Parse LLM response: strip thinking tags, extract JSON.
+    
+    Returns:
+        (cleaned_text, json_data)
+    """
+    # Strip <thinking> tags từ reasoning models
+    cleaned = re.sub(r'<thinking>.*?</thinking>', '', llm_content, flags=re.DOTALL).strip()
+
+    # Extract JSON từ markdown code block
+    json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', cleaned, re.DOTALL)
+    if json_match:
+        cleaned = json_match.group(1).strip()
+
+    # Fallback: tìm object đầu tiên { ... }
+    if not cleaned.startswith('{'):
+        brace_start = cleaned.find('{')
+        if brace_start >= 0:
+            brace_end = cleaned.rfind('}')
+            if brace_end >= brace_start:
+                cleaned = cleaned[brace_start:brace_end + 1]
+
+    json_data = json.loads(cleaned)
+    return cleaned, json_data
+
+
+def _build_text_summary(json_data: dict, domain: str) -> str:
+    """Build text summary từ json_data."""
+    entities = json_data.get("entities", [])
+    commands = json_data.get("commands", [])
+    queries = json_data.get("queries", [])
+    events = json_data.get("events", [])
+    ui_components = json_data.get("ui_components", [])
+    confidence = json_data.get("confidence", 0.5)
+    summary = json_data.get("summary", "")
+
+    entity_names = ', '.join(e.get('name', '') for e in entities[:5])
+    return (
+        f"Tóm tắt phân tích brief:\n"
+        f"- Domain: {domain.title()}\n"
+        f"- Số entities: {len(entities)} ({entity_names})\n"
+        f"- Số commands: {len(commands)}\n"
+        f"- Số queries: {len(queries)}\n"
+        f"- Số events: {len(events)}\n"
+        f"- Số UI components: {len(ui_components)}\n"
+        f"- Độ tin cậy: {confidence:.0%}\n"
+        f"- {summary}"
+    )
+
+
 def analyze_brief_with_llm(
     brief_content: str,
     domain: Optional[str] = None,
     brief_id: str = "",
 ) -> BriefAnalysis:
     """
-    Phân tích brief bằng LLM — pure function, không phụ thuộc click.
-
+    Phân tích brief bằng LLM — legacy version (auto-detect domain via LLM).
+    
     Args:
         brief_content: Nội dung brief
-        domain: Domain user-provided (optional)
+        domain: Domain user-provided (optional, nếu None sẽ auto-detect bằng LLM)
         brief_id: Brief ID (cho compat signature)
 
     Returns:
         BriefAnalysis với json_data, text_summary, domain, confidence
-
-    Raises:
-        Exception: Khi LLM call fail hoặc JSON parse error
     """
     from midicoder.pipeline.llm import load_llm_config, call_llm
     from midicoder.pipeline.domain import (
@@ -54,20 +111,91 @@ def analyze_brief_with_llm(
     )
     from midicoder.pipeline.context_feed import get_brief_context
 
-    # Load LLM config
     llm_config = load_llm_config()
 
-    # Xác định domain
     if domain:
         final_domain = normalize_domain(domain)
     else:
         final_domain = detect_domain(brief_content, llm_config)
 
-    # Load prompt template
     try:
         system_prompt = get_domain_prompt(final_domain)
     except Exception:
         system_prompt = get_domain_prompt("generic")
+
+    context_result = None
+    try:
+        context_result = get_brief_context(
+            brief_content=brief_content,
+            domain=final_domain,
+            model_name=llm_config.model,
+            system_prompt=system_prompt,
+        )
+    except Exception:
+        pass
+
+    user_message_content = brief_content
+    if context_result and context_result.formatted_context:
+        user_message_content = (
+            f"{context_result.formatted_context}\n\n## Brief Content:\n{brief_content}"
+        )
+
+    start_time = time.time()
+    response = call_llm(
+        config=llm_config,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_message_content}],
+    )
+    latency_ms = int((time.time() - start_time) * 1000)
+    tokens_used = response.usage.get("total_tokens", 0)
+
+    _, json_data = _parse_llm_response(response.content)
+    text_summary = _build_text_summary(json_data, final_domain)
+
+    return BriefAnalysis(
+        json_data=json_data,
+        text_summary=text_summary,
+        domain=final_domain,
+        confidence=json_data.get("confidence", 0.5),
+        tokens_used=tokens_used,
+        latency_ms=latency_ms,
+    )
+
+
+def analyze_brief_with_llm_sync(
+    brief_content: str,
+    domain: str = "default",
+    brief_id: str = "",
+) -> BriefAnalysis:
+    """
+    Phân tích brief bằng LLM — domain explicit (KHÔNG gọi LLM để detect domain).
+    
+    Domain lấy từ projects.db field `domain` của active project.
+    LLM config lấy từ settings.db (global-level).
+
+    Args:
+        brief_content: Nội dung brief
+        domain: Domain explicit từ projects.db (default='default')
+        brief_id: Brief ID
+
+    Returns:
+        BriefAnalysis với json_data, text_summary, domain, confidence
+    """
+    from midicoder.pipeline.llm import load_llm_config, call_llm
+    from midicoder.pipeline.domain import get_domain_prompt, normalize_domain
+    from midicoder.pipeline.context_feed import get_brief_context
+
+    # Load LLM config từ settings.db
+    llm_config = load_llm_config()
+
+    # Normalize domain (ví dụ: ecommerce-d2c → ecommerce)
+    final_domain = normalize_domain(domain)
+
+    # Load prompt template theo domain
+    try:
+        system_prompt = get_domain_prompt(final_domain)
+    except Exception:
+        system_prompt = get_domain_prompt("default")
 
     # Query codebase context (optional)
     context_result = None
@@ -81,7 +209,7 @@ def analyze_brief_with_llm(
     except Exception:
         pass
 
-    # Build user message với context (nếu có)
+    # Build user message
     user_message_content = brief_content
     if context_result and context_result.formatted_context:
         user_message_content = (
@@ -98,54 +226,157 @@ def analyze_brief_with_llm(
     latency_ms = int((time.time() - start_time) * 1000)
     tokens_used = response.usage.get("total_tokens", 0)
 
-    # Parse JSON response
-    llm_content = response.content.strip()
-
-    # Strip <thinking> tags từ reasoning models
-    llm_content = re.sub(r'<thinking>.*?</thinking>', '', llm_content, flags=re.DOTALL).strip()
-
-    # Extract JSON từ markdown code block
-    json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', llm_content, re.DOTALL)
-    if json_match:
-        llm_content = json_match.group(1).strip()
-
-    # Fallback: tìm object đầu tiên { ... }
-    if not llm_content.startswith('{'):
-        brace_start = llm_content.find('{')
-        if brace_start >= 0:
-            brace_end = llm_content.rfind('}')
-            if brace_end >= brace_start:
-                llm_content = llm_content[brace_start:brace_end + 1]
-
-    json_data = json.loads(llm_content)
-
-    # Build text summary
-    entities = json_data.get("entities", [])
-    commands = json_data.get("commands", [])
-    queries = json_data.get("queries", [])
-    events = json_data.get("events", [])
-    ui_components = json_data.get("ui_components", [])
-    confidence = json_data.get("confidence", 0.5)
-    summary = json_data.get("summary", "")
-
-    entity_names = ', '.join(e.get('name', '') for e in entities[:5])
-    text_summary = (
-        f"Tóm tắt phân tích brief:\n"
-        f"- Domain: {final_domain.title()}\n"
-        f"- Số entities: {len(entities)} ({entity_names})\n"
-        f"- Số commands: {len(commands)}\n"
-        f"- Số queries: {len(queries)}\n"
-        f"- Số events: {len(events)}\n"
-        f"- Số UI components: {len(ui_components)}\n"
-        f"- Độ tin cậy: {confidence:.0%}\n"
-        f"- {summary}"
-    )
+    # Parse response
+    _, json_data = _parse_llm_response(response.content)
+    text_summary = _build_text_summary(json_data, final_domain)
 
     return BriefAnalysis(
         json_data=json_data,
         text_summary=text_summary,
         domain=final_domain,
-        confidence=confidence,
+        confidence=json_data.get("confidence", 0.5),
         tokens_used=tokens_used,
         latency_ms=latency_ms,
     )
+
+
+async def analyze_brief_with_llm_stream(
+    brief_content: str,
+    domain: str = "default",
+    brief_id: str = "",
+) -> AsyncIterator[StreamChunk]:
+    """
+    Phân tích brief bằng LLM với streaming — phát từng chunk qua WebSocket.
+    
+    Message types:
+    - {"type": "system_prompt", "data": "..."} — prompt template đã dùng
+    - {"type": "llm_config", "data": {"model": "...", "temperature": ...}} — LLM config dùng
+    - {"type": "thinking", "data": "..."} — reasoning/thinking của model
+    - {"type": "content", "data": "..."} — chunk nội dung (accumulated)
+    - {"type": "complete", "data": {json_data}} — kết quả cuối cùng
+    - {"type": "error", "data": "error message"} — lỗi
+
+    Args:
+        brief_content: Nội dung brief
+        domain: Domain từ projects.db
+        brief_id: Brief ID
+
+    Yields:
+        StreamChunk cho từng message type
+    """
+    from midicoder.pipeline.llm import load_llm_config, call_llm_stream
+    from midicoder.pipeline.domain import get_domain_prompt, normalize_domain
+    from midicoder.pipeline.context_feed import get_brief_context
+
+    try:
+        # Load LLM config
+        llm_config = load_llm_config()
+        final_domain = normalize_domain(domain)
+
+        # Load prompt
+        try:
+            system_prompt = get_domain_prompt(final_domain)
+        except Exception:
+            system_prompt = get_domain_prompt("default")
+
+        # Send metadata
+        yield StreamChunk(
+            type="system_prompt",
+            data=system_prompt,
+        )
+        yield StreamChunk(
+            type="llm_config",
+            data={
+                "provider": llm_config.provider,
+                "model": llm_config.model,
+                "temperature": llm_config.temperature,
+                "max_tokens": llm_config.max_tokens,
+            },
+        )
+        yield StreamChunk(
+            type="domain",
+            data=final_domain,
+        )
+
+        # Query codebase context
+        user_message_content = brief_content
+        context_result = None
+        try:
+            context_result = get_brief_context(
+                brief_content=brief_content,
+                domain=final_domain,
+                model_name=llm_config.model,
+                system_prompt=system_prompt,
+            )
+            if context_result and context_result.formatted_context:
+                user_message_content = (
+                    f"{context_result.formatted_context}\n\n## Brief Content:\n{brief_content}"
+                )
+                yield StreamChunk(
+                    type="context_injected",
+                    data={"token_count": context_result.token_count, "query_time_ms": context_result.query_time_ms},
+                )
+        except Exception:
+            pass
+
+        # Send user payload info
+        yield StreamChunk(
+            type="user_payload",
+            data={"brief_length": len(brief_content), "user_message_length": len(user_message_content)},
+        )
+
+        # Start streaming
+        start_time = time.time()
+        accumulated = ""
+        thinking_buffer = ""
+        in_thinking = False
+
+        async for chunk in call_llm_stream(
+            config=llm_config,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message_content}],
+        ):
+            content = chunk.content or ""
+            if content:
+                accumulated += content
+
+                # Detect <thinking> tags
+                if "<thinking>" in content and "</thinking>" not in content:
+                    in_thinking = True
+                    thinking_buffer += content
+                    yield StreamChunk(type="thinking", data=content, accumulated=accumulated)
+                    continue
+                if in_thinking:
+                    thinking_buffer += content
+                    if "</thinking>" in content:
+                        in_thinking = False
+                        yield StreamChunk(type="thinking_end", data=thinking_buffer)
+                        thinking_buffer = ""
+                    else:
+                        yield StreamChunk(type="thinking", data=content, accumulated=accumulated)
+                    continue
+
+                # Regular content chunk
+                yield StreamChunk(type="content", data=content, accumulated=accumulated)
+
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        # Parse final JSON
+        _, json_data = _parse_llm_response(accumulated)
+        
+        # Get usage from last chunk
+        tokens_used = 0
+
+        yield StreamChunk(
+            type="complete",
+            data={
+                "json_data": json_data,
+                "domain": final_domain,
+                "confidence": json_data.get("confidence", 0.5),
+                "latency_ms": latency_ms,
+                "tokens_used": tokens_used,
+            },
+        )
+
+    except Exception as e:
+        yield StreamChunk(type="error", data=str(e))

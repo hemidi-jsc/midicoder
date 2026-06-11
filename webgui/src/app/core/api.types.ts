@@ -53,7 +53,6 @@ export interface UserResponse {
 // ============================================================================
 
 export interface BriefAnalyzeRequest {
-  brief_content: string;
   version?: string;
 }
 

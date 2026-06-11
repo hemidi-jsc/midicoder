@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS projects (
     project_id TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
     path TEXT NOT NULL,
+    domain TEXT DEFAULT 'default',
     active INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -67,6 +68,18 @@ class ProjectsManager:
     def init(self):
         """Khởi tạo database với schema."""
         init_database(self.db_path, SCHEMA_PROJECTS)
+        self._migrate_domain_column()
+
+    def _migrate_domain_column(self):
+        """Migration: thêm column `domain` nếu chưa có."""
+        try:
+            with get_connection(self.db_path) as conn:
+                cursor = conn.execute("PRAGMA table_info(projects)")
+                columns = {row[1] for row in cursor.fetchall()}
+                if "domain" not in columns:
+                    conn.execute("ALTER TABLE projects ADD COLUMN domain TEXT DEFAULT 'default'")
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # CRUD
@@ -194,6 +207,22 @@ class ProjectsManager:
                 (project_id,),
             )
         return self.get(project_id)
+
+    def update_domain(self, project_id: str, domain: str) -> Optional[Dict[str, Any]]:
+        """Cập nhật domain của project."""
+        with get_connection(self.db_path) as conn:
+            conn.execute(
+                "UPDATE projects SET domain = ?, updated_at = datetime('now') WHERE project_id = ?",
+                (domain, project_id),
+            )
+        return self.get(project_id)
+
+    def get_domain(self, project_id: str) -> str:
+        """Lấy domain của project. Trả về 'default' nếu không có."""
+        project = self.get(project_id)
+        if project and project.get("domain"):
+            return project["domain"]
+        return "default"
 
     def delete(self, project_id: str) -> bool:
         """Xóa project khỏi registry."""

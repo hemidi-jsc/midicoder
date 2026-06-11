@@ -18,6 +18,7 @@ import { formatDateLocal } from '../../core/date.util';
 import { DOCS_BASE } from '../../core/app.constants';
 import { ClarificationListComponent } from '../../components/shared/clarification-list/clarification-list.component';
 import { HistoryListComponent } from '../../components/shared/history-list/history-list.component';
+import { AnalyzeOverlayComponent } from '../../components/shared/analyze-overlay/analyze-overlay.component';
 
 interface SectionOpenState {
   entities: boolean;
@@ -30,7 +31,7 @@ interface SectionOpenState {
 @Component({
   selector: 'app-brief-editor',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, I18nPipe, ClarificationListComponent, HistoryListComponent],
+  imports: [CommonModule, FormsModule, RouterLink, I18nPipe, ClarificationListComponent, HistoryListComponent, AnalyzeOverlayComponent],
   template: `
     <div class="brief-page py-8">
       <!-- Toast Notification -->
@@ -580,6 +581,16 @@ interface SectionOpenState {
             </div>
           </div>
         </div>
+      }
+
+      <!-- Analyze Overlay -->
+      @if (showAnalyzeOverlay) {
+        <app-analyze-overlay
+          [visible]="showAnalyzeOverlay"
+          (closeOverlay)="onCloseAnalyzeOverlay()"
+          (cancelAnalyze)="onCancelAnalyze()"
+          #analyzeOverlay
+        ></app-analyze-overlay>
       }
     </div>
   `,
@@ -1232,6 +1243,8 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
+    if (this.analyzeTimeoutId) clearTimeout(this.analyzeTimeoutId);
+    if (this.abortController) this.abortController.abort();
     window.removeEventListener('version-switched', this.onVersionSwitched);
   }
 
@@ -1379,47 +1392,146 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   // Actions: Analyze, Freeze
   // ============================================================================
 
-  async handleAnalyze(): Promise<void> {
+  // Analyze overlay state
+  showAnalyzeOverlay = false;
+  private abortController: AbortController | null = null;
+  private analyzeTimeoutId: any = null;
+
+  handleAnalyze(): void {
     if (!this.briefContent.trim()) {
       this.showToast(this.i18n.t('brief.enterBrief'), 'error');
       return;
     }
-    if (this.hasUnsavedChanges) await this.autoSave();
+    if (this.hasUnsavedChanges) {
+      // Auto-save trước, sau đó mở overlay
+      this.autoSave().then(() => {
+        this.openAnalyzeOverlay();
+      });
+    } else {
+      this.openAnalyzeOverlay();
+    }
+  }
 
+  openAnalyzeOverlay(): void {
+    this.showAnalyzeOverlay = true;
     this.isAnalyzing = true;
     this.cdr.detectChanges();
 
-    // Timeout safety net: 2 phút max
-    const timeoutId = setTimeout(() => {
-      if (this.isAnalyzing) {
+    // Timeout safety net: 3 phút max
+    this.analyzeTimeoutId = setTimeout(() => {
+      if (this.abortController) this.abortController.abort();
+      this.isAnalyzing = false;
+      this.showToast(this.i18n.t('brief.analyzeTimeout'), 'error');
+      this.cdr.detectChanges();
+    }, 180000);
+
+    // Connect SSE via fetch + ReadableStream
+    this.abortController = new AbortController();
+    const apiUrl = `http://localhost:6868/api/brief/analyze-stream?version=${encodeURIComponent(this.activeVersion)}`;
+
+    fetch(apiUrl, { signal: this.abortController.signal })
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No readable stream');
+        this._readSSEStream(reader);
+      })
+      .catch(err => {
+        if (err.name === 'AbortError') return;
+        console.error('[BriefEditor] SSE connect error:', err);
+        clearTimeout(this.analyzeTimeoutId);
         this.isAnalyzing = false;
-        this.showToast(this.i18n.t('brief.analyzeTimeout'), 'error');
+        this.showToast(`Kết nối lỗi: ${err.message}`, 'error');
         this.cdr.detectChanges();
-      }
-    }, 120000);
+      });
+  }
+
+  /** Read SSE stream line by line */
+  private async _readSSEStream(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let lastEvent = '';
 
     try {
-      const result = await this.api.analyzeBrief({
-        brief_content: this.briefContent,
-        version: this.activeVersion,
-      });
-      clearTimeout(timeoutId);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      if (result.success && result.data) {
-        this.analysisResult = result.data;
-        await this.loadBrief();
-        await this.loadLineage();
-        this.showToast(this.i18n.t('brief.analyzeSuccess', { count: result.data.metadata?.entities || 0 }), 'success');
-      } else {
-        this.showToast(result.error?.message || this.i18n.t('brief.analyzeError'), 'error');
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE lines
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            // Empty line = end of SSE event — we already parsed data, skip
+            continue;
+          }
+          if (trimmed.startsWith('data: ')) {
+            const dataStr = trimmed.slice(6);
+            try {
+              const data = JSON.parse(dataStr);
+              const msg = { type: lastEvent, data: data };
+              // Forward message to overlay component
+              const overlayEl = document.querySelector('app-analyze-overlay');
+              if (overlayEl && (overlayEl as any).onMessage) {
+                (overlayEl as any).onMessage(msg);
+              }
+
+              // If final_result or error, cleanup
+              if (lastEvent === 'final_result') {
+                clearTimeout(this.analyzeTimeoutId);
+                this.isAnalyzing = false;
+                this.analysisResult = data;
+                this.showToast(`Phân tích thành công — ${data.metadata?.entities || 0} entities`, 'success');
+                this.cdr.detectChanges();
+              } else if (lastEvent === 'error') {
+                clearTimeout(this.analyzeTimeoutId);
+                this.isAnalyzing = false;
+                this.showToast(`Lỗi: ${data}`, 'error');
+                this.cdr.detectChanges();
+              }
+            } catch {
+              // data might be plain string for error events
+              const msg = { type: lastEvent, data: dataStr };
+              const overlayEl = document.querySelector('app-analyze-overlay');
+              if (overlayEl && (overlayEl as any).onMessage) {
+                (overlayEl as any).onMessage(msg);
+              }
+              if (lastEvent === 'error') {
+                clearTimeout(this.analyzeTimeoutId);
+                this.isAnalyzing = false;
+                this.showToast(`Lỗi: ${dataStr}`, 'error');
+                this.cdr.detectChanges();
+              }
+            }
+          } else if (trimmed.startsWith('event: ')) {
+            lastEvent = trimmed.slice(7);
+          }
+        }
       }
-    } catch (e) {
-      clearTimeout(timeoutId);
-      this.showToast(this.i18n.t('brief.connectError'), 'error');
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+      throw err;
     } finally {
-      this.isAnalyzing = false;
-      this.cdr.detectChanges();
+      reader.releaseLock();
     }
+  }
+
+  onCloseAnalyzeOverlay(): void {
+    this.showAnalyzeOverlay = false;
+    this.cdr.detectChanges();
+  }
+
+  onCancelAnalyze(): void {
+    if (this.abortController) this.abortController.abort();
+    clearTimeout(this.analyzeTimeoutId);
+    this.isAnalyzing = false;
+    this.showAnalyzeOverlay = false;
+    this.abortController = null;
+    this.cdr.detectChanges();
   }
 
   async handleFreeze(): Promise<void> {
@@ -1501,27 +1613,26 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
 
       const updatedContent = this.briefContent + '\n\n--- Clarification Answers ---\n' + answersText;
 
-      // Re-analyze brief with clarified content
-      const result = await this.api.analyzeBrief({
-        brief_content: updatedContent,
+      // 1. Save the clarified brief first
+      const saveResult = await this.api.saveBrief({
         version: this.activeVersion,
+        brief_content: updatedContent,
       });
 
-      if (result.success && result.data) {
-        this.analysisResult = result.data;
-        this.briefContent = updatedContent;
-        this._lastSavedContent = updatedContent;
-
-        this.showToast(this.i18n.t('brief.clarifySuccess'), 'success');
-        this.cancelClarification();
-        await this.loadBrief();
-        await this.loadLineage();
-      } else {
-        this.showToast(result.error?.message || this.i18n.t('brief.clarifyError'), 'error');
+      if (!saveResult.success) {
+        this.showToast(this.i18n.t('brief.saveFailed'), 'error');
+        return;
       }
+
+      this.briefContent = updatedContent;
+      this._lastSavedContent = updatedContent;
+      this.cancelClarification();
+
+      // 2. Re-analyze with clarified content via WebSocket overlay
+      this.openAnalyzeOverlay();
+      this.isSubmittingAnswers = false;
     } catch {
       this.showToast(this.i18n.t('brief.connectError'), 'error');
-    } finally {
       this.isSubmittingAnswers = false;
       this.cdr.detectChanges();
     }
