@@ -31,7 +31,9 @@ export class PipelineStore implements OnDestroy {
     // Khi version thay đổi, reload pipeline status
     this.versionSub = this.versionService.activeVersion$.subscribe((version) => {
       this.activeVersion.set(version);
-      this.loadStatus();
+      this.loadStatus().catch(() => {
+        // Silent — loadStatus có thể fail khi backend chưa sẵn sàng
+      });
     });
   }
 

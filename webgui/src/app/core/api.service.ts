@@ -134,6 +134,13 @@ export interface ProjectInfo {
   created_at: string;
   updated_at: string;
   repo_url?: string | null;
+  tech_stack?: {
+    infrastructure?: string;
+    backend?: string;
+    frontend?: string;
+    ui_framework?: string;
+  };
+  prompt_domain?: string;
 }
 
 @Injectable({
@@ -461,6 +468,14 @@ export class ApiService {
   async getBriefRevisions(version?: string): Promise<ApiResponse<{ revisions: any[]; count: number }>> {
     const params = version ? `?version=${version}` : '';
     return this.get(`/brief/revisions${params}`);
+  }
+
+  /**
+   * GET /brief/revisions/{revision_number}/diff - Get unified diff for a revision
+   */
+  async getRevisionDiff(revisionNumber: number, version?: string): Promise<ApiResponse<{ revision_number: number; event: string; diff_summary: string | null; diff_text: string; stats: { added: number; removed: number }; has_diff: boolean }>> {
+    const params = version ? `?version=${version}` : '';
+    return this.get(`/brief/revisions/${revisionNumber}/diff${params}`);
   }
 
   /**

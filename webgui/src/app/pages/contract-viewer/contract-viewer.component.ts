@@ -3,13 +3,14 @@
  * Hiển thị DSL contracts dưới dạng tree view
  */
 
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
 import { I18nPipe } from '../../core/i18n.pipe';
 import { I18nService } from '../../core/i18n.service';
+import { VersionService } from '../../core/version.service';
 import { DOCS_BASE } from '../../core/app.constants';
 
 @Component({
@@ -191,9 +192,10 @@ import { DOCS_BASE } from '../../core/app.constants';
     }
   `],
 })
-export class ContractViewerComponent implements OnInit {
+export class ContractViewerComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly i18n = inject(I18nService);
+  private readonly versionService = inject(VersionService);
 
   readonly docsUrl = `${DOCS_BASE}/contract`;
 
@@ -205,7 +207,23 @@ export class ContractViewerComponent implements OnInit {
 
   async ngOnInit(): Promise<void> {
     await this.loadContractIR();
+
+    // Reload khi version switch
+    window.addEventListener('version-switched', this.onVersionSwitched);
   }
+
+  ngOnDestroy(): void {
+    window.removeEventListener('version-switched', this.onVersionSwitched);
+  }
+
+  /** Reload toàn bộ data khi version switch */
+  private onVersionSwitched = async (event: any) => {
+    try {
+      await this.loadContractIR();
+    } finally {
+      this.versionService.stopLoading();
+    }
+  };
 
   async loadContractIR(): Promise<void> {
     const result = await this.api.getContractIR();

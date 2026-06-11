@@ -10,6 +10,7 @@ import { AuthService } from './core/auth.service';
 import { ScreenCheckService } from './core/screen-check.service';
 import { UpdateService } from './core/update.service';
 import { PipelineStore, PhaseStatus } from './core/pipeline.store';
+import { VersionService } from './core/version.service';
 import { SidebarComponent } from './components/sidebar/sidebar.component';
 import type { UpdateStatus } from './core/api.types';
 
@@ -24,7 +25,7 @@ import type { UpdateStatus } from './core/api.types';
         <div class="fixed inset-0 z-50 bg-bg-primary bg-opacity-95 flex items-center justify-center">
           <div class="card max-w-md text-center">
             <h2 class="text-xl font-bold text-accent-warning mb-4">
-              ⚠️ {{ 'screen.title' | i18n }}
+              <i class="fa-solid fa-triangle-exclamation"></i> {{ 'screen.title' | i18n }}
             </h2>
             <p class="text-text-secondary mb-4">
               {{ screenWarningMessage }}
@@ -130,7 +131,7 @@ import type { UpdateStatus } from './core/api.types';
         <!-- Update Banner — hiện khi có phiên bản mới -->
         @if (updateStatus && updateStatus.has_update && !isUpgrading) {
           <div class="update-banner" style="position:fixed;top:95px;left:0;right:0;z-index:40;background:linear-gradient(90deg,var(--brand-color),#ff4da6);color:#fff;display:flex;align-items:center;justify-content:center;padding:10px 48px;gap:16px;box-shadow:0 2px 12px rgba(233,0,137,0.25);">
-            <span style="font-size:0.9rem;font-weight:500;">🎉 {{ 'update.banner' | i18n }} <strong>v{{ updateStatus.latest_version }}</strong> {{ 'update.currentVersion' | i18n:{current: updateStatus.current_version} }}</span>
+            <span style="font-size:0.9rem;font-weight:500;"><i class="fa-solid fa-party-horn"></i> {{ 'update.banner' | i18n }} <strong>v{{ updateStatus.latest_version }}</strong> {{ 'update.currentVersion' | i18n:{current: updateStatus.current_version} }}</span>
             <a [attr.href]="updateStatus.download_url" target="_blank" rel="noopener noreferrer" style="color:#fff;text-decoration:underline;cursor:pointer;font-size:0.85rem;margin-left:4px;">{{ 'update.changelog' | i18n }}</a>
             <button (click)="handleUpgrade()" style="background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.6);color:#fff;padding:5px 16px;border-radius:4px;cursor:pointer;font-size:0.85rem;font-weight:600;transition:background 0.2s;" title="{{ 'update.upgradeTitle' | i18n }}">
               ⬆ {{ 'update.upgrade' | i18n }}
@@ -141,7 +142,7 @@ import type { UpdateStatus } from './core/api.types';
         <!-- Upgrading Overlay — hiện khi đang restart -->
         @if (isUpgrading) {
           <div style="position:fixed;inset:0;z-index:60;background:rgba(15,15,23,0.9);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
-            <div style="font-size:2rem;animation:spin 1s linear infinite;">⏳</div>
+            <div style="font-size:2rem;animation:spin 1s linear infinite;"><i class="fa-solid fa-spinner"></i></div>
             <p style="color:var(--text-primary);font-size:1.1rem;font-weight:500;">{{ 'update.upgrading' | i18n }}</p>
           </div>
         }
@@ -153,6 +154,15 @@ import type { UpdateStatus } from './core/api.types';
       <!-- Main Content -->
       @if (isAuthenticated && !isLoginPage) {
         <main class="main-content">
+          <!-- Version switching loading overlay -->
+          @if (isSwitchingVersion) {
+            <div class="version-switch-overlay">
+              <div class="version-switch-spinner">
+                <i class="fa-solid fa-spinner"></i>
+                <span>{{ 'common.loading' | i18n }}</span>
+              </div>
+            </div>
+          }
           <router-outlet />
         </main>
       } @else {
@@ -437,6 +447,37 @@ import type { UpdateStatus } from './core/api.types';
       min-height: 100vh;
       padding: 24px;
       padding-top: 104px;
+      position: relative;
+    }
+
+    /* Version switch loading overlay */
+    .version-switch-overlay {
+      position: fixed;
+      top: 96px;
+      left: 344px;
+      right: 0;
+      bottom: 0;
+      background: rgba(15, 15, 23, 0.6);
+      backdrop-filter: blur(3px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 25;
+    }
+
+    .version-switch-spinner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text-primary);
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    .version-switch-spinner i {
+      animation: spin 1s linear infinite;
+      font-size: 1.4rem;
+      color: var(--brand-color);
     }
 
     /* ===== Gaming Animations ===== */
@@ -459,12 +500,14 @@ import type { UpdateStatus } from './core/api.types';
 })
 export class AppComponent implements OnInit, OnDestroy {
   private pipelineStore = inject(PipelineStore);
+  private versionService = inject(VersionService);
 
   isAuthenticated = false;
   currentUser: any = null;
   screenSupported = true;
   screenWarningMessage = '';
   isLoginPage = false;
+  isSwitchingVersion = false;
 
   appVersion = APP_VERSION;
   docsChangelogUrl = `${DOCS_BASE}/changelog`;
@@ -475,6 +518,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private authSub?: Subscription;
   private routerSub?: Subscription;
+  private versionLoadingSub?: Subscription;
 
   constructor(
     private authService: AuthService,
@@ -497,6 +541,11 @@ export class AppComponent implements OnInit, OnDestroy {
           this.router.navigate(['/dashboard']);
         }
       }, 0);
+    });
+
+    // Subscribe to version loading state
+    this.versionLoadingSub = this.versionService.loading$.subscribe(loading => {
+      this.isSwitchingVersion = loading;
     });
   }
 
@@ -531,6 +580,7 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.authSub?.unsubscribe();
     this.routerSub?.unsubscribe();
+    this.versionLoadingSub?.unsubscribe();
   }
 
   async handleLogout(): Promise<void> {

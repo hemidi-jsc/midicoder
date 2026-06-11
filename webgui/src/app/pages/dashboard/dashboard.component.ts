@@ -93,76 +93,55 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
           />
         </div>
 
-        <!-- Row 2: Pipeline Progress -->
+        <!-- Row 2: Tech Stack -->
         <div class="dashboard-card">
-          <h2 class="card-title">{{ 'dashboard.pipelineProgress' | i18n }}</h2>
-
-          <div class="progress-section">
-            <div class="progress-header">
-              <span class="progress-label">{{ 'dashboard.totalProgress' | i18n }}</span>
-              <span class="progress-value">{{ overallProgress() }}%</span>
+          <h2 class="card-title"><i class="fa-solid fa-layer-group"></i> {{ 'dashboard.techStack' | i18n }}</h2>
+          @if (activeProject()?.tech_stack) {
+            <div class="tech-stack-grid">
+              <!-- Infrastructure -->
+              <div class="tech-item">
+                <div class="tech-icon-wrap">
+                  <i class="{{ getTechIcon('infrastructure', activeProject()!.tech_stack?.infrastructure || '') }}"></i>
+                </div>
+                <div class="tech-label">{{ 'project.infrastructure' | i18n }}</div>
+                <div class="tech-value">{{ getTechLabel('infrastructure', activeProject()!.tech_stack?.infrastructure || '') }}</div>
+              </div>
+              <!-- Backend -->
+              <div class="tech-item">
+                <div class="tech-icon-wrap">
+                  <i class="{{ getTechIcon('backend', activeProject()!.tech_stack?.backend || '') }}"></i>
+                </div>
+                <div class="tech-label">{{ 'project.backend' | i18n }}</div>
+                <div class="tech-value">{{ getTechLabel('backend', activeProject()!.tech_stack?.backend || '') }}</div>
+              </div>
+              <!-- Frontend -->
+              <div class="tech-item">
+                <div class="tech-icon-wrap">
+                  <i class="{{ getTechIcon('frontend', activeProject()!.tech_stack?.frontend || '') }}"></i>
+                </div>
+                <div class="tech-label">{{ 'project.frontend' | i18n }}</div>
+                <div class="tech-value">{{ getTechLabel('frontend', activeProject()!.tech_stack?.frontend || '') }}</div>
+              </div>
+              <!-- UI System -->
+              <div class="tech-item">
+                <div class="tech-icon-wrap">
+                  <i class="{{ getTechIcon('ui_framework', activeProject()!.tech_stack?.ui_framework || '') }}"></i>
+                </div>
+                <div class="tech-label">{{ 'project.uiSystem' | i18n }}</div>
+                <div class="tech-value">{{ getTechLabel('ui_framework', activeProject()!.tech_stack?.ui_framework || '') }}</div>
+              </div>
+              <!-- Domain -->
+              <div class="tech-item">
+                <div class="tech-icon-wrap">
+                  <i class="fa-solid fa-cubes"></i>
+                </div>
+                <div class="tech-label">{{ 'project.domain' | i18n }}</div>
+                <div class="tech-value">{{ activeProject()?.prompt_domain || 'Default' }}</div>
+              </div>
             </div>
-            <div class="progress-track">
-              <div class="progress-fill" [style.width.%]="overallProgress()"></div>
-            </div>
-          </div>
-
-          <div class="phase-grid">
-            <a class="phase-item" routerLink="/dashboard">
-              <div class="phase-icon" [ngClass]="'phase-' + initPhase().status">
-                @if (initPhase().status === 'complete') { ✓ }
-                @else if (initPhase().status === 'in_progress') { ◎ }
-                @else { 1 }
-              </div>
-              <p class="phase-name">{{ 'dashboard.phaseInit' | i18n }}</p>
-              <p class="phase-status">{{ getPhaseStatusText(initPhase().status) }}</p>
-            </a>
-            <a class="phase-item" routerLink="/brief-editor">
-              <div class="phase-icon" [ngClass]="'phase-' + briefPhase().status">
-                @if (briefPhase().status === 'complete') { ✓ }
-                @else if (briefPhase().status === 'in_progress') { ◎ }
-                @else { 2 }
-              </div>
-              <p class="phase-name">{{ 'dashboard.phaseBrief' | i18n }}</p>
-              <p class="phase-status">{{ getPhaseStatusText(briefPhase().status) }}</p>
-            </a>
-            <a class="phase-item" routerLink="/contract-viewer">
-              <div class="phase-icon" [ngClass]="'phase-' + contractPhase().status">
-                @if (contractPhase().status === 'complete') { ✓ }
-                @else if (contractPhase().status === 'in_progress') { ◎ }
-                @else { 3 }
-              </div>
-              <p class="phase-name">{{ 'dashboard.phaseContract' | i18n }}</p>
-              <p class="phase-status">{{ getPhaseStatusText(contractPhase().status) }}</p>
-            </a>
-            <a class="phase-item" routerLink="/ir-explorer">
-              <div class="phase-icon" [ngClass]="'phase-' + irPhase().status">
-                @if (irPhase().status === 'complete') { ✓ }
-                @else if (irPhase().status === 'in_progress') { ◎ }
-                @else { 4 }
-              </div>
-              <p class="phase-name">{{ 'dashboard.phaseIR' | i18n }}</p>
-              <p class="phase-status">{{ getPhaseStatusText(irPhase().status) }}</p>
-            </a>
-            <a class="phase-item" routerLink="/code-generator">
-              <div class="phase-icon" [ngClass]="'phase-' + codePhase().status">
-                @if (codePhase().status === 'complete') { ✓ }
-                @else if (codePhase().status === 'in_progress') { ◎ }
-                @else { 5 }
-              </div>
-              <p class="phase-name">{{ 'dashboard.phaseCode' | i18n }}</p>
-              <p class="phase-status">{{ getPhaseStatusText(codePhase().status) }}</p>
-            </a>
-            <a class="phase-item" routerLink="/preview">
-              <div class="phase-icon" [ngClass]="'phase-' + previewPhase().status">
-                @if (previewPhase().status === 'complete') { ✓ }
-                @else if (previewPhase().status === 'in_progress') { ◎ }
-                @else { 6 }
-              </div>
-              <p class="phase-name">{{ 'dashboard.phasePreview' | i18n }}</p>
-              <p class="phase-status">{{ getPhaseStatusText(previewPhase().status) }}</p>
-            </a>
-          </div>
+          } @else {
+            <p class="empty-state">{{ 'dashboard.noTechStack' | i18n }}</p>
+          }
         </div>
 
         <!-- Row 3: Artifacts Stats -->
@@ -297,107 +276,52 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
       margin: 0 0 20px 0;
     }
 
-    /* Progress Section */
-    .progress-section {
-      margin-bottom: 28px;
-    }
-
-    .progress-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-
-    .progress-label {
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-    }
-
-    .progress-value {
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: var(--brand-color);
-    }
-
-    .progress-track {
-      height: 8px;
-      background: var(--bg-secondary);
-      overflow: hidden;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: var(--brand-gradient);
-      transition: width 0.5s ease;
-    }
-
-    /* Phase Grid */
-    .phase-grid {
+    /* Tech Stack Grid */
+    .tech-stack-grid {
       display: grid;
-      grid-template-columns: repeat(6, 1fr);
-      gap: 16px;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
     }
 
-    .phase-item {
+    .tech-item {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      padding: 16px 12px;
       text-align: center;
-      text-decoration: none;
-      color: inherit;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
-
-    .phase-item:hover {
-      opacity: 0.8;
-    }
-
-    .phase-icon {
-      width: 56px;
-      height: 56px;
-      margin: 0 auto 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 2px solid var(--border-subtle);
-      font-size: 1.4rem;
       transition: all 0.2s;
     }
 
-    .phase-item .phase-icon.phase-complete {
-      border-color: var(--accent-success);
-      color: var(--accent-success);
-      background: rgba(63, 185, 80, 0.1);
-    }
-
-    .phase-item .phase-icon.phase-in_progress {
+    .tech-item:hover {
       border-color: var(--brand-color);
+      box-shadow: 0 0 10px rgba(252, 103, 103, 0.15);
+    }
+
+    .tech-icon-wrap {
+      font-size: 2rem;
+      margin-bottom: 8px;
       color: var(--brand-color);
-      background: rgba(252, 103, 103, 0.1);
-      box-shadow: 0 0 15px rgba(252, 103, 103, 0.3);
     }
 
-    .phase-item .phase-icon.phase-pending {
-      border-color: var(--border-subtle);
-      color: var(--text-tertiary);
+    .tech-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+      letter-spacing: 0.04em;
     }
 
-    .phase-item .phase-icon.phase-error {
-      border-color: var(--accent-error);
-      color: var(--accent-error);
-      background: rgba(248, 81, 73, 0.1);
-    }
-
-    .phase-name {
+    .tech-value {
       font-size: 0.85rem;
       font-weight: 500;
       color: var(--text-primary);
-      margin: 0 0 4px 0;
     }
 
-    .phase-status {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-      margin: 0;
+    .empty-state {
+      text-align: center;
+      color: var(--text-tertiary);
+      font-size: 0.9rem;
+      margin: 24px 0;
     }
   `]
 })
@@ -470,7 +394,26 @@ export class DashboardComponent implements OnInit {
       this.loadActiveProject();
       this.loadArtifactStats();
     });
+
+    // Listen to version-switched event from window
+    this.subscriptions.add(
+      new Subscription(() => {
+        window.removeEventListener('version-switched', this.onVersionSwitched);
+      })
+    );
+    window.addEventListener('version-switched', this.onVersionSwitched);
   }
+
+  /** Reload toàn bộ data khi version được switch */
+  private onVersionSwitched = async (event: any) => {
+    try {
+      this.pipelineStore.loadStatus();
+      this.loadActiveProject();
+      this.loadArtifactStats();
+    } finally {
+      this.versionService.stopLoading();
+    }
+  };
 
   ngOnInit(): void {
     this.pipelineStore.loadStatus();
@@ -525,6 +468,63 @@ export class DashboardComponent implements OnInit {
       case 'in_progress': return this.i18n.t('dashboard.inProgress');
       case 'error': return this.i18n.t('dashboard.error');
       default: return this.i18n.t('dashboard.pending');
+    }
+  }
+
+  /** FontAwesome icon class cho tech stack */
+  getTechIcon(category: string, value: string): string {
+    const v = (value || '').toLowerCase();
+    switch (category) {
+      case 'infrastructure':
+        if (v.includes('docker')) return 'fa-brands fa-docker';
+        if (v.includes('k8s') || v.includes('kubernetes')) return 'fa-solid fa-dharmachakra';
+        return 'fa-solid fa-server';
+      case 'backend':
+        if (v.includes('fastapi') || v.includes('python')) return 'fa-brands fa-python';
+        if (v.includes('nestjs') || v.includes('node')) return 'fa-brands fa-node-js';
+        if (v.includes('express')) return 'fa-brands fa-node-js';
+        return 'fa-solid fa-server';
+      case 'frontend':
+        if (v.includes('angular')) return 'fa-brands fa-angular';
+        if (v.includes('react')) return 'fa-brands fa-react';
+        if (v.includes('vue')) return 'fa-brands fa-vuejs';
+        return 'fa-solid fa-desktop';
+      case 'ui_framework':
+        if (v.includes('carbon')) return 'fa-solid fa-palette';
+        if (v.includes('tailwind')) return 'fa-brands fa-css3';
+        if (v.includes('material')) return 'fa-brands fa-material-ui';
+        return 'fa-solid fa-paint-brush';
+      default:
+        return 'fa-solid fa-cube';
+    }
+  }
+
+  /** Human-readable label cho tech stack */
+  getTechLabel(category: string, value: string): string {
+    const v = (value || '').toLowerCase();
+    switch (category) {
+      case 'infrastructure':
+        if (v.includes('docker')) return 'Docker';
+        if (v.includes('k8s') || v.includes('kubernetes')) return 'Kubernetes';
+        if (v === 'infrastructure') return 'Docker/K8s';
+        return value || '—';
+      case 'backend':
+        if (v.includes('fastapi')) return 'FastAPI';
+        if (v.includes('nestjs')) return 'NestJS';
+        if (v.includes('express')) return 'Express';
+        return value || '—';
+      case 'frontend':
+        if (v.includes('angular')) return 'Angular';
+        if (v.includes('react')) return 'React';
+        if (v.includes('vue')) return 'Vue';
+        return value || '—';
+      case 'ui_framework':
+        if (v.includes('carbon')) return 'Carbon';
+        if (v.includes('tailwind')) return 'Tailwind';
+        if (v.includes('material')) return 'Material';
+        return value || '—';
+      default:
+        return value || '—';
     }
   }
 }

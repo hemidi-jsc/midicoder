@@ -3,13 +3,14 @@
  * Hiển thị MIR và Symbol Table
  */
 
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
 import { I18nPipe } from '../../core/i18n.pipe';
 import { I18nService } from '../../core/i18n.service';
+import { VersionService } from '../../core/version.service';
 import { DOCS_BASE } from '../../core/app.constants';
 
 @Component({
@@ -152,7 +153,7 @@ import { DOCS_BASE } from '../../core/app.constants';
     }
   `],
 })
-export class IRExplorerComponent implements OnInit {
+export class IRExplorerComponent implements OnInit, OnDestroy {
   readonly docsUrl = `${DOCS_BASE}/ir`;
 
   mirData: any = null;
@@ -162,11 +163,29 @@ export class IRExplorerComponent implements OnInit {
 
   private api = inject(ApiService);
   private i18n = inject(I18nService);
+  private versionService = inject(VersionService);
 
   async ngOnInit(): Promise<void> {
     await this.loadMIR();
     await this.loadSymbolTable();
+
+    // Reload khi version switch
+    window.addEventListener('version-switched', this.onVersionSwitched);
   }
+
+  ngOnDestroy(): void {
+    window.removeEventListener('version-switched', this.onVersionSwitched);
+  }
+
+  /** Reload toàn bộ data khi version switch */
+  private onVersionSwitched = async (event: any) => {
+    try {
+      await this.loadMIR();
+      await this.loadSymbolTable();
+    } finally {
+      this.versionService.stopLoading();
+    }
+  };
 
   async loadMIR(): Promise<void> {
     const result = await this.api.getMIR();

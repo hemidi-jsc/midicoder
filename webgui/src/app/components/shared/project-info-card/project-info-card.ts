@@ -19,8 +19,8 @@ const DOCS_URL = `${DOCS_BASE}/project-management`;
   template: `
     <div class="info-card">
       <div class="card-header">
-        <h3 class="card-title">📁 Project</h3>
-        <a [href]="docsUrl" target="_blank" rel="noopener noreferrer" class="help-icon" attr.title="{{ 'project.helpTitle' | i18n }}">❓</a>
+        <h3 class="card-title"><i class="fa-solid fa-folder"></i> Project</h3>
+        <a [href]="docsUrl" target="_blank" rel="noopener noreferrer" class="help-icon" attr.title="{{ 'project.helpTitle' | i18n }}"><i class="fa-solid fa-circle-question"></i></a>
       </div>
 
       @if (!project) {
@@ -65,7 +65,7 @@ const DOCS_URL = `${DOCS_BASE}/project-management`;
 
         <div class="card-actions">
           <button class="btn-open-ide" (click)="openInIde()" attr.title="{{ 'project.openIdeTitle' | i18n }}">
-            📂 {{ 'project.openIde' | i18n }}
+            <i class="fa-solid fa-folder-open"></i> {{ 'project.openIde' | i18n }}
           </button>
         </div>
       }

@@ -5,7 +5,7 @@
  *     content_snapshot, created_at }
  */
 
-import { Component, Input } from '@angular/core';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { I18nPipe } from '../../../core/i18n.pipe';
 import { formatDateLocal } from '../../../core/date.util';
@@ -30,8 +30,7 @@ export interface BriefRevisionItem {
     <div class="hl-list">
       @if (items.length === 0) {
         <div class="hl-empty">
-          <p class="hl-empty-icon">📝</p>
-          <p class="hl-empty-title">{{ 'brief.historyEmpty' | i18n }}</p>
+          <p class="hl-empty-icon"><i class="fa-solid fa-scroll"></i></p>          <p class="hl-empty-title">{{ 'brief.historyEmpty' | i18n }}</p>
           <p class="hl-empty-hint">{{ 'brief.historyHint' | i18n }}</p>
         </div>
       } @else {
@@ -39,9 +38,7 @@ export interface BriefRevisionItem {
           @for (entry of items; track entry.id; let idx = $index) {
             <div class="hl-entry">
               <div class="hl-dot-col">
-                <div class="hl-dot"
-                     [class]="dotColorClass(entry.event)">
-                </div>
+                <div class="hl-dot" [class]="dotColorClass(entry.event)"></div>
                 @if (idx < items.length - 1) {
                   <div class="hl-line"></div>
                 }
@@ -49,18 +46,22 @@ export interface BriefRevisionItem {
               <div class="hl-content">
                 <div class="hl-meta">
                   <span class="hl-rev">#{{ entry.revision_number }}</span>
-                  <span class="hl-badge"
-                        [class]="badgeClass(entry.event)">
-                    {{ getEventLabel(entry.event) }}
-                  </span>
                   <span class="hl-date">{{ formatDateTime(entry.created_at) }}</span>
                 </div>
                 @if (entry.diff_summary) {
                   <p class="hl-desc">{{ entry.diff_summary }}</p>
                 }
-                @if (entry.snapshot_hash) {
-                  <div class="hl-hash">
-                    <span class="hash-new">{{ entry.snapshot_hash | slice:0:7 }}</span>
+                @if (entry.revision_number > 1 || entry.snapshot_hash) {
+                  <div class="hl-footer-row">
+                    @if (entry.revision_number > 1) {
+                      <button class="hl-diff-link" (click)="onViewDiff(entry)">Xem diff</button>
+                    }
+                    @if (entry.revision_number > 1 && entry.snapshot_hash) {
+                      <span class="hl-sep">·</span>
+                    }
+                    @if (entry.snapshot_hash) {
+                      <span class="hl-hash">{{ entry.snapshot_hash | slice:0:7 }}</span>
+                    }
                   </div>
                 }
               </div>
@@ -127,13 +128,12 @@ export interface BriefRevisionItem {
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding-top: 3px;
+      padding-top: 2px;
       flex-shrink: 0;
     }
     .hl-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 0;
+      width: 7px;
+      height: 7px;
       flex-shrink: 0;
     }
     .dot-green  { background: #3fb950; }
@@ -144,92 +144,89 @@ export interface BriefRevisionItem {
     .hl-line {
       width: 1px;
       flex: 1;
-      min-height: 16px;
-      margin-top: 3px;
-      background: rgba(252,103,103,0.12);
+      min-height: 12px;
+      margin-top: 2px;
+      background: rgba(255,255,255,0.06);
     }
 
     .hl-content {
       flex: 1;
       min-width: 0;
-      padding-bottom: 4px;
     }
     .hl-meta {
       display: flex;
-      align-items: center;
+      align-items: baseline;
       gap: 8px;
-      margin-bottom: 3px;
-      flex-wrap: wrap;
+      margin-bottom: 2px;
     }
     .hl-rev {
+      font-size: 0.75rem;
+      font-family: monospace;
+      font-weight: 600;
+      color: rgba(255,255,255,0.6);
+    }
+    .hl-date {
       font-size: 0.6875rem;
       font-family: monospace;
       color: rgba(255,255,255,0.3);
     }
-    .hl-badge {
-      font-size: 0.6875rem;
-      padding: 2px 7px;
-      border-radius: 0;
-      font-weight: 600;
-    }
-    .badge-green  { background: rgba(63,185,80,0.2); color: #56d364; border: 1px solid rgba(63,185,80,0.3); }
-    .badge-blue   { background: rgba(56,132,255,0.2); color: #58a6ff; border: 1px solid rgba(56,132,255,0.3); }
-    .badge-purple { background: rgba(168,85,247,0.2); color: #c084fc; border: 1px solid rgba(168,85,247,0.3); }
-    .badge-red    { background: rgba(248,81,73,0.2); color: #f87171; border: 1px solid rgba(248,81,73,0.3); }
-    .badge-gray   { background: rgba(136,136,136,0.2); color: #999; border: 1px solid rgba(136,136,136,0.3); }
-    .hl-date {
-      font-size: 0.6875rem;
-      font-family: monospace;
-      color: rgba(255,255,255,0.35);
-    }
     .hl-desc {
       font-size: 0.75rem;
-      color: rgba(255,255,255,0.75);
+      color: rgba(255,255,255,0.65);
       line-height: 1.4;
-      margin: 0;
+      margin: 0 0 4px 0;
     }
-    .hl-hash {
+
+    .hl-footer-row {
       display: flex;
       align-items: center;
-      gap: 6px;
-      margin-top: 4px;
+      gap: 5px;
+      margin-top: 3px;
     }
-    .hash-new {
+    .hl-diff-link {
       font-size: 0.6875rem;
       font-family: monospace;
-      color: #3fb950;
-      background: rgba(63,185,80,0.1);
-      padding: 1px 5px;
-      border-radius: 0;
+      color: #58a6ff;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .hl-diff-link:hover {
+      color: #79c0ff;
+      text-decoration: underline;
+    }
+    .hl-sep {
+      font-size: 0.6875rem;
+      color: rgba(255,255,255,0.2);
+    }
+    .hl-hash {
+      font-size: 0.6875rem;
+      font-family: monospace;
+      color: rgba(63,185,80,0.7);
     }
 
     .hl-footer {
       padding: 10px 12px;
-      border-top: 1px solid rgba(252,103,103,0.1);
+      border-top: 1px solid rgba(255,255,255,0.06);
       flex-shrink: 0;
     }
     .hl-footer-text {
       font-size: 0.6875rem;
-      color: rgba(255,255,255,0.3);
+      color: rgba(255,255,255,0.25);
     }
   `]
 })
 export class HistoryListComponent {
   /** Danh sách revision items (từ SQLite brief_revisions table) */
   @Input() items: BriefRevisionItem[] = [];
+  /** Emitted when user clicks "Xem diff" on a revision */
+  @Output() viewDiff = new EventEmitter<BriefRevisionItem>();
 
   formatDateTime(iso: string): string {
     return formatDateLocal(iso);
-  }
-
-  getEventLabel(event: string): string {
-    const labels: Record<string, string> = {
-      'created': 'Created',
-      'content_updated': 'Updated',
-      'analyzed': 'Analyzed',
-      'freezed': 'Freezed',
-    };
-    return labels[event] || event;
   }
 
   dotColorClass(event: string): string {
@@ -242,13 +239,7 @@ export class HistoryListComponent {
     return map[event] || 'dot-gray';
   }
 
-  badgeClass(event: string): string {
-    const map: Record<string, string> = {
-      'created': 'badge-green',
-      'content_updated': 'badge-blue',
-      'analyzed': 'badge-purple',
-      'freezed': 'badge-red',
-    };
-    return `hl-badge ${map[event] || 'badge-gray'}`;
+  onViewDiff(entry: BriefRevisionItem): void {
+    this.viewDiff.emit(entry);
   }
 }

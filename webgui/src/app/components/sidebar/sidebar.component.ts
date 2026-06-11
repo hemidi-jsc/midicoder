@@ -95,15 +95,13 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
         </div>
         <div class="settings-list">
           <a routerLink="/general-settings" class="settings-item">
-            <span class="settings-icon">🛠️</span>
-            <span class="settings-name">{{ 'nav.general' | i18n }}</span>
+            <span class="settings-icon"><i class="fa-solid fa-wrench"></i></span>            <span class="settings-name">{{ 'nav.general' | i18n }}</span>
           </a>
           <a routerLink="/llm-config" class="settings-item">
-            <span class="settings-icon">⚙️</span>
-            <span class="settings-name">{{ 'nav.llmConfig' | i18n }}</span>
+            <span class="settings-icon"><i class="fa-solid fa-gear"></i></span>            <span class="settings-name">{{ 'nav.llmConfig' | i18n }}</span>
           </a>
           <a routerLink="/system-logs" class="settings-item">
-            <span class="settings-icon">📋</span>
+            <span class="settings-icon"><i class="fa-solid fa-list-ul"></i></span>
             <span class="settings-name">{{ 'nav.systemLogs' | i18n }}</span>
           </a>
         </div>

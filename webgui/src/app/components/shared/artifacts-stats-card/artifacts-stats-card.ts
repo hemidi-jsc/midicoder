@@ -69,7 +69,7 @@ export interface ArtifactStatsData {
         <!-- Column 1: Briefs -->
         <div class="artifact-col" [class.done]="isDone('brief')">
           <div class="artifact-header">
-            <span class="artifact-icon" [class.done]="isDone('brief')">📝</span>
+            <span class="artifact-icon" [class.done]="isDone('brief')"><i class="fa-solid fa-pen-to-square"></i></span>
             <span class="artifact-name">{{ 'artifacts.briefs' | i18n }}</span>
           </div>
           @if (!isDone('brief')) {
@@ -109,7 +109,7 @@ export interface ArtifactStatsData {
         <!-- Column 2: Contracts -->
         <div class="artifact-col" [class.done]="isDone('contract')">
           <div class="artifact-header">
-            <span class="artifact-icon" [class.done]="isDone('contract')">📋</span>
+            <span class="artifact-icon" [class.done]="isDone('contract')"><i class="fa-solid fa-clipboard"></i></span>
             <span class="artifact-name">{{ 'artifacts.contracts' | i18n }}</span>
           </div>
           @if (!isDone('contract')) {
@@ -152,7 +152,7 @@ export interface ArtifactStatsData {
         <!-- Column 3: IR -->
         <div class="artifact-col" [class.done]="isDone('ir')">
           <div class="artifact-header">
-            <span class="artifact-icon" [class.done]="isDone('ir')">🔗</span>
+            <span class="artifact-icon" [class.done]="isDone('ir')"><i class="fa-solid fa-link"></i></span>
             <span class="artifact-name">{{ 'artifacts.ir' | i18n }}</span>
           </div>
           @if (!isDone('ir')) {
@@ -186,7 +186,7 @@ export interface ArtifactStatsData {
         <!-- Column 4: Code -->
         <div class="artifact-col" [class.done]="isDone('code')">
           <div class="artifact-header">
-            <span class="artifact-icon" [class.done]="isDone('code')">💻</span>
+            <span class="artifact-icon" [class.done]="isDone('code')"><i class="fa-solid fa-laptop-code"></i></span>
             <span class="artifact-name">{{ 'artifacts.code' | i18n }}</span>
           </div>
           @if (!isDone('code')) {

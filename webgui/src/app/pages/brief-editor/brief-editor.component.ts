@@ -12,6 +12,7 @@ import { RouterLink, Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { I18nPipe } from '../../core/i18n.pipe';
 import { I18nService } from '../../core/i18n.service';
+import { VersionService } from '../../core/version.service';
 import { PipelineStore } from '../../core/pipeline.store';
 import { formatDateLocal } from '../../core/date.util';
 import { DOCS_BASE } from '../../core/app.constants';
@@ -120,22 +121,21 @@ interface SectionOpenState {
         <!-- Column 3: Buttons -->
         <div class="flex items-center space-x-3 flex-shrink-0">
           <!-- Auto-save status -->
-          <span class="text-sm text-text-tertiary flex items-center">
-            @if (saveStatus === 'saving') {
-              <svg class="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          @if (saveStatus === 'saving') {
+            <span class="inline-flex items-center text-xs font-medium text-blue-300">
+              <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
               {{ 'brief.saving' | i18n }}
-            } @else if (saveStatus === 'saved') {
-              <svg class="mr-2 h-4 w-4 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-              </svg>
-              {{ 'brief.saved' | i18n }}
-            } @else if (hasUnsavedChanges) {
-              <span class="text-yellow-400">{{ 'brief.unsaved' | i18n }}</span>
-            }
-          </span>
+            </span>
+          } @else if (hasUnsavedChanges) {
+            <span class="text-xs font-medium text-amber-300">{{ 'brief.unsaved' | i18n }}</span>
+          } @else if (saveStatus === 'saved') {
+            <span class="text-xs font-medium text-green-400">{{ 'brief.saved' | i18n }}</span>
+          } @else {
+            <span class="text-xs text-text-tertiary">{{ 'brief.autoSaveOn' | i18n }}</span>
+          }
 
           <!-- Analyze Button - chỉ hiện khi status !== freezed -->
           @if (!briefInfo || briefInfo.status !== 'freezed') {
@@ -244,8 +244,7 @@ interface SectionOpenState {
 
           <!-- Extracted Resources Grid -->
           <div class="mb-4">
-            <h3 class="font-medium text-accent-primary mb-2">📦 {{ 'brief.resourcesExtracted' | i18n }}</h3>
-            <div class="grid grid-cols-5 gap-3">
+            <h3 class="font-medium text-accent-primary mb-2"><i class="fa-solid fa-box-open"></i> {{ 'brief.resourcesExtracted' | i18n }}</h3>            <div class="grid grid-cols-5 gap-3">
               <div class="p-3 bg-bg-secondary text-center border border-border-primary">
                 <p class="text-2xl font-bold text-blue-400">{{ analysisResult?.metadata?.entities }}</p>
                 <p class="text-xs text-text-secondary mt-1">{{ 'brief.entities' | i18n }}</p>
@@ -275,7 +274,7 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.entities?.length) {
               <div class="border border-border-primary overflow-hidden">
                 <button (click)="toggleSection('entities')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary">📦 {{ 'brief.entities' | i18n }} ({{ analysisResult.analysis.entities.length }})</span>
+                  <span class="font-medium text-sm text-text-primary"><i class="fa-solid fa-cube"></i> {{ 'brief.entities' | i18n }} ({{ analysisResult.analysis.entities.length }})</span>
                   <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.entities" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.entities) {
@@ -303,7 +302,7 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.commands?.length) {
               <div class="border border-border-primary overflow-hidden">
                 <button (click)="toggleSection('commands')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary">⚡ {{ 'brief.commands' | i18n }} ({{ analysisResult.analysis.commands.length }})</span>
+                  <span class="font-medium text-sm text-text-primary"><i class="fa-solid fa-bolt"></i> {{ 'brief.commands' | i18n }} ({{ analysisResult.analysis.commands.length }})</span>
                   <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.commands" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.commands) {
@@ -331,7 +330,7 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.queries?.length) {
               <div class="border border-border-primary overflow-hidden">
                 <button (click)="toggleSection('queries')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary">🔍 {{ 'brief.queries' | i18n }} ({{ analysisResult.analysis.queries.length }})</span>
+                  <span class="font-medium text-sm text-text-primary"><i class="fa-solid fa-magnifying-glass"></i> {{ 'brief.queries' | i18n }} ({{ analysisResult.analysis.queries.length }})</span>
                   <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.queries" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.queries) {
@@ -359,7 +358,7 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.events?.length) {
               <div class="border border-border-primary overflow-hidden">
                 <button (click)="toggleSection('events')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary">📡 {{ 'brief.events' | i18n }} ({{ analysisResult.analysis.events.length }})</span>
+                  <span class="font-medium text-sm text-text-primary"><i class="fa-solid fa-satellite-dish"></i> {{ 'brief.events' | i18n }} ({{ analysisResult.analysis.events.length }})</span>
                   <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.events" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.events) {
@@ -387,7 +386,7 @@ interface SectionOpenState {
             @if (analysisResult?.analysis?.ui_components?.length) {
               <div class="border border-border-primary overflow-hidden">
                 <button (click)="toggleSection('ui_components')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary">🧩 {{ 'brief.uiComponents' | i18n }} ({{ analysisResult.analysis.ui_components.length }})</span>
+                  <span class="font-medium text-sm text-text-primary"><i class="fa-solid fa-puzzle-piece"></i> {{ 'brief.uiComponents' | i18n }} ({{ analysisResult.analysis.ui_components.length }})</span>
                   <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.ui_components" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 @if (sectionOpen.ui_components) {
@@ -415,7 +414,7 @@ interface SectionOpenState {
           <!-- Ambiguities -->
           @if (analysisResult?.analysis?.ambiguities?.length) {
             <div class="mb-4">
-              <h3 class="font-medium text-yellow-400 mb-2">⚠️ {{ 'brief.needClarify' | i18n }} ({{ analysisResult?.analysis?.ambiguities?.length }})</h3>
+              <h3 class="font-medium text-yellow-400 mb-2"><i class="fa-solid fa-triangle-exclamation"></i> {{ 'brief.needClarify' | i18n }} ({{ analysisResult?.analysis?.ambiguities?.length }})</h3>
               <div class="space-y-2">
                 @for (ambiguity of analysisResult?.analysis?.ambiguities; track ambiguity.id) {
                   <div class="p-3 bg-yellow-900 bg-opacity-20 border-l-2 border-yellow-500">
@@ -491,7 +490,7 @@ interface SectionOpenState {
                   @if (isSubmittingAnswers) {
                     {{ 'brief.sending' | i18n }}
                   } @else {
-                    ✅ {{ 'brief.sendAll' | i18n }} ({{ answeredCount }}/{{ clarificationAmbiguities.length }})
+                    <i class="fa-solid fa-paper-plane"></i> {{ 'brief.sendAll' | i18n }} ({{ answeredCount }}/{{ clarificationAmbiguities.length }})
                   }
                 </button>
               </div>
@@ -539,11 +538,49 @@ interface SectionOpenState {
           <!-- History tab panel -->
           @if (rightTab === 'history') {
             <div class="sidebar-panel">
-              <app-history-list [items]="lineage"></app-history-list>
+              <app-history-list [items]="lineage" (viewDiff)="openDiffModal($event)"></app-history-list>
             </div>
           }
         </div>
       </div>
+
+      <!-- Diff Modal -->
+      @if (showDiffModal && diffData) {
+        <div class="diff-modal-overlay" (click)="closeDiffModal()">
+          <div class="diff-modal" (click)="$event.stopPropagation()">
+            <div class="diff-modal-header">
+              <div class="diff-modal-title">
+                <span class="diff-modal-rev">#{{ diffData.revision_number }}</span>
+                <span class="diff-modal-event">{{ getEventLabelForModal(diffData.event) }}</span>
+                @if (diffData.diff_summary) {
+                  <span class="diff-modal-summary">{{ diffData.diff_summary }}</span>
+                }
+              </div>
+              <button class="diff-modal-close" (click)="closeDiffModal()">✕</button>
+            </div>
+            <div class="diff-modal-stats">
+              @if (diffData.stats) {
+                <span class="diff-stat diff-stat-added">+{{ diffData.stats.added }}</span>
+                <span class="diff-stat diff-stat-removed">-{{ diffData.stats.removed }}</span>
+              }
+            </div>
+            <div class="diff-modal-body">
+              @if (diffData.loading) {
+                <div class="diff-loading">{{ 'brief.loadingDiff' | i18n }}</div>
+              } @else if (diffData.diff_lines && diffData.diff_lines.length > 0) {
+                @for (line of diffData.diff_lines; track line.text) {
+                  <div class="diff-line" [class.diff-added]="line.type === 'added'" [class.diff-removed]="line.type === 'removed'" [class.diff-header]="line.type === 'header'" [class.diff-context]="line.type === 'context'">
+                    <span class="diff-sign">{{ line.sign }}</span>
+                    <span class="diff-text">{{ line.text }}</span>
+                  </div>
+                }
+              } @else {
+                <div class="diff-empty">Không có thay đổi</div>
+              }
+            </div>
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: [`
@@ -833,11 +870,13 @@ interface SectionOpenState {
 
     /* =================================================================
      * 2-Column layout: Editor (2/3) + Sidebar (1/3)
+     * Fixed height — inner scroll
      * ================================================================= */
     .brief-page {
       display: flex;
       flex-direction: column;
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
     }
     .brief-grid {
       display: grid;
@@ -848,18 +887,27 @@ interface SectionOpenState {
       min-height: 0;
     }
     .brief-main {
-      min-width: 0;
       display: flex;
       flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    .brief-main::-webkit-scrollbar {
+      width: 6px;
+    }
+    .brief-main::-webkit-scrollbar-thumb {
+      background: rgba(252,103,103,0.15);
     }
     .brief-main > .card {
-      flex: 1;
       display: flex;
       flex-direction: column;
+      min-height: 100%;
     }
     .brief-main > .card textarea {
       flex: 1;
-      min-height: 400px;
+      min-height: 260px;
+      overflow-y: auto;
     }
     .brief-sidebar {
       display: flex;
@@ -867,6 +915,7 @@ interface SectionOpenState {
       background: #14141f;
       border: 1px solid rgba(252,103,103,0.15);
       overflow: hidden;
+      min-height: 0;
     }
 
     /* IBM Carbon: no border-radius anywhere in this component */
@@ -931,6 +980,149 @@ interface SectionOpenState {
         max-height: none;
       }
     }
+
+    /* Diff Modal */
+    .diff-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 2rem;
+    }
+    .diff-modal {
+      background: #16161e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      width: 100%;
+      max-width: 720px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .diff-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      flex-shrink: 0;
+    }
+    .diff-modal-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .diff-modal-rev {
+      font-size: 0.8125rem;
+      font-family: monospace;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    .diff-modal-event {
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 0;
+      font-weight: 600;
+      background: rgba(56, 132, 255, 0.2);
+      color: #58a6ff;
+      border: 1px solid rgba(56, 132, 255, 0.3);
+    }
+    .diff-modal-summary {
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.6);
+    }
+    .diff-modal-close {
+      background: none;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.875rem;
+      padding: 2px 8px;
+      cursor: pointer;
+      border-radius: 0;
+    }
+    .diff-modal-close:hover {
+      color: white;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .diff-modal-stats {
+      display: flex;
+      gap: 12px;
+      padding: 8px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      flex-shrink: 0;
+    }
+    .diff-stat {
+      font-size: 0.75rem;
+      font-family: monospace;
+    }
+    .diff-stat-added {
+      color: #3fb950;
+      background: rgba(63, 185, 80, 0.1);
+      padding: 1px 6px;
+    }
+    .diff-stat-removed {
+      color: #f85149;
+      background: rgba(248, 81, 73, 0.1);
+      padding: 1px 6px;
+    }
+    .diff-modal-body {
+      flex: 1;
+      overflow: auto;
+      padding: 0;
+    }
+    .diff-loading {
+      padding: 16px;
+      font-size: 0.8125rem;
+      color: rgba(255,255,255,0.4);
+      text-align: center;
+    }
+    .diff-empty {
+      padding: 16px;
+      font-size: 0.8125rem;
+      color: rgba(255,255,255,0.3);
+      text-align: center;
+    }
+    .diff-line {
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.75rem;
+      line-height: 1.6;
+      display: flex;
+      align-items: flex-start;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .diff-line.diff-header {
+      color: rgba(255,255,255,0.35);
+      font-size: 0.6875rem;
+      padding: 2px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      background: rgba(255,255,255,0.02);
+    }
+    .diff-line.diff-context {
+      color: rgba(255,255,255,0.4);
+      padding: 0 12px;
+    }
+    .diff-line.diff-added {
+      color: #7ee787;
+      background: rgba(63,185,80,0.08);
+      padding: 0 12px;
+    }
+    .diff-line.diff-removed {
+      color: #f97583;
+      background: rgba(248,81,73,0.08);
+      padding: 0 12px;
+    }
+    .diff-sign {
+      flex-shrink: 0;
+      width: 1em;
+      user-select: none;
+    }
+    .diff-text {
+      flex: 1;
+      min-width: 0;
+    }
   `],
 })
 export class BriefEditorComponent implements OnInit, OnDestroy {
@@ -968,6 +1160,18 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   clarificationAmbiguities: any[] = [];
   clarificationAnswers: Record<string, string> = {};
   isSubmittingAnswers = false;
+
+  // Diff modal
+  showDiffModal = false;
+  diffData: {
+    revision_number: number;
+    event: string;
+    diff_summary: string | null;
+    diff_text: string;
+    diff_lines: { type: 'header' | 'added' | 'removed' | 'context'; sign: string; text: string }[];
+    stats: { added: number; removed: number } | null;
+    loading: boolean;
+  } | null = null;
 
   get answeredCount(): number {
     return Object.values(this.clarificationAnswers).filter(v => v?.trim()).length;
@@ -1011,6 +1215,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   private cdr = inject(ChangeDetectorRef);
   private router = inject(Router);
   private i18n = inject(I18nService);
+  private versionService = inject(VersionService);
   private saveTimer: any = null;
   private toastTimer: any = null;
 
@@ -1019,11 +1224,57 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
     await this.loadBrief();
     await this.loadLineage();
     this.cdr.detectChanges();
+
+    // Reload khi version switch
+    window.addEventListener('version-switched', this.onVersionSwitched);
   }
 
   ngOnDestroy(): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
+    window.removeEventListener('version-switched', this.onVersionSwitched);
+  }
+
+  /** Reload toàn bộ brief data khi version switch */
+  private onVersionSwitched = async (event: any) => {
+    const targetVersion = event?.detail?.version || this.activeVersion;
+    try {
+      await this.pipelineStore.loadStatus();
+      await this.loadBriefForVersion(targetVersion);
+      await this.loadLineageForVersion(targetVersion);
+      this.cdr.detectChanges();
+    } catch (e) {
+      console.error('BriefEditor onVersionSwitched error:', e);
+    } finally {
+      this.versionService.stopLoading();
+    }
+  };
+
+  async loadBriefForVersion(version: string): Promise<void> {
+    const result = await this.api.getBrief(version);
+    if (result.success && result.data) {
+      this.briefInfo = result.data;
+      this.briefContent = result.data.content || '';
+      this._lastSavedContent = this.briefContent;
+      this.clarifications = result.data.clarifications || [];
+      this.analysisResult = result.data.analysis || null;
+    } else {
+      // Clear all content khi không có brief cho version này
+      this.briefInfo = null;
+      this.briefContent = '';
+      this._lastSavedContent = '';
+      this.clarifications = [];
+      this.analysisResult = null;
+    }
+  }
+
+  async loadLineageForVersion(version: string): Promise<void> {
+    const result = await this.api.getBriefRevisions(version);
+    if (result.success && result.data?.revisions) {
+      this.lineage = result.data.revisions;
+    } else {
+      this.lineage = [];
+    }
   }
 
   // ============================================================================
@@ -1053,6 +1304,13 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
       this.clarifications = result.data.clarifications || [];
       // Restore analysis result from backend (persisted in artifacts table)
       this.analysisResult = result.data.analysis || null;
+    } else {
+      // Clear all content khi không có brief cho version này
+      this.briefInfo = null;
+      this.briefContent = '';
+      this._lastSavedContent = '';
+      this.clarifications = [];
+      this.analysisResult = null;
     }
   }
 
@@ -1060,6 +1318,8 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
     const result = await this.api.getBriefRevisions(this.activeVersion);
     if (result.success && result.data?.revisions) {
       this.lineage = result.data.revisions;
+    } else {
+      this.lineage = [];
     }
   }
 
@@ -1087,7 +1347,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.autoSave();
-    }, 2000);
+    }, 5000);
   }
 
   async autoSave(): Promise<void> {
@@ -1103,6 +1363,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
       if (result.success) {
         this._lastSavedContent = this.briefContent;
         this.saveStatus = 'saved';
+        this.loadLineage();
         setTimeout(() => {
           if (this.saveStatus === 'saved' && !this.hasUnsavedChanges) {
             this.saveStatus = 'idle';
@@ -1264,5 +1525,80 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
       this.isSubmittingAnswers = false;
       this.cdr.detectChanges();
     }
+  }
+
+  // ============================================================================
+  // Diff Modal
+  // ============================================================================
+
+  getEventLabelForModal(event: string): string {
+    const labels: Record<string, string> = {
+      'created': 'Created',
+      'content_updated': 'Updated',
+      'analyzed': 'Analyzed',
+      'freezed': 'Freezed',
+    };
+    return labels[event] || event;
+  }
+
+  async openDiffModal(entry: any): Promise<void> {
+    this.showDiffModal = true;
+    this.diffData = {
+      revision_number: entry.revision_number,
+      event: entry.event,
+      diff_summary: entry.diff_summary,
+      diff_text: '',
+      diff_lines: [],
+      stats: null,
+      loading: true,
+    };
+    this.cdr.detectChanges();
+
+    try {
+      const result = await this.api.getRevisionDiff(entry.revision_number, this.activeVersion);
+      if (result.success && result.data) {
+        const lines = this.parseDiffText(result.data.diff_text);
+        this.diffData = {
+          revision_number: result.data.revision_number,
+          event: result.data.event || entry.event,
+          diff_summary: result.data.diff_summary || entry.diff_summary,
+          diff_text: result.data.diff_text,
+          diff_lines: lines,
+          stats: result.data.stats,
+          loading: false,
+        };
+      } else {
+        this.diffData = { ...this.diffData!, loading: false, diff_text: '', diff_lines: [] };
+      }
+    } catch {
+      this.diffData = { ...this.diffData!, loading: false, diff_text: '', diff_lines: [] };
+    }
+  }
+
+  parseDiffText(text: string): { type: 'header' | 'added' | 'removed' | 'context'; sign: string; text: string }[] {
+    if (!text) return [];
+    const lines = text.split('\n');
+    const result: { type: 'header' | 'added' | 'removed' | 'context'; sign: string; text: string }[] = [];
+    for (const line of lines) {
+      if (line.startsWith('---') || line.startsWith('+++')) {
+        result.push({ type: 'header', sign: '', text: line });
+      } else if (line.startsWith('@@')) {
+        result.push({ type: 'header', sign: '', text: line });
+      } else if (line.startsWith('+')) {
+        result.push({ type: 'added', sign: '+', text: line.substring(1) });
+      } else if (line.startsWith('-')) {
+        result.push({ type: 'removed', sign: '-', text: line.substring(1) });
+      } else if (line.startsWith(' ')) {
+        result.push({ type: 'context', sign: ' ', text: line.substring(1) });
+      } else {
+        result.push({ type: 'context', sign: '', text: line });
+      }
+    }
+    return result;
+  }
+
+  closeDiffModal(): void {
+    this.showDiffModal = false;
+    this.diffData = null;
   }
 }

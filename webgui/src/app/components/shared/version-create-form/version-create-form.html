@@ -53,8 +53,7 @@
         @if (getParentVersion()) {
           <div class="inheritance-info">
             <div class="inheritance-header">
-              <span class="inheritance-icon">🔗</span>
-              <strong>{{ 'version.inheritFrom' | i18n }}</strong>
+              <span class="inheritance-icon"><i class="fa-solid fa-link"></i></span>              <strong>{{ 'version.inheritFrom' | i18n }}</strong>
               <span class="inheritance-parent">{{ getParentVersion() }}</span>
             </div>
             <p class="inheritance-note">
@@ -64,8 +63,7 @@
         } @else {
           <div class="inheritance-info no-parent">
             <div class="inheritance-header">
-              <span class="inheritance-icon">📄</span>
-              <strong>{{ 'version.original' | i18n }}</strong>
+              <span class="inheritance-icon"><i class="fa-regular fa-file"></i></span>              <strong>{{ 'version.original' | i18n }}</strong>
             </div>
             <p class="inheritance-note">
               {{ 'version.firstNote' | i18n }}
@@ -76,8 +74,7 @@
         @if (impact.will_archive.length > 0) {
           <div class="impact-section">
             <div class="impact-header">
-              <span class="impact-icon">📦</span>
-              <strong>{{ 'version.archived' | i18n }}</strong>
+              <span class="impact-icon"><i class="fa-solid fa-box"></i></span>              <strong>{{ 'version.archived' | i18n }}</strong>
               <span class="impact-count">{{ impact.will_archive.length }}</span>
             </div>
             <div class="impact-list">
@@ -95,8 +92,7 @@
         @if (impact.will_delete.length > 0) {
           <div class="impact-section danger-section">
             <div class="impact-header">
-              <span class="impact-icon">🗑️</span>
-              <strong>{{ 'version.deleted' | i18n }}</strong>
+              <span class="impact-icon"><i class="fa-solid fa-trash-can"></i></span>              <strong>{{ 'version.deleted' | i18n }}</strong>
               <span class="impact-count danger">{{ impact.will_delete.length }}</span>
             </div>
             <div class="impact-list">
@@ -114,8 +110,7 @@
 
         @if (!hasImpact) {
           <div class="no-impact">
-            <span class="no-impact-icon">✅</span>
-            <p>{{ 'version.noImpact' | i18n }}</p>
+            <span class="no-impact-icon"><i class="fa-solid fa-circle-check"></i></span>            <p>{{ 'version.noImpact' | i18n }}</p>
           </div>
         }
 

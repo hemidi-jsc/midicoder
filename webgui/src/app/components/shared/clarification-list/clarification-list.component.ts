@@ -26,8 +26,7 @@ export interface ClarificationItem {
     <div class="cl-list">
       @if (items.length === 0) {
         <div class="cl-empty">
-          <p class="cl-empty-icon">💬</p>
-          <p class="cl-empty-title">{{ 'brief.clarifyHistory' | i18n }}</p>
+          <p class="cl-empty-icon"><i class="fa-regular fa-comments"></i></p>          <p class="cl-empty-title">{{ 'brief.clarifyHistory' | i18n }}</p>
           <p class="cl-empty-hint">{{ 'brief.clarifyEmpty' | i18n }}</p>
         </div>
       } @else {

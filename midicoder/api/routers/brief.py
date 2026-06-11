@@ -407,6 +407,89 @@ async def get_brief_revisions(version: str = Query(None), request: Request = Non
         brief_id = brief.get("brief_id")
         revisions = mgr.get_revisions(brief_id)
 
+        # Append 'Z' để frontend parse đúng UTC (giống activity.py)
+        for rev in revisions:
+            ts = rev.get("created_at", "")
+            if ts and isinstance(ts, str) and not ts.endswith("Z") and "+" not in ts:
+                rev["created_at"] = ts + "Z"
+
         return ApiResponse(success=True, data={"revisions": revisions, "count": len(revisions)}, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
+
+
+@router.get("/revisions/{revision_number}/diff", response_model=ApiResponse)
+async def get_revision_diff(
+    revision_number: int,
+    version: str = Query(None),
+    request: Request = None,
+):
+    """Lấy unified diff của revision N so với revision N-1.
+
+    Returns:
+        - added_lines, removed_lines: list of strings with line numbers
+        - diff_text: unified diff format string
+        - stats: {added, removed, total}
+    """
+    import difflib
+
+    language = i18n.get_language_from_request(request)
+    try:
+        from midicoder.storage.sqlite import BriefsManager
+        mgr = BriefsManager(db_path=_get_project_db_path("briefs.db"))
+        mgr.init()
+
+        brief = _get_brief(mgr, version)
+        if not brief:
+            return ApiResponse(success=True, data={"diff_text": "", "stats": {"added": 0, "removed": 0}}, language=language)
+
+        brief_id = brief.get("brief_id")
+
+        # Get current revision
+        revisions = mgr.get_revisions(brief_id)
+        current_rev = None
+        prev_rev = None
+        for rev in revisions:
+            if rev["revision_number"] == revision_number:
+                current_rev = rev
+                break
+
+        if not current_rev:
+            return ApiResponse(success=False, data=None, message="Revision not found", language=language)
+
+        # Find previous revision
+        for rev in revisions:
+            if rev["revision_number"] == revision_number - 1:
+                prev_rev = rev
+                break
+
+        current_content = current_rev.get("content_snapshot") or ""
+        prev_content = ""
+        if prev_rev:
+            prev_content = prev_rev.get("content_snapshot") or ""
+
+        # Compute unified diff
+        current_lines = current_content.splitlines(keepends=True)
+        prev_lines = prev_content.splitlines(keepends=True)
+
+        diff = list(difflib.unified_diff(prev_lines, current_lines, fromfile=f"v{revision_number - 1}", tofile=f"v{revision_number}", lineterm=""))
+        diff_text = "\n".join(diff) if diff else ""
+
+        # Count added/removed
+        added = sum(1 for line in diff if line.startswith("+") and not line.startswith("+++"))
+        removed = sum(1 for line in diff if line.startswith("-") and not line.startswith("---"))
+
+        return ApiResponse(
+            success=True,
+            data={
+                "revision_number": revision_number,
+                "event": current_rev.get("event"),
+                "diff_summary": current_rev.get("diff_summary"),
+                "diff_text": diff_text,
+                "stats": {"added": added, "removed": removed, "total": added + removed},
+                "has_diff": added > 0 or removed > 0,
+            },
+            language=language,
+        )
     except Exception as e:
         return ApiResponse(success=False, data=None, message=str(e), language=language)

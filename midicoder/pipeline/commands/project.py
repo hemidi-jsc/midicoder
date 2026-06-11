@@ -138,13 +138,35 @@ def _enrich_with_git_info(project: Dict[str, Any]) -> Dict[str, Any]:
     return project
 
 
+def _enrich_with_tech_stack(project: Dict[str, Any]) -> Dict[str, Any]:
+    """Đọc tech_stack + prompt_domain từ midicoder.yml vào project dict."""
+    path = project.get("path", "")
+    if not path:
+        project["tech_stack"] = None
+        project["prompt_domain"] = None
+        return project
+    config_file = Path(path) / ".midicoder" / "config" / "midicoder.yml"
+    if config_file.exists():
+        try:
+            cfg_data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
+            project["tech_stack"] = cfg_data.get("tech_stack", {})
+            project["prompt_domain"] = cfg_data.get("prompt_domain", "")
+        except Exception:
+            project["tech_stack"] = {}
+            project["prompt_domain"] = ""
+    else:
+        project["tech_stack"] = {}
+        project["prompt_domain"] = ""
+    return project
+
+
 def project_list() -> Dict[str, Any]:
     """List tất cả projects và project đang active."""
     mgr = _ensure_manager()
-    projects = [_enrich_with_git_info(p) for p in mgr.list_all()]
+    projects = [_enrich_with_git_info(_enrich_with_tech_stack(dict(p))) for p in mgr.list_all()]
     active = mgr.get_active()
     if active:
-        active = _enrich_with_git_info(active)
+        active = _enrich_with_git_info(_enrich_with_tech_stack(active))
 
     return {
         "projects": projects,
@@ -153,11 +175,12 @@ def project_list() -> Dict[str, Any]:
 
 
 def project_get_active() -> Optional[Dict[str, Any]]:
-    """Lấy project đang active."""
+    """Lấy project đang active (bao gồm tech_stack từ midicoder.yml)."""
     mgr = _ensure_manager()
     project = mgr.get_active()
     if project:
         project = _enrich_with_git_info(project)
+        project = _enrich_with_tech_stack(project)
     return project
 
 

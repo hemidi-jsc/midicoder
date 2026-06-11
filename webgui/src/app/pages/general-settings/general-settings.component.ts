@@ -29,7 +29,7 @@ interface SettingsData {
         </div>
         <p class="text-text-secondary mt-1">{{ 'settings.subtitle' | i18n }}</p>
         <div class="info-notice">
-          <span class="notice-icon">ℹ️</span>
+          <span class="notice-icon"><i class="fa-solid fa-circle-info"></i></span>
           <span>{{ 'settings.comingSoon' | i18n }}</span>
         </div>
       </div>

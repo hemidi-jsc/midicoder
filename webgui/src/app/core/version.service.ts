@@ -38,9 +38,11 @@ export class VersionService {
 
   private versionsSubject = new BehaviorSubject<VersionInfo[]>([]);
   private activeVersionSubject = new BehaviorSubject<string>('');
+  private loadingSubject = new BehaviorSubject<boolean>(false);
 
   readonly versions$ = this.versionsSubject.asObservable();
   readonly activeVersion$ = this.activeVersionSubject.asObservable();
+  readonly loading$ = this.loadingSubject.asObservable();
 
   /**
    * Load danh sách tất cả versions từ backend API.
@@ -153,6 +155,9 @@ export class VersionService {
   /**
    * Set active version — gọi backend API POST /version/use để switch SQLite + config file
    * Block nếu version đã bị archived
+   * 
+   * Loading state: bật khi bắt đầu, tắt bởi component qua stopLoading() sau khi reload xong
+   * Fallback: tự động tắt sau 5s nếu component quên gọi stopLoading()
    */
   async setActiveVersion(version: string): Promise<boolean> {
     // Block switch to archived version
@@ -162,20 +167,33 @@ export class VersionService {
       return false;
     }
 
+    this.loadingSubject.next(true);
+    // Fallback timer — auto stop after 5s nếu component quên gọi stopLoading()
+    const fallbackTimer = setTimeout(() => this.stopLoading(), 5000);
+
     try {
       const result = await this.api.useVersion({ version });
       if (result.success) {
         this.activeVersionSubject.next(version);
         localStorage.setItem('midicoder_active_version', version);
-        // Reload để lấy pipeline progress của version mới
         await this.loadVersions();
+        // Dispatch event — component sẽ gọi versionService.stopLoading() sau khi reload xong
+        window.dispatchEvent(new CustomEvent('version-switched', { detail: { version } }));
         return true;
       }
       return false;
     } catch (error) {
       console.error('Failed to switch version:', error);
       return false;
+    } finally {
+      // Clear fallback nếu stopLoading() đã được gọi sớm hơn
+      clearTimeout(fallbackTimer);
     }
+  }
+
+  /** Tắt loading state — gọi bởi component sau khi reload data xong */
+  stopLoading(): void {
+    this.loadingSubject.next(false);
   }
 
   /**
