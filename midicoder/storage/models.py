@@ -28,7 +28,6 @@ class BriefData(BaseModel):
         version: Version number (format: v1.0.0)
         content: Nội dung brief (markdown)
         title: Tiêu đề brief (optional)
-        brief_type: Loại brief (working, master, patch, library)
         status: Status của brief
     """
 
@@ -36,11 +35,8 @@ class BriefData(BaseModel):
     version: str = Field(..., min_length=1, description="Version number")
     content: str = Field(..., min_length=1, description="Nội dung brief (markdown)")
     title: Optional[str] = Field(None, description="Tiêu đề brief")
-    brief_type: Literal["working", "master", "patch", "library"] = Field(
-        default="working", description="Loại brief"
-    )
-    status: Literal["draft", "clarified", "frozen", "archived"] = Field(
-        default="draft", description="Status của brief"
+    status: Literal["draft", "freezed"] = Field(
+        default="draft", description="Status của brief (draft hoặc freezed)"
     )
 
     @field_validator("version")
@@ -58,36 +54,34 @@ class ClarificationData(BaseModel):
 
     Fields:
         brief_id: Brief ID reference
-        round_num: Round number
         question: Câu hỏi
         answer: Câu trả lời
         is_memo: Có phải memo (highlighted memory) không
     """
 
     brief_id: str = Field(..., min_length=1, description="Brief ID reference")
-    round_num: int = Field(..., ge=1, description="Round number")
     question: str = Field(..., min_length=1, description="Câu hỏi")
     answer: str = Field(..., min_length=1, description="Câu trả lời")
     is_memo: bool = Field(default=False, description="Có phải memo không")
 
 
-class BriefLineageData(BaseModel):
+class BriefRevisionData(BaseModel):
     """
-    Model cho brief lineage tracking.
+    Model cho brief revision tracking.
 
     Fields:
-        brief_id: Current brief ID
-        parent_brief_id: Parent brief ID
+        brief_id: Brief ID
         version: Version number
-        change_type: Type of change
-        change_description: Description of changes
+        revision_number: Revision sequence number
+        event: Event type (created, content_updated, analyzed, freezed)
+        diff_summary: Summary of changes
     """
 
-    brief_id: str = Field(..., min_length=1, description="Current brief ID")
-    parent_brief_id: str = Field(..., min_length=1, description="Parent brief ID")
+    brief_id: str = Field(..., min_length=1, description="Brief ID")
     version: str = Field(..., min_length=1, description="Version number")
-    change_type: str = Field(..., min_length=1, description="Type of change")
-    change_description: str = Field(..., min_length=1, description="Description of changes")
+    revision_number: int = Field(..., ge=1, description="Revision sequence number")
+    event: str = Field(..., min_length=1, description="Event type")
+    diff_summary: Optional[str] = Field(None, description="Summary of changes (max 200 chars)")
 
 
 # ============================================================================
@@ -135,6 +129,8 @@ class ActivityLogData(BaseModel):
     Model cho activity log data.
 
     Fields:
+        project_id: ID project (tất cả activity thuộc project)
+        version: Version name (activity thuộc version cụ thể)
         action: Hành động
         resource_type: Loại resource (optional)
         resource_id: ID resource (optional)
@@ -143,6 +139,8 @@ class ActivityLogData(BaseModel):
         duration_ms: Thời gian thực hiện ms (optional)
     """
 
+    project_id: Optional[str] = Field(None, description="Project ID")
+    version: Optional[str] = Field(None, description="Version name")
     action: str = Field(..., min_length=1, description="Hành động")
     resource_type: Optional[str] = Field(None, description="Loại resource")
     resource_id: Optional[str] = Field(None, description="ID resource")
@@ -284,7 +282,7 @@ __all__ = [
     # Brief models
     "BriefData",
     "ClarificationData",
-    "BriefLineageData",
+    "BriefRevisionData",
     # Artifact models
     "ArtifactData",
     "ActivityLogData",

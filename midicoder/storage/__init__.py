@@ -34,7 +34,6 @@ __all__ = [
     # Managers
     "BriefsManager",
     "ArtifactsManager",
-    "ActivityLogger",
     "ProvenanceManager",
     # Initialization
     "init_all_databases",
@@ -60,7 +59,6 @@ from midicoder.storage.sqlite import (
     # Managers
     BriefsManager,
     ArtifactsManager,
-    ActivityLogger,
     ProvenanceManager,
     # Initialization
     init_all_databases,
@@ -71,7 +69,7 @@ from midicoder.storage.models import (
     # Brief models
     BriefData,
     ClarificationData,
-    BriefLineageData,
+    BriefRevisionData,
     # Artifact models
     ArtifactData,
     ActivityLogData,

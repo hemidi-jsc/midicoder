@@ -180,29 +180,26 @@ def init_database(db_path: Path, schema_sql: str, timeout: float = DEFAULT_TIMEO
 # Schema Definitions (Updated theo requirement doc)
 # ============================================================================
 
-# Briefs table schema (Q1=A, Q2=B, Q4=A, Q7=A)
+# Briefs table schema (1 version = 1 brief, 2 status: draft / freezed)
 SCHEMA_BRIEFS = """
--- Briefs table: lưu trữ briefs (requirements documents)
+-- Briefs table: mỗi version có 1 brief duy nhất
 CREATE TABLE IF NOT EXISTS briefs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     brief_id TEXT NOT NULL,
     version TEXT NOT NULL DEFAULT 'v1.0.0',
-    type TEXT NOT NULL DEFAULT 'working',
     title TEXT,
-    content TEXT,  -- Full content (Q1=A)
+    content TEXT,
     status TEXT DEFAULT 'draft',
+    content_hash TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    source_file TEXT,
-    hash TEXT,  -- Content hash (Q4=A)
     UNIQUE(brief_id, version)
 );
 
--- Clarifications table: lưu trữ Q&A clarification sessions
+-- Clarifications table: Q&A clarification
 CREATE TABLE IF NOT EXISTS clarifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     brief_id TEXT NOT NULL,
-    round INTEGER NOT NULL,
     question TEXT NOT NULL,
     answer TEXT NOT NULL,
     is_memo INTEGER DEFAULT 0,
@@ -210,33 +207,29 @@ CREATE TABLE IF NOT EXISTS clarifications (
     FOREIGN KEY (brief_id) REFERENCES briefs(brief_id) ON DELETE CASCADE
 );
 
--- Brief lineage table: tracking brief evolution (Q2=B: separate table)
-CREATE TABLE IF NOT EXISTS brief_lineage (
+-- Brief revisions table: full history of brief changes
+CREATE TABLE IF NOT EXISTS brief_revisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     brief_id TEXT NOT NULL,
-    parent_brief_id TEXT,
     version TEXT NOT NULL,
-    change_type TEXT,
-    change_description TEXT,
-    old_content_hash TEXT,
-    new_content_hash TEXT,
+    revision_number INTEGER NOT NULL,
+    event TEXT NOT NULL,
+    snapshot_hash TEXT,
+    diff_summary TEXT,
+    content_snapshot TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (brief_id) REFERENCES briefs(brief_id) ON DELETE CASCADE,
-    FOREIGN KEY (parent_brief_id) REFERENCES briefs(brief_id) ON DELETE SET NULL
+    UNIQUE(brief_id, revision_number)
 );
 
--- Indexes (Q7=A: composite indexes)
+-- Indexes
 CREATE INDEX IF NOT EXISTS idx_briefs_version ON briefs(version);
-CREATE INDEX IF NOT EXISTS idx_briefs_type ON briefs(type);
 CREATE INDEX IF NOT EXISTS idx_briefs_status ON briefs(status);
-CREATE INDEX IF NOT EXISTS idx_briefs_version_status ON briefs(brief_id, status);
 
--- Indexes for clarifications table
 CREATE INDEX IF NOT EXISTS idx_clarifications_brief ON clarifications(brief_id);
-CREATE INDEX IF NOT EXISTS idx_clarifications_round ON clarifications(brief_id, round);
 
--- Indexes for brief_lineage table
-CREATE INDEX IF NOT EXISTS idx_lineage_brief ON brief_lineage(brief_id);
+CREATE INDEX IF NOT EXISTS idx_revisions_brief ON brief_revisions(brief_id);
+CREATE INDEX IF NOT EXISTS idx_revisions_version ON brief_revisions(version);
 """
 
 # Artifacts table schema (Q1=A: full content in DB, Q7=A)
@@ -271,6 +264,8 @@ CREATE TABLE IF NOT EXISTS activity_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT DEFAULT (datetime('now')),
     user TEXT DEFAULT 'cli',
+    project_id TEXT,
+    version TEXT,
     action TEXT NOT NULL,
     resource_type TEXT,
     resource_id TEXT,
@@ -284,6 +279,8 @@ CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_activity_action ON activity_log(action);
 CREATE INDEX IF NOT EXISTS idx_activity_action_timestamp ON activity_log(action, timestamp);
 CREATE INDEX IF NOT EXISTS idx_activity_resource ON activity_log(resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS idx_activity_project ON activity_log(project_id);
+CREATE INDEX IF NOT EXISTS idx_activity_version ON activity_log(version);
 """
 
 # Provenance schema (Q5=B: DDD-AIF, Q6=B: polymorphic, Q7=A)
@@ -380,11 +377,17 @@ CREATE INDEX IF NOT EXISTS idx_references_to ON "references"(to_symbol, to_file)
 # ============================================================================
 
 
+# ============================================================================
+# Briefs Manager
+# ============================================================================
+
+
 class BriefsManager:
     """
     Quản lý briefs trong SQLite.
 
-    Cung cấp CRUD operations cho briefs, clarifications, và brief_lineage.
+    Mỗi version có 1 brief duy nhất với 2 status: draft / freezed.
+    Cung cấp CRUD cho briefs, clarifications, và revision tracking.
     """
 
     def __init__(self, db_path: Optional[Path] = None):
@@ -397,19 +400,32 @@ class BriefsManager:
         self.db_path = db_path or DB_BRIEFS
 
     def _get_connection(self):
-        """
-        Lấy SQLite connection context manager.
-
-        Dùng cho internal operations và testing.
-
-        Returns:
-            Context manager cho connection
-        """
+        """Lấy SQLite connection context manager."""
         return get_connection(self.db_path)
 
     def init(self):
         """Khởi tạo database với schema."""
         init_database(self.db_path, SCHEMA_BRIEFS)
+        self._migrate_briefs()
+
+    def _migrate_briefs(self):
+        """Migration: thêm columns còn thiếu vào bảng briefs."""
+        try:
+            with get_connection(self.db_path) as conn:
+                cursor = conn.execute("PRAGMA table_info(briefs)")
+                columns = {row[1] for row in cursor.fetchall()}
+
+                if "content_hash" not in columns:
+                    conn.execute("ALTER TABLE briefs ADD COLUMN content_hash TEXT")
+
+                if "title" not in columns:
+                    conn.execute("ALTER TABLE briefs ADD COLUMN title TEXT")
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Brief CRUD
+    # ------------------------------------------------------------------
 
     def create(
         self,
@@ -417,7 +433,6 @@ class BriefsManager:
         version: str,
         content: str,
         title: str = None,
-        brief_type: str = "working",
     ) -> Dict:
         """
         Tạo brief mới.
@@ -425,9 +440,8 @@ class BriefsManager:
         Args:
             brief_id: ID duy nhất cho brief
             version: Version number
-            content: Nội dung brief (markdown) - Q1=A: lưu full content
+            content: Nội dung brief
             title: Tiêu đề brief
-            brief_type: 'working' hoặc 'master'
 
         Returns:
             Brief record dictionary
@@ -440,21 +454,17 @@ class BriefsManager:
         try:
             with get_connection(self.db_path) as conn:
                 cursor = conn.execute(
-                    """
-                    INSERT INTO briefs (brief_id, version, type, title, content, hash)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                    (brief_id, version, brief_type, title, content, content_hash),
+                    "INSERT INTO briefs (brief_id, version, title, content, content_hash) VALUES (?, ?, ?, ?, ?)",
+                    (brief_id, version, title, content, content_hash),
                 )
 
                 return {
                     "id": cursor.lastrowid,
                     "brief_id": brief_id,
                     "version": version,
-                    "type": brief_type,
                     "title": title,
                     "content": content,
-                    "hash": content_hash,
+                    "content_hash": content_hash,
                     "status": "draft",
                 }
         except sqlite3.IntegrityError as e:
@@ -463,16 +473,7 @@ class BriefsManager:
             )
 
     def get(self, brief_id: str, version: str = None) -> Optional[Dict]:
-        """
-        Lấy brief theo ID.
-
-        Args:
-            brief_id: Brief ID
-            version: Version (optional, default: latest) - Q17=B
-
-        Returns:
-            Brief record or None
-        """
+        """Lấy brief theo ID."""
         with get_connection(self.db_path) as conn:
             if version:
                 cursor = conn.execute(
@@ -480,7 +481,6 @@ class BriefsManager:
                     (brief_id, version),
                 )
             else:
-                # Sắp xếp theo id DESC để lấy record mới nhất
                 cursor = conn.execute(
                     "SELECT * FROM briefs WHERE brief_id = ? ORDER BY id DESC LIMIT 1",
                     (brief_id,),
@@ -489,41 +489,12 @@ class BriefsManager:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def get_by_version(self, brief_id: str, version: str) -> Optional[Dict]:
-        """
-        Lấy brief theo ID và version cụ thể.
-
-        Args:
-            brief_id: Brief ID
-            version: Version number
-
-        Returns:
-            Brief record or None
-        """
-        return self.get(brief_id, version)
-
     def get_latest(self, brief_id: str) -> Optional[Dict]:
-        """
-        Lấy brief mới nhất theo ID.
-
-        Args:
-            brief_id: Brief ID
-
-        Returns:
-            Latest brief record or None
-        """
+        """Lấy brief mới nhất theo ID."""
         return self.get(brief_id)
 
     def list(self, version: str = None) -> List[Dict]:
-        """
-        Danh sách tất cả briefs.
-
-        Args:
-            version: Filter by version (optional)
-
-        Returns:
-            List of brief records
-        """
+        """Danh sách tất cả briefs."""
         with get_connection(self.db_path) as conn:
             if version:
                 cursor = conn.execute(
@@ -531,22 +502,12 @@ class BriefsManager:
                     (version,),
                 )
             else:
-                cursor = conn.execute(
-                    "SELECT * FROM briefs ORDER BY created_at DESC"
-                )
+                cursor = conn.execute("SELECT * FROM briefs ORDER BY created_at DESC")
 
             return [dict(row) for row in cursor.fetchall()]
 
     def search_by_status(self, status: str) -> List[Dict]:
-        """
-        Tìm briefs theo status.
-
-        Args:
-            status: Status để filter (draft, clarified, frozen, archived)
-
-        Returns:
-            List of brief records with matching status
-        """
+        """Tìm briefs theo status (draft hoặc freezed)."""
         with get_connection(self.db_path) as conn:
             cursor = conn.execute(
                 "SELECT * FROM briefs WHERE status = ? ORDER BY created_at DESC",
@@ -556,273 +517,137 @@ class BriefsManager:
 
     def update_status(self, brief_id: str, status: str) -> bool:
         """
-        Cập nhật status của brief.
+        Cập nhật status của brief. Chỉ cho phép draft → freezed.
 
-        Args:
-            brief_id: Brief ID
-            status: Status mới
-
-        Returns:
-            True nếu thành công
+        Raises:
+            ValueError: Nếu brief đã freezed hoặc status không hợp lệ
         """
+        if status not in ("draft", "freezed"):
+            raise ValueError(f"Invalid brief status: {status}")
+
         with get_connection(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT status FROM briefs WHERE brief_id = ?",
+                (brief_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(f"Brief not found: {brief_id}")
+            current_status = row[0]
+            if current_status == "freezed":
+                raise ValueError("Brief đã được đóng băng, không thể thay đổi status")
+            if current_status == status:
+                return True
+
             conn.execute(
                 "UPDATE briefs SET status = ?, updated_at = datetime('now') WHERE brief_id = ?",
                 (status, brief_id),
             )
             return True
 
-    def update_type(self, brief_id: str, brief_type: str) -> bool:
-        """
-        Cập nhật type của brief (working → master → library).
+    # ------------------------------------------------------------------
+    # Clarifications
+    # ------------------------------------------------------------------
 
-        Args:
-            brief_id: Brief ID
-            brief_type: Type mới ('working', 'master', 'library', 'patch')
-
-        Returns:
-            True nếu thành công
-        """
-        with get_connection(self.db_path) as conn:
-            conn.execute(
-                "UPDATE briefs SET type = ?, updated_at = datetime('now') WHERE brief_id = ?",
-                (brief_type, brief_id),
-            )
-            return True
-
-    def save_as_library(self, brief_id: str, name: str, tags: Optional[str] = None) -> bool:
-        """
-        Lưu brief vào library — cập nhật type='library' và title/name.
-
-        Args:
-            brief_id: Brief ID
-            name: Tên library brief
-            tags: Comma-separated tags (optional)
-
-        Returns:
-            True nếu thành công
-        """
-        # Build metadata JSON if tags provided
-        metadata = None
-        if tags:
-            import json
-            metadata = json.dumps({"name": name, "tags": tags})
-
-        with get_connection(self.db_path) as conn:
-            if metadata:
-                conn.execute(
-                    """UPDATE briefs 
-                       SET type = 'library', title = ?, source_file = ?, status = 'frozen',
-                           updated_at = datetime('now')
-                       WHERE brief_id = ?""",
-                    (name, metadata, brief_id),
-                )
-            else:
-                conn.execute(
-                    """UPDATE briefs 
-                       SET type = 'library', title = ?, status = 'frozen',
-                           updated_at = datetime('now')
-                       WHERE brief_id = ?""",
-                    (name, brief_id),
-                )
-            return True
-
-    def search_by_type(self, brief_type: str) -> List[Dict]:
-        """
-        Tìm briefs theo type.
-
-        Args:
-            brief_type: Type để filter ('working', 'master', 'library', 'patch')
-
-        Returns:
-            List of brief records with matching type
-        """
-        with get_connection(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT * FROM briefs WHERE type = ? ORDER BY created_at DESC",
-                (brief_type,),
-            )
-            return [dict(row) for row in cursor.fetchall()]
-
-    def get_library_brief(self, name: str) -> Optional[Dict]:
-        """
-        Tìm library brief theo tên.
-
-        Args:
-            name: Tên library brief (lưu trong title field)
-
-        Returns:
-            Brief record hoặc None
-        """
-        with get_connection(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT * FROM briefs WHERE type = 'library' AND title = ? ORDER BY created_at DESC LIMIT 1",
-                (name,),
-            )
-            row = cursor.fetchone()
-            return dict(row) if row else None
-
-    def duplicate_brief(self, src_brief_id: str, new_brief_id: str, new_type: str) -> Optional[Dict]:
-        """
-        Copy brief sang record mới (với brief_id mới và type mới).
-
-        Args:
-            src_brief_id: Brief ID nguồn
-            new_brief_id: Brief ID mới
-            new_type: Type mới ('working', 'master', 'patch')
-
-        Returns:
-            Brief record mới hoặc None
-        """
-        with get_connection(self.db_path) as conn:
-            src = conn.execute(
-                "SELECT * FROM briefs WHERE brief_id = ? ORDER BY id DESC LIMIT 1",
-                (src_brief_id,),
-            ).fetchone()
-            if not src:
-                return None
-
-            src_dict = dict(src)
-            content = src_dict.get("content", "")
-            content_hash = hashlib.sha256(content.encode()).hexdigest() if content else None
-
-            cursor = conn.execute(
-                """INSERT INTO briefs (brief_id, version, type, title, content, status, hash)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    new_brief_id,
-                    src_dict.get("version", "v1.0.0"),
-                    new_type,
-                    src_dict.get("title"),
-                    content,
-                    "draft",
-                    content_hash,
-                ),
-            )
-
-            return {
-                "id": cursor.lastrowid,
-                "brief_id": new_brief_id,
-                "version": src_dict.get("version", "v1.0.0"),
-                "type": new_type,
-                "title": src_dict.get("title"),
-                "content": content,
-                "hash": content_hash,
-                "status": "draft",
-            }
-
-    def _update_source_file(self, brief_id: str, source_file: str) -> bool:
-        """
-        Cập nhật source_file của brief (internal method).
-
-        Args:
-            brief_id: Brief ID
-            source_file: Đường dẫn file nguồn
-
-        Returns:
-            True nếu thành công
-        """
-        with get_connection(self.db_path) as conn:
-            conn.execute(
-                "UPDATE briefs SET source_file = ?, updated_at = datetime('now') WHERE brief_id = ?",
-                (source_file, brief_id),
-            )
-            return True
-
-    # Clarification methods
     def add_clarification(
-        self, brief_id: str, round_num: int, question: str, answer: str, is_memo: bool = False
+        self, brief_id: str, question: str, answer: str, is_memo: bool = False
     ) -> int:
-        """
-        Thêm clarification Q&A.
-
-        Args:
-            brief_id: Brief ID
-            round_num: Round number
-            question: Câu hỏi
-            answer: Câu trả lời
-            is_memo: Có phải memo (highlighted memory) không
-
-        Returns:
-            ID của clarification mới
-        """
+        """Thêm clarification Q&A."""
         with get_connection(self.db_path) as conn:
             cursor = conn.execute(
-                """
-                INSERT INTO clarifications (brief_id, round, question, answer, is_memo)
-                VALUES (?, ?, ?, ?, ?)
-            """,
-                (brief_id, round_num, question, answer, 1 if is_memo else 0),
+                "INSERT INTO clarifications (brief_id, question, answer, is_memo) VALUES (?, ?, ?, ?)",
+                (brief_id, question, answer, 1 if is_memo else 0),
             )
             return cursor.lastrowid
 
     def get_clarifications(self, brief_id: str) -> List[Dict]:
-        """
-        Lấy tất cả clarifications cho brief.
-
-        Args:
-            brief_id: Brief ID
-
-        Returns:
-            List of clarification records
-        """
+        """Lấy tất cả clarifications cho brief."""
         with get_connection(self.db_path) as conn:
             cursor = conn.execute(
-                "SELECT * FROM clarifications WHERE brief_id = ? ORDER BY round, created_at",
+                "SELECT * FROM clarifications WHERE brief_id = ? ORDER BY created_at",
                 (brief_id,),
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def _convert_to_master(self, brief_id: str) -> bool:
-        """
-        Convert working-brief → master-brief.
+    # ------------------------------------------------------------------
+    # Revisions
+    # ------------------------------------------------------------------
 
-        Cập nhật type='master' và status='clarified'.
-
-        Args:
-            brief_id: Brief ID để convert
-
-        Returns:
-            True nếu thành công
-        """
-        with get_connection(self.db_path) as conn:
-            conn.execute(
-                "UPDATE briefs SET type = 'master', status = 'clarified', updated_at = datetime('now') WHERE brief_id = ?",
-                (brief_id,),
-            )
-            return True
-
-    # Lineage method
-    def record_lineage(
-        self,
-        brief_id: str,
-        parent_brief_id: str,
-        version: str,
-        change_type: str,
-        change_description: str,
-    ) -> int:
-        """
-        Record brief lineage (evolution tracking).
-
-        Args:
-            brief_id: Current brief ID
-            parent_brief_id: Parent brief ID
-            version: Version number
-            change_type: Type of change (clarify, update, patch, etc.)
-            change_description: Description of changes
-
-        Returns:
-            ID của lineage record mới
-        """
+    def _get_next_revision_number(self, brief_id: str) -> int:
+        """Lấy số revision tiếp theo cho brief."""
         with get_connection(self.db_path) as conn:
             cursor = conn.execute(
-                """
-                INSERT INTO brief_lineage (brief_id, parent_brief_id, version, change_type, change_description)
-                VALUES (?, ?, ?, ?, ?)
-            """,
-                (brief_id, parent_brief_id, version, change_type, change_description),
+                "SELECT COALESCE(MAX(revision_number), 0) + 1 FROM brief_revisions WHERE brief_id = ?",
+                (brief_id,),
+            )
+            return cursor.fetchone()[0]
+
+    def add_revision(
+        self,
+        brief_id: str,
+        version: str,
+        event: str,
+        diff_summary: str,
+        content: str = None,
+    ) -> int:
+        """
+        Thêm revision record vào brief_revisions.
+
+        Args:
+            brief_id: Brief ID
+            version: Version name
+            event: Loại sự kiện ('created', 'content_updated', 'analyzed', 'freezed')
+            diff_summary: Tóm tắt thay đổi (tối đa 200 ký tự)
+            content: Nội dung brief tại thời điểm này (để lưu snapshot)
+
+        Returns:
+            ID của revision record mới
+        """
+        revision_number = self._get_next_revision_number(brief_id)
+        snapshot_hash = hashlib.sha256(content.encode()).hexdigest() if content else None
+
+        with get_connection(self.db_path) as conn:
+            cursor = conn.execute(
+                """INSERT INTO brief_revisions
+                   (brief_id, version, revision_number, event, snapshot_hash, diff_summary, content_snapshot)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (brief_id, version, revision_number, event, snapshot_hash, diff_summary[:200] if diff_summary else None, content),
             )
             return cursor.lastrowid
+
+    def get_revisions(self, brief_id: str) -> List[Dict]:
+        """Lấy tất cả revisions cho brief (mới nhất trước)."""
+        with get_connection(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT * FROM brief_revisions WHERE brief_id = ? ORDER BY revision_number DESC",
+                (brief_id,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_revision_diff(self, brief_id: str, rev_a: int, rev_b: int) -> Dict:
+        """
+        So sánh 2 revision.
+
+        Returns:
+            Dict với keys: revision_a, revision_b (mỗi cái có snapshot_hash, diff_summary, created_at)
+        """
+        with get_connection(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM brief_revisions WHERE brief_id = ? AND revision_number IN (?, ?)",
+                (brief_id, rev_a, rev_b),
+            ).fetchall()
+            result = {}
+            for row in rows:
+                d = dict(row)
+                result[f"revision_{d['revision_number']}"] = {
+                    "revision_number": d["revision_number"],
+                    "event": d["event"],
+                    "snapshot_hash": d["snapshot_hash"],
+                    "diff_summary": d["diff_summary"],
+                    "content_snapshot": d["content_snapshot"],
+                    "created_at": d["created_at"],
+                }
+            return result
 
 
 # ============================================================================
@@ -1021,139 +846,6 @@ class ArtifactsManager:
                 (content, artifact_id),
             )
             return True
-
-
-# ============================================================================
-# Activity Logger (Updated với Q16=A)
-# ============================================================================
-
-
-class ActivityLogger:
-    """
-    Logger cho activity/audit trail.
-
-    Lưu trong artifacts.db cùng với artifacts table.
-    """
-
-    def __init__(self, db_path: Optional[Path] = None):
-        """
-        Khởi tạo ActivityLogger.
-
-        Args:
-            db_path: Đường dẫn đến database (default: .midicoder/data/artifacts.db)
-        """
-        self.db_path = db_path or DB_ARTIFACTS
-
-    def _get_connection(self):
-        """
-        Lấy SQLite connection context manager.
-
-        Returns:
-            Context manager cho connection
-        """
-        return get_connection(self.db_path)
-
-    def init(self):
-        """Khởi tạo database với schema."""
-        # Artifacts và activity_log cùng trong artifacts.db
-        init_database(self.db_path, SCHEMA_ARTIFACTS + "\n" + SCHEMA_ACTIVITY)
-
-    def log(
-        self,
-        action: str,
-        resource_type: str = None,
-        resource_id: str = None,
-        details: Dict = None,
-        status: str = "success",
-        duration_ms: int = None,
-    ) -> int:
-        """
-        Ghi log activity.
-
-        Args:
-            action: Hành động (init, analyze, generate, etc.)
-            resource_type: Loại resource
-            resource_id: ID resource
-            details: Chi tiết (dict)
-            status: Status (success, failed)
-            duration_ms: Thời gian thực hiện (ms)
-
-        Returns:
-            ID của log entry mới
-        """
-        logger.debug(
-            f"Logging activity: {action}",
-            extra={
-                "action": action,
-                "resource_type": resource_type,
-                "resource_id": resource_id,
-                "status": status,
-            },
-        )
-
-        with get_connection(self.db_path) as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO activity_log 
-                (action, resource_type, resource_id, details, status, duration_ms)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    action,
-                    resource_type,
-                    resource_id,
-                    json.dumps(details) if details else None,
-                    status,
-                    duration_ms,
-                ),
-            )
-            return cursor.lastrowid
-
-    def query(
-        self,
-        start_time: str = None,
-        end_time: str = None,
-        action: str = None,
-        status: str = None,
-        limit: int = 100,
-    ) -> List[Dict]:
-        """
-        Query activity logs với filters (Q16=A: full filters).
-
-        Args:
-            start_time: Start time filter (ISO format)
-            end_time: End time filter (ISO format)
-            action: Action filter
-            status: Status filter
-            limit: Maximum results to return
-
-        Returns:
-            List of activity log records
-        """
-        with get_connection(self.db_path) as conn:
-            query = "SELECT * FROM activity_log WHERE 1=1"
-            params = []
-
-            if start_time:
-                query += " AND timestamp >= ?"
-                params.append(start_time)
-
-            if end_time:
-                query += " AND timestamp <= ?"
-                params.append(end_time)
-
-            if action:
-                query += " AND action = ?"
-                params.append(action)
-
-            if status:
-                query += " AND status = ?"
-                params.append(status)
-
-            query += f" ORDER BY timestamp DESC LIMIT {limit}"
-
-            cursor = conn.execute(query, params)
-            return [dict(row) for row in cursor.fetchall()]
 
 
 # ============================================================================
@@ -1495,7 +1187,6 @@ __all__ = [
     # Managers
     "BriefsManager",
     "ArtifactsManager",
-    "ActivityLogger",
     "ProvenanceManager",
     # Initialization
     "init_all_databases",

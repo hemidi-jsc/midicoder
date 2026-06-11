@@ -12,7 +12,6 @@ from pathlib import Path
 from midicoder.storage.sqlite import (
     BriefsManager,
     ArtifactsManager,
-    ActivityLogger,
     ProvenanceManager,
     get_connection,
     init_database,
@@ -71,16 +70,7 @@ def temp_provenance_db():
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-@pytest.fixture
-def temp_activity_logger():
-    """Temp ActivityLogger for unit tests."""
-    temp_dir = tempfile.mkdtemp()
-    db_path = Path(temp_dir) / "artifacts.db"
-    logger = ActivityLogger(db_path)
-    logger.init()
-    yield logger, db_path
-    # Cleanup
-    shutil.rmtree(temp_dir, ignore_errors=True)
+# Activity log tests moved to test_activity.py (uses storage/activity.py shared module)
 
 
 # ============================================================================
@@ -296,43 +286,8 @@ class TestArtifactsManager:
 
 
 # ============================================================================
-# ActivityLogger Tests
+# Activity log tests moved to test_activity.py
 # ============================================================================
-
-class TestActivityLogger:
-    """Tests for ActivityLogger."""
-
-    def test_log_activity(self, temp_activity_logger):
-        """Test logging an activity."""
-        logger, _ = temp_activity_logger
-
-        log_id = logger.log(
-            action="init",
-            resource_type="database",
-            resource_id="briefs.db",
-            details={"tables": 3},
-            status="success",
-            duration_ms=150,
-        )
-
-        assert log_id > 0
-
-    def test_query_logs(self, temp_activity_logger):
-        """Test querying activity logs with filters."""
-        logger, _ = temp_activity_logger
-
-        # Log multiple activities
-        logger.log("init", "db", "briefs.db", status="success")
-        logger.log("init", "db", "artifacts.db", status="success")
-        logger.log("error", "db", "provenance.db", status="failed")
-
-        # Query by action
-        inits = logger.query(action="init")
-        assert len(inits) == 2
-
-        # Query by status
-        failed = logger.query(status="failed")
-        assert len(failed) == 1
 
 
 # ============================================================================

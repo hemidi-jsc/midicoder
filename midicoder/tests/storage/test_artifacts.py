@@ -1,8 +1,8 @@
 ﻿"""
-Tests cho ArtifactsManager và ActivityLogger.
+Tests cho ArtifactsManager.
 
-E09: SQLite Persistence - Artifacts + Activity Log
-E10: Artifact Contracts
+E09: SQLite Persistence - Artifacts
+Activity log tests moved to test_activity.py (uses storage/activity.py shared module).
 """
 
 import pytest
@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 from midicoder.storage.sqlite import (
     ArtifactsManager,
-    ActivityLogger,
     SCHEMA_ARTIFACTS,
     SCHEMA_ACTIVITY,
 )
@@ -233,149 +232,7 @@ class TestArtifactsManager:
         assert results[0]["artifact_id"] == "a1"
 
 
-class TestActivityLogger:
-    """Tests cho ActivityLogger class."""
-
-    @pytest.fixture(autouse=True)
-    def setup(self):
-        """
-        Setup trước mỗi test - tạo temp database.
-        """
-        self.temp_dir = tempfile.mkdtemp()
-        self.db_path = Path(self.temp_dir) / "test_activity.db"
-        self.logger = ActivityLogger(self.db_path)
-        self.logger.init()
-        yield
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
-
-    def test_init_creates_tables(self):
-        """
-        Test: init() tạo đúng tables artifacts và activity_log.
-        
-        Verification: Cả 2 tables đều tồn tại.
-        """
-        with self.logger._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-            tables = {row[0] for row in cursor.fetchall()}
-            
-            assert "artifacts" in tables
-            assert "activity_log" in tables
-
-    def test_log_activity_success(self):
-        """
-        Test: log() ghi activity log thành công.
-        
-        Verification: Record được lưu vào activity_log table.
-        """
-        self.logger.log(
-            action="init",
-            resource_type="project",
-            resource_id="proj-001"
-        )
-        
-        # Verify
-        with self.logger._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT * FROM activity_log WHERE action = ?",
-                ("init",)
-            )
-            row = cursor.fetchone()
-            
-            assert row is not None
-            assert row["action"] == "init"
-            assert row["resource_type"] == "project"
-            assert row["resource_id"] == "proj-001"
-            assert row["status"] == "success"
-
-    def test_log_activity_with_details(self):
-        """
-        Test: log() với details dict được serialize thành JSON.
-        
-        Verification: details field chứa JSON string hợp lệ.
-        """
-        details = {
-            "files_created": 10,
-            "duration": "5s"
-        }
-        
-        self.logger.log(
-            action="generate",
-            details=details
-        )
-        
-        with self.logger._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT details FROM activity_log WHERE action = ?",
-                ("generate",)
-            )
-            row = cursor.fetchone()
-            
-            parsed = json.loads(row["details"])
-            assert parsed == details
-
-    def test_log_activity_failed_status(self):
-        """
-        Test: log() với status='failed'.
-        
-        Verification: status field được lưu đúng.
-        """
-        self.logger.log(
-            action="compile",
-            status="failed",
-            details={"error": "Syntax error"}
-        )
-        
-        with self.logger._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT status FROM activity_log WHERE action = ?",
-                ("compile",)
-            )
-            row = cursor.fetchone()
-            
-            assert row["status"] == "failed"
-
-    def test_log_activity_with_duration(self):
-        """
-        Test: log() với duration_ms.
-        
-        Verification: duration_ms được lưu đúng giá trị.
-        """
-        self.logger.log(
-            action="analyze",
-            duration_ms=1523
-        )
-        
-        with self.logger._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT duration_ms FROM activity_log WHERE action = ?",
-                ("analyze",)
-            )
-            row = cursor.fetchone()
-            
-            assert row["duration_ms"] == 1523
-
-    def test_log_activity_defaults(self):
-        """
-        Test: log() với các tham số mặc định.
-        
-        Verification: 
-        - user mặc định là 'cli'
-        - status mặc định là 'success'
-        - details là NULL khi không có
-        """
-        self.logger.log(action="simple-action")
-        
-        with self.logger._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT user, status, details FROM activity_log LIMIT 1"
-            )
-            row = cursor.fetchone()
-            
-            assert row["user"] == "cli"
-            assert row["status"] == "success"
-            assert row["details"] is None
+# Activity log tests moved to test_activity.py (uses storage/activity.py shared module)
 
 
 if __name__ == "__main__":
