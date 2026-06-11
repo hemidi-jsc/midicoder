@@ -50,6 +50,13 @@ VI_TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "brief.analyze_failed": "Phân tích brief thất bại",
     "brief.rewrite_start": "Đang viết lại brief",
     "brief.rewrite_success": "Đã viết lại brief thành công",
+    "brief.saved": "Đã lưu brief thành công",
+    "brief.updated": "Đã cập nhật brief thành công",
+    "brief.saveFailed": "Không thể lưu brief",
+    "brief.emptyContent": "Brief không được để trống",
+    "brief.noActiveProject": "Không có project đang hoạt động",
+    "brief.freezeError": "Không thể đóng băng brief",
+    "brief.freezedMsg": "Brief đã được đóng băng",
     
     # Contract commands
     "contract.gen_start": "Đang tạo hợp đồng DSL",
@@ -136,6 +143,13 @@ EN_TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "brief.analyze_failed": "Brief analysis failed",
     "brief.rewrite_start": "Rewriting brief",
     "brief.rewrite_success": "Brief rewritten successfully",
+    "brief.saved": "Brief saved successfully",
+    "brief.updated": "Brief updated successfully",
+    "brief.saveFailed": "Failed to save brief",
+    "brief.emptyContent": "Brief content cannot be empty",
+    "brief.noActiveProject": "No active project",
+    "brief.freezeError": "Failed to freeze brief",
+    "brief.freezedMsg": "Brief has been freezed",
     
     # Contract commands
     "contract.gen_start": "Generating DSL contract",
@@ -219,29 +233,33 @@ class I18n:
     def translate(self, key: str, language: str = "vi", **kwargs) -> str:
         """
         Dịch một key sang ngôn ngữ chỉ định
-        
+
         Args:
             key: Key của message (ví dụ: "common.success")
             language: Ngôn ngữ đích (vi, en)
             **kwargs: Các tham số để format string
-        
+
         Returns:
             Message đã dịch
         """
         if language not in self.translations:
             language = self.default_language
-        
+
         message = self.translations[language].get(key, key)
-        
+
         # Format string nếu có kwargs
         if kwargs:
             try:
                 message = message.format(**kwargs)
             except (KeyError, ValueError):
                 pass
-        
+
         return message
-    
+
+    def t(self, key: str, language: str = None, **kwargs) -> str:
+        """Alias ngắn của translate(). Nếu không truyền language, dùng mặc định."""
+        return self.translate(key, language or self.default_language, **kwargs)
+
     def get_all_languages(self) -> list[str]:
         """Trả về danh sách ngôn ngữ được hỗ trợ"""
         return list(self.translations.keys())

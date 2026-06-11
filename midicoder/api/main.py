@@ -54,10 +54,10 @@ async def _auto_activate_active_project():
     so endpoints like /version/create don't fail with MDC-CONFIG-001.
     """
     try:
-        from midicoder.storage.projects import ProjectsManager
+        from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
         from midicoder.pipeline.config import get_config
 
-        mgr = ProjectsManager()
+        mgr = ProjectsManager(db_path=DB_PROJECTS)
         mgr.init()
         active = mgr.get_active()
         if active and active.get("path"):

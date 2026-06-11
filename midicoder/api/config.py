@@ -42,8 +42,8 @@ def get_global_config_path() -> Path:
 def get_project_cwd() -> str | None:
     """Active project path from ProjectsManager, or None."""
     try:
-        from midicoder.storage.projects import ProjectsManager
-        mgr = ProjectsManager()
+        from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
+        mgr = ProjectsManager(db_path=DB_PROJECTS)
         mgr.init()
         active_path = mgr.get_active_project_path()
         if active_path:
@@ -56,11 +56,11 @@ def get_project_cwd() -> str | None:
 def get_active_version() -> str | None:
     """Active version from ProjectsManager, fallback to project YAML."""
     try:
-        from midicoder.storage.projects import ProjectsManager
+        from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
         cwd = get_project_cwd()
         if not cwd:
             return None
-        mgr = ProjectsManager()
+        mgr = ProjectsManager(db_path=DB_PROJECTS)
         mgr.init()
         active = mgr.get_active()
         if active:
@@ -90,12 +90,12 @@ def get_active_version() -> str | None:
 def get_version_status(version: str) -> str | None:
     """
     Get version status from projects.db.
-    
+
     Returns 'archived', 'inbuild', 'draft' or None if version not found.
     """
     try:
-        from midicoder.storage.projects import ProjectsManager
-        mgr = ProjectsManager()
+        from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
+        mgr = ProjectsManager(db_path=DB_PROJECTS)
         mgr.init()
         active_project = mgr.get_active()
         if not active_project:
