@@ -456,11 +456,11 @@ export class ApiService {
   }
 
   /**
-   * GET /brief/lineage - Get brief change history (from brief_lineage table)
+   * GET /brief/revisions - Get brief revision history (from brief_revisions table)
    */
-  async getBriefLineage(version?: string): Promise<ApiResponse<{ lineage: any[]; count: number }>> {
+  async getBriefRevisions(version?: string): Promise<ApiResponse<{ revisions: any[]; count: number }>> {
     const params = version ? `?version=${version}` : '';
-    return this.get(`/brief/lineage${params}`);
+    return this.get(`/brief/revisions${params}`);
   }
 
   /**
@@ -468,13 +468,6 @@ export class ApiService {
    */
   async freezeBrief(version: string): Promise<ApiResponse<{ brief_id: string; status: string; type: string }>> {
     return this.post('/brief/freeze', { version });
-  }
-
-  /**
-   * POST /brief/set-status - Set brief status (draft → analyzed → clarified → frozen)
-   */
-  async setBriefStatus(version: string, status: string): Promise<ApiResponse<{ brief_id: string; status: string }>> {
-    return this.post('/brief/set-status', { version, status });
   }
 
   // ============================================================================
