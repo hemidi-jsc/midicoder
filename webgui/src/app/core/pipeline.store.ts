@@ -4,8 +4,10 @@
  * Dùng ApiService để kết nối với backend FastAPI thực
  */
 
-import { Injectable, signal, computed, inject } from '@angular/core';
+import { Injectable, signal, computed, inject, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { ApiService } from './api.service';
+import { VersionService } from './version.service';
 import { PipelineStatus } from './api.types';
 
 export type PhaseStatus = 'pending' | 'in_progress' | 'complete' | 'error';
@@ -20,8 +22,18 @@ export interface PhaseState {
 @Injectable({
   providedIn: 'root',
 })
-export class PipelineStore {
+export class PipelineStore implements OnDestroy {
   private api = inject(ApiService);
+  private versionService = inject(VersionService);
+  private versionSub: Subscription;
+
+  constructor() {
+    // Khi version thay đổi, reload pipeline status
+    this.versionSub = this.versionService.activeVersion$.subscribe((version) => {
+      this.activeVersion.set(version);
+      this.loadStatus();
+    });
+  }
 
   /**
    * States cho từng phase của pipeline
@@ -397,5 +409,9 @@ export class PipelineStore {
       this.previewPhaseState.set({ status: 'error', errorMessage: String(error) });
       return false;
     }
+  }
+
+  ngOnDestroy(): void {
+    this.versionSub?.unsubscribe();
   }
 }

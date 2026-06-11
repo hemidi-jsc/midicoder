@@ -1,6 +1,6 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterOutlet, Router, NavigationEnd } from '@angular/router';
+import { RouterOutlet, Router, NavigationEnd, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { Subscription, filter } from 'rxjs';
 
@@ -9,17 +9,14 @@ import { I18nPipe } from './core/i18n.pipe';
 import { AuthService } from './core/auth.service';
 import { ScreenCheckService } from './core/screen-check.service';
 import { UpdateService } from './core/update.service';
+import { PipelineStore, PhaseStatus } from './core/pipeline.store';
 import { SidebarComponent } from './components/sidebar/sidebar.component';
 import type { UpdateStatus } from './core/api.types';
-
-/** Application version — import từ shared constants */
-
-/** Docs base URL theo version */
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, FormsModule, SidebarComponent, I18nPipe],
+  imports: [CommonModule, RouterOutlet, FormsModule, RouterLink, SidebarComponent, I18nPipe],
   template: `
     <div class="min-h-screen bg-bg-primary text-text-primary">
       <!-- Screen Warning Overlay -->
@@ -41,54 +38,98 @@ import type { UpdateStatus } from './core/api.types';
 
       <!-- Header - chỉ hiển thị khi đã đăng nhập và không ở trang login -->
       @if (isAuthenticated && !isLoginPage) {
-        <header class="fixed top-0 left-0 w-full bg-bg-secondary border-b border-border-primary z-50 flex items-center justify-between">
-          <!-- Logo và App Version Badge - bên trái -->
-          <div class="flex items-center space-x-3">
-            <img src="logo.png" alt="Midicoder" class="logo-header">
-            <a
-              href="https://github.com/hemidi-jsc/midicoder/releases"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="app-version-badge"
-              title="{{ 'header.viewRelease' | i18n }}"
-            >
-              v{{ appVersion }}
-            </a>
-            <div class="header-links">
+        <header class="fixed top-0 left-0 w-full bg-bg-secondary border-b border-border-primary z-50">
+          <!-- Row 1: Logo left | Pipeline center | User right -->
+          <div class="header-row">
+            <!-- Cột 1: Logo + Version Badge + Links -->
+            <div class="header-left">
+              <img src="logo.png" alt="Midicoder" class="logo-header">
               <a
-                [attr.href]="docsChangelogUrl"
+                href="https://github.com/hemidi-jsc/midicoder/releases"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="header-link"
-                title="{{ 'update.changelog' | i18n }}"
+                class="app-version-badge"
+                title="{{ 'header.viewRelease' | i18n }}"
               >
-                {{ 'update.changelog' | i18n }}
+                v{{ appVersion }}
               </a>
-              <span class="header-separator">·</span>
-              <a
-                [attr.href]="docsGettingStartedUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="header-link"
-                title="{{ 'header.documentation' | i18n }}"
-              >
-                {{ 'header.documentation' | i18n }}
-              </a>
+              <div class="header-links">
+                <a
+                  [attr.href]="docsChangelogUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="header-link"
+                  title="{{ 'update.changelog' | i18n }}"
+                >
+                  {{ 'update.changelog' | i18n }}
+                </a>
+                <span class="header-separator">·</span>
+                <a
+                  [attr.href]="docsGettingStartedUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="header-link"
+                  title="{{ 'header.documentation' | i18n }}"
+                >
+                  {{ 'header.documentation' | i18n }}
+                </a>
+              </div>
             </div>
-          </div>
 
-          <!-- User Info - bên phải -->
-          <div class="flex items-center space-x-4">
-            <span class="text-text-secondary text-sm">{{ currentUser?.email }}</span>
-            <button (click)="handleLogout()" class="logout-btn">
-              {{ 'auth.logout' | i18n }}
-            </button>
+            <!-- Cột 2: Gaming Pipeline Progress Bar (giữa) -->
+            @if (pipelineInitialized()) {
+              <div class="header-center">
+                <div class="pipeline-wrapper">
+                  <!-- Version label — left of pipeline -->
+                  <span class="pipeline-version-badge">
+                    {{ 'header.versionLabel' | i18n }} <strong>{{ activeVersion() }}</strong>
+                  </span>
+
+                  <nav class="pipeline-nav">
+                    <!-- Track runs behind all steps -->
+                    <div class="pipeline-track">
+                      <div class="pipeline-fill" [style.width.%]="overallProgress()"></div>
+                    </div>
+
+                    <!-- Steps row — each step = icon + label -->
+                    <div class="pipeline-steps">
+                    @for (step of pipelineSteps(); track step.key) {
+                      <a
+                        class="pipeline-step"
+                        [routerLink]="step.route"
+                        [ngClass]="'step-' + step.state().status"
+                      >
+                        <div class="step-circle">
+                          @if (step.state().status === 'complete') {
+                            <span class="step-check">✓</span>
+                          } @else if (step.state().status === 'in_progress') {
+                            <span class="step-spinner">◌</span>
+                          } @else {
+                            <span class="step-number">{{ step.number }}</span>
+                          }
+                        </div>
+                        <span class="step-label">{{ step.labelKey | i18n }}</span>
+                      </a>
+                    }
+                  </div>
+                </nav>
+              </div>
+            </div>
+            }
+
+            <!-- Cột 3: User Info + Logout -->
+            <div class="header-right">
+              <span class="user-email">{{ currentUser?.email }}</span>
+              <button (click)="handleLogout()" class="logout-btn">
+                {{ 'auth.logout' | i18n }}
+              </button>
+            </div>
           </div>
         </header>
 
         <!-- Update Banner — hiện khi có phiên bản mới -->
         @if (updateStatus && updateStatus.has_update && !isUpgrading) {
-          <div class="update-banner" style="position:fixed;top:65px;left:0;right:0;z-index:40;background:linear-gradient(90deg,var(--brand-color),#ff4da6);color:#fff;display:flex;align-items:center;justify-content:center;padding:10px 48px;gap:16px;box-shadow:0 2px 12px rgba(233,0,137,0.25);">
+          <div class="update-banner" style="position:fixed;top:95px;left:0;right:0;z-index:40;background:linear-gradient(90deg,var(--brand-color),#ff4da6);color:#fff;display:flex;align-items:center;justify-content:center;padding:10px 48px;gap:16px;box-shadow:0 2px 12px rgba(233,0,137,0.25);">
             <span style="font-size:0.9rem;font-weight:500;">🎉 {{ 'update.banner' | i18n }} <strong>v{{ updateStatus.latest_version }}</strong> {{ 'update.currentVersion' | i18n:{current: updateStatus.current_version} }}</span>
             <a [attr.href]="updateStatus.download_url" target="_blank" rel="noopener noreferrer" style="color:#fff;text-decoration:underline;cursor:pointer;font-size:0.85rem;margin-left:4px;">{{ 'update.changelog' | i18n }}</a>
             <button (click)="handleUpgrade()" style="background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.6);color:#fff;padding:5px 16px;border-radius:4px;cursor:pointer;font-size:0.85rem;font-weight:600;transition:background 0.2s;" title="{{ 'update.upgradeTitle' | i18n }}">
@@ -109,7 +150,7 @@ import type { UpdateStatus } from './core/api.types';
         <app-sidebar *ngIf="isAuthenticated && !isLoginPage"></app-sidebar>
       }
 
-      <!-- Main Content - router-outlet luôn render (bao gồm login) -->
+      <!-- Main Content -->
       @if (isAuthenticated && !isLoginPage) {
         <main class="main-content">
           <router-outlet />
@@ -121,7 +162,22 @@ import type { UpdateStatus } from './core/api.types';
   `,
   styles: [`
     header {
-      padding: 16px 48px;
+      padding: 0 24px 0 344px;
+    }
+
+    .header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 80px;
+    }
+
+    /* ===== Column 1: Left ===== */
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
     }
 
     .logo-header {
@@ -129,7 +185,6 @@ import type { UpdateStatus } from './core/api.types';
       width: auto;
     }
 
-    /* App Version Badge */
     .app-version-badge {
       display: inline-flex;
       align-items: center;
@@ -152,7 +207,6 @@ import type { UpdateStatus } from './core/api.types';
       box-shadow: var(--glow-sm);
     }
 
-    /* Header Links */
     .header-links {
       display: flex;
       align-items: center;
@@ -177,6 +231,191 @@ import type { UpdateStatus } from './core/api.types';
       user-select: none;
     }
 
+    /* ===== Column 2: Gaming Pipeline ===== */
+    .header-center {
+      flex: 1;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 0 20px;
+      min-width: 0;
+    }
+
+    /* Wrapper holds version label + pipeline nav */
+    .pipeline-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      width: 100%;
+      max-width: 720px;
+    }
+
+    /* Version label — plain text, vertically centered */
+    .pipeline-version-badge {
+      flex-shrink: 0;
+      font-size: 13px;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.55);
+      white-space: nowrap;
+      letter-spacing: 0.02em;
+    }
+
+    .pipeline-version-badge strong {
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .pipeline-nav {
+      flex: 1;
+      position: relative;
+      padding-top: 0;
+      min-width: 0;
+    }
+
+    /* Track — behind everything, centered on the 32px circles */
+    .pipeline-track {
+      position: absolute;
+      top: 16px;
+      transform: translateY(-50%);
+      left: 16px;
+      right: 16px;
+      height: 3px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 2px;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .pipeline-fill {
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, #3dbf54, #fc6767, #ff4da6);
+      border-radius: 2px;
+      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 0 12px rgba(252, 103, 103, 0.5);
+    }
+
+    /* Steps flex row */
+    .pipeline-steps {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Each step — icon over label, column centered */
+    .pipeline-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .pipeline-step:hover {
+      transform: translateY(-2px);
+    }
+
+    /* Circle — solid bg to cover track behind */
+    .step-circle {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      border: 2px solid rgba(255,255,255,0.12);
+      background: var(--bg-secondary);
+      color: rgba(255,255,255,0.25);
+      transition: all 0.3s;
+      margin-bottom: 4px;
+      position: relative;
+      z-index: 3;
+    }
+
+    /* Completed — solid bg to hide track */
+    .pipeline-step.step-complete .step-circle {
+      border-color: #3dbf54;
+      color: #3dbf54;
+      background: var(--bg-secondary);
+      box-shadow: 0 0 12px rgba(61, 191, 84, 0.35), inset 0 0 8px rgba(61, 191, 84, 0.1);
+    }
+
+    .step-check {
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    /* In-progress — solid bg */
+    .pipeline-step.step-in_progress .step-circle {
+      border-color: #fc6767;
+      color: #fc6767;
+      background: var(--bg-secondary);
+      box-shadow: 0 0 16px rgba(252, 103, 103, 0.45), inset 0 0 6px rgba(252, 103, 103, 0.1);
+      animation: activePulse 2s infinite;
+    }
+
+    .step-spinner {
+      font-size: 16px;
+      animation: spin 1s linear infinite;
+    }
+
+    /* Pending — solid dark bg */
+    .pipeline-step.step-pending .step-circle {
+      border-color: rgba(255,255,255,0.22);
+      color: rgba(255,255,255,0.45);
+      background: var(--bg-secondary);
+    }
+
+    .step-number {
+      font-size: 12px;
+    }
+
+    /* Error — solid bg */
+    .pipeline-step.step-error .step-circle {
+      border-color: #f85149;
+      color: #f85149;
+      background: var(--bg-secondary);
+      box-shadow: 0 0 12px rgba(248, 81, 73, 0.3);
+    }
+
+    /* Label */
+    .step-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.6);
+      transition: color 0.2s;
+      white-space: nowrap;
+    }
+
+    .pipeline-step.step-complete .step-label {
+      color: #3dbf54;
+    }
+
+    .pipeline-step.step-in_progress .step-label {
+      color: #fc6767;
+    }
+
+    .pipeline-step:hover .step-label {
+      color: rgba(255,255,255,0.95);
+    }
+
+    /* ===== Column 3: Right ===== */
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .user-email {
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+    }
+
     .logout-btn {
       background: transparent;
       border: 1px solid var(--border-subtle);
@@ -192,31 +431,45 @@ import type { UpdateStatus } from './core/api.types';
       color: var(--accent-error);
     }
 
+    /* Main content — matches header padding */
     .main-content {
       margin-left: 320px;
-      min-height: calc(100vh - 65px);
+      min-height: 100vh;
       padding: 24px;
-      padding-top: 65px;
+      padding-top: 104px;
+    }
+
+    /* ===== Gaming Animations ===== */
+    @keyframes activePulse {
+      0%, 100% {
+        box-shadow: 0 0 12px rgba(252, 103, 103, 0.4);
+        transform: scale(1);
+      }
+      50% {
+        box-shadow: 0 0 20px rgba(252, 103, 103, 0.6);
+        transform: scale(1.08);
+      }
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
   `]
 })
 export class AppComponent implements OnInit, OnDestroy {
-  /**
-   * State
-   */
+  private pipelineStore = inject(PipelineStore);
+
   isAuthenticated = false;
   currentUser: any = null;
-  projectName = '';
   screenSupported = true;
   screenWarningMessage = '';
   isLoginPage = false;
 
-  /** App version to display in header */
   appVersion = APP_VERSION;
   docsChangelogUrl = `${DOCS_BASE}/changelog`;
   docsGettingStartedUrl = `${DOCS_BASE}/getting-started`;
 
-  /** Update state */
   updateStatus: UpdateStatus | null = null;
   isUpgrading = false;
 
@@ -229,17 +482,13 @@ export class AppComponent implements OnInit, OnDestroy {
     private screenCheck: ScreenCheckService,
     private updateService: UpdateService,
   ) {
-    // Subscribe to auth state changes
     this.authSub = this.authService.isAuthenticated$.subscribe((auth) => {
       this.isAuthenticated = auth;
       this.currentUser = this.authService.getCurrentUser();
     });
 
-    // Subscribe to navigation events - check auth AFTER navigation completes
     this.routerSub = this.router.events.pipe(filter(event => event instanceof NavigationEnd)).subscribe(() => {
       this.isLoginPage = this.router.url === '/login';
-
-      // Check auth after navigation completes to avoid redirect loops
       setTimeout(() => {
         const auth = this.authService.isAuthenticated();
         if (!auth && !this.isLoginPage) {
@@ -251,17 +500,32 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Pipeline steps definition — drives the header progress bar */
+  pipelineSteps() {
+    return [
+      { number: 1, key: 'brief',    route: '/brief-editor',     state: () => this.pipelineStore.getBriefPhase(),    labelKey: 'header.stepBrief' },
+      { number: 2, key: 'contract', route: '/contract-viewer',  state: () => this.pipelineStore.getContractPhase(), labelKey: 'header.stepContract' },
+      { number: 3, key: 'ir',       route: '/ir-explorer',      state: () => this.pipelineStore.getIRPhase(),       labelKey: 'header.stepIR' },
+      { number: 4, key: 'code',     route: '/code-generator',   state: () => this.pipelineStore.getCodePhase(),     labelKey: 'header.stepCode' },
+      { number: 5, key: 'preview',  route: '/preview',          state: () => this.pipelineStore.getPreviewPhase(),  labelKey: 'header.stepPreview' },
+    ];
+  }
+
+  overallProgress() { return this.pipelineStore.overallProgress(); }
+  activeVersion() { return this.pipelineStore.getActiveVersion(); }
+  pipelineInitialized(): boolean {
+    return this.pipelineStore.isWorkspaceInitialized();
+  }
+
   ngOnInit(): void {
     this.screenSupported = this.screenCheck.isSupported();
     this.screenWarningMessage = this.screenCheck.getWarningMessage();
-
-    // Subscribe to update status
+    this.pipelineStore.loadStatus();
     this.updateService.status$.subscribe((status) => {
       this.updateStatus = status;
       this.isUpgrading = status?.upgrading ?? false;
     });
-    // Initial check + start polling
-    this.updateService.startPolling(120000); // every 2 minutes
+    this.updateService.startPolling(120000);
   }
 
   ngOnDestroy(): void {
@@ -269,39 +533,23 @@ export class AppComponent implements OnInit, OnDestroy {
     this.routerSub?.unsubscribe();
   }
 
-  /**
-   * Xử lý logout
-   */
   async handleLogout(): Promise<void> {
     await this.authService.logout();
     this.router.navigate(['/login']);
   }
 
-  /**
-   * Xử lý upgrade phiên bản mới
-   */
   handleUpgrade(): void {
     this.updateService.upgrade().subscribe({
       next: (success) => {
         if (success) {
-          // Frontend sẽ mất kết nối khi backend shutdown
-          // Hiện overlay "đang khởi động lại"
           this.isUpgrading = true;
-          // Auto reload khi backend quay lại
-          setTimeout(() => {
-            window.location.reload();
-          }, 5000);
+          setTimeout(() => { window.location.reload(); }, 5000);
         }
       },
-      error: () => {
-        console.error('Upgrade failed');
-      },
+      error: () => { console.error('Upgrade failed'); },
     });
   }
 
-  /**
-   * Force kiểm tra phiên bản mới ngay
-   */
   handleCheckUpdate(): void {
     this.updateService.forceCheck().subscribe();
   }

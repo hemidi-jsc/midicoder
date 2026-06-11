@@ -134,13 +134,13 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
       min-width: 320px;
       background: var(--bg-secondary);
       border-right: 1px solid var(--border-subtle);
-      height: calc(100vh - 65px);
+      height: 100vh;
       position: fixed;
-      top: 65px;
+      top: 0;
       left: 0;
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 16px 0;
+      padding: 80px 0 16px 0;
       z-index: 30;
     }
 

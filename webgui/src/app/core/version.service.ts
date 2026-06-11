@@ -43,8 +43,8 @@ export class VersionService {
   readonly activeVersion$ = this.activeVersionSubject.asObservable();
 
   /**
-   * Load danh sách tất cả versions từ backend API
-   * Gọi GET /version/list để lấy versions, GET /pipeline/status để lấy pipeline progress
+   * Load danh sách tất cả versions từ backend API.
+   * Nếu fail và đã có data cũ → giữ data cũ (không wipe về []).
    */
   async loadVersions(): Promise<void> {
     try {
@@ -104,13 +104,17 @@ export class VersionService {
         if (activeVersionName) {
           localStorage.setItem('midicoder_active_version', activeVersionName);
         }
-      } else {
-        this.versionsSubject.next([]);
-        this.activeVersionSubject.next('');
+      } else if (listResult.success) {
+        // API success nhưng data trống — có thể project mới chưa có version
+        // Chỉ set empty nếu chưa có data cũ
+        if (this.versionsSubject.getValue().length === 0) {
+          this.versionsSubject.next([]);
+          this.activeVersionSubject.next('');
+        }
       }
     } catch (error) {
+      // API fail — không wipe data cũ, giữ versions hiện tại
       console.warn('Failed to load versions from backend:', error);
-      this.versionsSubject.next([]);
     }
   }
 
