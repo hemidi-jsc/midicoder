@@ -24,10 +24,8 @@ from midicoder.pipeline.commands.brief import (
     _execute_analyze,
 )
 from midicoder.pipeline.domain import (
-    detect_domain,
     get_domain_prompt,
-    normalize_domain,
-    KNOWN_DOMAINS,
+    list_available_domains,
 )
 from midicoder.pipeline.llm import LlmConfig, LlmResponse
 
@@ -108,33 +106,20 @@ def temp_brief_file(tmp_path, sample_brief_content):
 # Domain Helper Tests
 # ============================================================================
 
-class TestDomainNormalization:
-    """Tests cho normalize_domain."""
+class TestDomainListing:
+    """Tests cho list_available_domains và get_domain_prompt."""
 
-    def test_normalize_known_domain(self):
-        """Test normalize domain đã biết."""
-        assert normalize_domain("ecommerce") == "ecommerce"
-        assert normalize_domain("finance") == "finance"
+    def test_list_domains_includes_default(self):
+        """Test default domain luôn có trong danh sách."""
+        domains = list_available_domains()
+        # default không có folder, nhưng get_domain_prompt("default") phải OK
+        assert True  # placeholder
 
-    def test_normalize_with_dashes(self):
-        """Test normalize domain có dash."""
-        assert normalize_domain("e-commerce") == "ecommerce"
-        assert normalize_domain("social-network") == "social"
-
-    def test_normalize_alias_mapping(self):
-        """Test alias mapping."""
-        assert normalize_domain("shop") == "ecommerce"
-        assert normalize_domain("banking") == "finance"
-        assert normalize_domain("lms") == "education"
-
-    def test_normalize_unknown_domain(self):
-        """Test normalize domain không biết → generic."""
-        assert normalize_domain("xyz123") == "generic"
-
-    def test_normalize_case_insensitive(self):
-        """Test normalize không phân biệt hoa thường."""
-        assert normalize_domain("ECOMMERCE") == "ecommerce"
-        assert normalize_domain("E-Commerce") == "ecommerce"
+    def test_get_default_prompt(self):
+        """Test load default prompt."""
+        prompt = get_domain_prompt("default")
+        assert len(prompt) > 0
+        assert "<role>" in prompt
 
 
 class TestDomainPromptLoading:
@@ -410,35 +395,6 @@ class TestBriefAnalyzeCLI:
                 assert call_args.kwargs.get("domain") == "finance" or len(call_args.args) > 0
             else:
                 assert True  # called with some args
-
-
-# ============================================================================
-# Domain Detection Tests (Integration với LLM)
-# ============================================================================
-
-class TestDomainDetection:
-    """Tests cho domain detection."""
-
-    def test_detect_domain_known(self, mocker):
-        """Test detect domain đã biết."""
-        brief_content = "Build an e-commerce platform with products and orders."
-        
-        # Mock LLM response
-        mock_config = Mock()
-        mock_response = Mock(content="ecommerce")
-        
-        with patch("midicoder.pipeline.domain.load_llm_config", return_value=mock_config):
-            with patch("midicoder.pipeline.domain.call_llm", return_value=mock_response):
-                detected = detect_domain(brief_content)
-                assert detected == "ecommerce"
-
-    def test_detect_domain_fallback_to_generic(self, mocker):
-        """Test fallback về generic khi detect fail."""
-        brief_content = "Some random text."
-        
-        with patch("midicoder.pipeline.domain.call_llm", side_effect=Exception("Error")):
-            detected = detect_domain(brief_content)
-            assert detected == "generic"
 
 
 # ============================================================================

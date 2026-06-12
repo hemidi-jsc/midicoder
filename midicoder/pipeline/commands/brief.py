@@ -20,7 +20,7 @@ from midicoder.storage.activity import log
 from midicoder.pipeline.config import get_config
 from midicoder.pipeline.analyze import (
     BriefAnalysis,
-    analyze_brief_with_llm,
+    analyze_brief_with_llm_sync,
 )
 
 
@@ -30,16 +30,17 @@ def _analyze_with_llm(
     brief_id: str,
 ) -> BriefAnalysis:
     """
-    CLI wrapper cho analyze_brief_with_llm — thêm activity log output.
+    CLI wrapper cho analyze_brief_with_llm_sync — thêm activity log output.
 
     Delegate vào pure module (midicoder.pipeline.analyze), thêm progress
     output cho CLI user.
     """
-    log("brief.analyzing", resource_type="brief", resource_id=brief_id, details={"step": "detecting_domain"})
+    effective_domain = domain if domain else "default"
+    log("brief.analyzing", resource_type="brief", resource_id=brief_id, details={"domain": effective_domain})
     try:
-        analysis = analyze_brief_with_llm(
+        analysis = analyze_brief_with_llm_sync(
             brief_content=brief_content,
-            domain=domain,
+            domain=effective_domain,
             brief_id=brief_id,
         )
     except Exception as e:

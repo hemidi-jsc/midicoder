@@ -10,7 +10,6 @@
 import { Component, OnInit, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 
 import { I18nPipe } from '../../core/i18n.pipe';
@@ -30,7 +29,7 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
   selector: 'app-dashboard',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, RouterLink, I18nPipe,
+    CommonModule, FormsModule, I18nPipe,
     ProjectInfoCardComponent,
     VersionInfoCardComponent,
     ProjectCreateFormComponent,

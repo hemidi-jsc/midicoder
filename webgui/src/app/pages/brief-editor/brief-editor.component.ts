@@ -4,7 +4,7 @@
  * Auto-save + phân tích + clarification history + change log
  */
 
-import { Component, ChangeDetectorRef, inject, OnInit, OnDestroy } from '@angular/core';
+import { Component, ChangeDetectorRef, inject, OnInit, OnDestroy, ViewChild, AfterViewChecked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink, Router } from '@angular/router';
@@ -18,7 +18,8 @@ import { formatDateLocal } from '../../core/date.util';
 import { DOCS_BASE } from '../../core/app.constants';
 import { ClarificationListComponent } from '../../components/shared/clarification-list/clarification-list.component';
 import { HistoryListComponent } from '../../components/shared/history-list/history-list.component';
-import { AnalyzeOverlayComponent } from '../../components/shared/analyze-overlay/analyze-overlay.component';
+import { LlmProgressComponent } from '../../components/shared/llm-progress/llm-progress.component';
+import { AnalysisResultModalComponent } from '../../components/shared/analysis-result-modal/analysis-result-modal.component';
 
 interface SectionOpenState {
   entities: boolean;
@@ -31,7 +32,7 @@ interface SectionOpenState {
 @Component({
   selector: 'app-brief-editor',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, I18nPipe, ClarificationListComponent, HistoryListComponent, AnalyzeOverlayComponent],
+  imports: [CommonModule, FormsModule, I18nPipe, HistoryListComponent, LlmProgressComponent, AnalysisResultModalComponent],
   template: `
     <div class="brief-page py-8">
       <!-- Toast Notification -->
@@ -180,342 +181,25 @@ interface SectionOpenState {
             ></textarea>
           </div>
 
-          <!-- Analysis Result -->
-          @if (analysisResult) {
-        <div class="card mt-6 analysis-card">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-lg font-semibold">{{ 'brief.analysis' | i18n }}</h2>
-            <div class="flex items-center gap-2">
-              <span class="text-xs px-2 py-1 font-medium"
-                    [class]="analysisResult.status === 'needs_clarification'
-                      ? 'bg-yellow-900 bg-opacity-40 text-yellow-300 border border-yellow-700'
-                      : 'bg-green-900 bg-opacity-40 text-green-300 border border-green-700'">
-                {{ analysisResult.status === 'needs_clarification' ? ('brief.needClarify' | i18n) : ('brief.readyContract' | i18n) }}
-              </span>
-              @if (analysisResult?.metadata?.brief_id) {
-                <span class="text-xs text-text-tertiary font-mono">{{ analysisResult.metadata.brief_id }}</span>
-              }
-            </div>
-          </div>
-
-          <!-- Summary -->
-          @if (analysisResult?.analysis?.summary) {
-            <div class="mb-4 p-3 bg-blue-900 bg-opacity-20 border-l-4 border-blue-400">
-              <p class="text-sm text-blue-200">{{ analysisResult.analysis.summary }}</p>
-            </div>
-          }
-
-          <!-- Intent + Confidence -->
-          <div class="mb-4 grid grid-cols-4 gap-4">
-            <div>
-              <span class="text-text-secondary text-xs">{{ 'brief.domain' | i18n }}</span>
-              <p class="text-sm font-medium text-text-primary">{{ analysisResult?.analysis?.intent?.domain }}</p>
-            </div>
-            <div>
-              <span class="text-text-secondary text-xs">{{ 'brief.type' | i18n }}</span>
-              <p class="text-sm font-medium text-text-primary">{{ analysisResult?.analysis?.intent?.type }}</p>
-            </div>
-            <div>
-              <span class="text-text-secondary text-xs">{{ 'brief.scale' | i18n }}</span>
-              <p class="text-sm font-medium text-text-primary">{{ analysisResult?.analysis?.intent?.scale }}</p>
-            </div>
-            <div>
-              <span class="text-text-tertiary text-xs">{{ 'brief.confidence' | i18n }}</span>
-              <div class="flex items-center gap-2">
-                <div class="flex-1 h-2 bg-bg-secondary overflow-hidden">
-                  <div class="h-full transition-all duration-500"
-                       [class]="analysisResult?.metadata?.confidence >= 0.8
-                         ? 'bg-green-400'
-                         : analysisResult?.metadata?.confidence >= 0.5
-                           ? 'bg-yellow-400'
-                           : 'bg-red-400'"
-                       [style.width.%]="analysisResult?.metadata?.confidence * 100"></div>
-                </div>
-                <span class="text-sm font-medium"
-                      [class]="analysisResult?.metadata?.confidence >= 0.8
-                        ? 'text-green-300'
-                        : analysisResult?.metadata?.confidence >= 0.5
-                          ? 'text-yellow-300'
-                          : 'text-red-300'">
-                  {{ (analysisResult?.metadata?.confidence * 100).toFixed(0) }}%
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Extracted Resources Grid -->
-          <div class="mb-4">
-            <h3 class="font-medium text-accent-primary mb-2"><i class="fa-solid fa-box-open"></i> {{ 'brief.resourcesExtracted' | i18n }}</h3>            <div class="grid grid-cols-5 gap-3">
-              <div class="p-3 bg-bg-secondary text-center border border-border-primary">
-                <p class="text-2xl font-bold text-blue-400">{{ analysisResult?.metadata?.entities }}</p>
-                <p class="text-xs text-text-secondary mt-1">{{ 'brief.entities' | i18n }}</p>
-              </div>
-              <div class="p-3 bg-bg-secondary text-center border border-border-primary">
-                <p class="text-2xl font-bold text-orange-400">{{ analysisResult?.metadata?.commands }}</p>
-                <p class="text-xs text-text-secondary mt-1">{{ 'brief.commands' | i18n }}</p>
-              </div>
-              <div class="p-3 bg-bg-secondary text-center border border-border-primary">
-                <p class="text-2xl font-bold text-cyan-400">{{ analysisResult?.metadata?.queries }}</p>
-                <p class="text-xs text-text-secondary mt-1">{{ 'brief.queries' | i18n }}</p>
-              </div>
-              <div class="p-3 bg-bg-secondary text-center border border-border-primary">
-                <p class="text-2xl font-bold text-purple-400">{{ analysisResult?.metadata?.events }}</p>
-                <p class="text-xs text-text-secondary mt-1">{{ 'brief.events' | i18n }}</p>
-              </div>
-              <div class="p-3 bg-bg-secondary text-center border border-border-primary">
-                <p class="text-2xl font-bold text-teal-400">{{ analysisResult?.metadata?.ui_components }}</p>
-                <p class="text-xs text-text-secondary mt-1">{{ 'brief.uiComponents' | i18n }}</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Collapsible: Raw Details -->
-          <div class="mb-4 space-y-3">
-            <!-- Entities -->
-            @if (analysisResult?.analysis?.entities?.length) {
-              <div class="border border-border-primary overflow-hidden">
-                <button (click)="toggleSection('entities')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary"><i class="fa-solid fa-cube"></i> {{ 'brief.entities' | i18n }} ({{ analysisResult.analysis.entities.length }})</span>
-                  <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.entities" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                </button>
-                @if (sectionOpen.entities) {
-                  <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                      <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
-                        <tr><th class="px-4 py-2 text-left">{{ 'brief.name' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.entityType' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.description' | i18n }}</th></tr>
-                      </thead>
-                      <tbody>
-                        @for (e of analysisResult.analysis.entities; track e.name) {
-                          <tr class="border-t border-border-primary">
-                            <td class="px-4 py-2 font-medium text-blue-400">{{ e.name }}</td>
-                            <td class="px-4 py-2 text-text-tertiary">{{ e.type || '—' }}</td>
-                            <td class="px-4 py-2 text-text-secondary">{{ e.description || '—' }}</td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-              </div>
-            }
-
-            <!-- Commands -->
-            @if (analysisResult?.analysis?.commands?.length) {
-              <div class="border border-border-primary overflow-hidden">
-                <button (click)="toggleSection('commands')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary"><i class="fa-solid fa-bolt"></i> {{ 'brief.commands' | i18n }} ({{ analysisResult.analysis.commands.length }})</span>
-                  <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.commands" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                </button>
-                @if (sectionOpen.commands) {
-                  <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                      <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
-                        <tr><th class="px-4 py-2 text-left">{{ 'brief.name' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.target' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.description' | i18n }}</th></tr>
-                      </thead>
-                      <tbody>
-                        @for (c of analysisResult.analysis.commands; track c.name) {
-                          <tr class="border-t border-border-primary">
-                            <td class="px-4 py-2 font-medium text-orange-400">{{ c.name }}</td>
-                            <td class="px-4 py-2 text-text-tertiary">{{ c.target || '—' }}</td>
-                            <td class="px-4 py-2 text-text-secondary">{{ c.description || '—' }}</td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-              </div>
-            }
-
-            <!-- Queries -->
-            @if (analysisResult?.analysis?.queries?.length) {
-              <div class="border border-border-primary overflow-hidden">
-                <button (click)="toggleSection('queries')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary"><i class="fa-solid fa-magnifying-glass"></i> {{ 'brief.queries' | i18n }} ({{ analysisResult.analysis.queries.length }})</span>
-                  <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.queries" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                </button>
-                @if (sectionOpen.queries) {
-                  <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                      <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
-                        <tr><th class="px-4 py-2 text-left">{{ 'brief.name' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.entities' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.filter' | i18n }}</th></tr>
-                      </thead>
-                      <tbody>
-                        @for (q of analysisResult.analysis.queries; track q.name) {
-                          <tr class="border-t border-border-primary">
-                            <td class="px-4 py-2 font-medium text-cyan-400">{{ q.name }}</td>
-                            <td class="px-4 py-2 text-text-tertiary">{{ q.entity || '—' }}</td>
-                            <td class="px-4 py-2 text-text-secondary">{{ q.filter || '—' }}</td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-              </div>
-            }
-
-            <!-- Events -->
-            @if (analysisResult?.analysis?.events?.length) {
-              <div class="border border-border-primary overflow-hidden">
-                <button (click)="toggleSection('events')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary"><i class="fa-solid fa-satellite-dish"></i> {{ 'brief.events' | i18n }} ({{ analysisResult.analysis.events.length }})</span>
-                  <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.events" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                </button>
-                @if (sectionOpen.events) {
-                  <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                      <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
-                        <tr><th class="px-4 py-2 text-left">{{ 'brief.name' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.source' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.description' | i18n }}</th></tr>
-                      </thead>
-                      <tbody>
-                        @for (ev of analysisResult.analysis.events; track ev.name) {
-                          <tr class="border-t border-border-primary">
-                            <td class="px-4 py-2 font-medium text-purple-400">{{ ev.name }}</td>
-                            <td class="px-4 py-2 text-text-tertiary">{{ ev.source || '—' }}</td>
-                            <td class="px-4 py-2 text-text-secondary">{{ ev.description || '—' }}</td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-              </div>
-            }
-
-            <!-- UI Components -->
-            @if (analysisResult?.analysis?.ui_components?.length) {
-              <div class="border border-border-primary overflow-hidden">
-                <button (click)="toggleSection('ui_components')" class="w-full flex items-center justify-between p-3 bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-                  <span class="font-medium text-sm text-text-primary"><i class="fa-solid fa-puzzle-piece"></i> {{ 'brief.uiComponents' | i18n }} ({{ analysisResult.analysis.ui_components.length }})</span>
-                  <svg class="h-4 w-4 text-text-secondary transition-transform" [class.rotate-180]="sectionOpen.ui_components" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                </button>
-                @if (sectionOpen.ui_components) {
-                  <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                      <thead class="bg-bg-secondary text-text-tertiary text-xs uppercase">
-                        <tr><th class="px-4 py-2 text-left">{{ 'brief.name' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.componentType' | i18n }}</th><th class="px-4 py-2 text-left">{{ 'brief.description' | i18n }}</th></tr>
-                      </thead>
-                      <tbody>
-                        @for (uc of analysisResult.analysis.ui_components; track uc.name) {
-                          <tr class="border-t border-border-primary">
-                            <td class="px-4 py-2 font-medium text-teal-400">{{ uc.name }}</td>
-                            <td class="px-4 py-2 text-text-tertiary">{{ uc.type || '—' }}</td>
-                            <td class="px-4 py-2 text-text-secondary">{{ uc.description || '—' }}</td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-              </div>
-            }
-          </div>
-
-          <!-- Ambiguities -->
-          @if (analysisResult?.analysis?.ambiguities?.length) {
-            <div class="mb-4">
-              <h3 class="font-medium text-yellow-400 mb-2"><i class="fa-solid fa-triangle-exclamation"></i> {{ 'brief.needClarify' | i18n }} ({{ analysisResult?.analysis?.ambiguities?.length }})</h3>
-              <div class="space-y-2">
-                @for (ambiguity of analysisResult?.analysis?.ambiguities; track ambiguity.id) {
-                  <div class="p-3 bg-yellow-900 bg-opacity-20 border-l-2 border-yellow-500">
-                    <p class="text-sm text-text-primary"><strong>{{ ambiguity.type }}:</strong> {{ ambiguity.description }}</p>
-                    <p class="text-sm text-text-secondary mt-1">{{ ambiguity.source_text }}</p>
-                  </div>
-                }
-              </div>
-            </div>
-          }
-
-          <!-- Next Action -->
-          <div class="mt-4 flex justify-end gap-3">
-            @if (analysisResult?.status === 'needs_clarification') {
-              @if (!clarificationActive) {
-                <button (click)="startBatchClarification()" class="btn btn-primary" [disabled]="isStartingClarification">
-                  {{ isStartingClarification ? ('brief.clarifying' | i18n) : ('brief.clarifyTitle' | i18n) }}
-                </button>
-              }
-            } @else {
-              <a routerLink="/contract-viewer" class="btn btn-primary">
-                {{ 'contract.generate' | i18n }} →
-              </a>
-            }
-          </div>
-
-          <!-- Clarification Batch Section -->
-          @if (clarificationActive) {
-            <div class="clarification-batch-section">
-              <div class="clarification-batch-header">
-                <h3 class="clarification-batch-title">{{ 'brief.clarify' | i18n }}</h3>
-                <p class="clarification-batch-subtitle">{{ 'brief.clarifyCount' | i18n:{count: clarificationAmbiguities.length} }}</p>
-              </div>
-
-              <div class="clarification-batch-questions">
-                @for (amb of clarificationAmbiguities; track amb.id || amb.type) {
-                  <div class="clarification-ambiguity-card"
-                       [class.answered]="clarificationAnswers[amb.id || amb.type]?.trim()">
-                    <div class="ambiguity-badge-wrapper">
-                      <span class="ambiguity-type-badge"
-                            [class]="amb.type === 'undefined_behavior' ? 'amb-undefined' : amb.type === 'missing_detail' ? 'amb-missing' : 'amb-tech'">
-                        {{ amb.type }}
-                      </span>
-                      @if (clarificationAnswers[amb.id || amb.type]?.trim()) {
-                        <span class="ambiguity-checked">✓</span>
-                      }
-                    </div>
-                    <p class="ambiguity-description">{{ amb.description }}</p>
-                    @if (amb.source_text) {
-                      <p class="ambiguity-source">"— {{ amb.source_text }}"</p>
-                    }
-                    <textarea
-                      [(ngModel)]="clarificationAnswers[amb.id || amb.type]"
-                      placeholder="{{ 'brief.answerPlaceholder' | i18n }}"
-                      rows="2"
-                      class="ambiguity-textarea"
-                    ></textarea>
-                  </div>
-                }
-              </div>
-
-              <!-- Progress bar -->
-              <div class="clarification-progress-bar">
-                <div class="clarification-progress-fill" [style.width.%]="clarificationProgressPct"></div>
-              </div>
-              <p class="clarification-progress-text">{{ 'brief.answered' | i18n:{count: answeredCount} }}</p>
-
-              <!-- Submit button -->
-              <div class="clarification-submit-row">
-                <button (click)="cancelClarification()" class="clarification-cancel-btn">{{ 'brief.cancel' | i18n }}</button>
-                <button (click)="submitBatchAnswers()" class="btn btn-primary clarification-submit-btn"
-                        [disabled]="answeredCount < clarificationAmbiguities.length || isSubmittingAnswers">
-                  @if (isSubmittingAnswers) {
-                    {{ 'brief.sending' | i18n }}
-                  } @else {
-                    <i class="fa-solid fa-paper-plane"></i> {{ 'brief.sendAll' | i18n }} ({{ answeredCount }}/{{ clarificationAmbiguities.length }})
-                  }
-                </button>
-              </div>
-            </div>
-          }
-        </div>
-      }
         </div>
 
-        <!-- Right column: Sidebar with Clarify/History tabs -->
+        <!-- Right column: Sidebar with Analysis/History tabs -->
         <div class="brief-sidebar">
           <!-- Tab toggle -->
           <div class="sidebar-tabs">
-            <button
-              type="button"
-              class="sidebar-tab"
-              [class.active]="rightTab === 'clarify'"
-              (click)="rightTab = 'clarify'"
-            >
-              {{ 'brief.clarify' | i18n }}
-              @if (clarifications.length > 0) {
-                <span class="tab-badge">{{ clarifications.length }}</span>
-              }
-            </button>
+            @if (analysisResult) {
+              <button
+                type="button"
+                class="sidebar-tab"
+                [class.active]="rightTab === 'analysis'"
+                (click)="rightTab = 'analysis'"
+              >
+                {{ 'brief.analysis' | i18n }}
+                @if (analysisResult.status === 'needs_clarification') {
+                  <span class="tab-badge">!</span>
+                }
+              </button>
+            }
             <button
               type="button"
               class="sidebar-tab"
@@ -529,10 +213,82 @@ interface SectionOpenState {
             </button>
           </div>
 
-          <!-- Clarify tab panel -->
-          @if (rightTab === 'clarify') {
-            <div class="sidebar-panel">
-              <app-clarification-list [items]="clarifications"></app-clarification-list>
+          <!-- Analysis tab panel (sidebar summary) -->
+          @if (rightTab === 'analysis' && analysisResult) {
+            <div class="sidebar-panel analysis-sidebar">
+              <!-- Summary -->
+              @if (analysisResult.analysis?.summary) {
+                <div class="analysis-summary">
+                  <p class="analysis-summary-text">{{ analysisResult.analysis.summary }}</p>
+                </div>
+              }
+
+              <!-- Intent row -->
+              @if (analysisResult.analysis) {
+                <div class="analysis-intent-row">
+                  @let domain = analysisResult.analysis.domain || analysisResult.analysis.intent?.domain;
+                  @let type = analysisResult.analysis.type || analysisResult.analysis.intent?.type;
+                  @if (domain) {
+                    <span class="intent-chip"><span class="chip-label">{{ 'brief.domain' | i18n }}</span> {{ domain }}</span>
+                  }
+                  @if (type) {
+                    <span class="intent-chip"><span class="chip-label">{{ 'brief.type' | i18n }}</span> {{ type }}</span>
+                  }
+                  @let scale = analysisResult.analysis.scale || analysisResult.analysis.intent?.scale;
+                  @if (scale) {
+                    <span class="intent-chip"><span class="chip-label">{{ 'brief.scale' | i18n }}</span> {{ scale }}</span>
+                  }
+                </div>
+              }
+
+              <!-- Resource stats -->
+              @if (analysisResult.analysis) {
+                @let entities = analysisResult.analysis.entities || [];
+                @let commands = analysisResult.analysis.commands || [];
+                @let queries = analysisResult.analysis.queries || [];
+                @let events = analysisResult.analysis.events || [];
+                @let uiComponents = analysisResult.analysis.ui_components || [];
+                <div class="analysis-stats-row">
+                  <span class="stat-item"><span class="stat-val">{{ entities.length }}</span> <span class="stat-label">{{ 'brief.entities' | i18n }}</span></span>
+                  <span class="stat-item"><span class="stat-val">{{ commands.length }}</span> <span class="stat-label">{{ 'brief.commands' | i18n }}</span></span>
+                  <span class="stat-item"><span class="stat-val">{{ queries.length }}</span> <span class="stat-label">{{ 'brief.queries' | i18n }}</span></span>
+                  <span class="stat-item"><span class="stat-val">{{ events.length }}</span> <span class="stat-label">{{ 'brief.events' | i18n }}</span></span>
+                  <span class="stat-item"><span class="stat-val">{{ uiComponents.length }}</span> <span class="stat-label">{{ 'brief.uiComponents' | i18n }}</span></span>
+                </div>
+              }
+
+              <!-- Ambiguities preview -->
+              @if (analysisResult.analysis?.ambiguities?.length > 0) {
+                <div class="sidebar-ambiguities">
+                  <h4 class="ambiguity-heading">
+                    {{ 'brief.needClarify' | i18n }} ({{ analysisResult.analysis.ambiguities.length }})
+                  </h4>
+                  @for (amb of analysisResult.analysis.ambiguities; track $index) {
+                    <div class="amb-item">
+                      <span class="amb-type-badge" [class.amb-undefined]="amb.type === 'undefined_behavior'"
+                            [class.amb-missing]="amb.type === 'missing_detail'"
+                            [class.amb-tech]="amb.type === 'tech_gap'">{{ amb.type }}</span>
+                      <p class="amb-desc">{{ amb.description }}</p>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Footer actions -->
+              <div class="sidebar-footer">
+                <button (click)="openAnalysisModal()" class="btn btn-secondary w-full">
+                  <i class="fa-solid fa-expand"></i> {{ 'analysisResult.view' | i18n }}
+                </button>
+                @if (analysisResult.status === 'ready') {
+                  <button (click)="navigateToContract()" class="btn btn-primary w-full mt-2">
+                    <i class="fa-solid fa-file-contract"></i> {{ 'analysisResult.createContract' | i18n }}
+                  </button>
+                } @else if (analysisResult.status === 'needs_clarification') {
+                  <button (click)="openAnalysisModal('clarify')" class="btn btn-accent w-full mt-2">
+                    <i class="fa-solid fa-pen-to-square"></i> {{ 'analysisResult.startClarify' | i18n }}
+                  </button>
+                }
+              </div>
             </div>
           }
 
@@ -583,14 +339,27 @@ interface SectionOpenState {
         </div>
       }
 
-      <!-- Analyze Overlay -->
+      <!-- LLM Progress Overlay -->
       @if (showAnalyzeOverlay) {
-        <app-analyze-overlay
+        <app-llm-progress
           [visible]="showAnalyzeOverlay"
+          [title]="'analyze.title' | i18n"
           (closeOverlay)="onCloseAnalyzeOverlay()"
           (cancelAnalyze)="onCancelAnalyze()"
+          (viewResult)="openAnalysisModal()"
           #analyzeOverlay
-        ></app-analyze-overlay>
+        ></app-llm-progress>
+      }
+
+      <!-- Analysis Result Modal -->
+      @if (showAnalysisModal) {
+        <app-analysis-result-modal
+          [analysisResult]="analysisResult"
+          [initialTab]="modalInitialTab"
+          (close)="closeAnalysisModal()"
+          (submitClarification)="onSubmitClarification($event)"
+          (goToContract)="navigateToContract()"
+        ></app-analysis-result-modal>
       }
     </div>
   `,
@@ -979,6 +748,132 @@ interface SectionOpenState {
     .sidebar-panel {
       flex: 1;
       overflow-y: auto;
+      padding: 12px;
+    }
+
+    /* Analysis sidebar — clean, data-focused */
+    .analysis-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .analysis-summary-text {
+      font-size: 0.8125rem;
+      color: rgba(255, 255, 255, 0.7);
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    /* Intent chips — horizontal row */
+    .analysis-intent-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .intent-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.7);
+    }
+    .intent-chip .chip-label {
+      font-size: 0.625rem;
+      color: rgba(255, 255, 255, 0.4);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    /* Stats row — compact, horizontal */
+    .analysis-stats-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 12px;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .analysis-stats-row .stat-item {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+      font-size: 0.78rem;
+    }
+    .analysis-stats-row .stat-val {
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 0.9rem;
+    }
+    .analysis-stats-row .stat-label {
+      font-size: 0.6875rem;
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    /* Ambiguities — subtle */
+    .ambiguity-heading {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: rgba(250, 204, 21, 0.8);
+      margin: 0 0 8px 0;
+    }
+    .amb-item {
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      background: rgba(255, 255, 255, 0.02);
+      border-left: 2px solid rgba(255, 255, 255, 0.08);
+    }
+    .amb-type-badge {
+      display: inline-block;
+      font-size: 0.625rem;
+      padding: 1px 6px;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    .amb-undefined {
+      background: rgba(255, 166, 0, 0.15);
+      color: rgba(255, 166, 0, 0.8);
+    }
+    .amb-missing {
+      background: rgba(255, 82, 82, 0.15);
+      color: rgba(255, 82, 82, 0.8);
+    }
+    .amb-tech {
+      background: rgba(41, 121, 255, 0.15);
+      color: rgba(41, 121, 255, 0.8);
+    }
+    .amb-desc {
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.55);
+      line-height: 1.45;
+      margin: 0;
+    }
+
+    /* Sidebar footer buttons */
+    .sidebar-footer {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: auto;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .sidebar-footer .btn {
+      width: 100%;
+      padding: 8px;
+      font-size: 0.8125rem;
+    }
+    .btn-accent {
+      background: #e91e63;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-accent:hover {
+      background: #c2185b;
     }
 
     /* Responsive: stack on small screens */
@@ -1136,11 +1031,14 @@ interface SectionOpenState {
     }
   `],
 })
-export class BriefEditorComponent implements OnInit, OnDestroy {
+export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked {
   briefContent = '';
   private _lastSavedContent = '';
+  private _normalizeWhitespace(content: string): string {
+    return content.split('\n').map(line => line.trimEnd()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
   get hasUnsavedChanges(): boolean {
-    return this.briefContent.trim() !== this._lastSavedContent.trim();
+    return this._normalizeWhitespace(this.briefContent) !== this._normalizeWhitespace(this._lastSavedContent);
   }
 
   isAnalyzing = false;
@@ -1209,7 +1107,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   }
 
   // Right sidebar tab toggle
-  rightTab: 'clarify' | 'history' = 'clarify';
+  rightTab: 'analysis' | 'history' = 'analysis';
 
   // Dynamic version từ PipelineStore
   get activeVersion(): string {
@@ -1238,6 +1136,16 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
 
     // Reload khi version switch
     window.addEventListener('version-switched', this.onVersionSwitched);
+  }
+
+  ngAfterViewChecked(): void {
+    // Flush pending SSE messages when overlay ref becomes available
+    if (this.pendingMessages.length > 0 && this.analyzeOverlayRef) {
+      for (const msg of this.pendingMessages) {
+        this.analyzeOverlayRef.onMessage(msg);
+      }
+      this.pendingMessages = [];
+    }
   }
 
   ngOnDestroy(): void {
@@ -1392,10 +1300,43 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   // Actions: Analyze, Freeze
   // ============================================================================
 
+  @ViewChild('analyzeOverlay') analyzeOverlayRef?: LlmProgressComponent;
+
   // Analyze overlay state
   showAnalyzeOverlay = false;
   private abortController: AbortController | null = null;
   private analyzeTimeoutId: any = null;
+  private pendingMessages: any[] = [];
+
+  // Analysis result modal
+  showAnalysisModal = false;
+  modalInitialTab: 'result' | 'clarify' = 'result';
+
+  openAnalysisModal(tab: 'result' | 'clarify' = 'result'): void {
+    this.modalInitialTab = tab;
+    // Force Angular to recreate the component so setter fires
+    this.showAnalysisModal = false;
+    this.cdr.detectChanges();
+    setTimeout(() => {
+      this.showAnalysisModal = true;
+      this.cdr.detectChanges();
+    }, 100);
+  }
+
+  closeAnalysisModal(): void {
+    this.showAnalysisModal = false;
+    this.cdr.detectChanges();
+  }
+
+  onSubmitClarification(items: any[]): void {
+    // Handle clarification submission — forward to existing submitBatchAnswers logic
+    this.closeAnalysisModal();
+    this.startBatchClarification();
+  }
+
+  navigateToContract(): void {
+    this.router.navigate(['/contract-viewer']);
+  }
 
   handleAnalyze(): void {
     if (!this.briefContent.trim()) {
@@ -1415,6 +1356,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
   openAnalyzeOverlay(): void {
     this.showAnalyzeOverlay = true;
     this.isAnalyzing = true;
+    this.pendingMessages = [];
     this.cdr.detectChanges();
 
     // Timeout safety net: 3 phút max
@@ -1474,10 +1416,11 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
             try {
               const data = JSON.parse(dataStr);
               const msg = { type: lastEvent, data: data };
-              // Forward message to overlay component
-              const overlayEl = document.querySelector('app-analyze-overlay');
-              if (overlayEl && (overlayEl as any).onMessage) {
-                (overlayEl as any).onMessage(msg);
+              // Forward message to overlay component (buffer if not ready)
+              if (this.analyzeOverlayRef) {
+                this.analyzeOverlayRef.onMessage(msg);
+              } else {
+                this.pendingMessages.push(msg);
               }
 
               // If final_result or error, cleanup
@@ -1485,25 +1428,23 @@ export class BriefEditorComponent implements OnInit, OnDestroy {
                 clearTimeout(this.analyzeTimeoutId);
                 this.isAnalyzing = false;
                 this.analysisResult = data;
-                this.showToast(`Phân tích thành công — ${data.metadata?.entities || 0} entities`, 'success');
                 this.cdr.detectChanges();
               } else if (lastEvent === 'error') {
                 clearTimeout(this.analyzeTimeoutId);
                 this.isAnalyzing = false;
-                this.showToast(`Lỗi: ${data}`, 'error');
                 this.cdr.detectChanges();
               }
             } catch {
               // data might be plain string for error events
               const msg = { type: lastEvent, data: dataStr };
-              const overlayEl = document.querySelector('app-analyze-overlay');
-              if (overlayEl && (overlayEl as any).onMessage) {
-                (overlayEl as any).onMessage(msg);
+              if (this.analyzeOverlayRef) {
+                this.analyzeOverlayRef.onMessage(msg);
+              } else {
+                this.pendingMessages.push(msg);
               }
               if (lastEvent === 'error') {
                 clearTimeout(this.analyzeTimeoutId);
                 this.isAnalyzing = false;
-                this.showToast(`Lỗi: ${dataStr}`, 'error');
                 this.cdr.detectChanges();
               }
             }

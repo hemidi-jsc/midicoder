@@ -6,7 +6,6 @@ CLI (`brief.py`) wrap các functions này thêm click.echo, artifact saving, v.v
 WebGUI backend có thể import trực tiếp HOẶC call CLI command qua subprocess.
 
 Các public function:
-- analyze_brief_with_llm()         → BriefAnalysis (legacy — auto-detect domain via LLM)
 - analyze_brief_with_llm_sync()    → BriefAnalysis (domain explicit, KHÔNG gọi LLM để detect)
 - analyze_brief_with_llm_stream()  → async generator (streaming LLM chunks)
 """
@@ -87,81 +86,6 @@ def _build_text_summary(json_data: dict, domain: str) -> str:
     )
 
 
-def analyze_brief_with_llm(
-    brief_content: str,
-    domain: Optional[str] = None,
-    brief_id: str = "",
-) -> BriefAnalysis:
-    """
-    Phân tích brief bằng LLM — legacy version (auto-detect domain via LLM).
-    
-    Args:
-        brief_content: Nội dung brief
-        domain: Domain user-provided (optional, nếu None sẽ auto-detect bằng LLM)
-        brief_id: Brief ID (cho compat signature)
-
-    Returns:
-        BriefAnalysis với json_data, text_summary, domain, confidence
-    """
-    from midicoder.pipeline.llm import load_llm_config, call_llm
-    from midicoder.pipeline.domain import (
-        detect_domain,
-        get_domain_prompt,
-        normalize_domain,
-    )
-    from midicoder.pipeline.context_feed import get_brief_context
-
-    llm_config = load_llm_config()
-
-    if domain:
-        final_domain = normalize_domain(domain)
-    else:
-        final_domain = detect_domain(brief_content, llm_config)
-
-    try:
-        system_prompt = get_domain_prompt(final_domain)
-    except Exception:
-        system_prompt = get_domain_prompt("generic")
-
-    context_result = None
-    try:
-        context_result = get_brief_context(
-            brief_content=brief_content,
-            domain=final_domain,
-            model_name=llm_config.model,
-            system_prompt=system_prompt,
-        )
-    except Exception:
-        pass
-
-    user_message_content = brief_content
-    if context_result and context_result.formatted_context:
-        user_message_content = (
-            f"{context_result.formatted_context}\n\n## Brief Content:\n{brief_content}"
-        )
-
-    start_time = time.time()
-    response = call_llm(
-        config=llm_config,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_message_content}],
-    )
-    latency_ms = int((time.time() - start_time) * 1000)
-    tokens_used = response.usage.get("total_tokens", 0)
-
-    _, json_data = _parse_llm_response(response.content)
-    text_summary = _build_text_summary(json_data, final_domain)
-
-    return BriefAnalysis(
-        json_data=json_data,
-        text_summary=text_summary,
-        domain=final_domain,
-        confidence=json_data.get("confidence", 0.5),
-        tokens_used=tokens_used,
-        latency_ms=latency_ms,
-    )
-
-
 def analyze_brief_with_llm_sync(
     brief_content: str,
     domain: str = "default",
@@ -182,14 +106,14 @@ def analyze_brief_with_llm_sync(
         BriefAnalysis với json_data, text_summary, domain, confidence
     """
     from midicoder.pipeline.llm import load_llm_config, call_llm
-    from midicoder.pipeline.domain import get_domain_prompt, normalize_domain
+    from midicoder.pipeline.domain import get_domain_prompt
     from midicoder.pipeline.context_feed import get_brief_context
 
     # Load LLM config từ settings.db
     llm_config = load_llm_config()
 
-    # Normalize domain (ví dụ: ecommerce-d2c → ecommerce)
-    final_domain = normalize_domain(domain)
+    # Domain từ project — dùng nguyên value (default, ecommerce, ...)
+    final_domain = domain
 
     # Load prompt template theo domain
     try:
@@ -265,13 +189,14 @@ async def analyze_brief_with_llm_stream(
         StreamChunk cho từng message type
     """
     from midicoder.pipeline.llm import load_llm_config, call_llm_stream
-    from midicoder.pipeline.domain import get_domain_prompt, normalize_domain
+    from midicoder.pipeline.domain import get_domain_prompt
     from midicoder.pipeline.context_feed import get_brief_context
 
     try:
         # Load LLM config
         llm_config = load_llm_config()
-        final_domain = normalize_domain(domain)
+        # Domain từ project — dùng nguyên value
+        final_domain = domain
 
         # Load prompt
         try:
@@ -319,10 +244,21 @@ async def analyze_brief_with_llm_stream(
         except Exception:
             pass
 
-        # Send user payload info
+        # Send raw request payload — the exact JSON sent to LLM
+        raw_request = {
+            "model": llm_config.model,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_message_content}],
+            "temperature": llm_config.temperature,
+            "max_tokens": llm_config.max_tokens,
+        }
         yield StreamChunk(
             type="user_payload",
-            data={"brief_length": len(brief_content), "user_message_length": len(user_message_content)},
+            data={
+                "brief_length": len(brief_content),
+                "user_message_length": len(user_message_content),
+                "raw_request": raw_request,
+            },
         )
 
         # Start streaming
@@ -366,6 +302,20 @@ async def analyze_brief_with_llm_stream(
         
         # Get usage from last chunk
         tokens_used = 0
+        prompt_tokens = 0
+        completion_tokens = 0
+        usage = chunk.usage if hasattr(chunk, "usage") and chunk.usage else None
+        if usage:
+            if hasattr(usage, "prompt_tokens"):
+                prompt_tokens = getattr(usage, "prompt_tokens", 0)
+                completion_tokens = getattr(usage, "completion_tokens", 0)
+            elif isinstance(usage, dict):
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+            tokens_used = prompt_tokens + completion_tokens
+
+        # Estimate cost (approximate, based on common pricing)
+        cost = (prompt_tokens * 0.001 + completion_tokens * 0.002) / 1000  # USD per 1K tokens
 
         yield StreamChunk(
             type="complete",
@@ -375,7 +325,17 @@ async def analyze_brief_with_llm_stream(
                 "confidence": json_data.get("confidence", 0.5),
                 "latency_ms": latency_ms,
                 "tokens_used": tokens_used,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "estimated_cost_usd": round(cost, 4),
+                "model": llm_config.model,
             },
+        )
+
+        # Send final accumulated response content
+        yield StreamChunk(
+            type="final_content",
+            data=accumulated,
         )
 
     except Exception as e:

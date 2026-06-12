@@ -369,7 +369,7 @@
     "freezedBanner": "Brief đã đóng (freezed)",
     "freezedBannerDesc": "— không thể chỉnh sửa. Tạo version mới để inherit.",
     "placeholder": "Viết brief của bạn ở đây...",
-    "analysis": "Kết quả phân tích",
+    "analysis": "Phân tích",
     "needClarify": "Cần clarify",
     "readyContract": "Sẵn sàng contract",
     "resources": "Resources extracted",
@@ -526,5 +526,77 @@
     "urls": "Preview URLs",
     "stopped": "Preview đã dừng",
     "toCode": "Mã nguồn →"
+  },
+  "analyze": {
+    "title": "Phân tích Brief",
+    "status": {
+      "streaming": "Đang xử lý",
+      "complete": "Hoàn tất",
+      "error": "Lỗi"
+    },
+    "tabs": {
+      "stream": "Stream",
+      "prompt": "Prompt",
+      "payload": "Payload",
+      "result": "Kết quả"
+    },
+    "stream": {
+      "thinking": "LLM đang suy nghĩ",
+      "thinkingDone": "LLM đã suy nghĩ xong",
+      "thinkingPending": "Đang suy nghĩ...",
+      "thinkingEnd": "/thinking",
+      "token": "token",
+      "started": "Bắt đầu phân tích",
+      "promptLoaded": "Prompt template đã tải",
+      "llmConfig": "LLM config",
+      "contextInjected": "Codebase context",
+      "payloadSent": "Gửi payload",
+      "output": "LLM đang trả lời",
+      "context": "context",
+      "error": "Lỗi",
+      "complete": "Hoàn tất"
+    },
+    "promptEmpty": "Chưa nhận được prompt",
+    "payloadEmpty": "Chưa nhận được thông tin payload",
+    "payload": {
+      "briefLength": "Độ dài brief",
+      "userMessageLength": "Độ dài tin nhắn",
+      "chars": "ký tự",
+      "systemPrompt": "System Prompt",
+      "userMessage": "User Message",
+      "rawRequest": "Raw Request",
+      "rawResponse": "Raw Response",
+      "tokenStats": "Thống kê Token",
+      "model": "Model",
+      "promptTokens": "Prompt Tokens",
+      "completionTokens": "Completion Tokens",
+      "totalTokens": "Tổng Tokens",
+      "latency": "Thời gian",
+      "estimatedCost": "Chi phí ước tính",
+      "noResponseYet": "Chưa có phản hồi",
+      "noStatsYet": "Chưa có thống kê"
+    },
+    "chunksReceived": "{{count}} chunks đã nhận",
+    "connecting": "Đang kết nối...",
+    "close": "Đóng",
+    "cancel": "Hủy",
+    "resultStats": {
+      "entities": "Thực thể",
+      "commands": "Lệnh",
+      "queries": "Truy vấn",
+      "events": "Sự kiện",
+      "ui": "UI"
+    }
+  },
+  "llmProgress": {
+    "viewResult": "Xem kết quả"
+  },
+  "analysisResult": {
+    "title": "Kết quả phân tích",
+    "tabResult": "Kết quả",
+    "tabClarify": "Làm rõ",
+    "startClarify": "Làm rõ yêu cầu",
+    "createContract": "Tạo Contract",
+    "view": "Xem"
   }
 }

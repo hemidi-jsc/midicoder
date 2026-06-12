@@ -226,8 +226,16 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
                     "type": json_data.get("type", "api"),
                     "scale": json_data.get("scale", "medium"),
                 },
+                "domain": json_data.get("domain", analysis.domain),
+                "type": json_data.get("type", "api"),
+                "scale": json_data.get("scale", "medium"),
                 "ambiguities": ambiguities,
                 "summary": summary,
+                "entities": entities,
+                "commands": commands,
+                "queries": queries,
+                "events": events,
+                "ui_components": ui_components,
             },
             "metadata": {
                 "domain": analysis.domain,
@@ -257,8 +265,8 @@ async def analyze_brief_stream_sse(request: Request, version: str = "v1.0.0"):
     from starlette.responses import StreamingResponse
 
     def _sse(data: str | dict, event: str = None):
-        """Format SSE message."""
-        payload = json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else str(data)
+        """Format SSE message — always JSON-encode data."""
+        payload = json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else json.dumps(str(data), ensure_ascii=False)
         line = f"data: {payload}"
         if event:
             line = f"event: {event}\n{line}"
@@ -393,8 +401,16 @@ async def analyze_brief_stream_sse(request: Request, version: str = "v1.0.0"):
                         "type": json_data.get("type", "api"),
                         "scale": json_data.get("scale", "medium"),
                     },
+                    "domain": json_data.get("domain", analysis_domain),
+                    "type": json_data.get("type", "api"),
+                    "scale": json_data.get("scale", "medium"),
                     "ambiguities": ambiguities,
                     "summary": summary,
+                    "entities": entities,
+                    "commands": commands,
+                    "queries": queries,
+                    "events": events_list,
+                    "ui_components": ui_components,
                 },
                 "metadata": {
                     "domain": analysis_domain,

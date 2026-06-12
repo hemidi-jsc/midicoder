@@ -369,7 +369,7 @@
     "freezedBanner": "Brief is freezed",
     "freezedBannerDesc": "— cannot be edited. Create a new version to inherit.",
     "placeholder": "Write your brief here...",
-    "analysis": "Analysis Results",
+    "analysis": "Analysis",
     "needClarify": "Needs clarification",
     "readyContract": "Ready for contract",
     "resources": "Resources extracted",
@@ -526,5 +526,77 @@
     "urls": "Preview URLs",
     "stopped": "Preview stopped",
     "toCode": "Code →"
+  },
+  "analyze": {
+    "title": "Analyze Brief",
+    "status": {
+      "streaming": "Processing",
+      "complete": "Complete",
+      "error": "Error"
+    },
+    "tabs": {
+      "stream": "Stream",
+      "prompt": "Prompt",
+      "payload": "Payload",
+      "result": "Result"
+    },
+    "stream": {
+      "thinking": "LLM thinking",
+      "thinkingDone": "LLM thinking done",
+      "thinkingPending": "Thinking...",
+      "thinkingEnd": "/thinking",
+      "token": "token",
+      "started": "Analysis started",
+      "promptLoaded": "Prompt template loaded",
+      "llmConfig": "LLM config",
+      "contextInjected": "Codebase context",
+      "payloadSent": "Payload sent",
+      "output": "LLM output",
+      "context": "context",
+      "error": "Error",
+      "complete": "Complete"
+    },
+    "promptEmpty": "No prompt received yet",
+    "payloadEmpty": "No payload info received yet",
+    "payload": {
+      "briefLength": "Brief length",
+      "userMessageLength": "User message length",
+      "chars": "chars",
+      "systemPrompt": "System Prompt",
+      "userMessage": "User Message",
+      "rawRequest": "Raw Request",
+      "rawResponse": "Raw Response",
+      "tokenStats": "Token Usage",
+      "model": "Model",
+      "promptTokens": "Prompt Tokens",
+      "completionTokens": "Completion Tokens",
+      "totalTokens": "Total Tokens",
+      "latency": "Latency",
+      "estimatedCost": "Estimated Cost",
+      "noResponseYet": "No response yet",
+      "noStatsYet": "No stats yet"
+    },
+    "chunksReceived": "{{count}} chunks received",
+    "connecting": "Connecting...",
+    "close": "Close",
+    "cancel": "Cancel",
+    "resultStats": {
+      "entities": "Entities",
+      "commands": "Commands",
+      "queries": "Queries",
+      "events": "Events",
+      "ui": "UI"
+    }
+  },
+  "llmProgress": {
+    "viewResult": "View Results"
+  },
+  "analysisResult": {
+    "title": "Analysis Results",
+    "tabResult": "Results",
+    "tabClarify": "Clarify",
+    "startClarify": "Clarify Requirements",
+    "createContract": "Create Contract",
+    "view": "View"
   }
 }
