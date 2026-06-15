@@ -68,24 +68,31 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
         </div>
 
         <div class="version-list">
-          @for (version of versions; track version.version) {
-            <div
-              class="version-item"
-              [class.selected]="version.version === activeVersion"
-              [class.archived]="version.status === 'archived'"
-              [class.disabled]="version.status === 'archived'"
-              (click)="version.status !== 'archived' && switchVersion(version.version)"
-              [title]="version.status === 'archived' ? ('version.archivedTitle' | i18n) : ''"
-            >
-              <div class="version-info">
-                <span class="version-name">{{ version.version }}</span>
-                <span class="version-status" [ngClass]="version.status">
-                  {{ version.status }}
-                </span>
-              </div>
+          @if (versionLoading) {
+            <div class="version-loading">
+              <div class="version-spinner"></div>
+              <span>{{ 'version.loading' | i18n }}</span>
             </div>
-          } @empty {
-            <p class="empty-text">{{ 'version.empty' | i18n }}</p>
+          } @else {
+            @for (version of versions; track version.version) {
+              <div
+                class="version-item"
+                [class.selected]="version.version === activeVersion"
+                [class.archived]="version.status === 'archived'"
+                [class.disabled]="version.status === 'archived'"
+                (click)="version.status !== 'archived' && version.version !== activeVersion && switchVersion(version.version)"
+                [title]="version.status === 'archived' ? ('version.archivedTitle' | i18n) : ''"
+              >
+                <div class="version-info">
+                  <span class="version-name">{{ version.version }}</span>
+                  <span class="version-status" [ngClass]="version.status">
+                    {{ version.status }}
+                  </span>
+                </div>
+              </div>
+            } @empty {
+              <p class="empty-text">{{ 'version.empty' | i18n }}</p>
+            }
           }
         </div>
       </div>
@@ -317,6 +324,30 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
       display: flex;
       flex-direction: column;
       gap: 4px;
+      min-height: 60px;
+    }
+
+    .version-loading {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+    }
+    .version-loading span {
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.4);
+    }
+    .version-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(252, 103, 103, 0.2);
+      border-top-color: var(--brand-color);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
 
     .version-item {
@@ -581,6 +612,9 @@ export class SidebarComponent implements OnInit, OnDestroy {
   projects: ProjectInfo[] = [];
   showCreateProjectModal = false;
 
+  // Loading state for versions
+  versionLoading = false;
+
   private routerSub?: Subscription;
 
   constructor(
@@ -593,6 +627,11 @@ export class SidebarComponent implements OnInit, OnDestroy {
     // Subscribe to versions changes
     this.versionService.versions$.subscribe(versions => {
       this.versions = versions;
+    });
+
+    // Subscribe to loading state
+    this.versionService.loading$.subscribe(loading => {
+      this.versionLoading = loading;
     });
 
     // Subscribe to active version changes

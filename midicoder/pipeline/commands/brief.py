@@ -430,6 +430,25 @@ def _build_analysis_response(json_data: dict, analysis: BriefAnalysis, brief_id:
     if not isinstance(ambiguities, list):
         ambiguities = []
 
+    # quality_score — from root, nested metadata, or fallback to confidence
+    quality_score_raw = _extract_root_field(json_data, "quality_score")
+    if quality_score_raw is not None:
+        quality_score = float(quality_score_raw)
+    else:
+        quality_score = confidence
+
+    # Also update confidence if LLM returned higher one in metadata
+    confidence_raw = _extract_root_field(json_data, "confidence")
+    if confidence_raw is not None:
+        confidence = max(confidence, float(confidence_raw))
+    else:
+        confidence = analysis.confidence
+
+    # blockers — IDs of critical ambiguities
+    blockers = json_data.get("blockers", [])
+    if not isinstance(blockers, list):
+        blockers = []
+
     # Compute status dynamically
     status = _compute_status(json_data, confidence)
 
@@ -444,6 +463,8 @@ def _build_analysis_response(json_data: dict, analysis: BriefAnalysis, brief_id:
             "domain": llm_domain,
             "type": app_type,
             "scale": app_scale,
+            "quality_score": quality_score,
+            "blockers": blockers,
             "ambiguities": ambiguities,
             "summary": summary,
             "entities": entities,
@@ -462,6 +483,8 @@ def _build_analysis_response(json_data: dict, analysis: BriefAnalysis, brief_id:
         "metadata": {
             "domain": llm_domain,
             "confidence": confidence,
+            "quality_score": quality_score,
+            "blockers": blockers,
             "entities": len(entities),
             "commands": len(commands),
             "queries": len(queries),
@@ -506,9 +529,20 @@ def _save_analysis_artifact(
     state_machines = _extract_module_array(json_data, "state_machines")
 
     content_json = json.dumps(json_data, indent=2, ensure_ascii=False)
+
+    # Extract quality_score from json_data (root or nested metadata)
+    quality_score = json_data.get("quality_score")
+    if quality_score is None:
+        meta_in_json = json_data.get("metadata")
+        if isinstance(meta_in_json, dict):
+            quality_score = meta_in_json.get("quality_score")
+    if quality_score is None:
+        quality_score = confidence
+
     artifact_metadata = {
         "domain": domain,
         "confidence": confidence,
+        "quality_score": quality_score,
         "tokens_used": tokens_used,
         "latency_ms": latency_ms,
         "entity_count": len(entities),
@@ -558,11 +592,12 @@ def save_brief(project_cwd: str, version: str, brief_content: str, change_descri
         change_description: Mô tả thay đổi
 
     Returns:
-        {"brief_id": str, "updated": bool}
-
-    Raises:
-        ValueError: Nếu brief đã freezed
+        {"brief_id": str, "updated": bool, "error": str or None}
     """
+    # Empty content — no-op (avoid writing empty brief to DB)
+    if not brief_content.strip():
+        return {"brief_id": None, "updated": False, "error": None}
+
     briefs_db = _get_project_db_path(project_cwd, "briefs.db")
     mgr = BriefsManager(db_path=briefs_db)
     mgr.init()
@@ -573,7 +608,7 @@ def save_brief(project_cwd: str, version: str, brief_content: str, change_descri
     if existing:
         brief_id = existing.get("brief_id")
         if existing.get("status") == "freezed":
-            raise ValueError("Brief đã được đóng băng, không thể chỉnh sửa")
+            return {"brief_id": None, "updated": False, "error": "blocked_status:freezed"}
 
         old_hash = existing.get("content_hash", "")
         with mgr._get_connection() as conn:
@@ -631,6 +666,16 @@ def analyze_brief_for_api(project_cwd: str, version: str, language: str = "vi") 
     if not brief_content.strip():
         return {"success": False, "data": None, "error": "empty_content"}
 
+    # Load clarification history
+    clarifications = briefs_manager.get_clarifications(brief_id)
+    history_lines = []
+    for c in clarifications:
+        q = c.get("question", "") or c.get("summary", "")
+        a = c.get("answer", "")
+        if q and a:
+            history_lines.append(f"- Q: {q}\n  A: {a}")
+    clarification_history = "\n".join(history_lines) if history_lines else ""
+
     domain = _get_active_project_domain()
 
     try:
@@ -639,6 +684,7 @@ def analyze_brief_for_api(project_cwd: str, version: str, language: str = "vi") 
             domain=domain,
             brief_id=brief_id,
             language=language,
+            clarification_history=clarification_history,
         )
     except Exception as e:
         return {"success": False, "data": None, "error": f"llm_failed:{str(e)}"}
@@ -696,6 +742,16 @@ async def analyze_brief_stream_for_api(project_cwd: str, version: str, language:
     if not brief_content.strip():
         raise ValueError({"code": "empty_content"})
 
+    # Load clarification history
+    clarifications = briefs_manager.get_clarifications(brief_id)
+    history_lines = []
+    for c in clarifications:
+        q = c.get("question", "") or c.get("summary", "")
+        a = c.get("answer", "")
+        if q and a:
+            history_lines.append(f"- Q: {q}\n  A: {a}")
+    clarification_history = "\n".join(history_lines) if history_lines else ""
+
     domain = _get_active_project_domain()
 
     # Yield started event
@@ -712,6 +768,7 @@ async def analyze_brief_stream_for_api(project_cwd: str, version: str, language:
     json_data = None
     analysis_domain = domain
     analysis_confidence = 0.5
+    analysis_quality_score = 0.5
     analysis_tokens = 0
     analysis_latency = 0
 
@@ -721,6 +778,7 @@ async def analyze_brief_stream_for_api(project_cwd: str, version: str, language:
             domain=domain,
             brief_id=brief_id,
             language=language,
+            clarification_history=clarification_history,
         ):
             data = chunk.data if isinstance(chunk.data, dict) else str(chunk.data)
             if chunk.accumulated:
@@ -731,6 +789,7 @@ async def analyze_brief_stream_for_api(project_cwd: str, version: str, language:
                 json_data = chunk.data.get("json_data")
                 analysis_domain = chunk.data.get("domain", domain)
                 analysis_confidence = chunk.data.get("confidence", 0.5)
+                analysis_quality_score = chunk.data.get("quality_score", analysis_confidence)
                 analysis_tokens = chunk.data.get("tokens_used", 0)
                 analysis_latency = chunk.data.get("latency_ms", 0)
 
@@ -766,6 +825,102 @@ async def analyze_brief_stream_for_api(project_cwd: str, version: str, language:
                 latency_ms=analysis_latency,
             ), brief_id),
         }
+
+
+def clarify_brief_for_api(
+    project_cwd: str,
+    version: str,
+    answers: list,
+    re_analyze: bool = True,
+    language: str = "vi",
+) -> dict:
+    """
+    Lưu clarifications, merge answers vào brief, tạo revision, optionally re-analyze.
+
+    Args:
+        project_cwd: Absolute path đến project root
+        version: Version name
+        answers: List of dicts with keys: id, summary, question, recommend, answer
+        re_analyze: If True, re-analyze brief after saving clarifications
+        language: Mã ngôn ngữ (vi, en)
+
+    Returns:
+        {"success": bool, "data": dict or None, "error": str or None}
+    """
+    import time
+
+    MAX_CLARIFICATION_ROUNDS = 3
+
+    briefs_db = _get_project_db_path(project_cwd, "briefs.db")
+    briefs_manager = BriefsManager(db_path=briefs_db)
+    briefs_manager.init()
+
+    brief = _find_brief(briefs_manager, version)
+    if not brief:
+        return {"success": False, "data": None, "error": "not_found"}
+
+    brief_id = brief.get("brief_id")
+    brief_status = brief.get("status", "draft")
+    brief_content = brief.get("content", "")
+
+    if brief_status != "draft":
+        return {"success": False, "data": None, "error": f"blocked_status:{brief_status}"}
+
+    # Filter answers: only save non-empty answers
+    valid_answers = [a for a in answers if a.get("answer", "").strip()]
+    if not valid_answers:
+        return {"success": False, "data": None, "error": "no_answers"}
+
+    # Determine current round number
+    existing_clarifications = briefs_manager.get_clarifications(brief_id)
+    existing_rounds = set()
+    for c in existing_clarifications:
+        r = c.get("round", 0)
+        if r and r > 0:
+            existing_rounds.add(r)
+    current_round = max(existing_rounds, default=0) + 1
+
+    # Check max rounds
+    if current_round > MAX_CLARIFICATION_ROUNDS:
+        return {"success": False, "data": None, "error": f"max_rounds:{MAX_CLARIFICATION_ROUNDS}"}
+
+    # Save each clarification
+    for a in valid_answers:
+        briefs_manager.add_clarification(
+            brief_id=brief_id,
+            question=a.get("question", a.get("summary", "")),
+            answer=a.get("answer", ""),
+            is_memo=False,
+            round=current_round,
+            ambiguity_id=a.get("id", ""),
+            summary=a.get("summary", ""),
+        )
+
+    # Merge answers into brief content
+    round_header = f"\n\n--- Clarification Answers (Round {current_round}) ---"
+    answer_lines = []
+    for a in valid_answers:
+        summary = a.get("summary", "")
+        answer = a.get("answer", "")
+        answer_lines.append(f"- {summary}: {answer}")
+    brief_content = brief_content + round_header + "\n" + "\n".join(answer_lines)
+
+    # Update brief content
+    briefs_manager.update_content(brief_id, brief_content)
+
+    # Create revision
+    diff_summary = f"Clarified {len(valid_answers)} ambiguities (round {current_round})"
+    briefs_manager.add_revision(brief_id, version, "clarification", diff_summary, brief_content)
+
+    response_data = {
+        "brief_id": brief_id,
+        "revision_number": len(briefs_manager.get_revisions(brief_id)),
+        "clarification_count": len(valid_answers),
+        "round": current_round,
+        "should_re_analyze": re_analyze,  # Tell frontend to trigger analyze stream
+    }
+
+    return {"success": True, "data": response_data, "error": None}
 
 
 def get_brief_for_api(project_cwd: str, version: str) -> dict:
@@ -828,6 +983,18 @@ def get_brief_for_api(project_cwd: str, version: str) -> dict:
                     persisted_scale = persisted_scale_raw if persisted_scale_raw in VALID_SCALES else _compute_scale(content)
                     persisted_confidence = metadata_raw.get("confidence", 0.5)
 
+                    # Extract quality_score from persisted artifact metadata OR from LLM content
+                    persisted_quality_score = metadata_raw.get("quality_score")
+                    if persisted_quality_score is None:
+                        qs_from_content = _extract_root_field(content, "quality_score")
+                        if qs_from_content is not None:
+                            try:
+                                persisted_quality_score = float(qs_from_content)
+                            except (ValueError, TypeError):
+                                pass
+                    if persisted_quality_score is None:
+                        persisted_quality_score = persisted_confidence
+
                     # Ensure ambiguities is a list and normalize format (old → new)
                     persisted_ambiguities = content.get("ambiguities", [])
                     if not isinstance(persisted_ambiguities, list):
@@ -853,6 +1020,7 @@ def get_brief_for_api(project_cwd: str, version: str) -> dict:
                     normalized_metadata = {
                         "domain": persisted_domain or metadata_raw.get("domain", ""),
                         "confidence": persisted_confidence,
+                        "quality_score": persisted_quality_score,
                         "entities": len(persisted_entities),
                         "commands": len(persisted_commands),
                         "queries": len(persisted_queries),
@@ -1234,9 +1402,11 @@ def freeze_brief(version: str, project_cwd: str) -> dict:
     briefs_manager.update_status(brief_id, "freezed")
     log("brief.freezed", resource_type="brief", resource_id=brief_id, details={"brief_id": brief_id})
 
-    # 2. Record revision lineage
+    # 2. Record revision lineage (save current content snapshot, not empty)
     try:
-        briefs_manager.add_revision(brief_id, version, "freezed", "Brief freezed, version → inbuild", "")
+        current_brief = briefs_manager.get_by_brief_id(brief_id)
+        current_content = current_brief.get("content", "") if current_brief else ""
+        briefs_manager.add_revision(brief_id, version, "freezed", "Brief freezed, version → inbuild", current_content)
     except Exception:
         pass
 

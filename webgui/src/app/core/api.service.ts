@@ -485,6 +485,23 @@ export class ApiService {
     return this.post('/brief/freeze', { version });
   }
 
+  /**
+   * POST /brief/clarify - Submit clarification answers, merge into brief, optionally re-analyze
+   */
+  async clarifyBrief(request: {
+    version: string;
+    answers: Array<{ id: string; summary: string; question: string; recommend: string; answer: string }>;
+    re_analyze: boolean;
+  }): Promise<ApiResponse<{
+    brief_id: string;
+    revision_number: number;
+    clarification_count: number;
+    round: number;
+    should_re_analyze: boolean;
+  }>> {
+    return this.post('/brief/clarify', request);
+  }
+
   // ============================================================================
   // CONTRACT ENDPOINTS
   // ============================================================================

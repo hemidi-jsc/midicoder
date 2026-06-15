@@ -203,6 +203,9 @@ CREATE TABLE IF NOT EXISTS clarifications (
     question TEXT NOT NULL,
     answer TEXT NOT NULL,
     is_memo INTEGER DEFAULT 0,
+    round INTEGER DEFAULT 0,
+    ambiguity_id TEXT,
+    summary TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (brief_id) REFERENCES briefs(brief_id) ON DELETE CASCADE
 );
@@ -407,6 +410,7 @@ class BriefsManager:
         """Khởi tạo database với schema."""
         init_database(self.db_path, SCHEMA_BRIEFS)
         self._migrate_briefs()
+        self._migrate_clarifications()
 
     def _migrate_briefs(self):
         """Migration: thêm columns còn thiếu vào bảng briefs."""
@@ -420,6 +424,22 @@ class BriefsManager:
 
                 if "title" not in columns:
                     conn.execute("ALTER TABLE briefs ADD COLUMN title TEXT")
+        except Exception:
+            pass
+
+    def _migrate_clarifications(self):
+        """Migration: thêm columns round, ambiguity_id, summary vào bảng clarifications."""
+        try:
+            with get_connection(self.db_path) as conn:
+                cursor = conn.execute("PRAGMA table_info(clarifications)")
+                columns = {row[1] for row in cursor.fetchall()}
+
+                if "round" not in columns:
+                    conn.execute("ALTER TABLE clarifications ADD COLUMN round INTEGER DEFAULT 0")
+                if "ambiguity_id" not in columns:
+                    conn.execute("ALTER TABLE clarifications ADD COLUMN ambiguity_id TEXT")
+                if "summary" not in columns:
+                    conn.execute("ALTER TABLE clarifications ADD COLUMN summary TEXT")
         except Exception:
             pass
 
@@ -545,18 +565,37 @@ class BriefsManager:
             )
             return True
 
+    def update_content(self, brief_id: str, content: str) -> bool:
+        """Cập nhật nội dung brief và content_hash."""
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        with get_connection(self.db_path) as conn:
+            conn.execute(
+                "UPDATE briefs SET content = ?, content_hash = ?, updated_at = datetime('now') WHERE brief_id = ?",
+                (content, content_hash, brief_id),
+            )
+        return True
+
     # ------------------------------------------------------------------
     # Clarifications
     # ------------------------------------------------------------------
 
     def add_clarification(
-        self, brief_id: str, question: str, answer: str, is_memo: bool = False
+        self,
+        brief_id: str,
+        question: str,
+        answer: str,
+        is_memo: bool = False,
+        round: int = 0,
+        ambiguity_id: str = "",
+        summary: str = "",
     ) -> int:
         """Thêm clarification Q&A."""
         with get_connection(self.db_path) as conn:
             cursor = conn.execute(
-                "INSERT INTO clarifications (brief_id, question, answer, is_memo) VALUES (?, ?, ?, ?)",
-                (brief_id, question, answer, 1 if is_memo else 0),
+                "INSERT INTO clarifications "
+                "(brief_id, question, answer, is_memo, round, ambiguity_id, summary) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (brief_id, question, answer, 1 if is_memo else 0, round, ambiguity_id, summary),
             )
             return cursor.lastrowid
 

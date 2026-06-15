@@ -35,6 +35,20 @@ class BriefSaveRequest(BaseModel):
     brief_content: str = Field(default="", description="Nội dung brief")
 
 
+class BriefClarifyAnswer(BaseModel):
+    id: str = Field(default="", description="Ambiguity ID")
+    summary: str = Field(default="", description="Short title")
+    question: str = Field(default="", description="Question")
+    recommend: str = Field(default="", description="Recommended answer")
+    answer: str = Field(default="", description="User's answer")
+
+
+class BriefClarifyRequest(BaseModel):
+    version: str = Field(default="v1.0.0", description="Version name")
+    answers: list[BriefClarifyAnswer] = Field(default_factory=list, description="List of clarification answers")
+    re_analyze: bool = Field(default=True, description="Re-analyze brief after saving clarifications")
+
+
 # ============================================================================
 # Helpers
 # ============================================================================
@@ -93,7 +107,8 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
     elif error == "empty_content":
         message = i18n.t("brief.emptyContent", language)
     elif error.startswith("llm_failed:"):
-        message = f"LLM analysis failed: {error.split(':', 1)[1]}"
+        detail = error.split(":", 1)[1]
+        message = i18n.t("brief.llmFailed", language, detail=detail)
     else:
         message = result.get("stderr", i18n.t("brief.analyze_failed", language))
 
@@ -103,15 +118,14 @@ async def analyze_brief(request_data: BriefAnalyzeRequest = None, request: Reque
 @router.get("/analyze-stream")
 async def analyze_brief_stream_sse(request: Request, version: str = "v1.0.0"):
     """SSE endpoint cho brief analysis — delegate vào pipeline stream generator."""
+    language = i18n.get_language_from_request(request)
     project_cwd = _resolve_project_cwd()
 
     async def error_gen(message: str):
         yield _sse(message, "error")
 
     if not project_cwd:
-        return StreamingResponse(error_gen(i18n.t("brief.noActiveProject")), media_type="text/event-stream")
-
-    language = i18n.get_language_from_request(request)
+        return StreamingResponse(error_gen(i18n.t("brief.noActiveProject", language)), media_type="text/event-stream")
 
     try:
         stream = await pipeline_bridge.brief_analyze_stream(project_cwd, version, language)
@@ -122,11 +136,12 @@ async def analyze_brief_stream_sse(request: Request, version: str = "v1.0.0"):
         else:
             code = str(err)
         if code == "not_found":
-            return StreamingResponse(error_gen(i18n.t("brief.notFound")), media_type="text/event-stream")
+            return StreamingResponse(error_gen(i18n.t("brief.notFound", language)), media_type="text/event-stream")
         elif code.startswith("blocked_status:"):
-            return StreamingResponse(error_gen(f"Brief status='{code.split(':', 1)[1]}', chỉ phân tích khi status=draft"), media_type="text/event-stream")
+            status = code.split(":", 1)[1]
+            return StreamingResponse(error_gen(i18n.t("brief.analyze_blocked", language, status=status)), media_type="text/event-stream")
         elif code == "empty_content":
-            return StreamingResponse(error_gen(i18n.t("brief.emptyContent")), media_type="text/event-stream")
+            return StreamingResponse(error_gen(i18n.t("brief.emptyContent", language)), media_type="text/event-stream")
         else:
             return StreamingResponse(error_gen(str(err)), media_type="text/event-stream")
 
@@ -153,9 +168,6 @@ async def save_brief(request_data: BriefSaveRequest = None, request: Request = N
     if not project_cwd:
         return ApiResponse(success=False, data=None, message=i18n.t("brief.noActiveProject", language), language=language)
 
-    if not request_data.brief_content.strip():
-        return ApiResponse(success=True, data={"saved": True}, message="OK", language=language)
-
     result = await pipeline_bridge.execute_command(
         "brief", "save",
         project_cwd=project_cwd,
@@ -164,13 +176,17 @@ async def save_brief(request_data: BriefSaveRequest = None, request: Request = N
         change_description="Auto-save",
     )
 
+    data = result.get("_data", {})
+    err = data.get("error")
+
+    # Empty content — pipeline returns error=None, no-op success
+    if err is None and not data.get("brief_id"):
+        return ApiResponse(success=True, data={"saved": True}, message=i18n.t("brief.ok", language), language=language)
+    if err and err.startswith("blocked_status:"):
+        return ApiResponse(success=False, data=None, message=i18n.t("brief.freezedBlocked", language), language=language)
     if not result["success"]:
-        stderr = result.get("stderr", "")
-        if "đóng băng" in stderr or "freezed" in stderr.lower():
-            return ApiResponse(success=False, data=None, message=i18n.t("brief.freezedBlocked", language), language=language)
         return ApiResponse(success=False, data=None, message=i18n.t("brief.saveFailed", language), language=language)
 
-    data = result.get("_data", {})
     brief_id = data.get("brief_id")
     updated = data.get("updated", False)
 
@@ -182,7 +198,8 @@ async def save_brief(request_data: BriefSaveRequest = None, request: Request = N
             language=language,
         )
 
-    return ApiResponse(success=False, data=None, message=i18n.t("brief.saveFailed", language), language=language)
+    # Fallback: no brief_id but no error (empty content edge case)
+    return ApiResponse(success=True, data={"saved": True}, message=i18n.t("brief.ok", language), language=language)
 
 
 @router.post("/freeze", response_model=ApiResponse)
@@ -246,7 +263,7 @@ async def get_brief(version: str = Query(None), request: Request = None):
     return ApiResponse(
         success=False,
         data=None,
-        message=data.get("error") or result.get("stderr", "Brief not found"),
+        message=data.get("error") or result.get("stderr", i18n.t("brief.notFound", language)),
         language=language,
     )
 
@@ -350,3 +367,55 @@ async def get_revision_diff(
         message=message,
         language=language,
     )
+
+
+@router.post("/clarify", response_model=ApiResponse)
+async def clarify_brief(request_data: "BriefClarifyRequest" = None, request: Request = None):
+    """Lưu clarifications, merge vào brief, tạo revision, optionally re-analyze."""
+    if request_data is None:
+        request_data = BriefClarifyRequest()
+
+    language = i18n.get_language_from_request(request)
+    project_cwd = _resolve_project_cwd()
+    if not project_cwd:
+        return ApiResponse(success=False, data=None, message=i18n.t("brief.noActiveProject", language), language=language)
+
+    # Convert Pydantic models to dicts
+    answers = [a.model_dump() for a in request_data.answers]
+
+    result = await pipeline_bridge.execute_command(
+        "brief", "clarify",
+        project_cwd=project_cwd,
+        version=request_data.version,
+        answers=answers,
+        re_analyze=request_data.re_analyze,
+        language=language,
+    )
+
+    data = result.get("_data", {})
+    if data.get("success"):
+        resp_data = data.get("data", {})
+        round_num = resp_data.get("round", 0)
+        message = i18n.t("brief.clarified", language, round=round_num)
+        return ApiResponse(
+            success=True,
+            data=resp_data,
+            message=message,
+            language=language,
+        )
+
+    error = data.get("error", "")
+    if error == "not_found":
+        message = i18n.t("brief.notFound", language)
+    elif error.startswith("blocked_status:"):
+        status = error.split(":", 1)[1]
+        message = i18n.t("brief.analyze_blocked", language, status=status)
+    elif error == "no_answers":
+        message = i18n.t("brief.noAnswers", language)
+    elif error.startswith("max_rounds:"):
+        max_r = error.split(":", 1)[1]
+        message = i18n.t("brief.maxRoundsReached", language, max_rounds=max_r)
+    else:
+        message = result.get("stderr", i18n.t("brief.clarify_failed", language))
+
+    return ApiResponse(success=False, data=None, message=message, language=language)

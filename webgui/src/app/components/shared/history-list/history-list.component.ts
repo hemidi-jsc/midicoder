@@ -51,15 +51,15 @@ export interface BriefRevisionItem {
                 @if (entry.diff_summary) {
                   <p class="hl-desc">{{ entry.diff_summary }}</p>
                 }
-                @if (entry.revision_number > 1 || entry.snapshot_hash) {
+                @if (entry.revision_number > 1) {
                   <div class="hl-footer-row">
-                    @if (entry.revision_number > 1) {
-                      <button class="hl-diff-link" (click)="onViewDiff(entry)">Xem diff</button>
+                    @if (entry.diff_summary && hasChanges(entry)) {
+                      <button class="hl-diff-link" (click)="onViewDiff(entry)">{{ 'brief.viewDiff' | i18n }}</button>
                     }
-                    @if (entry.revision_number > 1 && entry.snapshot_hash) {
+                    @if ((entry.diff_summary && hasChanges(entry)) && entry.revision_number > 1 && entry.snapshot_hash) {
                       <span class="hl-sep">·</span>
                     }
-                    @if (entry.snapshot_hash) {
+                    @if (entry.revision_number > 1 && entry.snapshot_hash) {
                       <span class="hl-hash">{{ entry.snapshot_hash | slice:0:7 }}</span>
                     }
                   </div>
@@ -241,5 +241,12 @@ export class HistoryListComponent {
 
   onViewDiff(entry: BriefRevisionItem): void {
     this.viewDiff.emit(entry);
+  }
+
+  /** Check if a revision should show diff link — metadata-only events don't have content diff */
+  hasChanges(entry: BriefRevisionItem): boolean {
+    // These events don't change brief content — skip diff
+    const noDiffEvents = ['freezed', 'analyzed', 'created'];
+    return !noDiffEvents.includes(entry.event);
   }
 }

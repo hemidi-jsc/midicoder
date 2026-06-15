@@ -42,34 +42,6 @@ interface SectionOpenState {
   imports: [CommonModule, FormsModule, I18nPipe, HistoryListComponent, LlmProgressComponent, AnalysisResultModalComponent],
   template: `
     <div class="brief-page py-8">
-      <!-- Toast Notification -->
-      @if (toast.show) {
-        <div class="fixed top-16 right-4 z-50 animate-slide-in pointer-events-none">
-          <div class="pointer-events-auto flex items-center gap-3 px-5 py-3.5"
-               [ngClass]="toast.type === 'success'
-                 ? 'bg-green-600 border border-green-400'
-                 : 'bg-red-600 border border-red-400'">
-            <!-- Icon -->
-            @if (toast.type === 'success') {
-              <svg class="h-5 w-5 text-green-100 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-              </svg>
-            } @else {
-              <svg class="h-5 w-5 text-red-100 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-              </svg>
-            }
-            <span class="font-semibold text-sm text-white">
-              {{ toast.message }}
-            </span>
-            <button (click)="toast.show = false" class="ml-1 opacity-60 hover:opacity-100 transition-opacity">
-              <svg class="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-      }
 
       <!-- Header: 3 columns — Title | Progress Bar | Buttons -->
       <div class="mb-6 flex items-center justify-between gap-6">
@@ -129,38 +101,34 @@ interface SectionOpenState {
 
         <!-- Column 3: Buttons -->
         <div class="flex items-center space-x-3 flex-shrink-0">
-          <!-- Auto-save status -->
-          @if (saveStatus === 'saving') {
-            <span class="inline-flex items-center text-xs font-medium text-blue-300">
-              <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              {{ 'brief.saving' | i18n }}
-            </span>
-          } @else if (hasUnsavedChanges) {
-            <span class="text-xs font-medium text-amber-300">{{ 'brief.unsaved' | i18n }}</span>
-          } @else if (saveStatus === 'saved') {
-            <span class="text-xs font-medium text-green-400">{{ 'brief.saved' | i18n }}</span>
-          } @else {
-            <span class="text-xs text-text-tertiary">{{ 'brief.autoSaveOn' | i18n }}</span>
+          <!-- Auto-save status — hide when freezed -->
+          @if (!isFrozen) {
+            @if (saveStatus === 'saving') {
+              <span class="save-status save-status-saving">
+                <svg class="animate-spin -ml-0.5 mr-1.5 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                {{ 'brief.saving' | i18n }}
+              </span>
+            } @else if (hasUnsavedChanges) {
+              <span class="save-status save-status-unsaved">{{ 'brief.unsaved' | i18n }}</span>
+            } @else if (saveStatus === 'saved') {
+              <span class="save-status save-status-saved">{{ 'brief.saved' | i18n }}</span>
+            } @else {
+              <span class="save-status save-status-idle">{{ 'brief.autoSaveOn' | i18n }}</span>
+            }
           }
 
-          <!-- Analyze Button - chỉ hiện khi status !== freezed -->
-          @if (!briefInfo || briefInfo.status !== 'freezed') {
-            <button (click)="handleAnalyze()" class="btn btn-primary" [disabled]="isAnalyzing || !briefContent.trim()">
-              {{ isAnalyzing ? ('brief.analyzing' | i18n) : ('brief.analyze' | i18n) }}
-            </button>
-          } @else {
-            <span class="text-xs text-text-tertiary italic">{{ 'brief.freezed' | i18n }}</span>
-          }
+          <!-- Analyze Button — always visible, toggle disabled -->
+          <button (click)="handleAnalyze()" class="btn btn-primary" [disabled]="isAnalyzing || !briefContent.trim() || isFrozen">
+            {{ isAnalyzing ? ('brief.analyzing' | i18n) : analyzeButtonText }}
+          </button>
 
-          <!-- Freeze Button - hiện khi brief chưa có hoặc status là draft -->
-          @if (!briefInfo || briefInfo.status === 'draft') {
-            <button (click)="handleFreeze()" class="btn btn-secondary" [disabled]="isFreezing || !briefContent.trim()">
-              {{ isFreezing ? ('brief.processing' | i18n) : ('brief.freeze' | i18n) }}
-            </button>
-          }
+          <!-- Freeze Button — always visible, toggle disabled -->
+          <button (click)="handleFreeze()" class="btn btn-secondary" [disabled]="isFreezing || !briefContent.trim() || isFrozen">
+            {{ isFreezing ? ('brief.processing' | i18n) : ('brief.freeze' | i18n) }}
+          </button>
         </div>
       </div>
 
@@ -199,11 +167,11 @@ interface SectionOpenState {
                 type="button"
                 class="sidebar-tab"
                 [class.active]="rightTab === 'analysis'"
-                (click)="rightTab = 'analysis'"
+                (click)="setRightTab('analysis')"
               >
                 {{ 'brief.analysis' | i18n }}
-                @if (analysisResult.status === 'needs_clarification') {
-                  <span class="tab-badge">!</span>
+                @if (analysisResult?.analysis?.ambiguities?.length > 0) {
+                  <span class="tab-badge">{{ analysisResult.analysis.ambiguities.length }}</span>
                 }
               </button>
             }
@@ -211,101 +179,144 @@ interface SectionOpenState {
               type="button"
               class="sidebar-tab"
               [class.active]="rightTab === 'history'"
-              (click)="rightTab = 'history'"
+              (click)="setRightTab('history')"
             >
               {{ 'brief.history' | i18n }}
-              @if (lineage.length > 0) {
-                <span class="tab-badge">{{ lineage.length }}</span>
+              @if (clarificationHistory.length > 0) {
+                <span class="tab-badge">{{ clarificationHistory.length }}</span>
               }
             </button>
           </div>
 
           <!-- Analysis tab panel (sidebar summary) -->
           @if (rightTab === 'analysis' && analysisResult) {
-            <div class="sidebar-panel analysis-sidebar">
-              <!-- Summary -->
-              @if (analysisResult.analysis?.summary) {
-                <div class="analysis-summary">
-                  <p class="analysis-summary-text">{{ analysisResult.analysis.summary }}</p>
-                </div>
-              }
+            <div class="sidebar-panel">
+              <!-- Content wrapper — scrollable -->
+              <div class="analysis-sidebar">
+                <!-- Summary -->
+                @if (analysisResult.analysis?.summary) {
+                  <div class="analysis-summary">
+                    <p class="analysis-summary-text">{{ analysisResult.analysis.summary }}</p>
+                  </div>
+                }
 
-              <!-- Intent row -->
-              @if (analysisResult.analysis) {
-                <div class="analysis-intent-row">
-                  @let domain = analysisResult.analysis.domain || analysisResult.analysis.intent?.domain;
-                  @let type = analysisResult.analysis.type || analysisResult.analysis.intent?.type;
-                  @if (domain) {
-                    <span class="intent-chip"><span class="chip-label">{{ 'brief.domain' | i18n }}</span> {{ domain }}</span>
-                  }
-                  @if (type) {
-                    <span class="intent-chip"><span class="chip-label">{{ 'brief.type' | i18n }}</span> {{ type }}</span>
-                  }
-                  @let scale = analysisResult.analysis.scale || analysisResult.analysis.intent?.scale;
-                  @if (scale) {
-                    <span class="intent-chip"><span class="chip-label">{{ 'brief.scale' | i18n }}</span> {{ scale }}</span>
-                  }
-                </div>
-              }
+                <!-- Intent row -->
+                @if (analysisResult.analysis) {
+                  <div class="analysis-intent-row">
+                    @let domain = analysisResult.analysis.domain || analysisResult.analysis.intent?.domain;
+                    @let type = analysisResult.analysis.type || analysisResult.analysis.intent?.type;
+                    @if (domain) {
+                      <span class="intent-chip"><span class="chip-label">{{ 'brief.domain' | i18n }}</span> {{ domain }}</span>
+                    }
+                    @if (type) {
+                      <span class="intent-chip"><span class="chip-label">{{ 'brief.type' | i18n }}</span> {{ type }}</span>
+                    }
+                    @let scale = analysisResult.analysis.scale || analysisResult.analysis.intent?.scale;
+                    @if (scale) {
+                      <span class="intent-chip"><span class="chip-label">{{ 'brief.scale' | i18n }}</span> {{ scale }}</span>
+                    }
+                  </div>
+                }
 
-              <!-- Resource stats -->
-              @if (analysisResult.analysis) {
-                @let entities = analysisResult.analysis.entities || [];
-                @let commands = analysisResult.analysis.commands || [];
-                @let queries = analysisResult.analysis.queries || [];
-                @let events = analysisResult.analysis.events || [];
-                @let uiComponents = analysisResult.analysis.ui_components || [];
-                @let valueObjects = analysisResult.analysis.value_objects || [];
-                @let guards = analysisResult.analysis.guards || [];
-                @let workflows = analysisResult.analysis.workflows || [];
-                @let aggregates = analysisResult.analysis.aggregates || [];
-                @let roles = analysisResult.analysis.roles || [];
-                @let permissions = analysisResult.analysis.permissions || [];
-                @let stateMachines = analysisResult.analysis.state_machines || [];
-                <div class="analysis-stats-row">
-                  <span class="stat-item"><span class="stat-val">{{ entities.length }}</span> <span class="stat-label">{{ 'brief.entities' | i18n }}</span></span>
-                  <span class="stat-item"><span class="stat-val">{{ commands.length }}</span> <span class="stat-label">{{ 'brief.commands' | i18n }}</span></span>
-                  <span class="stat-item"><span class="stat-val">{{ queries.length }}</span> <span class="stat-label">{{ 'brief.queries' | i18n }}</span></span>
-                  <span class="stat-item"><span class="stat-val">{{ events.length }}</span> <span class="stat-label">{{ 'brief.events' | i18n }}</span></span>
-                  <span class="stat-item"><span class="stat-val">{{ uiComponents.length }}</span> <span class="stat-label">{{ 'brief.uiComponents' | i18n }}</span></span>
-                  <span class="stat-item"><span class="stat-val">{{ valueObjects.length }}</span> <span class="stat-label">{{ 'brief.valueObjects' | i18n }}</span></span>
-                  <span class="stat-item"><span class="stat-val">{{ guards.length }}</span> <span class="stat-label">{{ 'brief.guards' | i18n }}</span></span>
-                  <span class="stat-item"><span class="stat-val">{{ workflows.length }}</span> <span class="stat-label">{{ 'brief.workflows' | i18n }}</span></span>
-                  <span class="stat-item"><span class="stat-val">{{ aggregates.length }}</span> <span class="stat-label">{{ 'brief.aggregates' | i18n }}</span></span>
-                  <span class="stat-item"><span class="stat-val">{{ roles.length }}</span> <span class="stat-label">{{ 'brief.roles' | i18n }}</span></span>
-                  <span class="stat-item"><span class="stat-val">{{ permissions.length }}</span> <span class="stat-label">{{ 'brief.permissions' | i18n }}</span></span>
-                  <span class="stat-item"><span class="stat-val">{{ stateMachines.length }}</span> <span class="stat-label">{{ 'brief.stateMachines' | i18n }}</span></span>
-                </div>
-              }
-
-              <!-- Ambiguities preview -->
-              @if (analysisResult.analysis?.ambiguities?.length > 0) {
-                <div class="sidebar-ambiguities">
-                  <h4 class="ambiguity-heading">
-                    {{ 'brief.needClarify' | i18n }} ({{ analysisResult.analysis.ambiguities.length }})
-                  </h4>
-                  @for (amb of analysisResult.analysis.ambiguities; track $index) {
-                    <div class="amb-item">
-                      <p class="amb-summary">{{ amb.summary }}</p>
-                      @if (amb.recommend) {
-                        <p class="amb-recommend">💡 {{ amb.recommend }}</p>
-                      }
+                <!-- Quality Score bar -->
+                @if (analysisResult.analysis) {
+                  @let qs = sidebarQualityScore;
+                  @let qsPercent = (qs * 100) | number:'1.0-0';
+                  <div class="quality-score-bar">
+                    <span class="qs-label">{{ 'brief.qualityScore' | i18n }}</span>
+                    <div class="qs-track">
+                      <div class="qs-fill" [style.width.%]="qsPercent" [class]="getQualityColorClass(qs)"></div>
                     </div>
-                  }
-                </div>
-              }
+                    <span class="qs-value" [class]="getQualityColorClass(qs)">{{ qsPercent }}%</span>
+                  </div>
+                }
 
-              <!-- Footer actions -->
+                <!-- Resource stats -->
+                @if (analysisResult.analysis) {
+                  @let entities = analysisResult.analysis.entities || [];
+                  @let commands = analysisResult.analysis.commands || [];
+                  @let queries = analysisResult.analysis.queries || [];
+                  @let events = analysisResult.analysis.events || [];
+                  @let uiComponents = analysisResult.analysis.ui_components || [];
+                  @let valueObjects = analysisResult.analysis.value_objects || [];
+                  @let guards = analysisResult.analysis.guards || [];
+                  @let workflows = analysisResult.analysis.workflows || [];
+                  @let aggregates = analysisResult.analysis.aggregates || [];
+                  @let roles = analysisResult.analysis.roles || [];
+                  @let permissions = analysisResult.analysis.permissions || [];
+                  @let stateMachines = analysisResult.analysis.state_machines || [];
+                  <div class="analysis-stats-row">
+                    <span class="stat-item"><span class="stat-val">{{ entities.length }}</span> <span class="stat-label">{{ 'brief.entities' | i18n }}</span></span>
+                    <span class="stat-item"><span class="stat-val">{{ commands.length }}</span> <span class="stat-label">{{ 'brief.commands' | i18n }}</span></span>
+                    <span class="stat-item"><span class="stat-val">{{ queries.length }}</span> <span class="stat-label">{{ 'brief.queries' | i18n }}</span></span>
+                    <span class="stat-item"><span class="stat-val">{{ events.length }}</span> <span class="stat-label">{{ 'brief.events' | i18n }}</span></span>
+                    <span class="stat-item"><span class="stat-val">{{ uiComponents.length }}</span> <span class="stat-label">{{ 'brief.uiComponents' | i18n }}</span></span>
+                    <span class="stat-item"><span class="stat-val">{{ valueObjects.length }}</span> <span class="stat-label">{{ 'brief.valueObjects' | i18n }}</span></span>
+                    <span class="stat-item"><span class="stat-val">{{ guards.length }}</span> <span class="stat-label">{{ 'brief.guards' | i18n }}</span></span>
+                    <span class="stat-item"><span class="stat-val">{{ workflows.length }}</span> <span class="stat-label">{{ 'brief.workflows' | i18n }}</span></span>
+                    <span class="stat-item"><span class="stat-val">{{ aggregates.length }}</span> <span class="stat-label">{{ 'brief.aggregates' | i18n }}</span></span>
+                    <span class="stat-item"><span class="stat-val">{{ roles.length }}</span> <span class="stat-label">{{ 'brief.roles' | i18n }}</span></span>
+                    <span class="stat-item"><span class="stat-val">{{ permissions.length }}</span> <span class="stat-label">{{ 'brief.permissions' | i18n }}</span></span>
+                    <span class="stat-item"><span class="stat-val">{{ stateMachines.length }}</span> <span class="stat-label">{{ 'brief.stateMachines' | i18n }}</span></span>
+                  </div>
+                }
+
+                <!-- Ambiguities count -->
+                @if (analysisResult.analysis?.ambiguities?.length > 0) {
+                  <div class="ambiguities-count">
+                    <span class="amb-count-val">{{ analysisResult.analysis.ambiguities.length }}</span>
+                    <span class="amb-count-label">{{ 'brief.ambiguities' | i18n }}</span>
+                  </div>
+                }
+
+                <!-- Clarification History (inline in analysis tab) -->
+                @if (clarificationHistory.length > 0) {
+                  <div class="sidebar-clarification-history">
+                    <h4 class="history-heading">
+                      <i class="fa-solid fa-clock-rotate-left"></i>
+                      {{ 'brief.clarificationHistory' | i18n }} ({{ clarificationHistory.length }})
+                    </h4>
+                    @for (round of clarificationRounds; track round.num) {
+                      <div class="clarification-round">
+                        <div class="round-header">
+                          <span class="round-label">{{ 'brief.clarificationRound' | i18n:{round: round.num} }}</span>
+                          <span class="round-date">{{ round.date }}</span>
+                        </div>
+                        @for (c of round.items; track c.id || $index) {
+                          <div class="clarification-q-a">
+                            <p class="qa-question">{{ c.question || c.summary }}</p>
+                            <p class="qa-answer">{{ c.answer }}</p>
+                          </div>
+                        }
+                      </div>
+                    }
+                  </div>
+                } @else {
+                  <div class="empty-state">
+                    <i class="fa-regular fa-clock"></i>
+                    <p>{{ 'brief.noClarificationHistory' | i18n }}</p>
+                  </div>
+                }
+
+                <!-- Spacer to allow scrolling past footer -->
+                <div class="sidebar-spacer"></div>
+              </div>
+
+              <!-- Footer actions — inline 50/50, absolute bottom -->
               <div class="sidebar-footer">
-                <button (click)="openAnalysisModal()" class="btn btn-secondary w-full">
+                <button (click)="openAnalysisModal()" class="btn btn-secondary">
                   <i class="fa-solid fa-expand"></i> {{ 'analysisResult.view' | i18n }}
                 </button>
-                @if (analysisResult.status === 'ready') {
-                  <button (click)="navigateToContract()" class="btn btn-primary w-full mt-2">
+                @if (analysisResult.status === 'ready' || sidebarQualityScore >= 0.9) {
+                  <button (click)="navigateToContract()" class="btn btn-primary">
                     <i class="fa-solid fa-file-contract"></i> {{ 'analysisResult.createContract' | i18n }}
                   </button>
                 } @else if (analysisResult.status === 'needs_clarification') {
-                  <button (click)="openAnalysisModal('clarify')" class="btn btn-accent w-full mt-2">
+                  <button (click)="openAnalysisModal('clarify')" class="btn btn-accent">
+                    <i class="fa-solid fa-pen-to-square"></i> {{ 'analysisResult.startClarify' | i18n }}
+                  </button>
+                } @else {
+                  <button (click)="openAnalysisModal('clarify')" class="btn btn-accent">
                     <i class="fa-solid fa-pen-to-square"></i> {{ 'analysisResult.startClarify' | i18n }}
                   </button>
                 }
@@ -353,7 +364,7 @@ interface SectionOpenState {
                   </div>
                 }
               } @else {
-                <div class="diff-empty">Không có thay đổi</div>
+                <div class="diff-empty">{{ 'brief.diffEmpty' | i18n }}</div>
               }
             </div>
           </div>
@@ -381,6 +392,53 @@ interface SectionOpenState {
           (submitClarification)="onSubmitClarification($event)"
           (goToContract)="navigateToContract()"
         ></app-analysis-result-modal>
+      }
+
+      <!-- Clarify Complete Modal — user chooses re-analyze or contract -->
+      @if (showClarifyCompleteModal) {
+        <div class="clarify-complete-overlay">
+          <div class="clarify-complete-modal">
+            <div class="clarify-complete-header">
+              <h3 class="clarify-complete-title">{{ 'brief.clarifyCompleteTitle' | i18n }}</h3>
+              <button class="clarify-complete-close" (click)="closeClarifyCompleteModal()">✕</button>
+            </div>
+            <div class="clarify-complete-body">
+              <p class="clarify-complete-round">{{ 'brief.clarifyCompleteRound' | i18n: {round: _clarifyResult?.round || 1, count: _clarifyResult?.clarification_count || 0} }}</p>
+              <p class="clarify-complete-desc">{{ 'brief.clarifyCompleteDesc' | i18n }}</p>
+              <div class="clarify-complete-actions">
+                <button class="btn btn-accent w-full" (click)="reAnalyzeFromClarify()">
+                  <i class="fa-solid fa-magnifying-glass-chart"></i> {{ 'brief.clarifyCompleteReAnalyze' | i18n }}
+                </button>
+                <button class="btn btn-primary w-full" (click)="goToContractFromClarify()">
+                  <i class="fa-solid fa-file-contract"></i> {{ 'brief.clarifyCompleteContract' | i18n }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- Max Rounds Dialog -->
+      @if (showMaxRoundsDialog) {
+        <div class="max-rounds-overlay">
+          <div class="max-rounds-modal">
+            <div class="max-rounds-header">
+              <h3 class="max-rounds-title">{{ 'brief.maxRoundsDialog' | i18n }}</h3>
+              <button class="max-rounds-close" (click)="showMaxRoundsDialog = false">✕</button>
+            </div>
+            <div class="max-rounds-body">
+              <p class="max-rounds-desc">{{ 'brief.maxRoundsDesc' | i18n }}</p>
+              <div class="max-rounds-actions">
+                <button class="btn btn-primary w-full" (click)="showMaxRoundsDialog = false; navigateToContract()">
+                  <i class="fa-solid fa-file-contract"></i> {{ 'brief.maxRoundsContract' | i18n }}
+                </button>
+                <button class="btn btn-secondary w-full" (click)="showMaxRoundsDialog = false">
+                  {{ 'brief.maxRoundsClose' | i18n }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       }
     </div>
   `,
@@ -519,6 +577,38 @@ interface SectionOpenState {
     .step-connector.done {
       background: var(--accent-success, #4ade80);
       box-shadow: 0 0 6px rgba(74, 222, 128, 0.3);
+    }
+
+    /* ---- Auto-save status — prominent, colored ---- */
+    .save-status {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      padding: 3px 10px;
+      border-radius: 0;
+      border: 1px solid transparent;
+    }
+    .save-status-saving {
+      color: #58a6ff;
+      background: rgba(88, 166, 255, 0.08);
+      border-color: rgba(88, 166, 255, 0.2);
+    }
+    .save-status-unsaved {
+      color: #f0883e;
+      background: rgba(240, 136, 62, 0.08);
+      border-color: rgba(240, 136, 62, 0.2);
+    }
+    .save-status-saved {
+      color: #3fb950;
+      background: rgba(63, 185, 80, 0.08);
+      border-color: rgba(63, 185, 80, 0.2);
+    }
+    .save-status-idle {
+      color: rgba(255, 255, 255, 0.55);
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.08);
     }
 
     /* ---- Clarification Batch UI ---- */
@@ -765,18 +855,29 @@ interface SectionOpenState {
       line-height: 1.4;
     }
 
-    /* Sidebar panel (scrollable content) */
+    /* Sidebar panel (flex container, no scroll - children scroll) */
     .sidebar-panel {
       flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Analysis sidebar — scrollable content area */
+    .analysis-sidebar {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
       overflow-y: auto;
       padding: 12px;
     }
 
-    /* Analysis sidebar — clean, data-focused */
-    .analysis-sidebar {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
+    /* Spacer so last content isn't hidden behind footer */
+    .sidebar-spacer {
+      flex-shrink: 0;
+      height: 56px;
     }
 
     .analysis-summary-text {
@@ -834,6 +935,45 @@ interface SectionOpenState {
       color: rgba(255, 255, 255, 0.4);
     }
 
+    /* Quality Score bar */
+    .quality-score-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .qs-label {
+      font-size: 0.6875rem;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      flex-shrink: 0;
+      min-width: 72px;
+    }
+    .qs-track {
+      flex: 1;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 0;
+      overflow: hidden;
+    }
+    .qs-fill {
+      height: 100%;
+      transition: width 0.3s ease;
+    }
+    .qs-fill.qs-good { background: #3fb950; }
+    .qs-fill.qs-warn { background: #d29922; }
+    .qs-fill.qs-bad { background: #f85149; }
+    .qs-value {
+      font-size: 0.75rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      min-width: 36px;
+      text-align: right;
+    }
+    .qs-value.qs-good { color: #3fb950; }
+    .qs-value.qs-warn { color: #d29922; }
+    .qs-value.qs-bad { color: #f85149; }
+
     /* Ambiguities — subtle */
     .ambiguity-heading {
       font-size: 0.75rem;
@@ -861,19 +1001,131 @@ interface SectionOpenState {
       font-style: italic;
     }
 
-    /* Sidebar footer buttons */
-    .sidebar-footer {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-top: auto;
+    /* Sidebar clarification history */
+    .sidebar-clarification-history {
+      margin-top: 12px;
       padding-top: 10px;
       border-top: 1px solid rgba(255, 255, 255, 0.06);
     }
+
+    /* Ambiguities count — compact badge-style */
+    .ambiguities-count {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 8px 10px;
+      background: rgba(250, 204, 21, 0.06);
+      border: 1px solid rgba(250, 204, 21, 0.12);
+    }
+    .amb-count-val {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: rgba(250, 204, 21, 0.9);
+    }
+    .amb-count-label {
+      font-size: 0.6875rem;
+      color: rgba(250, 204, 21, 0.6);
+    }
+
+    /* Empty state */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 12px;
+      text-align: center;
+    }
+    .empty-state i {
+      font-size: 1.5rem;
+      color: rgba(139, 148, 158, 0.3);
+      margin-bottom: 8px;
+    }
+    .empty-state p {
+      font-size: 0.75rem;
+      color: rgba(139, 148, 158, 0.5);
+      margin: 0;
+    }
+
+    .history-heading {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: rgba(139, 148, 158, 0.9);
+      margin: 0 0 8px 0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .history-heading i {
+      color: rgba(139, 148, 158, 0.6);
+      font-size: 0.6875rem;
+    }
+
+    .clarification-round {
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      background: rgba(255, 255, 255, 0.02);
+      border-left: 2px solid rgba(139, 148, 158, 0.25);
+    }
+
+    .round-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .round-label {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      color: rgba(139, 148, 158, 0.8);
+      text-transform: uppercase;
+    }
+
+    .round-date {
+      font-size: 0.6rem;
+      color: rgba(255, 255, 255, 0.25);
+    }
+
+    .clarification-q-a {
+      margin-bottom: 4px;
+    }
+
+    .qa-question {
+      font-size: 0.6875rem;
+      color: rgba(255, 255, 255, 0.55);
+      margin: 0;
+      font-weight: 500;
+    }
+
+    .qa-answer {
+      font-size: 0.65rem;
+      color: rgba(63, 185, 80, 0.7);
+      margin: 2px 0 0 0;
+    }
+
+    /* Sidebar footer buttons — inline 50/50, absolute bottom, not scrollable */
+    .sidebar-footer {
+      display: flex;
+      flex-direction: row;
+      gap: 2px;
+      flex-shrink: 0;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 6px 4px 6px;
+      background: #0d1117;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      z-index: 5;
+    }
     .sidebar-footer .btn {
-      width: 100%;
-      padding: 8px;
-      font-size: 0.8125rem;
+      flex: 1;
+      width: auto;
+      padding: 7px 4px;
+      font-size: 0.72rem;
+      white-space: nowrap;
     }
     .btn-accent {
       background: #e91e63;
@@ -999,6 +1251,220 @@ interface SectionOpenState {
       color: rgba(255,255,255,0.3);
       text-align: center;
     }
+
+    /* Clarify Complete Modal */
+    .clarify-complete-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      padding: 2rem;
+    }
+
+    .clarify-complete-modal {
+      background: #16161e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .clarify-complete-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .clarify-complete-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #3fb950;
+      margin: 0;
+    }
+
+    .clarify-complete-close {
+      background: none;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.875rem;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+
+    .clarify-complete-close:hover {
+      color: white;
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .clarify-complete-body {
+      padding: 24px 20px;
+      text-align: center;
+    }
+
+    .clarify-complete-round {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.85);
+      margin: 0 0 6px 0;
+    }
+
+    .clarify-complete-desc {
+      font-size: 0.8125rem;
+      color: rgba(255, 255, 255, 0.5);
+      margin: 0 0 20px 0;
+    }
+
+    .clarify-complete-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .clarify-complete-actions .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 16px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .clarify-complete-actions .btn-accent {
+      background: linear-gradient(135deg, #fc6767, #e05858);
+      color: white;
+    }
+
+    .clarify-complete-actions .btn-accent:hover {
+      filter: brightness(1.1);
+    }
+
+    .clarify-complete-actions .btn-primary {
+      background: linear-gradient(135deg, #58a6ff, #388bfd);
+      color: white;
+    }
+
+    .clarify-complete-actions .btn-primary:hover {
+      filter: brightness(1.1);
+    }
+
+    .clarify-complete-actions .w-full {
+      width: 100%;
+    }
+
+    /* Max Rounds Dialog — same style as clarify-complete */
+    .max-rounds-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10001;
+      padding: 2rem;
+    }
+
+    .max-rounds-modal {
+      background: #16161e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .max-rounds-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .max-rounds-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #d29922;
+      margin: 0;
+    }
+
+    .max-rounds-close {
+      background: none;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.875rem;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+
+    .max-rounds-close:hover {
+      color: white;
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .max-rounds-body {
+      padding: 24px 20px;
+      text-align: center;
+    }
+
+    .max-rounds-desc {
+      font-size: 0.8125rem;
+      color: rgba(255, 255, 255, 0.5);
+      margin: 0 0 20px 0;
+      line-height: 1.5;
+    }
+
+    .max-rounds-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .max-rounds-actions .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 16px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .max-rounds-actions .btn-primary {
+      background: linear-gradient(135deg, #58a6ff, #388bfd);
+      color: white;
+    }
+
+    .max-rounds-actions .btn-primary:hover {
+      filter: brightness(1.1);
+    }
+
+    .max-rounds-actions .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .max-rounds-actions .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+    }
+
+    .max-rounds-actions .w-full {
+      width: 100%;
+    }
+
     .diff-line {
       font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
       font-size: 0.75rem;
@@ -1058,6 +1524,23 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
   clarifications: any[] = [];
   lineage: any[] = [];
   showHistory = false;
+
+  // Clarification history — grouped by round
+  clarificationHistory: any[] = [];
+  clarificationRounds: Array<{ num: number; date: string; items: any[] }> = [];
+
+  // Quality score from analysis
+  get sidebarQualityScore(): number {
+    return this.analysisResult?.metadata?.quality_score
+      ?? this.analysisResult?.analysis?.quality_score
+      ?? (this.analysisResult?.metadata?.confidence ?? 0);
+  }
+
+  getQualityColorClass(qs: number): string {
+    if (qs >= 0.9) return 'qs-good';
+    if (qs >= 0.7) return 'qs-warn';
+    return 'qs-bad';
+  }
 
   // Collapsible sections state
   sectionOpen: SectionOpenState = {
@@ -1125,15 +1608,38 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
   // Right sidebar tab toggle
   rightTab: 'analysis' | 'history' = 'analysis';
 
+  setRightTab(tab: 'analysis' | 'history'): void {
+    this.rightTab = tab;
+    // Reset scroll to top of sidebar
+    setTimeout(() => {
+      const sidebar = document.querySelector('.analysis-sidebar');
+      if (sidebar) sidebar.scrollTop = 0;
+    }, 10);
+  }
+
   // Dynamic version từ PipelineStore
   get activeVersion(): string {
     return this.pipelineStore.getActiveVersion() || '';
   }
 
-  // Toast notification
-  toast = { show: false, message: '', type: 'success' as 'success' | 'error' };
-
   readonly docsUrl = `${DOCS_BASE}/brief`;
+
+  // Clarification round tracking
+  get clarificationRound(): number {
+    // Count distinct rounds from clarification history
+    const rounds = new Set<number>();
+    for (const c of this.clarificationHistory) {
+      const r = c.round || 0;
+      if (r > 0) rounds.add(r);
+    }
+    return rounds.size;
+  }
+
+  get analyzeButtonText(): string {
+    const round = this.clarificationRound;
+    if (round === 0) return this.i18n.t('brief.analyzeButtonText');
+    return this.i18n.t('brief.analyzeAgainText', { round });
+  }
 
   private api = inject(ApiService);
   private pipelineStore = inject(PipelineStore);
@@ -1143,11 +1649,13 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
   private versionService = inject(VersionService);
   private saveTimer: any = null;
   private toastTimer: any = null;
+  toast: { show: boolean; message: string; type: string } = { show: false, message: '', type: 'info' };
 
   async ngOnInit(): Promise<void> {
     await this.pipelineStore.loadStatus();
     await this.loadBrief();
     await this.loadLineage();
+    await this.loadClarificationHistory();
     this.cdr.detectChanges();
 
     // Reload khi version switch
@@ -1179,6 +1687,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
       await this.pipelineStore.loadStatus();
       await this.loadBriefForVersion(targetVersion);
       await this.loadLineageForVersion(targetVersion);
+      await this.loadClarificationHistory();
       this.cdr.detectChanges();
     } catch (e) {
       console.error('BriefEditor onVersionSwitched error:', e);
@@ -1218,7 +1727,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
   // Toast
   // ============================================================================
 
-  showToast(message: string, type: 'success' | 'error' = 'success'): void {
+  showToast(message: string, type: 'success' | 'error' | 'info' = 'success'): void {
     this.toast = { show: true, message, type };
     this.cdr.detectChanges();
     if (this.toastTimer) clearTimeout(this.toastTimer);
@@ -1249,6 +1758,8 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
       this.clarifications = [];
       this.analysisResult = null;
     }
+    await this.loadLineage();
+    await this.loadClarificationHistory();
   }
 
   async loadLineage(): Promise<void> {
@@ -1257,6 +1768,32 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
       this.lineage = result.data.revisions;
     } else {
       this.lineage = [];
+    }
+  }
+
+  async loadClarificationHistory(): Promise<void> {
+    const result = await this.api.getClarifications(this.activeVersion);
+    if (result.success && result.data?.clarifications) {
+      this.clarificationHistory = result.data.clarifications;
+      // Group by round
+      const roundMap = new Map<number, any[]>();
+      for (const c of this.clarificationHistory) {
+        const r = c.round || 0;
+        if (r > 0) {
+          if (!roundMap.has(r)) roundMap.set(r, []);
+          roundMap.get(r)!.push(c);
+        }
+      }
+      this.clarificationRounds = Array.from(roundMap.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([num, items]) => ({
+          num,
+          date: items.length > 0 ? formatDateLocal(items[0].created_at) : '',
+          items,
+        }));
+    } else {
+      this.clarificationHistory = [];
+      this.clarificationRounds = [];
     }
   }
 
@@ -1328,6 +1865,11 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
   showAnalysisModal = false;
   modalInitialTab: 'result' | 'clarify' = 'result';
 
+  // Clarify complete modal
+  showClarifyCompleteModal = false;
+  showMaxRoundsDialog = false;
+  _clarifyResult: { round: number; clarification_count: number } | null = null;
+
   openAnalysisModal(tab: 'result' | 'clarify' = 'result'): void {
     this.modalInitialTab = tab;
     // Force Angular to recreate the component so setter fires
@@ -1345,13 +1887,85 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
   }
 
   onSubmitClarification(items: any[]): void {
-    // Handle clarification submission — forward to existing submitBatchAnswers logic
+    // Handle clarification submission — call POST /brief/clarify API
     this.closeAnalysisModal();
-    this.startBatchClarification();
+    this.submitClarificationsViaAPI(items);
+  }
+
+  async submitClarificationsViaAPI(items: any[]): Promise<void> {
+    if (items.length === 0) {
+      this.showToast(this.i18n.t('brief.noAnswers'), 'error');
+      return;
+    }
+
+    // Show info toast
+    this.showToast(this.i18n.t('brief.sending'), 'info');
+
+    try {
+      const re_analyze = true;
+      const result = await this.api.clarifyBrief({
+        version: this.activeVersion,
+        answers: items,
+        re_analyze: re_analyze,
+      });
+
+      if (!result.success) {
+        // Check if it's a max_rounds error (backend returns message like "Đã hết 3 vòng làm rõ")
+        const msg = result.message || '';
+        if (msg.includes('vòng làm rõ') || msg.includes('max_rounds') || msg.includes('hết')) {
+          this.showMaxRoundsDialog = true;
+          this.cdr.detectChanges();
+          return;
+        }
+        this.showToast(msg || this.i18n.t('brief.clarifyError'), 'error');
+        return;
+      }
+
+      const data = result.data;
+      if (data) {
+        // Reload brief content to get updated content with clarification answers
+        await this.loadBrief();
+        // Reload lineage and clarification history
+        await this.loadLineage();
+        await this.loadClarificationHistory();
+
+        // Show post-clarify modal: user chooses re-analyze or go to contract
+        this._clarifyResult = {
+          round: data.round || 1,
+          clarification_count: data.clarification_count || 0,
+        };
+        console.log('[BriefEditor] Clarify complete, showing modal', this._clarifyResult);
+        this.showClarifyCompleteModal = true;
+        this.cdr.detectChanges();
+      }
+    } catch (e) {
+      console.error('[BriefEditor] submitClarificationsViaAPI error:', e);
+      this.showToast(this.i18n.t('brief.connectError'), 'error');
+    }
   }
 
   navigateToContract(): void {
     this.router.navigate(['/contract-viewer']);
+  }
+
+  updateSidebarAnalysis(): void {
+    this.cdr.detectChanges();
+  }
+
+  closeClarifyCompleteModal(): void {
+    this.showClarifyCompleteModal = false;
+    this._clarifyResult = null;
+    this.cdr.detectChanges();
+  }
+
+  reAnalyzeFromClarify(): void {
+    this.closeClarifyCompleteModal();
+    setTimeout(() => this.handleAnalyze(), 300);
+  }
+
+  goToContractFromClarify(): void {
+    this.closeClarifyCompleteModal();
+    this.navigateToContract();
   }
 
   handleAnalyze(): void {
@@ -1359,8 +1973,15 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
       this.showToast(this.i18n.t('brief.enterBrief'), 'error');
       return;
     }
+
+    // Check max clarification rounds — force stop at 3
+    if (this.clarificationRound >= 3) {
+      this.showMaxRoundsDialog = true;
+      this.cdr.detectChanges();
+      return;
+    }
+
     if (this.hasUnsavedChanges) {
-      // Auto-save trước, sau đó mở overlay
       this.autoSave().then(() => {
         this.openAnalyzeOverlay();
       });
@@ -1399,7 +2020,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
         console.error('[BriefEditor] SSE connect error:', err);
         clearTimeout(this.analyzeTimeoutId);
         this.isAnalyzing = false;
-        this.showToast(`Kết nối lỗi: ${err.message}`, 'error');
+        this.showToast(this.i18n.t('brief.connectError', { message: err.message }), 'error');
         this.cdr.detectChanges();
       });
   }
@@ -1444,10 +2065,17 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
                 clearTimeout(this.analyzeTimeoutId);
                 this.isAnalyzing = false;
                 this.analysisResult = data;
+                this.abortController = null;
+                // Keep overlay open — user closes manually
+                // Refresh sidebar silently
+                this.loadLineage().then(() => {
+                  this.updateSidebarAnalysis();
+                });
                 this.cdr.detectChanges();
               } else if (lastEvent === 'error') {
                 clearTimeout(this.analyzeTimeoutId);
                 this.isAnalyzing = false;
+                this.abortController = null;
                 this.cdr.detectChanges();
               }
             } catch {
@@ -1600,13 +2228,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
   // ============================================================================
 
   getEventLabelForModal(event: string): string {
-    const labels: Record<string, string> = {
-      'created': 'Created',
-      'content_updated': 'Updated',
-      'analyzed': 'Analyzed',
-      'freezed': 'Freezed',
-    };
-    return labels[event] || event;
+    return this.i18n.t(`brief.event.${event}`) || event;
   }
 
   async openDiffModal(entry: any): Promise<void> {

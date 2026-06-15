@@ -47,6 +47,20 @@ def _inject_language(content: str, lang_info: dict) -> str:
     return content
 
 
+def _inject_clarification_history(content: str, history: str) -> str:
+    """
+    Replace {{ clarification_history_placeholder }} in prompt template.
+
+    Args:
+        content: Prompt template content
+        history: Formatted clarification history text (or "No previous clarifications.")
+    """
+    placeholder = "{{ clarification_history_placeholder }}"
+    if placeholder in content:
+        content = content.replace(placeholder, history.strip() or "No previous clarifications.")
+    return content
+
+
 # ---------------------------------------------------------------------------
 # Prompt loading
 # ---------------------------------------------------------------------------
@@ -55,6 +69,7 @@ def get_domain_prompt(
     domain: str,
     prompt_type: str = "analyze",
     language: str = "vi",
+    clarification_history: str = "",
 ) -> str:
     """
     Load prompt template cho domain.
@@ -68,9 +83,10 @@ def get_domain_prompt(
         domain: Tên domain (default, ecommerce, ...)
         prompt_type: Loại prompt (analyze)
         language: Mã ngôn ngữ user chọn (vi, en) — inject vào prompt template
+        clarification_history: Lịch sử clarification từ các round trước (format text)
 
     Returns:
-        Prompt template content với language variables đã được thay thế
+        Prompt template content với language variables và clarification history đã được thay thế
 
     Raises:
         FileNotFoundError: Khi không tìm thấy prompt file
@@ -78,12 +94,15 @@ def get_domain_prompt(
     prompt_filename = f"brief-{prompt_type}"
     lang_info = _resolve_language_info(language)
 
+    history_text = clarification_history.strip() or "No previous clarifications."
+
     # domain="default" hoặc empty → root prompt
     if not domain or domain.lower() == "default":
         try:
             content = _load_prompt_from_package(prompt_filename)
             logger.info(f"Load default prompt: {prompt_filename}")
-            return _inject_language(content, lang_info)
+            content = _inject_language(content, lang_info)
+            return _inject_clarification_history(content, history_text)
         except FileNotFoundError:
             pass
 
@@ -92,7 +111,8 @@ def get_domain_prompt(
     try:
         content = _load_prompt_from_package(package_prompt)
         logger.info(f"Load domain prompt: {package_prompt}")
-        return _inject_language(content, lang_info)
+        content = _inject_language(content, lang_info)
+        return _inject_clarification_history(content, history_text)
     except FileNotFoundError:
         pass
 
@@ -100,7 +120,8 @@ def get_domain_prompt(
     try:
         content = _load_prompt_from_package(prompt_filename)
         logger.info(f"Fallback to default prompt cho domain '{domain}': {prompt_filename}")
-        return _inject_language(content, lang_info)
+        content = _inject_language(content, lang_info)
+        return _inject_clarification_history(content, history_text)
     except FileNotFoundError:
         pass
 

@@ -750,7 +750,7 @@ export interface StreamMessage {
 })
 export class LlmProgressComponent {
   @Input() visible = false;
-  @Input() title = 'LLM Processing';
+  @Input() title = 'LLM Processing'; // Set by parent with i18n, English fallback
   @Output() closeOverlay = new EventEmitter<void>();
   @Output() cancelAnalyze = new EventEmitter<void>();
   @Output() viewResult = new EventEmitter<void>();

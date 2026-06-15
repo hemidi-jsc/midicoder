@@ -90,7 +90,7 @@ interface SectionOpenState {
                 </div>
               }
 
-              <!-- Intent grid: domain, type, scale, confidence -->
+              <!-- Intent grid: domain, type, scale, quality_score -->
               <div class="intent-grid">
                 <div class="intent-item">
                   <span class="intent-label">{{ 'brief.domain' | i18n }}</span>
@@ -105,19 +105,19 @@ interface SectionOpenState {
                   <p class="intent-value">{{ analysisResult?.analysis?.intent?.scale || '—' }}</p>
                 </div>
                 <div class="intent-item">
-                  <span class="intent-label">{{ 'brief.confidence' | i18n }}</span>
+                  <span class="intent-label">{{ 'brief.qualityScore' | i18n }}</span>
                   <div class="confidence-row">
                     <div class="confidence-bar">
                       <div
                         class="confidence-fill"
-                        [class.conf-high]="analysisResult?.metadata?.confidence >= 0.8"
-                        [class.conf-mid]="analysisResult?.metadata?.confidence >= 0.5 && analysisResult?.metadata?.confidence < 0.8"
-                        [class.conf-low]="analysisResult?.metadata?.confidence < 0.5"
-                        [style.width.%]="analysisResult?.metadata?.confidence * 100"
+                        [class.conf-high]="qualityScore >= 0.9"
+                        [class.conf-mid]="qualityScore >= 0.7 && qualityScore < 0.9"
+                        [class.conf-low]="qualityScore < 0.7"
+                        [style.width.%]="qualityScore * 100"
                       ></div>
                     </div>
                     <span class="confidence-pct">
-                      {{ (analysisResult?.metadata?.confidence * 100).toFixed(0) }}%
+                      {{ (qualityScore * 100).toFixed(0) }}%
                     </span>
                   </div>
                 </div>
@@ -370,7 +370,7 @@ interface SectionOpenState {
                             <tr>
                               <th>{{ 'brief.name' | i18n }}</th>
                               <th>{{ 'brief.description' | i18n }}</th>
-                              <th>Fields</th>
+                              <th>{{ 'brief.fields' | i18n }}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -439,7 +439,7 @@ interface SectionOpenState {
                           <thead>
                             <tr>
                               <th>{{ 'brief.name' | i18n }}</th>
-                              <th>Trigger</th>
+                              <th>{{ 'brief.trigger' | i18n }}</th>
                               <th>{{ 'brief.description' | i18n }}</th>
                             </tr>
                           </thead>
@@ -510,7 +510,7 @@ interface SectionOpenState {
                             <tr>
                               <th>{{ 'brief.name' | i18n }}</th>
                               <th>{{ 'brief.description' | i18n }}</th>
-                              <th>Permissions</th>
+                              <th>{{ 'brief.permissions' | i18n }}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -544,8 +544,8 @@ interface SectionOpenState {
                           <thead>
                             <tr>
                               <th>{{ 'brief.name' | i18n }}</th>
-                              <th>Resource</th>
-                              <th>Action</th>
+                              <th>{{ 'brief.resource' | i18n }}</th>
+                              <th>{{ 'brief.action' | i18n }}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -579,8 +579,8 @@ interface SectionOpenState {
                           <thead>
                             <tr>
                               <th>{{ 'brief.name' | i18n }}</th>
-                              <th>Entity</th>
-                              <th>States</th>
+                              <th>{{ 'brief.smEntity' | i18n }}</th>
+                              <th>{{ 'brief.states' | i18n }}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -640,9 +640,17 @@ interface SectionOpenState {
                     <div
                       class="clarify-card"
                       [class.answered]="clarificationAnswers[amb.id || amb.summary]?.trim()"
+                      [class.blocker]="isBlocker(amb)"
                     >
                       <div class="clarify-card-header">
-                        <span class="clarify-card-title">{{ amb.summary }}</span>
+                        <div class="clarify-card-title-row">
+                          <span class="clarify-card-title">{{ amb.summary }}</span>
+                          @if (isBlocker(amb)) {
+                            <span class="badge badge-blocker">{{ 'brief.blocker' | i18n }}</span>
+                          } @else {
+                            <span class="badge badge-optional">{{ 'brief.optional' | i18n }}</span>
+                          }
+                        </div>
                         @if (clarificationAnswers[amb.id || amb.summary]?.trim()) {
                           <span class="answered-check">✓</span>
                         }
@@ -674,7 +682,14 @@ interface SectionOpenState {
                       [style.width.%]="progressPct"
                     ></div>
                   </div>
-                  <p class="clarify-progress-text">{{ 'brief.answered' | i18n:{count: answeredCount} }}</p>
+                  <p class="clarify-progress-text">
+                    {{ 'brief.answered' | i18n:{count: answeredCount} }}
+                    @if (totalBlockers > 0) {
+                      <span class="blocker-progress">
+                        {{ 'brief.blockersProgress' | i18n: {answered: blockerAnsweredCount, total: totalBlockers} }}
+                      </span>
+                    }
+                  </p>
                 </div>
 
                 <!-- Submit row -->
@@ -685,7 +700,7 @@ interface SectionOpenState {
                   <button
                     class="btn btn-primary"
                     (click)="submitAnswers()"
-                    [disabled]="answeredCount < clarificationAmbiguities.length || isSubmitting"
+                    [disabled]="!canSubmit() || isSubmitting"
                   >
                     @if (isSubmitting) {
                       <i class="fa-solid fa-spinner fa-spin"></i> {{ 'brief.sending' | i18n }}
@@ -1159,11 +1174,47 @@ interface SectionOpenState {
       border-color: rgba(63, 185, 80, 0.3);
     }
 
+    .clarify-card.blocker {
+      border-color: rgba(248, 81, 73, 0.3);
+      background: rgba(248, 81, 73, 0.05);
+    }
+
+    .clarify-card.blocker.answered {
+      border-color: rgba(63, 185, 80, 0.4);
+      background: rgba(63, 185, 80, 0.05);
+    }
+
     .clarify-card-header {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
       margin-bottom: 6px;
+    }
+
+    .clarify-card-title-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+    }
+
+    .badge {
+      font-size: 0.6rem;
+      padding: 1px 5px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+
+    .badge-blocker {
+      background: rgba(248, 81, 73, 0.2);
+      color: #f85149;
+      border: 1px solid rgba(248, 81, 73, 0.3);
+    }
+
+    .badge-optional {
+      background: rgba(255, 255, 255, 0.06);
+      color: rgba(255, 255, 255, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .clarify-card-title {
@@ -1395,6 +1446,24 @@ export class AnalysisResultModalComponent implements AfterViewInit {
   clarificationAmbiguities: AmbiguityItem[] = [];
   clarificationAnswers: Record<string, string> = {};
 
+  get qualityScore(): number {
+    // Fallback: use metadata.quality_score, then analysis.quality_score, then confidence
+    return this.analysisResult?.metadata?.quality_score
+      ?? this.analysisResult?.analysis?.quality_score
+      ?? (this.analysisResult?.metadata?.confidence ?? 0.5);
+  }
+
+  get blockers(): string[] {
+    return this.analysisResult?.metadata?.blockers
+      ?? this.analysisResult?.analysis?.blockers
+      ?? [];
+  }
+
+  isBlocker(amb: AmbiguityItem): boolean {
+    const id = amb.id || amb.summary;
+    return this.blockers.includes(id);
+  }
+
   get answeredCount(): number {
     return this.clarificationAmbiguities.filter(amb => {
       const key = amb.id || amb.summary;
@@ -1402,9 +1471,26 @@ export class AnalysisResultModalComponent implements AfterViewInit {
     }).length;
   }
 
+  get blockerAnsweredCount(): number {
+    return this.clarificationAmbiguities.filter(amb => {
+      if (!this.isBlocker(amb)) return false;
+      const key = amb.id || amb.summary;
+      return this.clarificationAnswers[key]?.trim();
+    }).length;
+  }
+
+  get totalBlockers(): number {
+    return this.clarificationAmbiguities.filter(amb => this.isBlocker(amb)).length;
+  }
+
   get progressPct(): number {
     if (!this.clarificationAmbiguities.length) return 0;
     return Math.round((this.answeredCount / this.clarificationAmbiguities.length) * 100);
+  }
+
+  canSubmit(): boolean {
+    // Submit enabled when all blockers answered (optional: all ambiguities)
+    return this.blockerAnsweredCount >= this.totalBlockers && this.answeredCount > 0;
   }
 
   isSubmitting = false;
@@ -1431,19 +1517,22 @@ export class AnalysisResultModalComponent implements AfterViewInit {
   }
 
   submitAnswers(): void {
-    if (this.answeredCount < this.clarificationAmbiguities.length) return;
+    if (!this.canSubmit()) return;
     this.isSubmitting = true;
 
-    const answers = this.clarificationAmbiguities.map(amb => {
-      const key = amb.id || amb.summary;
-      return {
-        id: amb.id,
-        summary: amb.summary,
-        question: amb.question,
-        recommend: amb.recommend,
-        answer: this.clarificationAnswers[key] || ''
-      };
-    });
+    // Only emit answers that have non-empty text
+    const answers = this.clarificationAmbiguities
+      .map(amb => {
+        const key = amb.id || amb.summary;
+        return {
+          id: amb.id,
+          summary: amb.summary,
+          question: amb.question,
+          recommend: amb.recommend,
+          answer: this.clarificationAnswers[key] || ''
+        };
+      })
+      .filter(a => a.answer.trim()); // Only send answered items
 
     this.submitClarification.emit(answers);
     // isSubmitting reset by parent after response

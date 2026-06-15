@@ -91,6 +91,7 @@ def analyze_brief_with_llm_sync(
     domain: str = "default",
     brief_id: str = "",
     language: str = "vi",
+    clarification_history: str = "",
 ) -> BriefAnalysis:
     """
     Phân tích brief bằng LLM — domain explicit (KHÔNG gọi LLM để detect domain).
@@ -103,6 +104,7 @@ def analyze_brief_with_llm_sync(
         domain: Domain explicit từ projects.db (default='default')
         brief_id: Brief ID
         language: Mã ngôn ngữ (vi, en) — inject vào prompt template
+        clarification_history: Lịch sử clarification từ các round trước
 
     Returns:
         BriefAnalysis với json_data, text_summary, domain, confidence
@@ -119,9 +121,9 @@ def analyze_brief_with_llm_sync(
 
     # Load prompt template theo domain
     try:
-        system_prompt = get_domain_prompt(final_domain, language=language)
+        system_prompt = get_domain_prompt(final_domain, language=language, clarification_history=clarification_history)
     except Exception:
-        system_prompt = get_domain_prompt("default", language=language)
+        system_prompt = get_domain_prompt("default", language=language, clarification_history=clarification_history)
 
     # Query codebase context (optional)
     context_result = None
@@ -171,6 +173,7 @@ async def analyze_brief_with_llm_stream(
     domain: str = "default",
     brief_id: str = "",
     language: str = "vi",
+    clarification_history: str = "",
 ) -> AsyncIterator[StreamChunk]:
     """
     Phân tích brief bằng LLM với streaming — phát từng chunk qua WebSocket.
@@ -188,6 +191,7 @@ async def analyze_brief_with_llm_stream(
         domain: Domain từ projects.db
         brief_id: Brief ID
         language: Mã ngôn ngữ (vi, en) — inject vào prompt template
+        clarification_history: Lịch sử clarification từ các round trước
 
     Yields:
         StreamChunk cho từng message type
@@ -204,9 +208,9 @@ async def analyze_brief_with_llm_stream(
 
         # Load prompt
         try:
-            system_prompt = get_domain_prompt(final_domain, language=language)
+            system_prompt = get_domain_prompt(final_domain, language=language, clarification_history=clarification_history)
         except Exception:
-            system_prompt = get_domain_prompt("default", language=language)
+            system_prompt = get_domain_prompt("default", language=language, clarification_history=clarification_history)
 
         # Send metadata
         yield StreamChunk(
@@ -333,12 +337,28 @@ async def analyze_brief_with_llm_stream(
         # Parse final JSON
         _, json_data = _parse_llm_response(accumulated)
 
+        # Extract confidence & quality_score from root OR nested metadata dict
+        confidence = json_data.get("confidence")
+        quality_score = json_data.get("quality_score")
+        if confidence is None or quality_score is None:
+            meta = json_data.get("metadata")
+            if isinstance(meta, dict):
+                if confidence is None:
+                    confidence = meta.get("confidence")
+                if quality_score is None:
+                    quality_score = meta.get("quality_score")
+        if confidence is None:
+            confidence = 0.5
+        if quality_score is None:
+            quality_score = confidence
+
         yield StreamChunk(
             type="complete",
             data={
                 "json_data": json_data,
                 "domain": final_domain,
-                "confidence": json_data.get("confidence", 0.5),
+                "confidence": confidence,
+                "quality_score": quality_score,
                 "latency_ms": latency_ms,
                 "tokens_used": tokens_used,
                 "prompt_tokens": prompt_tokens,

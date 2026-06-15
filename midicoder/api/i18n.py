@@ -61,7 +61,12 @@ VI_TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "brief.freezedMsg": "Brief đã được đóng băng",
     "brief.freezedBlocked": "Brief đã được đóng băng, không thể chỉnh sửa",
     "brief.revisionNotFound": "Không tìm thấy revision",
-    
+    "brief.ok": "OK",
+    "brief.llmFailed": "Phân tích LLM thất bại: {detail}",
+    "brief.clarified": "Đã làm rõ yêu cầu (Round {round})",
+    "brief.noAnswers": "Không có câu trả lời nào để lưu",
+    "brief.maxRoundsReached": "Đã hết {max_rounds} vòng làm rõ, bạn vẫn có thể tiếp tục sang Contract",
+    "brief.clarify_failed": "Không thể lưu clarifications",    
     # Contract commands
     "contract.gen_start": "Đang tạo hợp đồng DSL",
     "contract.gen_success": "Đã tạo hợp đồng DSL thành công",
@@ -158,7 +163,13 @@ EN_TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "brief.freezedMsg": "Brief has been freezed",
     "brief.freezedBlocked": "Brief is already freezed, cannot edit",
     "brief.revisionNotFound": "Revision not found",
-    
+    "brief.ok": "OK",
+    "brief.llmFailed": "LLM analysis failed: {detail}",
+    "brief.clarified": "Requirements clarified (Round {round})",
+    "brief.noAnswers": "No answers to save",
+    "brief.maxRoundsReached": "Reached {max_rounds} clarification rounds, you can still proceed to Contract",
+    "brief.clarify_failed": "Failed to save clarifications",
+
     # Contract commands
     "contract.gen_start": "Generating DSL contract",
     "contract.gen_success": "DSL contract generated successfully",

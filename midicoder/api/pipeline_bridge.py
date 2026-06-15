@@ -231,6 +231,14 @@ class PipelineBridge:
             from midicoder.pipeline.commands.brief import get_revision_diff_for_api
             rev_num = kwargs.get("revision_number", 1)
             return _sync_wrap(lambda: get_revision_diff_for_api(project_cwd, version, rev_num))
+        elif sub == "clarify":
+            from midicoder.pipeline.commands.brief import clarify_brief_for_api
+            answers = kwargs.get("answers", [])
+            re_analyze = kwargs.get("re_analyze", True)
+            language = kwargs.get("language", "vi")
+            return _sync_wrap(
+                lambda: clarify_brief_for_api(project_cwd, version, answers, re_analyze, language)
+            )
         return _not_implemented("brief", sub)
 
     def _dispatch_contract(self, sub: str, kwargs) -> Dict[str, Any]:
