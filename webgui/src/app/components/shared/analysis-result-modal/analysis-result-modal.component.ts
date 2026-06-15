@@ -613,7 +613,7 @@ interface SectionOpenState {
                       </p>
                       <p class="ambiguity-question">{{ amb.question }}</p>
                       @if (amb.recommend) {
-                        <p class="ambiguity-recommend">💡 {{ amb.recommend }}</p>
+                        <p class="ambiguity-recommend"><i class="fa-solid fa-lightbulb"></i> {{ amb.recommend }}</p>
                       }
                     </div>
                   }
@@ -652,13 +652,13 @@ interface SectionOpenState {
                           }
                         </div>
                         @if (clarificationAnswers[amb.id || amb.summary]?.trim()) {
-                          <span class="answered-check">✓</span>
+                          <span class="answered-check"><i class="fa-solid fa-check"></i></span>
                         }
                       </div>
                       <p class="clarify-question">{{ amb.question }}</p>
                       @if (amb.recommend) {
                         <div class="clarify-recommend-row">
-                          <p class="clarify-recommend-text">💡 {{ amb.recommend }}</p>
+                          <p class="clarify-recommend-text"><i class="fa-solid fa-lightbulb"></i> {{ amb.recommend }}</p>
                           <button class="btn-use-recommend" (click)="useRecommendation(amb.id || amb.summary)">
                             {{ 'brief.useRecommend' | i18n }}
                           </button>

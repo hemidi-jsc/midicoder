@@ -152,7 +152,7 @@ export interface StreamMessage {
               <!-- Raw Request -->
               <div class="payload-section">
                 <button class="section-toggle" (click)="sections.rawRequest = !sections.rawRequest">
-                  <span class="toggle-icon">{{ sections.rawRequest ? '▾' : '▸' }}</span>
+                  <span class="toggle-icon"><i class="fa-solid fa-chevron-down" [class.expanded]="sections.rawRequest"></i></span>
                   <i class="fa-solid fa-paper-plane" style="color:#58a6ff;font-size:0.7rem"></i>
                   {{ 'analyze.payload.rawRequest' | i18n }}
                   <span class="section-size">
@@ -173,7 +173,7 @@ export interface StreamMessage {
               <!-- Raw Response -->
               <div class="payload-section">
                 <button class="section-toggle" (click)="sections.rawResponse = !sections.rawResponse">
-                  <span class="toggle-icon">{{ sections.rawResponse ? '▾' : '▸' }}</span>
+                  <span class="toggle-icon"><i class="fa-solid fa-chevron-down" [class.expanded]="sections.rawResponse"></i></span>
                   <i class="fa-solid fa-reply" style="color:#3fb950;font-size:0.7rem"></i>
                   {{ 'analyze.payload.rawResponse' | i18n }}
                   <span class="section-size">
@@ -194,7 +194,7 @@ export interface StreamMessage {
               <!-- Token Stats -->
               <div class="payload-section">
                 <button class="section-toggle" (click)="sections.tokenStats = !sections.tokenStats">
-                  <span class="toggle-icon">{{ sections.tokenStats ? '▾' : '▸' }}</span>
+                  <span class="toggle-icon"><i class="fa-solid fa-chevron-down" [class.expanded]="sections.tokenStats"></i></span>
                   <i class="fa-solid fa-chart-pie" style="color:#d2a83a;font-size:0.7rem"></i>
                   {{ 'analyze.payload.tokenStats' | i18n }}
                 </button>
@@ -587,6 +587,10 @@ export interface StreamMessage {
       color: #fc6767;
       font-size: 0.7rem;
       flex-shrink: 0;
+    }
+    .toggle-icon i.expanded {
+      transform: rotate(180deg);
+      transition: transform 0.2s;
     }
 
     .section-size {

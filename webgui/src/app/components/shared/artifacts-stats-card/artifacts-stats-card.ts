@@ -384,8 +384,14 @@ export class ArtifactsStatsCardComponent {
   };
 
   isDone(stage: 'brief' | 'contract' | 'ir' | 'code'): boolean {
-    const val = this.data.pipeline[stage];
-    return val !== 'none' && val !== 'pending' && val !== '';
+    // Dựa vào có data thật thay vì pipeline metadata (có thể stale)
+    switch (stage) {
+      case 'brief': return this.data.briefs.count > 0;
+      case 'contract': return this.data.contracts.count > 0;
+      case 'ir': return this.data.ir.operations > 0 || this.data.ir.entities > 0;
+      case 'code': return this.data.code.total_files > 0;
+      default: return false;
+    }
   }
 
   /** Convert categories object to key-value array for template iteration */

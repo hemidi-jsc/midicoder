@@ -64,7 +64,7 @@ import type { UpdateStatus } from './core/api.types';
                 >
                   {{ 'update.changelog' | i18n }}
                 </a>
-                <span class="header-separator">·</span>
+                <span class="header-separator"><i class="fa-solid fa-circle"></i></span>
                 <a
                   [attr.href]="docsGettingStartedUrl"
                   target="_blank"
@@ -102,9 +102,9 @@ import type { UpdateStatus } from './core/api.types';
                       >
                         <div class="step-circle">
                           @if (step.state().status === 'complete') {
-                            <span class="step-check">✓</span>
+                            <span class="step-check"><i class="fa-solid fa-check"></i></span>
                           } @else if (step.state().status === 'in_progress') {
-                            <span class="step-spinner">◌</span>
+                            <span class="step-spinner"><i class="fa-solid fa-spinner fa-spin"></i></span>
                           } @else {
                             <span class="step-number">{{ step.number }}</span>
                           }
@@ -134,7 +134,7 @@ import type { UpdateStatus } from './core/api.types';
             <span style="font-size:0.9rem;font-weight:500;"><i class="fa-solid fa-party-horn"></i> {{ 'update.banner' | i18n }} <strong>v{{ updateStatus.latest_version }}</strong> {{ 'update.currentVersion' | i18n:{current: updateStatus.current_version} }}</span>
             <a [attr.href]="updateStatus.download_url" target="_blank" rel="noopener noreferrer" style="color:#fff;text-decoration:underline;cursor:pointer;font-size:0.85rem;margin-left:4px;">{{ 'update.changelog' | i18n }}</a>
             <button (click)="handleUpgrade()" style="background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.6);color:#fff;padding:5px 16px;border-radius:4px;cursor:pointer;font-size:0.85rem;font-weight:600;transition:background 0.2s;" title="{{ 'update.upgradeTitle' | i18n }}">
-              ⬆ {{ 'update.upgrade' | i18n }}
+              <i class="fa-solid fa-arrow-up"></i> {{ 'update.upgrade' | i18n }}
             </button>
           </div>
         }

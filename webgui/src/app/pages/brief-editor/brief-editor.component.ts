@@ -345,7 +345,7 @@ interface SectionOpenState {
                   <span class="diff-modal-summary">{{ diffData.diff_summary }}</span>
                 }
               </div>
-              <button class="diff-modal-close" (click)="closeDiffModal()">✕</button>
+              <button class="diff-modal-close" (click)="closeDiffModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="diff-modal-stats">
               @if (diffData.stats) {
@@ -399,8 +399,8 @@ interface SectionOpenState {
         <div class="clarify-complete-overlay">
           <div class="clarify-complete-modal">
             <div class="clarify-complete-header">
-              <h3 class="clarify-complete-title">{{ 'brief.clarifyCompleteTitle' | i18n }}</h3>
-              <button class="clarify-complete-close" (click)="closeClarifyCompleteModal()">✕</button>
+              <h3 class="clarify-complete-title"><i class="fa-solid fa-circle-check"></i> {{ 'brief.clarifyCompleteTitle' | i18n }}</h3>
+              <button class="clarify-complete-close" (click)="closeClarifyCompleteModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="clarify-complete-body">
               <p class="clarify-complete-round">{{ 'brief.clarifyCompleteRound' | i18n: {round: _clarifyResult?.round || 1, count: _clarifyResult?.clarification_count || 0} }}</p>
@@ -423,8 +423,8 @@ interface SectionOpenState {
         <div class="max-rounds-overlay">
           <div class="max-rounds-modal">
             <div class="max-rounds-header">
-              <h3 class="max-rounds-title">{{ 'brief.maxRoundsDialog' | i18n }}</h3>
-              <button class="max-rounds-close" (click)="showMaxRoundsDialog = false">✕</button>
+              <h3 class="max-rounds-title"><i class="fa-solid fa-triangle-exclamation"></i> {{ 'brief.maxRoundsDialog' | i18n }}</h3>
+              <button class="max-rounds-close" (click)="showMaxRoundsDialog = false"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="max-rounds-body">
               <p class="max-rounds-desc">{{ 'brief.maxRoundsDesc' | i18n }}</p>

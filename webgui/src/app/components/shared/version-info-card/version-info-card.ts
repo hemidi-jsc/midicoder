@@ -31,7 +31,7 @@ export interface VersionMetadata {
     <div class="info-card">
       <div class="card-header">
         <h3 class="card-title">{{ 'version.heading' | i18n }}</h3>
-        <a [href]="docsUrl" target="_blank" rel="noopener noreferrer" class="help-icon" attr.title="{{ 'version.helpTitle' | i18n }}">❓</a>
+        <a [href]="docsUrl" target="_blank" rel="noopener noreferrer" class="help-icon" attr.title="{{ 'version.helpTitle' | i18n }}"><i class="fa-solid fa-circle-question"></i></a>
       </div>
 
       @if (!version) {

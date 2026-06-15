@@ -119,17 +119,11 @@ def _collect_brief_stats(version: str) -> Dict[str, Any]:
             if count == 0:
                 return result
 
-            # Get the main brief (type='working' or latest)
+            # Get the main brief (latest by id)
             brief = conn.execute(
-                "SELECT * FROM briefs WHERE version = ? AND type = 'working' ORDER BY id DESC LIMIT 1",
+                "SELECT * FROM briefs WHERE version = ? ORDER BY id DESC LIMIT 1",
                 (version,),
             ).fetchone()
-
-            if not brief:
-                brief = conn.execute(
-                    "SELECT * FROM briefs WHERE version = ? ORDER BY id DESC LIMIT 1",
-                    (version,),
-                ).fetchone()
 
             if brief:
                 b = dict(brief)
