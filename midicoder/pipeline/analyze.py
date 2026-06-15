@@ -90,10 +90,11 @@ def analyze_brief_with_llm_sync(
     brief_content: str,
     domain: str = "default",
     brief_id: str = "",
+    language: str = "vi",
 ) -> BriefAnalysis:
     """
     Phân tích brief bằng LLM — domain explicit (KHÔNG gọi LLM để detect domain).
-    
+
     Domain lấy từ projects.db field `domain` của active project.
     LLM config lấy từ settings.db (global-level).
 
@@ -101,6 +102,7 @@ def analyze_brief_with_llm_sync(
         brief_content: Nội dung brief
         domain: Domain explicit từ projects.db (default='default')
         brief_id: Brief ID
+        language: Mã ngôn ngữ (vi, en) — inject vào prompt template
 
     Returns:
         BriefAnalysis với json_data, text_summary, domain, confidence
@@ -117,9 +119,9 @@ def analyze_brief_with_llm_sync(
 
     # Load prompt template theo domain
     try:
-        system_prompt = get_domain_prompt(final_domain)
+        system_prompt = get_domain_prompt(final_domain, language=language)
     except Exception:
-        system_prompt = get_domain_prompt("default")
+        system_prompt = get_domain_prompt("default", language=language)
 
     # Query codebase context (optional)
     context_result = None
@@ -168,10 +170,11 @@ async def analyze_brief_with_llm_stream(
     brief_content: str,
     domain: str = "default",
     brief_id: str = "",
+    language: str = "vi",
 ) -> AsyncIterator[StreamChunk]:
     """
     Phân tích brief bằng LLM với streaming — phát từng chunk qua WebSocket.
-    
+
     Message types:
     - {"type": "system_prompt", "data": "..."} — prompt template đã dùng
     - {"type": "llm_config", "data": {"model": "...", "temperature": ...}} — LLM config dùng
@@ -184,6 +187,7 @@ async def analyze_brief_with_llm_stream(
         brief_content: Nội dung brief
         domain: Domain từ projects.db
         brief_id: Brief ID
+        language: Mã ngôn ngữ (vi, en) — inject vào prompt template
 
     Yields:
         StreamChunk cho từng message type
@@ -200,9 +204,9 @@ async def analyze_brief_with_llm_stream(
 
         # Load prompt
         try:
-            system_prompt = get_domain_prompt(final_domain)
+            system_prompt = get_domain_prompt(final_domain, language=language)
         except Exception:
-            system_prompt = get_domain_prompt("default")
+            system_prompt = get_domain_prompt("default", language=language)
 
         # Send metadata
         yield StreamChunk(
@@ -297,10 +301,7 @@ async def analyze_brief_with_llm_stream(
 
         latency_ms = int((time.time() - start_time) * 1000)
 
-        # Parse final JSON
-        _, json_data = _parse_llm_response(accumulated)
-        
-        # Get usage from last chunk
+        # Get usage from last chunk — many providers (Ollama, OpenRouter) don't return it
         tokens_used = 0
         prompt_tokens = 0
         completion_tokens = 0
@@ -314,8 +315,23 @@ async def analyze_brief_with_llm_stream(
                 completion_tokens = usage.get("completion_tokens", 0)
             tokens_used = prompt_tokens + completion_tokens
 
+        # Fallback: estimate tokens via tiktoken when provider doesn't return usage
+        if tokens_used == 0:
+            try:
+                from midicoder.pipeline.llm import count_tokens
+                pt = count_tokens(system_prompt + user_message_content, llm_config.model)
+                ct = count_tokens(accumulated, llm_config.model)
+                prompt_tokens = pt
+                completion_tokens = ct
+                tokens_used = pt + ct
+            except Exception:
+                pass  # keep zeros if tiktoken also fails
+
         # Estimate cost (approximate, based on common pricing)
         cost = (prompt_tokens * 0.001 + completion_tokens * 0.002) / 1000  # USD per 1K tokens
+
+        # Parse final JSON
+        _, json_data = _parse_llm_response(accumulated)
 
         yield StreamChunk(
             type="complete",

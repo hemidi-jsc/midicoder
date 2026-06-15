@@ -11,9 +11,24 @@ import { I18nPipe } from '../../../core/i18n.pipe';
 
 export interface AmbiguityItem {
   id?: string;
-  type: string;
-  description: string;
-  source_text?: string;
+  summary: string;
+  question: string;
+  recommend: string;
+}
+
+interface SectionOpenState {
+  entities: boolean;
+  commands: boolean;
+  queries: boolean;
+  events: boolean;
+  ui_components: boolean;
+  value_objects: boolean;
+  guards: boolean;
+  workflows: boolean;
+  aggregates: boolean;
+  roles: boolean;
+  permissions: boolean;
+  state_machines: boolean;
 }
 
 @Component({
@@ -101,17 +116,14 @@ export interface AmbiguityItem {
                         [style.width.%]="analysisResult?.metadata?.confidence * 100"
                       ></div>
                     </div>
-                    <span class="confidence-pct"
-                          [class.conf-high]="analysisResult?.metadata?.confidence >= 0.8"
-                          [class.conf-mid]="analysisResult?.metadata?.confidence >= 0.5 && analysisResult?.metadata?.confidence < 0.8"
-                          [class.conf-low]="analysisResult?.metadata?.confidence < 0.5">
+                    <span class="confidence-pct">
                       {{ (analysisResult?.metadata?.confidence * 100).toFixed(0) }}%
                     </span>
                   </div>
                 </div>
               </div>
 
-              <!-- Resource stats grid: 5 cards -->
+              <!-- Resource stats grid: 12 cards -->
               <div class="resource-stats">
                 <div class="stat-card">
                   <p class="stat-num color-blue">{{ analysisResult?.metadata?.entities || 0 }}</p>
@@ -132,6 +144,34 @@ export interface AmbiguityItem {
                 <div class="stat-card">
                   <p class="stat-num color-teal">{{ analysisResult?.metadata?.ui_components || 0 }}</p>
                   <p class="stat-label">{{ 'brief.uiComponents' | i18n }}</p>
+                </div>
+                <div class="stat-card">
+                  <p class="stat-num color-blue">{{ analysisResult?.metadata?.value_objects || 0 }}</p>
+                  <p class="stat-label">{{ 'brief.valueObjects' | i18n }}</p>
+                </div>
+                <div class="stat-card">
+                  <p class="stat-num color-orange">{{ analysisResult?.metadata?.guards || 0 }}</p>
+                  <p class="stat-label">{{ 'brief.guards' | i18n }}</p>
+                </div>
+                <div class="stat-card">
+                  <p class="stat-num color-cyan">{{ analysisResult?.metadata?.workflows || 0 }}</p>
+                  <p class="stat-label">{{ 'brief.workflows' | i18n }}</p>
+                </div>
+                <div class="stat-card">
+                  <p class="stat-num color-purple">{{ analysisResult?.metadata?.aggregates || 0 }}</p>
+                  <p class="stat-label">{{ 'brief.aggregates' | i18n }}</p>
+                </div>
+                <div class="stat-card">
+                  <p class="stat-num color-teal">{{ analysisResult?.metadata?.roles || 0 }}</p>
+                  <p class="stat-label">{{ 'brief.roles' | i18n }}</p>
+                </div>
+                <div class="stat-card">
+                  <p class="stat-num color-blue">{{ analysisResult?.metadata?.permissions || 0 }}</p>
+                  <p class="stat-label">{{ 'brief.permissions' | i18n }}</p>
+                </div>
+                <div class="stat-card">
+                  <p class="stat-num color-orange">{{ analysisResult?.metadata?.state_machines || 0 }}</p>
+                  <p class="stat-label">{{ 'brief.stateMachines' | i18n }}</p>
                 </div>
               </div>
 
@@ -312,6 +352,251 @@ export interface AmbiguityItem {
                     }
                   </div>
                 }
+
+                <!-- Value Objects -->
+                @if (analysisResult?.analysis?.value_objects?.length) {
+                  <div class="collapsible-section">
+                    <button class="section-toggle" (click)="toggleSection('value_objects')">
+                      <span class="section-title">
+                        <i class="fa-solid fa-gem"></i> {{ 'brief.valueObjects' | i18n }}
+                        <span class="section-count">({{ analysisResult.analysis.value_objects.length }})</span>
+                      </span>
+                      <i class="fa-solid fa-chevron-down" [class.open]="sectionOpen.value_objects"></i>
+                    </button>
+                    @if (sectionOpen.value_objects) {
+                      <div class="section-table-wrap">
+                        <table class="section-table">
+                          <thead>
+                            <tr>
+                              <th>{{ 'brief.name' | i18n }}</th>
+                              <th>{{ 'brief.description' | i18n }}</th>
+                              <th>Fields</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (vo of analysisResult.analysis.value_objects; track vo.name) {
+                              <tr>
+                                <td class="cell-name color-blue">{{ vo.name }}</td>
+                                <td>{{ vo.description || '—' }}</td>
+                                <td class="cell-muted">{{ (vo.fields || []).join(', ') || '—' }}</td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                  </div>
+                }
+
+                <!-- Guards -->
+                @if (analysisResult?.analysis?.guards?.length) {
+                  <div class="collapsible-section">
+                    <button class="section-toggle" (click)="toggleSection('guards')">
+                      <span class="section-title">
+                        <i class="fa-solid fa-shield-halved"></i> {{ 'brief.guards' | i18n }}
+                        <span class="section-count">({{ analysisResult.analysis.guards.length }})</span>
+                      </span>
+                      <i class="fa-solid fa-chevron-down" [class.open]="sectionOpen.guards"></i>
+                    </button>
+                    @if (sectionOpen.guards) {
+                      <div class="section-table-wrap">
+                        <table class="section-table">
+                          <thead>
+                            <tr>
+                              <th>{{ 'brief.name' | i18n }}</th>
+                              <th>{{ 'brief.target' | i18n }}</th>
+                              <th>{{ 'brief.description' | i18n }}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (g of analysisResult.analysis.guards; track g.name) {
+                              <tr>
+                                <td class="cell-name color-orange">{{ g.name }}</td>
+                                <td class="cell-muted">{{ g.target || '—' }}</td>
+                                <td>{{ g.description || '—' }}</td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                  </div>
+                }
+
+                <!-- Workflows -->
+                @if (analysisResult?.analysis?.workflows?.length) {
+                  <div class="collapsible-section">
+                    <button class="section-toggle" (click)="toggleSection('workflows')">
+                      <span class="section-title">
+                        <i class="fa-solid fa-diagram-project"></i> {{ 'brief.workflows' | i18n }}
+                        <span class="section-count">({{ analysisResult.analysis.workflows.length }})</span>
+                      </span>
+                      <i class="fa-solid fa-chevron-down" [class.open]="sectionOpen.workflows"></i>
+                    </button>
+                    @if (sectionOpen.workflows) {
+                      <div class="section-table-wrap">
+                        <table class="section-table">
+                          <thead>
+                            <tr>
+                              <th>{{ 'brief.name' | i18n }}</th>
+                              <th>Trigger</th>
+                              <th>{{ 'brief.description' | i18n }}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (w of analysisResult.analysis.workflows; track w.name) {
+                              <tr>
+                                <td class="cell-name color-cyan">{{ w.name }}</td>
+                                <td class="cell-muted">{{ w.trigger || '—' }}</td>
+                                <td>{{ w.description || '—' }}</td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                  </div>
+                }
+
+                <!-- Aggregates -->
+                @if (analysisResult?.analysis?.aggregates?.length) {
+                  <div class="collapsible-section">
+                    <button class="section-toggle" (click)="toggleSection('aggregates')">
+                      <span class="section-title">
+                        <i class="fa-solid fa-sitemap"></i> {{ 'brief.aggregates' | i18n }}
+                        <span class="section-count">({{ analysisResult.analysis.aggregates.length }})</span>
+                      </span>
+                      <i class="fa-solid fa-chevron-down" [class.open]="sectionOpen.aggregates"></i>
+                    </button>
+                    @if (sectionOpen.aggregates) {
+                      <div class="section-table-wrap">
+                        <table class="section-table">
+                          <thead>
+                            <tr>
+                              <th>{{ 'brief.name' | i18n }}</th>
+                              <th>{{ 'brief.rootEntity' | i18n }}</th>
+                              <th>{{ 'brief.memberEntities' | i18n }}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (a of analysisResult.analysis.aggregates; track a.name) {
+                              <tr>
+                                <td class="cell-name color-purple">{{ a.name }}</td>
+                                <td class="cell-muted">{{ a.root_entity || '—' }}</td>
+                                <td>{{ (a.member_entities || []).join(', ') || '—' }}</td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                  </div>
+                }
+
+                <!-- Roles -->
+                @if (analysisResult?.analysis?.roles?.length) {
+                  <div class="collapsible-section">
+                    <button class="section-toggle" (click)="toggleSection('roles')">
+                      <span class="section-title">
+                        <i class="fa-solid fa-users"></i> {{ 'brief.roles' | i18n }}
+                        <span class="section-count">({{ analysisResult.analysis.roles.length }})</span>
+                      </span>
+                      <i class="fa-solid fa-chevron-down" [class.open]="sectionOpen.roles"></i>
+                    </button>
+                    @if (sectionOpen.roles) {
+                      <div class="section-table-wrap">
+                        <table class="section-table">
+                          <thead>
+                            <tr>
+                              <th>{{ 'brief.name' | i18n }}</th>
+                              <th>{{ 'brief.description' | i18n }}</th>
+                              <th>Permissions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (r of analysisResult.analysis.roles; track r.name) {
+                              <tr>
+                                <td class="cell-name color-teal">{{ r.name }}</td>
+                                <td>{{ r.description || '—' }}</td>
+                                <td class="cell-muted">{{ (r.permissions || []).join(', ') || '—' }}</td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                  </div>
+                }
+
+                <!-- Permissions -->
+                @if (analysisResult?.analysis?.permissions?.length) {
+                  <div class="collapsible-section">
+                    <button class="section-toggle" (click)="toggleSection('permissions')">
+                      <span class="section-title">
+                        <i class="fa-solid fa-key"></i> {{ 'brief.permissions' | i18n }}
+                        <span class="section-count">({{ analysisResult.analysis.permissions.length }})</span>
+                      </span>
+                      <i class="fa-solid fa-chevron-down" [class.open]="sectionOpen.permissions"></i>
+                    </button>
+                    @if (sectionOpen.permissions) {
+                      <div class="section-table-wrap">
+                        <table class="section-table">
+                          <thead>
+                            <tr>
+                              <th>{{ 'brief.name' | i18n }}</th>
+                              <th>Resource</th>
+                              <th>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (p of analysisResult.analysis.permissions; track p.name) {
+                              <tr>
+                                <td class="cell-name color-blue">{{ p.name }}</td>
+                                <td class="cell-muted">{{ p.resource || '—' }}</td>
+                                <td>{{ p.action || '—' }}</td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                  </div>
+                }
+
+                <!-- State Machines -->
+                @if (analysisResult?.analysis?.state_machines?.length) {
+                  <div class="collapsible-section">
+                    <button class="section-toggle" (click)="toggleSection('state_machines')">
+                      <span class="section-title">
+                        <i class="fa-solid fa-rotate"></i> {{ 'brief.stateMachines' | i18n }}
+                        <span class="section-count">({{ analysisResult.analysis.state_machines.length }})</span>
+                      </span>
+                      <i class="fa-solid fa-chevron-down" [class.open]="sectionOpen.state_machines"></i>
+                    </button>
+                    @if (sectionOpen.state_machines) {
+                      <div class="section-table-wrap">
+                        <table class="section-table">
+                          <thead>
+                            <tr>
+                              <th>{{ 'brief.name' | i18n }}</th>
+                              <th>Entity</th>
+                              <th>States</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (sm of analysisResult.analysis.state_machines; track sm.name) {
+                              <tr>
+                                <td class="cell-name color-orange">{{ sm.name }}</td>
+                                <td class="cell-muted">{{ sm.entity || '—' }}</td>
+                                <td>{{ (sm.states || []).join(', ') || '—' }}</td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                  </div>
+                }
               </div>
 
               <!-- Ambiguities list -->
@@ -321,13 +606,14 @@ export interface AmbiguityItem {
                     <i class="fa-solid fa-triangle-exclamation"></i>
                     {{ 'brief.needClarify' | i18n }} ({{ analysisResult.analysis.ambiguities.length }})
                   </h3>
-                  @for (amb of analysisResult.analysis.ambiguities; track amb.id || amb.description) {
+                  @for (amb of analysisResult.analysis.ambiguities; track amb.id || amb.summary) {
                     <div class="ambiguity-item">
                       <p class="ambiguity-desc">
-                        <strong>{{ amb.type }}:</strong> {{ amb.description }}
+                        <strong>{{ amb.summary }}</strong>
                       </p>
-                      @if (amb.source_text) {
-                        <p class="ambiguity-source">"— {{ amb.source_text }}"</p>
+                      <p class="ambiguity-question">{{ amb.question }}</p>
+                      @if (amb.recommend) {
+                        <p class="ambiguity-recommend">💡 {{ amb.recommend }}</p>
                       }
                     </div>
                   }
@@ -350,28 +636,28 @@ export interface AmbiguityItem {
 
                 <!-- Ambiguity cards with textareas -->
                 <div class="clarify-cards">
-                  @for (amb of clarificationAmbiguities; track amb.id || amb.description) {
+                  @for (amb of clarificationAmbiguities; track amb.id || amb.summary) {
                     <div
                       class="clarify-card"
-                      [class.answered]="clarificationAnswers[amb.id || amb.description]?.trim()"
+                      [class.answered]="clarificationAnswers[amb.id || amb.summary]?.trim()"
                     >
                       <div class="clarify-card-header">
-                        <span
-                          class="ambiguity-badge"
-                          [class]="getAmbiguityClass(amb.type)"
-                        >
-                          {{ amb.type }}
-                        </span>
-                        @if (clarificationAnswers[amb.id || amb.description]?.trim()) {
+                        <span class="clarify-card-title">{{ amb.summary }}</span>
+                        @if (clarificationAnswers[amb.id || amb.summary]?.trim()) {
                           <span class="answered-check">✓</span>
                         }
                       </div>
-                      <p class="clarify-question">{{ amb.description }}</p>
-                      @if (amb.source_text) {
-                        <p class="clarify-source">"— {{ amb.source_text }}"</p>
+                      <p class="clarify-question">{{ amb.question }}</p>
+                      @if (amb.recommend) {
+                        <div class="clarify-recommend-row">
+                          <p class="clarify-recommend-text">💡 {{ amb.recommend }}</p>
+                          <button class="btn-use-recommend" (click)="useRecommendation(amb.id || amb.summary)">
+                            {{ 'brief.useRecommend' | i18n }}
+                          </button>
+                        </div>
                       }
                       <textarea
-                        [(ngModel)]="clarificationAnswers[amb.id || amb.description]"
+                        [(ngModel)]="clarificationAnswers[amb.id || amb.summary]"
                         placeholder="{{ 'brief.answerPlaceholder' | i18n }}"
                         rows="2"
                         class="clarify-textarea"
@@ -665,7 +951,7 @@ export interface AmbiguityItem {
     /* ===== Resource stats ===== */
     .resource-stats {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 8px;
       margin-bottom: 14px;
     }
@@ -816,14 +1102,21 @@ export interface AmbiguityItem {
 
     .ambiguity-desc {
       font-size: 0.75rem;
-      color: rgba(255, 255, 255, 0.7);
+      color: rgba(255, 255, 255, 0.85);
       margin: 0;
+      font-weight: 500;
     }
 
-    .ambiguity-source {
+    .ambiguity-question {
       font-size: 0.6875rem;
-      color: rgba(255, 255, 255, 0.4);
-      margin: 4px 0 0 0;
+      color: rgba(255, 255, 255, 0.6);
+      margin: 3px 0 0 0;
+    }
+
+    .ambiguity-recommend {
+      font-size: 0.65rem;
+      color: rgba(63, 185, 80, 0.9);
+      margin: 3px 0 0 0;
     }
 
     /* ===== Clarify panel ===== */
@@ -873,28 +1166,10 @@ export interface AmbiguityItem {
       margin-bottom: 6px;
     }
 
-    .ambiguity-badge {
-      font-size: 0.6875rem;
+    .clarify-card-title {
+      font-size: 0.8125rem;
       font-weight: 600;
-      padding: 1px 8px;
-    }
-
-    .amb-undefined {
-      background: rgba(248, 81, 73, 0.15);
-      color: #f85149;
-      border: 1px solid rgba(248, 81, 73, 0.25);
-    }
-
-    .amb-missing {
-      background: rgba(210, 168, 58, 0.15);
-      color: #d2a83a;
-      border: 1px solid rgba(210, 168, 58, 0.25);
-    }
-
-    .amb-tech {
-      background: rgba(56, 132, 255, 0.15);
-      color: #58a6ff;
-      border: 1px solid rgba(56, 132, 255, 0.25);
+      color: rgba(255, 255, 255, 0.85);
     }
 
     .answered-check {
@@ -904,16 +1179,45 @@ export interface AmbiguityItem {
     }
 
     .clarify-question {
-      font-size: 0.8125rem;
-      color: rgba(255, 255, 255, 0.8);
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.7);
       margin: 0 0 4px 0;
       line-height: 1.4;
     }
 
-    .clarify-source {
+    .clarify-recommend-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      padding: 4px 8px;
+      background: rgba(63, 185, 80, 0.06);
+      border: 1px dashed rgba(63, 185, 80, 0.2);
+    }
+
+    .clarify-recommend-text {
       font-size: 0.6875rem;
-      color: rgba(255, 255, 255, 0.35);
-      margin: 0 0 6px 0;
+      color: rgba(63, 185, 80, 0.9);
+      margin: 0;
+      font-style: italic;
+      flex: 1;
+    }
+
+    .btn-use-recommend {
+      font-size: 0.6875rem;
+      padding: 2px 8px;
+      background: rgba(63, 185, 80, 0.15);
+      color: #3fb950;
+      border: 1px solid rgba(63, 185, 80, 0.3);
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+
+    .btn-use-recommend:hover {
+      background: rgba(63, 185, 80, 0.25);
     }
 
     .clarify-textarea {
@@ -1072,12 +1376,19 @@ export class AnalysisResultModalComponent implements AfterViewInit {
   }
 
   // === Collapsible sections ===
-  sectionOpen = {
+  sectionOpen: SectionOpenState = {
     entities: false,
     commands: false,
     queries: false,
     events: false,
-    ui_components: false
+    ui_components: false,
+    value_objects: false,
+    guards: false,
+    workflows: false,
+    aggregates: false,
+    roles: false,
+    permissions: false,
+    state_machines: false,
   };
 
   // === Clarification state ===
@@ -1086,7 +1397,7 @@ export class AnalysisResultModalComponent implements AfterViewInit {
 
   get answeredCount(): number {
     return this.clarificationAmbiguities.filter(amb => {
-      const key = amb.id || amb.description;
+      const key = amb.id || amb.summary;
       return this.clarificationAnswers[key]?.trim();
     }).length;
   }
@@ -1099,7 +1410,7 @@ export class AnalysisResultModalComponent implements AfterViewInit {
   isSubmitting = false;
 
   // === Methods ===
-  toggleSection(key: 'entities' | 'commands' | 'queries' | 'events' | 'ui_components'): void {
+  toggleSection(key: keyof SectionOpenState): void {
     this.sectionOpen[key] = !this.sectionOpen[key];
   }
 
@@ -1124,12 +1435,12 @@ export class AnalysisResultModalComponent implements AfterViewInit {
     this.isSubmitting = true;
 
     const answers = this.clarificationAmbiguities.map(amb => {
-      const key = amb.id || amb.description;
+      const key = amb.id || amb.summary;
       return {
         id: amb.id,
-        type: amb.type,
-        description: amb.description,
-        source_text: amb.source_text,
+        summary: amb.summary,
+        question: amb.question,
+        recommend: amb.recommend,
         answer: this.clarificationAnswers[key] || ''
       };
     });
@@ -1138,16 +1449,18 @@ export class AnalysisResultModalComponent implements AfterViewInit {
     // isSubmitting reset by parent after response
   }
 
+  useRecommendation(key: string): void {
+    const amb = this.clarificationAmbiguities.find(a => (a.id || a.summary) === key);
+    if (amb && amb.recommend) {
+      this.clarificationAnswers[key] = amb.recommend;
+      this.cdr.markForCheck();
+    }
+  }
+
   onClarifyTabClick(): void {
     if (this.activeTab !== 'clarify') {
       this.startClarification();
     }
-  }
-
-  getAmbiguityClass(type: string): string {
-    if (type === 'undefined_behavior') return 'amb-undefined';
-    if (type === 'missing_detail') return 'amb-missing';
-    return 'amb-tech';
   }
 
   closeModal(): void {

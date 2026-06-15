@@ -48,6 +48,7 @@ VI_TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "brief.analyze_start": "Đang phân tích brief",
     "brief.analyze_success": "Đã phân tích brief thành công",
     "brief.analyze_failed": "Phân tích brief thất bại",
+    "brief.analyze_blocked": "Brief status là '{status}', chỉ phân tích được khi status = draft",
     "brief.rewrite_start": "Đang viết lại brief",
     "brief.rewrite_success": "Đã viết lại brief thành công",
     "brief.saved": "Đã lưu brief thành công",
@@ -55,8 +56,11 @@ VI_TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "brief.saveFailed": "Không thể lưu brief",
     "brief.emptyContent": "Brief không được để trống",
     "brief.noActiveProject": "Không có project đang hoạt động",
+    "brief.notFound": "Không tìm thấy brief cho version",
     "brief.freezeError": "Không thể đóng băng brief",
     "brief.freezedMsg": "Brief đã được đóng băng",
+    "brief.freezedBlocked": "Brief đã được đóng băng, không thể chỉnh sửa",
+    "brief.revisionNotFound": "Không tìm thấy revision",
     
     # Contract commands
     "contract.gen_start": "Đang tạo hợp đồng DSL",
@@ -141,6 +145,7 @@ EN_TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "brief.analyze_start": "Analyzing brief",
     "brief.analyze_success": "Brief analyzed successfully",
     "brief.analyze_failed": "Brief analysis failed",
+    "brief.analyze_blocked": "Brief status is '{status}', can only analyze when status = draft",
     "brief.rewrite_start": "Rewriting brief",
     "brief.rewrite_success": "Brief rewritten successfully",
     "brief.saved": "Brief saved successfully",
@@ -148,8 +153,11 @@ EN_TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "brief.saveFailed": "Failed to save brief",
     "brief.emptyContent": "Brief content cannot be empty",
     "brief.noActiveProject": "No active project",
+    "brief.notFound": "Brief not found for version",
     "brief.freezeError": "Failed to freeze brief",
     "brief.freezedMsg": "Brief has been freezed",
+    "brief.freezedBlocked": "Brief is already freezed, cannot edit",
+    "brief.revisionNotFound": "Revision not found",
     
     # Contract commands
     "contract.gen_start": "Generating DSL contract",

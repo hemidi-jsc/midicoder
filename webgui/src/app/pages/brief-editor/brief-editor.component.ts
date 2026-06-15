@@ -27,6 +27,13 @@ interface SectionOpenState {
   queries: boolean;
   events: boolean;
   ui_components: boolean;
+  value_objects: boolean;
+  guards: boolean;
+  workflows: boolean;
+  aggregates: boolean;
+  roles: boolean;
+  permissions: boolean;
+  state_machines: boolean;
 }
 
 @Component({
@@ -248,12 +255,26 @@ interface SectionOpenState {
                 @let queries = analysisResult.analysis.queries || [];
                 @let events = analysisResult.analysis.events || [];
                 @let uiComponents = analysisResult.analysis.ui_components || [];
+                @let valueObjects = analysisResult.analysis.value_objects || [];
+                @let guards = analysisResult.analysis.guards || [];
+                @let workflows = analysisResult.analysis.workflows || [];
+                @let aggregates = analysisResult.analysis.aggregates || [];
+                @let roles = analysisResult.analysis.roles || [];
+                @let permissions = analysisResult.analysis.permissions || [];
+                @let stateMachines = analysisResult.analysis.state_machines || [];
                 <div class="analysis-stats-row">
                   <span class="stat-item"><span class="stat-val">{{ entities.length }}</span> <span class="stat-label">{{ 'brief.entities' | i18n }}</span></span>
                   <span class="stat-item"><span class="stat-val">{{ commands.length }}</span> <span class="stat-label">{{ 'brief.commands' | i18n }}</span></span>
                   <span class="stat-item"><span class="stat-val">{{ queries.length }}</span> <span class="stat-label">{{ 'brief.queries' | i18n }}</span></span>
                   <span class="stat-item"><span class="stat-val">{{ events.length }}</span> <span class="stat-label">{{ 'brief.events' | i18n }}</span></span>
                   <span class="stat-item"><span class="stat-val">{{ uiComponents.length }}</span> <span class="stat-label">{{ 'brief.uiComponents' | i18n }}</span></span>
+                  <span class="stat-item"><span class="stat-val">{{ valueObjects.length }}</span> <span class="stat-label">{{ 'brief.valueObjects' | i18n }}</span></span>
+                  <span class="stat-item"><span class="stat-val">{{ guards.length }}</span> <span class="stat-label">{{ 'brief.guards' | i18n }}</span></span>
+                  <span class="stat-item"><span class="stat-val">{{ workflows.length }}</span> <span class="stat-label">{{ 'brief.workflows' | i18n }}</span></span>
+                  <span class="stat-item"><span class="stat-val">{{ aggregates.length }}</span> <span class="stat-label">{{ 'brief.aggregates' | i18n }}</span></span>
+                  <span class="stat-item"><span class="stat-val">{{ roles.length }}</span> <span class="stat-label">{{ 'brief.roles' | i18n }}</span></span>
+                  <span class="stat-item"><span class="stat-val">{{ permissions.length }}</span> <span class="stat-label">{{ 'brief.permissions' | i18n }}</span></span>
+                  <span class="stat-item"><span class="stat-val">{{ stateMachines.length }}</span> <span class="stat-label">{{ 'brief.stateMachines' | i18n }}</span></span>
                 </div>
               }
 
@@ -265,10 +286,10 @@ interface SectionOpenState {
                   </h4>
                   @for (amb of analysisResult.analysis.ambiguities; track $index) {
                     <div class="amb-item">
-                      <span class="amb-type-badge" [class.amb-undefined]="amb.type === 'undefined_behavior'"
-                            [class.amb-missing]="amb.type === 'missing_detail'"
-                            [class.amb-tech]="amb.type === 'tech_gap'">{{ amb.type }}</span>
-                      <p class="amb-desc">{{ amb.description }}</p>
+                      <p class="amb-summary">{{ amb.summary }}</p>
+                      @if (amb.recommend) {
+                        <p class="amb-recommend">💡 {{ amb.recommend }}</p>
+                      }
                     </div>
                   }
                 </div>
@@ -826,30 +847,18 @@ interface SectionOpenState {
       background: rgba(255, 255, 255, 0.02);
       border-left: 2px solid rgba(255, 255, 255, 0.08);
     }
-    .amb-type-badge {
-      display: inline-block;
-      font-size: 0.625rem;
-      padding: 1px 6px;
-      margin-bottom: 4px;
-      font-weight: 600;
-    }
-    .amb-undefined {
-      background: rgba(255, 166, 0, 0.15);
-      color: rgba(255, 166, 0, 0.8);
-    }
-    .amb-missing {
-      background: rgba(255, 82, 82, 0.15);
-      color: rgba(255, 82, 82, 0.8);
-    }
-    .amb-tech {
-      background: rgba(41, 121, 255, 0.15);
-      color: rgba(41, 121, 255, 0.8);
-    }
-    .amb-desc {
+    .amb-summary {
       font-size: 0.75rem;
-      color: rgba(255, 255, 255, 0.55);
-      line-height: 1.45;
+      color: rgba(255, 255, 255, 0.8);
+      font-weight: 500;
       margin: 0;
+      line-height: 1.4;
+    }
+    .amb-recommend {
+      font-size: 0.6875rem;
+      color: rgba(63, 185, 80, 0.8);
+      margin: 3px 0 0 0;
+      font-style: italic;
     }
 
     /* Sidebar footer buttons */
@@ -1057,6 +1066,13 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
     queries: false,
     events: false,
     ui_components: false,
+    value_objects: false,
+    guards: false,
+    workflows: false,
+    aggregates: false,
+    roles: false,
+    permissions: false,
+    state_machines: false,
   };
 
   formatDate(iso: string): string {
@@ -1549,7 +1565,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
     try {
       // Build answers text and append to brief content
       const answersText = this.clarificationAmbiguities
-        .map(amb => `[${amb.type}]: ${this.clarificationAnswers[amb.id] || ''}`)
+        .map(amb => `${amb.summary || ''}: ${this.clarificationAnswers[amb.id || amb.summary] || ''}`)
         .join('\n');
 
       const updatedContent = this.briefContent + '\n\n--- Clarification Answers ---\n' + answersText;

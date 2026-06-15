@@ -154,6 +154,11 @@ class PipelineBridge:
     async def index_reindex(self, paths: Optional[List[str]] = None) -> Dict[str, Any]:
         return await self.execute_command("index", "build")
 
+    async def brief_analyze_stream(self, project_cwd: str, version: str, language: str = "vi"):
+        """SSE streaming — returns async generator of {event, data} dicts."""
+        from midicoder.pipeline.commands.brief import analyze_brief_stream_for_api
+        return analyze_brief_stream_for_api(project_cwd, version, language)
+
     async def runtime_test(
         self, target: str = "all", timeout: int = 30
     ) -> Dict[str, Any]:
@@ -198,11 +203,34 @@ class PipelineBridge:
         return _not_implemented("project", sub)
 
     def _dispatch_brief(self, sub: str, kwargs) -> Dict[str, Any]:
+        project_cwd = kwargs.get("project_cwd", "")
+        version = kwargs.get("version", "v1.0.0")
+
         if sub == "freeze":
             from midicoder.pipeline.commands.brief import freeze_brief
-            version = kwargs.get("version", "v1.0.0")
-            project_cwd = kwargs.get("project_cwd", "")
             return _sync_wrap(lambda: freeze_brief(version, project_cwd))
+        elif sub == "save":
+            from midicoder.pipeline.commands.brief import save_brief
+            content = kwargs.get("brief_content", "")
+            change_desc = kwargs.get("change_description", "Auto-save")
+            return _sync_wrap(lambda: save_brief(project_cwd, version, content, change_desc))
+        elif sub == "analyze":
+            from midicoder.pipeline.commands.brief import analyze_brief_for_api
+            language = kwargs.get("language", "vi")
+            return _sync_wrap(lambda: analyze_brief_for_api(project_cwd, version, language))
+        elif sub == "get":
+            from midicoder.pipeline.commands.brief import get_brief_for_api
+            return _sync_wrap(lambda: get_brief_for_api(project_cwd, version))
+        elif sub == "clarifications":
+            from midicoder.pipeline.commands.brief import get_clarifications_for_api
+            return _sync_wrap(lambda: get_clarifications_for_api(project_cwd, version))
+        elif sub == "revisions":
+            from midicoder.pipeline.commands.brief import get_revisions_for_api
+            return _sync_wrap(lambda: get_revisions_for_api(project_cwd, version))
+        elif sub == "revision-diff":
+            from midicoder.pipeline.commands.brief import get_revision_diff_for_api
+            rev_num = kwargs.get("revision_number", 1)
+            return _sync_wrap(lambda: get_revision_diff_for_api(project_cwd, version, rev_num))
         return _not_implemented("brief", sub)
 
     def _dispatch_contract(self, sub: str, kwargs) -> Dict[str, Any]:

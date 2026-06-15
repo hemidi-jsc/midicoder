@@ -200,27 +200,27 @@ export interface StreamMessage {
                 </button>
                 @if (sections.tokenStats) {
                   <div class="payload-body">
-                    @if (tokenStats) {
+                    @if (_normalizedStats) {
                       <div class="token-stats-grid">
                         <div class="token-stat">
                           <span class="token-label">{{ 'analyze.payload.model' | i18n }}</span>
-                          <span class="token-val">{{ tokenStats.model || llmConfig?.model || 'N/A' }}</span>
+                          <span class="token-val">{{ _normalizedStats.model || llmConfig?.model || 'N/A' }}</span>
                         </div>
                         <div class="token-stat">
                           <span class="token-label">{{ 'analyze.payload.promptTokens' | i18n }}</span>
-                          <span class="token-val">{{ tokenStats.prompt_tokens || 0 }}</span>
+                          <span class="token-val">{{ _normalizedStats.prompt_tokens }}</span>
                         </div>
                         <div class="token-stat">
                           <span class="token-label">{{ 'analyze.payload.completionTokens' | i18n }}</span>
-                          <span class="token-val">{{ tokenStats.completion_tokens || 0 }}</span>
+                          <span class="token-val">{{ _normalizedStats.completion_tokens }}</span>
                         </div>
                         <div class="token-stat">
                           <span class="token-label">{{ 'analyze.payload.totalTokens' | i18n }}</span>
-                          <span class="token-val">{{ tokenStats.tokens_used || 0 }}</span>
+                          <span class="token-val">{{ _normalizedStats.tokens_used }}</span>
                         </div>
                         <div class="token-stat">
                           <span class="token-label">{{ 'analyze.payload.latency' | i18n }}</span>
-                          <span class="token-val">{{ tokenStats.latency_ms || 0 }}ms</span>
+                          <span class="token-val">{{ _normalizedStats.latency_ms }}ms</span>
                         </div>
                         <div class="token-stat">
                           <span class="token-label">{{ 'analyze.payload.estimatedCost' | i18n }}</span>
@@ -788,8 +788,23 @@ export class LlmProgressComponent {
   streamCount = 0;
   sections = { systemPrompt: false, userMessage: false, rawRequest: false, rawResponse: false, tokenStats: false };
 
+  /** Normalize token stats — backend may send keys with or without wrapper */
+  get _normalizedStats(): any {
+    if (!this.tokenStats) return null;
+    // If tokenStats is the complete event wrapper {json_data: ..., prompt_tokens: ...}
+    return {
+      model: this.tokenStats.model || this.tokenStats?.llmConfig?.model || '',
+      prompt_tokens: this.tokenStats.prompt_tokens ?? 0,
+      completion_tokens: this.tokenStats.completion_tokens ?? 0,
+      tokens_used: this.tokenStats.tokens_used ?? 0,
+      latency_ms: this.tokenStats.latency_ms ?? 0,
+      estimated_cost_usd: this.tokenStats.estimated_cost_usd ?? 0,
+    };
+  }
+
   get formattedCost(): string {
-    const val = this.tokenStats?.estimated_cost_usd || 0;
+    const val = this._normalizedStats?.estimated_cost_usd || 0;
+    if (val === 0) return '$0.0000';
     return `$${val.toFixed(4)}`;
   }
 

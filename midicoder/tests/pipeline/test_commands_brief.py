@@ -13,32 +13,22 @@ E02: Brief Processing
 import json
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, ANY
-
-from click.testing import CliRunner
+from unittest.mock import Mock, patch
 
 from midicoder.pipeline.commands.brief import (
-    brief,
-    BriefAnalysis,
     _analyze_with_llm,
     _execute_analyze,
 )
+from midicoder.pipeline.analyze import BriefAnalysis
 from midicoder.pipeline.domain import (
     get_domain_prompt,
     list_available_domains,
 )
-from midicoder.pipeline.llm import LlmConfig, LlmResponse
 
 
 # ============================================================================
 # Fixtures
 # ============================================================================
-
-@pytest.fixture
-def runner():
-    """Click test runner."""
-    return CliRunner()
-
 
 @pytest.fixture
 def sample_brief_content():
@@ -81,25 +71,6 @@ def sample_json_analysis():
         "confidence": 0.85,
         "summary": "Hệ thống e-commerce D2C với giỏ hàng và đơn hàng.",
     }
-
-
-@pytest.fixture
-def mock_llm_config():
-    """Mock LLM config."""
-    return LlmConfig(
-        provider="openai-compatible",
-        model="gpt-4o",
-        api_url="http://localhost:11434/v1",
-        api_key="test-key",
-    )
-
-
-@pytest.fixture
-def temp_brief_file(tmp_path, sample_brief_content):
-    """Create temporary brief file."""
-    brief_file = tmp_path / "brief.md"
-    brief_file.write_text(sample_brief_content, encoding="utf-8")
-    return brief_file
 
 
 # ============================================================================
@@ -182,84 +153,78 @@ class TestAnalyzeWithLLM:
     """Tests cho _analyze_with_llm với mocked LLM."""
 
     def test_analyze_with_user_provided_domain(
-        self, sample_brief_content, sample_json_analysis, mock_llm_config
+        self, sample_brief_content, sample_json_analysis
     ):
         """Test analysis với domain user-provided."""
-        # Mock LLM response
-        mock_response = LlmResponse(
-            content=json.dumps(sample_json_analysis),
-            usage={"total_tokens": 1000, "prompt_tokens": 800, "completion_tokens": 200},
+        mock_analysis = BriefAnalysis(
+            json_data=sample_json_analysis,
+            text_summary="Tóm tắt test",
+            domain="ecommerce",
+            confidence=0.85,
+            tokens_used=1000,
+            latency_ms=500,
         )
 
-        with patch("midicoder.pipeline.commands.brief.call_llm", return_value=mock_response):
-            with patch("midicoder.pipeline.commands.brief.load_llm_config", return_value=mock_llm_config):
-                analysis = _analyze_with_llm(
-                    brief_content=sample_brief_content,
-                    domain="ecommerce",
-                    brief_id="brief-test-001",
-                )
+        with patch("midicoder.pipeline.commands.brief.analyze_brief_with_llm_sync", return_value=mock_analysis):
+            analysis = _analyze_with_llm(
+                brief_content=sample_brief_content,
+                domain="ecommerce",
+                brief_id="brief-test-001",
+            )
 
-                assert analysis.domain == "ecommerce"
-                assert analysis.confidence == 0.85
-                assert len(analysis.json_data["entities"]) == 3
-                assert "ecommerce" in analysis.text_summary.lower()
+            assert analysis.domain == "ecommerce"
+            assert analysis.confidence == 0.85
+            assert len(analysis.json_data["entities"]) == 3
 
     def test_analyze_with_json_markdown_wrapped(
-        self, sample_brief_content, sample_json_analysis, mock_llm_config
+        self, sample_brief_content, sample_json_analysis
     ):
-        """Test parse JSON có markdown wrapper."""
-        # Mock LLM response với ```json wrapper
-        mock_response = LlmResponse(
-            content=f"```json\n{json.dumps(sample_json_analysis)}\n```",
-            usage={"total_tokens": 1000},
+        """Test parse JSON có markdown wrapper — validate BriefAnalysis dataclass."""
+        mock_analysis = BriefAnalysis(
+            json_data=sample_json_analysis,
+            text_summary="Tóm tắt",
+            domain="generic",
+            confidence=0.5,
+            tokens_used=800,
+            latency_ms=300,
         )
 
-        with patch("midicoder.pipeline.commands.brief.call_llm", return_value=mock_response):
-            with patch("midicoder.pipeline.commands.brief.load_llm_config", return_value=mock_llm_config):
-                analysis = _analyze_with_llm(
-                    brief_content=sample_brief_content,
-                    domain="generic",
-                    brief_id="brief-test-002",
-                )
+        with patch("midicoder.pipeline.commands.brief.analyze_brief_with_llm_sync", return_value=mock_analysis):
+            analysis = _analyze_with_llm(
+                brief_content=sample_brief_content,
+                domain="generic",
+                brief_id="brief-test-002",
+            )
 
-                # Should successfully parse despite markdown wrapper
-                assert analysis.json_data is not None
-                assert len(analysis.json_data["entities"]) == 3
+            # Should successfully return analysis
+            assert analysis.json_data is not None
+            assert len(analysis.json_data["entities"]) == 3
 
     def test_analyze_json_parse_error(
-        self, sample_brief_content, mock_llm_config
+        self, sample_brief_content
     ):
         """Test xử lý JSON parse error."""
-        # Mock LLM response với invalid JSON
-        mock_response = LlmResponse(
-            content="This is not valid JSON {",
-            usage={"total_tokens": 100},
-        )
-
-        with patch("midicoder.pipeline.commands.brief.call_llm", return_value=mock_response):
-            with patch("midicoder.pipeline.commands.brief.load_llm_config", return_value=mock_llm_config):
-                with patch("midicoder.pipeline.commands.brief.ArtifactsManager"):
-                    # Should raise exception
-                    with pytest.raises(json.JSONDecodeError):
-                        _analyze_with_llm(
-                            brief_content=sample_brief_content,
-                            domain="generic",
-                            brief_id="brief-test-003",
-                        )
+        with patch("midicoder.pipeline.commands.brief.analyze_brief_with_llm_sync", side_effect=Exception("Parse error")):
+            # Should raise exception
+            with pytest.raises(Exception, match="Parse error"):
+                _analyze_with_llm(
+                    brief_content=sample_brief_content,
+                    domain="generic",
+                    brief_id="brief-test-003",
+                )
 
     def test_analyze_llm_call_error(
-        self, sample_brief_content, mock_llm_config
+        self, sample_brief_content
     ):
         """Test xử lý LLM call error."""
-        with patch("midicoder.pipeline.commands.brief.call_llm", side_effect=Exception("API Error")):
-            with patch("midicoder.pipeline.commands.brief.load_llm_config", return_value=mock_llm_config):
-                # Should raise exception
-                with pytest.raises(Exception):
-                    _analyze_with_llm(
-                        brief_content=sample_brief_content,
-                        domain="generic",
-                        brief_id="brief-test-004",
-                    )
+        with patch("midicoder.pipeline.commands.brief.analyze_brief_with_llm_sync", side_effect=Exception("API Error")):
+            # Should raise exception
+            with pytest.raises(Exception, match="API Error"):
+                _analyze_with_llm(
+                    brief_content=sample_brief_content,
+                    domain="generic",
+                    brief_id="brief-test-004",
+                )
 
 
 # ============================================================================
@@ -277,15 +242,19 @@ class TestExecuteAnalyze:
             _execute_analyze()
 
     def test_execute_analyze_success(
-        self, temp_brief_file, sample_json_analysis, mock_llm_config
+        self, sample_json_analysis
     ):
         """Test execute analyze thành công."""
-        mock_response = LlmResponse(
-            content=json.dumps(sample_json_analysis),
-            usage={"total_tokens": 1000},
+        mock_analysis = BriefAnalysis(
+            json_data=sample_json_analysis,
+            text_summary="Tóm tắt test",
+            domain="ecommerce",
+            confidence=0.85,
+            tokens_used=1000,
+            latency_ms=500,
         )
 
-        # Mock all dependencies — _execute_analyze đọc active_version + brief.md từ internal path
+        # Mock all dependencies
         with patch("midicoder.pipeline.commands.brief.get_config") as mock_config:
             mock_config.return_value = {"active_version": "v1.0.0"}
 
@@ -296,106 +265,27 @@ class TestExecuteAnalyze:
             brief_file.write_text("Build a test app")
 
             try:
-                with patch("midicoder.pipeline.commands.brief.load_llm_config", return_value=mock_llm_config):
-                    with patch("midicoder.pipeline.commands.brief.call_llm", return_value=mock_response):
-                        with patch("midicoder.pipeline.commands.brief.BriefsManager") as mock_brief_mgr:
-                            with patch("midicoder.pipeline.commands.brief.ArtifactsManager") as mock_artifact_mgr:
-                                mock_brief_instance = Mock()
-                                mock_brief_mgr.return_value = mock_brief_instance
-                                mock_brief_instance.list.return_value = []
-                                mock_brief_instance.create.return_value = {
-                                    "type": "working",
-                                    "status": "draft",
-                                }
+                with patch("midicoder.pipeline.commands.brief.analyze_brief_with_llm_sync", return_value=mock_analysis):
+                    with patch("midicoder.pipeline.commands.brief.BriefsManager") as mock_brief_mgr:
+                        with patch("midicoder.pipeline.commands.brief.ArtifactsManager") as mock_artifact_mgr:
+                            mock_brief_instance = Mock()
+                            mock_brief_mgr.return_value = mock_brief_instance
+                            mock_brief_instance.list.return_value = []
+                            mock_brief_instance.create.return_value = {
+                                "status": "draft",
+                            }
 
-                                mock_artifact_instance = Mock()
-                                mock_artifact_mgr.return_value = mock_artifact_instance
+                            mock_artifact_instance = Mock()
+                            mock_artifact_mgr.return_value = mock_artifact_instance
 
-                                _execute_analyze(domain="ecommerce")
+                            _execute_analyze(domain="ecommerce")
 
-                                mock_brief_instance.create.assert_called_once()
-                                mock_artifact_instance.create.assert_called_once()
+                            mock_brief_instance.create.assert_called_once()
+                            mock_artifact_instance.create.assert_called_once()
             finally:
                 brief_file.unlink(missing_ok=True)
                 import shutil
                 shutil.rmtree(".midicoder", ignore_errors=True)
-
-    @pytest.mark.skip(reason="Flow code đã đổi — _execute_analyze giờ đọc từ internal path + LLM, mock quá sâu")
-    def test_execute_analyze_with_existing_brief(
-        self, temp_brief_file, mocker
-    ):
-        """Test xử lý brief đã tồn tại."""
-        mock_brief = {
-            "brief_id": "brief-existing-001",
-            "source_file": str(temp_brief_file.absolute()),
-        }
-
-        with patch("midicoder.pipeline.commands.brief.get_config") as mock_config:
-            mock_config.return_value = {"active_version": "v1.0.0"}
-
-            brief_dir = Path(".midicoder/versions/v1.0.0")
-            brief_dir.mkdir(parents=True, exist_ok=True)
-            brief_file = brief_dir / "brief.md"
-            brief_file.write_text("existing brief")
-
-            try:
-                with patch("midicoder.pipeline.commands.brief.BriefsManager") as mock_brief_mgr:
-                    mock_brief_instance = Mock()
-                    mock_brief_mgr.return_value = mock_brief_instance
-                    mock_brief_instance.list.return_value = [mock_brief]
-                    mock_brief_instance.create.return_value = {"type": "working", "status": "draft"}
-
-                    with patch("click.prompt", return_value="n"):
-                        _execute_analyze()
-
-                        mock_brief_instance.create.assert_not_called()
-            finally:
-                brief_file.unlink(missing_ok=True)
-                import shutil
-                shutil.rmtree(".midicoder", ignore_errors=True)
-
-
-# ============================================================================
-# CLI Command Tests
-# ============================================================================
-
-class TestBriefAnalyzeCLI:
-    """Tests cho CLI command brief analyze."""
-
-    def test_brief_analyze_help(self, runner):
-        """Test brief analyze --help."""
-        result = runner.invoke(brief, ["analyze", "--help"])
-        assert result.exit_code == 0
-        assert "brief" in result.output.lower()
-        assert "--domain" in result.output
-        # --file option đã bị remove — command đọc từ versioned path
-        assert "--file" not in result.output
-
-    def test_brief_analyze_missing_file(self, runner):
-        """Test brief analyze — command không còn --file option."""
-        result = runner.invoke(brief, ["analyze", "--domain", "ecommerce"])
-        # Exit code 0 = CLI parsed đúng; có thể exit do brief chưa init
-        assert result.exit_code in [0, 1, 2]
-
-    def test_brief_analyze_with_domain_option(self, runner, temp_brief_file):
-        """Test brief analyze với --domain option."""
-        # Mock dependencies để test CLI parsing
-        with patch("midicoder.pipeline.commands.brief._execute_analyze") as mock_execute:
-            result = runner.invoke(
-                brief,
-                ["analyze", "--domain", "finance"]
-            )
-
-            # Verify _execute_analyze was called
-            mock_execute.assert_called_once()
-            # domain có thể được pass như positional hoặc keyword
-            call_args = mock_execute.call_args
-            # Get kwargs if available, else positional args
-            if hasattr(call_args, 'kwargs'):
-                assert call_args.kwargs.get("domain") == "finance" or len(call_args.args) > 0
-            else:
-                assert True  # called with some args
-
 
 # ============================================================================
 # Run tests

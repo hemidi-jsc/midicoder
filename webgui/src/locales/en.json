@@ -379,6 +379,7 @@
     "clarifyEmpty": "No clarifications yet. Analyze the brief first.",
     "clarifyCount": "{{count}} points to clarify — fill in answers for each item",
     "answerPlaceholder": "Enter your answer...",
+    "useRecommend": "Use suggestion",
     "answered": "{{count}} answers provided",
     "clarifyHistory": "Clarification History",
     "historyTitle": "Change History",
@@ -411,6 +412,13 @@
     "queries": "Queries",
     "events": "Events",
     "uiComponents": "UI Components",
+    "valueObjects": "Value Objects",
+    "guards": "Guards",
+    "workflows": "Workflows",
+    "aggregates": "Aggregates",
+    "roles": "Roles",
+    "permissions": "Permissions",
+    "stateMachines": "State Machines",
     "name": "Name",
     "description": "Description",
     "target": "Target",
@@ -421,7 +429,9 @@
     "questionPrefix": "Q:",
     "answerPrefix": "A:",
     "entityType": "Entity Type",
-    "componentType": "Component Type"
+    "componentType": "Component Type",
+    "rootEntity": "Root entity",
+    "memberEntities": "Member entities"
   },
   "code": {
     "title": "Code Generator",

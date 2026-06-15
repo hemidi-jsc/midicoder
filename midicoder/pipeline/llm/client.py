@@ -295,7 +295,7 @@ def count_tokens(text: str, model: str = "cl100k_base") -> int:
     """
     try:
         encoding = tiktoken.get_encoding(model)
-    except KeyError:
+    except (KeyError, ValueError):
         encoding = tiktoken.get_encoding("cl100k_base")
 
     return len(encoding.encode(text))

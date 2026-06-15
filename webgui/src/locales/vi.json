@@ -379,6 +379,7 @@
     "clarifyEmpty": "Chưa có clarification nào. Hãy analyze brief trước.",
     "clarifyCount": "{{count}} điểm cần làm rõ — hãy điền câu trả lời cho từng mục",
     "answerPlaceholder": "Điền câu trả lời của bạn...",
+    "useRecommend": "Dùng gợi ý",
     "answered": "{{count}} câu đã trả lời",
     "clarifyHistory": "Lịch sử Clarification",
     "historyTitle": "Lịch sử thay đổi",
@@ -411,6 +412,13 @@
     "queries": "Truy vấn",
     "events": "Sự kiện",
     "uiComponents": "UI Components",
+    "valueObjects": "Value Objects",
+    "guards": "Guards",
+    "workflows": "Workflows",
+    "aggregates": "Aggregates",
+    "roles": "Roles",
+    "permissions": "Permissions",
+    "stateMachines": "State Machines",
     "name": "Tên",
     "description": "Mô tả",
     "target": "Mục tiêu",
@@ -421,7 +429,9 @@
     "questionPrefix": "H:",
     "answerPrefix": "TL:",
     "entityType": "Loại thực thể",
-    "componentType": "Loại component"
+    "componentType": "Loại component",
+    "rootEntity": "Root entity",
+    "memberEntities": "Member entities"
   },
   "code": {
     "title": "Trình tạo mã",
