@@ -17,7 +17,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from midicoder.storage.projects import ProjectsManager
+from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
 from midicoder.storage.sqlite import get_connection
 
 
@@ -35,7 +35,7 @@ def _get_project_root() -> Path:
     except Exception:
         pass
 
-    mgr = ProjectsManager()
+    mgr = ProjectsManager(db_path=DB_PROJECTS)
     mgr.init()
     active = mgr.get_active()
     if active:
@@ -47,7 +47,7 @@ def _get_project_root() -> Path:
 def _get_active_version() -> Optional[str]:
     """Lấy tên version đang active (strip 'v' prefix nếu có)."""
     try:
-        mgr = ProjectsManager()
+        mgr = ProjectsManager(db_path=DB_PROJECTS)
         mgr.init()
         project_id = _get_project_id()
         v = mgr.version_get_active(project_id)
@@ -86,6 +86,18 @@ def _get_version_metadata() -> Dict[str, Any]:
 # Per-category stat collectors
 # ---------------------------------------------------------------------------
 
+def _version_query_variants(name: str) -> list:
+    """Trả về danh sách variants để query DB — cả có/không có prefix 'v'."""
+    if not name:
+        return []
+    variants = set()
+    variants.add(name)
+    stripped = name.lstrip("v")
+    variants.add(stripped)
+    variants.add(f"v{stripped}")
+    return list(variants)
+
+
 def _collect_brief_stats(version: str) -> Dict[str, Any]:
     """Collect brief statistics from briefs.db."""
     data_dir = _get_project_root() / ".midicoder" / "data"
@@ -105,13 +117,17 @@ def _collect_brief_stats(version: str) -> Dict[str, Any]:
     if not briefs_db.exists():
         return result
 
+    # Query variants for backward compat
+    variants = _version_query_variants(version)
+    placeholders = ", ".join(["?"] * len(variants))
+
     try:
         with sqlite3.connect(str(briefs_db), timeout=30) as conn:
             conn.row_factory = sqlite3.Row
 
-            # Total briefs for this version
+            # Total briefs for this version (query all variants)
             row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM briefs WHERE version = ?", (version,)
+                f"SELECT COUNT(*) as cnt FROM briefs WHERE version IN ({placeholders})", (variants,)
             ).fetchone()
             count = row["cnt"] if row else 0
             result["count"] = count
@@ -119,10 +135,10 @@ def _collect_brief_stats(version: str) -> Dict[str, Any]:
             if count == 0:
                 return result
 
-            # Get the main brief (latest by id)
+            # Get the main brief (latest by id) — query all variants
             brief = conn.execute(
-                "SELECT * FROM briefs WHERE version = ? ORDER BY id DESC LIMIT 1",
-                (version,),
+                f"SELECT * FROM briefs WHERE version IN ({placeholders}) ORDER BY id DESC LIMIT 1",
+                (variants,),
             ).fetchone()
 
             if brief:
@@ -149,8 +165,8 @@ def _collect_brief_stats(version: str) -> Dict[str, Any]:
 
             # Count by type
             rows = conn.execute(
-                "SELECT type, COUNT(*) as cnt FROM briefs WHERE version = ? GROUP BY type",
-                (version,),
+                f"SELECT type, COUNT(*) as cnt FROM briefs WHERE version IN ({placeholders}) GROUP BY type",
+                (variants,),
             ).fetchall()
             for r in rows:
                 result["types"][r["type"]] = r["cnt"]
@@ -178,14 +194,17 @@ def _collect_contract_stats(version: str) -> Dict[str, Any]:
     if not artifacts_db.exists():
         return result
 
+    variants = _version_query_variants(version)
+    placeholders = ", ".join(["?"] * len(variants))
+
     try:
         with sqlite3.connect(str(artifacts_db), timeout=30) as conn:
             conn.row_factory = sqlite3.Row
 
-            # List all contract artifacts for this version
+            # List all contract artifacts for this version (query all variants)
             contracts = conn.execute(
-                "SELECT * FROM artifacts WHERE type = 'contract' AND version = ?",
-                (version,),
+                f"SELECT * FROM artifacts WHERE type = 'contract' AND version IN ({placeholders})",
+                (variants,),
             ).fetchall()
 
             result["count"] = len(contracts)
@@ -240,13 +259,16 @@ def _collect_ir_stats(version: str) -> Dict[str, Any]:
     if not artifacts_db.exists():
         return result
 
+    variants = _version_query_variants(version)
+    placeholders = ", ".join(["?"] * len(variants))
+
     try:
         with sqlite3.connect(str(artifacts_db), timeout=30) as conn:
             conn.row_factory = sqlite3.Row
 
             mir = conn.execute(
-                "SELECT * FROM artifacts WHERE type = 'mir' AND version = ? ORDER BY id DESC LIMIT 1",
-                (version,),
+                f"SELECT * FROM artifacts WHERE type = 'mir' AND version IN ({placeholders}) ORDER BY id DESC LIMIT 1",
+                (variants,),
             ).fetchone()
 
             if mir:
@@ -302,13 +324,15 @@ def _collect_code_stats(version: str) -> Dict[str, Any]:
     }
 
     # 1. Try plan metadata first
+    variants = _version_query_variants(version)
+    placeholders = ", ".join(["?"] * len(variants))
     if artifacts_db.exists():
         try:
             with sqlite3.connect(str(artifacts_db), timeout=30) as conn:
                 conn.row_factory = sqlite3.Row
                 plan = conn.execute(
-                    "SELECT * FROM artifacts WHERE type = 'plan' AND version = ? ORDER BY id DESC LIMIT 1",
-                    (version,),
+                    f"SELECT * FROM artifacts WHERE type = 'plan' AND version IN ({placeholders}) ORDER BY id DESC LIMIT 1",
+                    (variants,),
                 ).fetchone()
                 if plan:
                     p = dict(plan)

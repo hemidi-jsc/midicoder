@@ -26,24 +26,24 @@ def _get_project_root() -> Optional[Path]:
     """
     Lấy root directory của project đang active.
 
-    Pipeline commands: chạy với cwd = project root.
-    API router: dùng ProjectsManager để resolve project path.
+    Ưu tiên ProjectsManager (database source of truth) trước,
+    sau đó fallback vào cwd nếu đang chạy pipeline command.
     """
-    # Case 1: cwd chính là project root (có .midicoder directory)
-    cwd = Path.cwd()
-    if (cwd / ".midicoder").is_dir():
-        return cwd
-
-    # Case 2: fallback — dùng ProjectsManager để tìm project active
+    # Case 1: dùng ProjectsManager để tìm project active (source of truth)
     try:
-        from midicoder.storage.projects import ProjectsManager
-        mgr = ProjectsManager()
+        from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
+        mgr = ProjectsManager(db_path=DB_PROJECTS)
         mgr.init()
         active = mgr.get_active()
         if active and active.get("path"):
             return Path(active["path"])
     except Exception:
         pass
+
+    # Case 2: cwd chính là project root (pipeline commands)
+    cwd = Path.cwd()
+    if (cwd / ".midicoder").is_dir():
+        return cwd
 
     return None
 

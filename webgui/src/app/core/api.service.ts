@@ -298,6 +298,11 @@ export class ApiService {
     api_key?: string;
     max_tokens?: number;
     temperature?: number;
+    top_p?: number;
+    top_k?: number;
+    min_p?: number;
+    presence_penalty?: number;
+    repetition_penalty?: number;
     timeout?: number;
     retry_attempts?: number;
   }): Promise<ApiResponse<{ saved: boolean }>> {
@@ -498,6 +503,9 @@ export class ApiService {
     clarification_count: number;
     round: number;
     should_re_analyze: boolean;
+    quality_score?: number;
+    remaining_ambiguities?: Array<{ summary: string; question: string; recommend: string }>;
+    remaining_blockers?: number;
   }>> {
     return this.post('/brief/clarify', request);
   }

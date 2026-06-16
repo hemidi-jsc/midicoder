@@ -18,7 +18,7 @@ import { DOCS_BASE } from '../../core/app.constants';
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink, I18nPipe],
   template: `
-    <div class="py-8">
+    <div>
       <!-- Header -->
       <div class="mb-6">
         <div class="page-header-row">

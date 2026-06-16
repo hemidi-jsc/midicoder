@@ -20,7 +20,7 @@ import { CodeFile } from '../../core/api.types';
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink, I18nPipe],
   template: `
-    <div class="py-8">
+    <div>
       <!-- Header -->
       <div class="mb-6 flex items-center justify-between">
         <div>

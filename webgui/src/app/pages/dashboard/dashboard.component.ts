@@ -183,7 +183,8 @@ import { ActivityHistoryCardComponent } from '../../components/shared/activity-h
     }
 
     .dashboard-container {
-      padding: 32px 0;
+      max-width: 1400px;
+      margin: 0 auto;
     }
 
     .dashboard-header {

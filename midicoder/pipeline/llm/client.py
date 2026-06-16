@@ -82,6 +82,11 @@ class LlmConfig:
         api_key: API key cho authentication (optional)
         max_tokens: Max tokens cho response (default: max context window)
         temperature: Temperature cho sampling 0.0-1.0 (default: 0.3)
+        top_p: Top-p nucleaus sampling (default: 0.9)
+        top_k: Top-k sampling (default: 0 = disabled)
+        min_p: Min-p sampling (default: 0.0 = disabled)
+        presence_penalty: Presence penalty -1.0~2.0 (default: 0.0)
+        repetition_penalty: Repetition penalty 1.0~2.0 (default: 1.0 = disabled)
         timeout: Timeout cho request bằng giây (default: 300)
         retry_attempts: Số lần retry khi fail (default: 3)
     """
@@ -92,6 +97,11 @@ class LlmConfig:
     api_key: Optional[str] = None
     max_tokens: int = 131072
     temperature: float = 0.3
+    top_p: float = 0.9
+    top_k: int = 0
+    min_p: float = 0.0
+    presence_penalty: float = 0.0
+    repetition_penalty: float = 1.0
     timeout: int = 300
     retry_attempts: int = 3
 
@@ -160,6 +170,11 @@ def load_llm_config() -> LlmConfig:
 
     max_tokens = config.get("llm.max_tokens")
     temperature = config.get("llm.temperature", 0.3)
+    top_p = config.get("llm.top_p", 0.9)
+    top_k = config.get("llm.top_k", 0)
+    min_p = config.get("llm.min_p", 0.0)
+    presence_penalty = config.get("llm.presence_penalty", 0.0)
+    repetition_penalty = config.get("llm.repetition_penalty", 1.0)
     timeout = config.get("llm.timeout", 300)
     retry_attempts = config.get("llm.retry_attempts", 3)
 
@@ -168,6 +183,16 @@ def load_llm_config() -> LlmConfig:
         max_tokens = _get_max_context_window(model) if model else 131072
     if temperature is None:
         temperature = 0.3
+    if top_p is None:
+        top_p = 0.9
+    if top_k is None:
+        top_k = 0
+    if min_p is None:
+        min_p = 0.0
+    if presence_penalty is None:
+        presence_penalty = 0.0
+    if repetition_penalty is None:
+        repetition_penalty = 1.0
     if timeout is None:
         timeout = 300
     if retry_attempts is None:
@@ -191,6 +216,11 @@ def load_llm_config() -> LlmConfig:
         api_key=api_key,
         max_tokens=max_tokens,
         temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        min_p=min_p,
+        presence_penalty=presence_penalty,
+        repetition_penalty=repetition_penalty,
         timeout=timeout,
         retry_attempts=retry_attempts,
     )
@@ -338,6 +368,11 @@ def call_llm(
             messages=messages_list,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
+            top_p=config.top_p,
+            top_k=config.top_k,
+            min_p=config.min_p,
+            presence_penalty=config.presence_penalty,
+            repetition_penalty=config.repetition_penalty,
         )
 
         content, reasoning = _extract_content(response.choices[0])
@@ -396,6 +431,11 @@ async def call_llm_async(
             messages=messages_list,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
+            top_p=config.top_p,
+            top_k=config.top_k,
+            min_p=config.min_p,
+            presence_penalty=config.presence_penalty,
+            repetition_penalty=config.repetition_penalty,
         )
 
         content, reasoning = _extract_content(response.choices[0])
@@ -450,6 +490,11 @@ async def call_llm_stream(
             messages=messages_list,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
+            top_p=config.top_p,
+            top_k=config.top_k,
+            min_p=config.min_p,
+            presence_penalty=config.presence_penalty,
+            repetition_penalty=config.repetition_penalty,
             stream=True,
         )
 

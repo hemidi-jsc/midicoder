@@ -18,7 +18,7 @@ import { DOCS_BASE } from '../../core/app.constants';
   standalone: true,
   imports: [CommonModule, RouterLink, I18nPipe],
   template: `
-    <div class="py-8">
+    <div>
       <!-- Header -->
       <div class="mb-6 flex items-center justify-between">
         <div>

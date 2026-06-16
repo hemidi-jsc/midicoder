@@ -11,6 +11,7 @@ import { Subscription, filter } from 'rxjs';
 import { VersionService, VersionInfo } from '../../core/version.service';
 import { ApiService, ProjectInfo } from '../../core/api.service';
 import { I18nPipe } from '../../core/i18n.pipe';
+import { APP_VERSION, DOCS_BASE } from '../../core/app.constants';
 import { VersionCreateFormComponent } from '../shared/version-create-form/version-create-form';
 import { ProjectCreateFormComponent } from '../shared/project-create-form/project-create-form';
 
@@ -112,6 +113,27 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
           <a routerLink="/system-logs" class="settings-item">
             <span class="settings-icon"><i class="fa-solid fa-list-ul"></i></span>
             <span class="settings-name">{{ 'nav.systemLogs' | i18n }}</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- App Info Section -->
+      <div class="sidebar-section sidebar-app-info">
+        <div class="sidebar-header">
+          <h3>{{ 'nav.info' | i18n }}</h3>
+        </div>
+        <div class="settings-list">
+          <a [attr.href]="docsGettingStartedUrl" target="_blank" rel="noopener noreferrer" class="settings-item settings-item-external">
+            <span class="settings-icon"><i class="fa-solid fa-book"></i></span>
+            <span class="settings-name">{{ 'header.documentation' | i18n }}</span>
+          </a>
+          <a [attr.href]="docsChangelogUrl" target="_blank" rel="noopener noreferrer" class="settings-item settings-item-external">
+            <span class="settings-icon"><i class="fa-solid fa-list-ul"></i></span>
+            <span class="settings-name">{{ 'update.changelog' | i18n }}</span>
+          </a>
+          <a href="https://github.com/hemidi-jsc/midicoder/releases" target="_blank" rel="noopener noreferrer" class="settings-item settings-item-version" title="{{ 'header.viewRelease' | i18n }}">
+            <span class="settings-icon"><i class="fa-solid fa-code-branch"></i></span>
+            <span class="settings-name">v{{ appVersion }}</span>
           </a>
         </div>
       </div>
@@ -600,6 +622,38 @@ import { ProjectCreateFormComponent } from '../shared/project-create-form/projec
       font-size: 0.85rem;
       font-weight: 500;
     }
+
+    /* App Info Section — pinned at bottom */
+    .sidebar-app-info {
+      margin-top: auto;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .settings-item-version {
+      /* cursor pointer inherited from <a> */
+    }
+
+    .settings-item-version:hover {
+      background: var(--bg-hover);
+    }
+
+    .settings-item-version .settings-icon i {
+      color: var(--text-muted);
+    }
+
+    .settings-item-version:hover .settings-icon i {
+      color: var(--brand-color);
+    }
+
+    .settings-item-version .settings-name {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-muted);
+    }
+
+    .settings-item-version:hover .settings-name {
+      color: var(--brand-color);
+    }
   `]
 })
 export class SidebarComponent implements OnInit, OnDestroy {
@@ -614,6 +668,11 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   // Loading state for versions
   versionLoading = false;
+
+  // App info
+  appVersion = APP_VERSION;
+  docsChangelogUrl = `${DOCS_BASE}/changelog`;
+  docsGettingStartedUrl = `${DOCS_BASE}/getting-started`;
 
   private routerSub?: Subscription;
 

@@ -42,38 +42,12 @@ import type { UpdateStatus } from './core/api.types';
         <header class="fixed top-0 left-0 w-full bg-bg-secondary border-b border-border-primary z-50">
           <!-- Row 1: Logo left | Pipeline center | User right -->
           <div class="header-row">
-            <!-- Cột 1: Logo + Version Badge + Links -->
+            <!-- Cột 1: Logo -->
             <div class="header-left">
               <img src="logo.png" alt="Midicoder" class="logo-header">
-              <a
-                href="https://github.com/hemidi-jsc/midicoder/releases"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="app-version-badge"
-                title="{{ 'header.viewRelease' | i18n }}"
-              >
-                v{{ appVersion }}
-              </a>
-              <div class="header-links">
-                <a
-                  [attr.href]="docsChangelogUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="header-link"
-                  title="{{ 'update.changelog' | i18n }}"
-                >
-                  {{ 'update.changelog' | i18n }}
-                </a>
-                <span class="header-separator"><i class="fa-solid fa-circle"></i></span>
-                <a
-                  [attr.href]="docsGettingStartedUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="header-link"
-                  title="{{ 'header.documentation' | i18n }}"
-                >
-                  {{ 'header.documentation' | i18n }}
-                </a>
+              <div class="header-slogan">
+                <span class="slogan-title">Contract Coding Platform</span>
+                <span class="slogan-attribution">{{ 'header.productOf' | i18n }}</span>
               </div>
             </div>
 
@@ -153,18 +127,20 @@ import type { UpdateStatus } from './core/api.types';
 
       <!-- Main Content -->
       @if (isAuthenticated && !isLoginPage) {
-        <main class="main-content">
-          <!-- Version switching loading overlay -->
-          @if (isSwitchingVersion) {
-            <div class="version-switch-overlay">
-              <div class="version-switch-spinner">
-                <i class="fa-solid fa-spinner"></i>
-                <span>{{ 'common.loading' | i18n }}</span>
+        <div class="main-wrapper">
+          <main class="main-content">
+            <!-- Version switching loading overlay -->
+            @if (isSwitchingVersion) {
+              <div class="version-switch-overlay">
+                <div class="version-switch-spinner">
+                  <i class="fa-solid fa-spinner"></i>
+                  <span>{{ 'common.loading' | i18n }}</span>
+                </div>
               </div>
-            </div>
-          }
-          <router-outlet />
-        </main>
+            }
+            <router-outlet />
+          </main>
+        </div>
       } @else {
         <router-outlet />
       }
@@ -193,6 +169,30 @@ import type { UpdateStatus } from './core/api.types';
     .logo-header {
       height: 28px;
       width: auto;
+      flex-shrink: 0;
+    }
+
+    .header-slogan {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      line-height: 1.15;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .slogan-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+
+    .slogan-attribution {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      letter-spacing: 0.01em;
     }
 
     .app-version-badge {
@@ -442,8 +442,16 @@ import type { UpdateStatus } from './core/api.types';
     }
 
     /* Main content — matches header padding */
-    .main-content {
+    .main-wrapper {
       margin-left: 320px;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+    }
+
+    .main-content {
+      width: 100%;
+      max-width: 1400px;
       min-height: 100vh;
       padding: 24px;
       padding-top: 104px;

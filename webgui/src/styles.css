@@ -49,6 +49,7 @@
 
 /* Exceptions: elements that must remain circular */
 .spinner,
+.version-spinner,
 .step-circle,
 .active-dot,
 .phase-icon,

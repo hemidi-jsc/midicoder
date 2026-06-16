@@ -60,9 +60,17 @@ def _get_active_project_domain() -> str:
 
 
 def _find_brief(mgr: BriefsManager, version: str) -> Optional[Dict[str, Any]]:
-    """Lấy brief duy nhất cho version này."""
-    for b in mgr.list(version=version):
-        return b
+    """Lấy brief duy nhất cho version này — thử cả có/không có prefix 'v'."""
+    # DB có thể lưu "v1.0.0" hoặc "1.0.0" — query cả 2 variants
+    variants = set()
+    variants.add(version)
+    stripped = version.lstrip("v")
+    variants.add(stripped)
+    if not version.startswith("v"):
+        variants.add(f"v{version}")
+    for v in variants:
+        for b in mgr.list(version=v):
+            return b
     return None
 
 
@@ -430,17 +438,25 @@ def _build_analysis_response(json_data: dict, analysis: BriefAnalysis, brief_id:
     if not isinstance(ambiguities, list):
         ambiguities = []
 
-    # quality_score — from root, nested metadata, or fallback to confidence
-    quality_score_raw = _extract_root_field(json_data, "quality_score")
-    if quality_score_raw is not None:
-        quality_score = float(quality_score_raw)
-    else:
-        quality_score = confidence
+    # blockers — IDs of critical ambiguities
+    blockers = json_data.get("blockers", [])
+    if not isinstance(blockers, list):
+        blockers = []
+
+    # quality_score — computed by code, NOT by LLM
+    # Formula: 1.0 - min(ambiguities * 0.05, 0.30) - (blockers * 0.10), clamped [0.3, 1.0]
+    quality_score = 1.0
+    quality_score -= min(len(ambiguities) * 0.05, 0.30)
+    quality_score -= len(blockers) * 0.10
+    quality_score = round(max(0.3, min(1.0, quality_score)), 2)
 
     # Also update confidence if LLM returned higher one in metadata
     confidence_raw = _extract_root_field(json_data, "confidence")
     if confidence_raw is not None:
-        confidence = max(confidence, float(confidence_raw))
+        try:
+            confidence = max(confidence, float(confidence_raw))
+        except (ValueError, TypeError):
+            pass
     else:
         confidence = analysis.confidence
 
@@ -530,14 +546,18 @@ def _save_analysis_artifact(
 
     content_json = json.dumps(json_data, indent=2, ensure_ascii=False)
 
-    # Extract quality_score from json_data (root or nested metadata)
-    quality_score = json_data.get("quality_score")
-    if quality_score is None:
-        meta_in_json = json_data.get("metadata")
-        if isinstance(meta_in_json, dict):
-            quality_score = meta_in_json.get("quality_score")
-    if quality_score is None:
-        quality_score = confidence
+    # quality_score — computed by code, NOT by LLM
+    # Formula: 1.0 - min(ambiguities * 0.05, 0.30) - (blockers * 0.10), clamped [0.3, 1.0]
+    _ambiguities_for_score = json_data.get("ambiguities", [])
+    if not isinstance(_ambiguities_for_score, list):
+        _ambiguities_for_score = []
+    _blockers_for_score = json_data.get("blockers", [])
+    if not isinstance(_blockers_for_score, list):
+        _blockers_for_score = []
+    quality_score = 1.0
+    quality_score -= min(len(_ambiguities_for_score) * 0.05, 0.30)
+    quality_score -= len(_blockers_for_score) * 0.10
+    quality_score = round(max(0.3, min(1.0, quality_score)), 2)
 
     artifact_metadata = {
         "domain": domain,
@@ -789,7 +809,11 @@ async def analyze_brief_stream_for_api(project_cwd: str, version: str, language:
                 json_data = chunk.data.get("json_data")
                 analysis_domain = chunk.data.get("domain", domain)
                 analysis_confidence = chunk.data.get("confidence", 0.5)
-                analysis_quality_score = chunk.data.get("quality_score", analysis_confidence)
+                # quality_score — computed by code, NOT from LLM
+                _a = json_data.get("ambiguities", []) if isinstance(json_data.get("ambiguities"), list) else []
+                _b = json_data.get("blockers", []) if isinstance(json_data.get("blockers"), list) else []
+                analysis_quality_score = 1.0 - min(len(_a) * 0.05, 0.30) - len(_b) * 0.10
+                analysis_quality_score = round(max(0.3, min(1.0, analysis_quality_score)), 2)
                 analysis_tokens = chunk.data.get("tokens_used", 0)
                 analysis_latency = chunk.data.get("latency_ms", 0)
 
@@ -912,6 +936,52 @@ def clarify_brief_for_api(
     diff_summary = f"Clarified {len(valid_answers)} ambiguities (round {current_round})"
     briefs_manager.add_revision(brief_id, version, "clarification", diff_summary, brief_content)
 
+    # Recompute quality_score: load persisted artifact, remove answered ambiguities/blockers, then compute
+    answered_summaries = {a.get("summary", "").strip() for a in valid_answers if a.get("summary", "").strip()}
+    answered_ids = {a.get("id", "").strip() for a in valid_answers if a.get("id", "").strip()}
+
+    recomputed_quality_score = None
+    remaining_ambiguities = None
+    remaining_blockers_count = None
+    try:
+        artifacts_mgr = ArtifactsManager(db_path=_get_project_db_path(project_cwd, "artifacts.db"))
+        artifacts_mgr.init()
+        artifact = artifacts_mgr.get(brief_id)
+        if artifact and artifact.get("content"):
+            content_str = artifact.get("content", "{}")
+            if isinstance(content_str, str):
+                artifact_content = json.loads(content_str)
+            else:
+                artifact_content = content_str
+
+            # Filter out answered ambiguities
+            old_ambiguities = artifact_content.get("ambiguities", [])
+            if isinstance(old_ambiguities, list):
+                remaining_ambiguities = []
+                for amb in old_ambiguities:
+                    amb_summary = amb.get("summary", "") if isinstance(amb, dict) else ""
+                    amb_id = amb.get("id", "") if isinstance(amb, dict) else ""
+                    if amb_summary not in answered_summaries and amb_id not in answered_ids:
+                        remaining_ambiguities.append(amb)
+            else:
+                remaining_ambiguities = []
+
+            # Filter out answered blockers
+            old_blockers = artifact_content.get("blockers", [])
+            if isinstance(old_blockers, list):
+                remaining_blockers = [b for b in old_blockers if b not in answered_summaries]
+            else:
+                remaining_blockers = []
+            remaining_blockers_count = len(remaining_blockers)
+
+            # Compute quality_score from formula
+            _qa = len(remaining_ambiguities)
+            _qb = len(remaining_blockers)
+            recomputed_quality_score = 1.0 - min(_qa * 0.05, 0.30) - _qb * 0.10
+            recomputed_quality_score = round(max(0.3, min(1.0, recomputed_quality_score)), 2)
+    except Exception:
+        pass
+
     response_data = {
         "brief_id": brief_id,
         "revision_number": len(briefs_manager.get_revisions(brief_id)),
@@ -919,6 +989,12 @@ def clarify_brief_for_api(
         "round": current_round,
         "should_re_analyze": re_analyze,  # Tell frontend to trigger analyze stream
     }
+    if recomputed_quality_score is not None:
+        response_data["quality_score"] = recomputed_quality_score
+    if remaining_ambiguities is not None:
+        response_data["remaining_ambiguities"] = remaining_ambiguities
+    if remaining_blockers_count is not None:
+        response_data["remaining_blockers"] = remaining_blockers_count
 
     return {"success": True, "data": response_data, "error": None}
 
@@ -983,23 +1059,22 @@ def get_brief_for_api(project_cwd: str, version: str) -> dict:
                     persisted_scale = persisted_scale_raw if persisted_scale_raw in VALID_SCALES else _compute_scale(content)
                     persisted_confidence = metadata_raw.get("confidence", 0.5)
 
-                    # Extract quality_score from persisted artifact metadata OR from LLM content
-                    persisted_quality_score = metadata_raw.get("quality_score")
-                    if persisted_quality_score is None:
-                        qs_from_content = _extract_root_field(content, "quality_score")
-                        if qs_from_content is not None:
-                            try:
-                                persisted_quality_score = float(qs_from_content)
-                            except (ValueError, TypeError):
-                                pass
-                    if persisted_quality_score is None:
-                        persisted_quality_score = persisted_confidence
-
                     # Ensure ambiguities is a list and normalize format (old → new)
                     persisted_ambiguities = content.get("ambiguities", [])
                     if not isinstance(persisted_ambiguities, list):
                         persisted_ambiguities = []
                     persisted_ambiguities = [_normalize_ambiguity(a) for a in persisted_ambiguities]
+
+                    # Extract blockers from persisted content
+                    persisted_blockers = content.get("blockers", [])
+                    if not isinstance(persisted_blockers, list):
+                        persisted_blockers = []
+
+                    # quality_score — computed by code, NOT from LLM (recomputed from formula for backward compat)
+                    _qa = len(persisted_ambiguities)
+                    _qb = len(persisted_blockers)
+                    persisted_quality_score = 1.0 - min(_qa * 0.05, 0.30) - _qb * 0.10
+                    persisted_quality_score = round(max(0.3, min(1.0, persisted_quality_score)), 2)
 
                     persisted_status = _compute_status(content, persisted_confidence)
 
@@ -1412,8 +1487,8 @@ def freeze_brief(version: str, project_cwd: str) -> dict:
 
     # 3. Update version status in projects.db (SQLite)
     try:
-        from midicoder.storage.projects import ProjectsManager
-        pm = ProjectsManager()
+        from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
+        pm = ProjectsManager(db_path=DB_PROJECTS)
         pm.init()
         active_project = pm.get_active()
         if active_project:

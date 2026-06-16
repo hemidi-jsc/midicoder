@@ -41,7 +41,7 @@ interface SectionOpenState {
   standalone: true,
   imports: [CommonModule, FormsModule, I18nPipe, HistoryListComponent, LlmProgressComponent, AnalysisResultModalComponent],
   template: `
-    <div class="brief-page py-8">
+    <div class="brief-page">
 
       <!-- Header: 3 columns — Title | Progress Bar | Buttons -->
       <div class="mb-6 flex items-center justify-between gap-6">
@@ -162,19 +162,17 @@ interface SectionOpenState {
         <div class="brief-sidebar">
           <!-- Tab toggle -->
           <div class="sidebar-tabs">
-            @if (analysisResult) {
-              <button
-                type="button"
-                class="sidebar-tab"
-                [class.active]="rightTab === 'analysis'"
-                (click)="setRightTab('analysis')"
-              >
-                {{ 'brief.analysis' | i18n }}
-                @if (analysisResult?.analysis?.ambiguities?.length > 0) {
-                  <span class="tab-badge">{{ analysisResult.analysis.ambiguities.length }}</span>
-                }
-              </button>
-            }
+            <button
+              type="button"
+              class="sidebar-tab"
+              [class.active]="rightTab === 'analysis'"
+              (click)="setRightTab('analysis')"
+            >
+              {{ 'brief.analysis' | i18n }}
+              @if (analysisResult?.analysis?.ambiguities?.length > 0) {
+                <span class="tab-badge">{{ analysisResult.analysis.ambiguities.length }}</span>
+              }
+            </button>
             <button
               type="button"
               class="sidebar-tab"
@@ -182,15 +180,16 @@ interface SectionOpenState {
               (click)="setRightTab('history')"
             >
               {{ 'brief.history' | i18n }}
-              @if (clarificationHistory.length > 0) {
-                <span class="tab-badge">{{ clarificationHistory.length }}</span>
+              @if (lineage.length > 0) {
+                <span class="tab-badge">{{ lineage.length }}</span>
               }
             </button>
           </div>
 
-          <!-- Analysis tab panel (sidebar summary) -->
-          @if (rightTab === 'analysis' && analysisResult) {
-            <div class="sidebar-panel">
+          <!-- Analysis tab panel -->
+          @if (rightTab === 'analysis') {
+            @if (analysisResult) {
+              <div class="sidebar-panel">
               <!-- Content wrapper — scrollable -->
               <div class="analysis-sidebar">
                 <!-- Summary -->
@@ -279,7 +278,11 @@ interface SectionOpenState {
                     @for (round of clarificationRounds; track round.num) {
                       <div class="clarification-round">
                         <div class="round-header">
-                          <span class="round-label">{{ 'brief.clarificationRound' | i18n:{round: round.num} }}</span>
+                          @if (round.num === 0) {
+                            <span class="round-label">{{ 'brief.inheritedRound' | i18n }}</span>
+                          } @else {
+                            <span class="round-label">{{ 'brief.clarificationRound' | i18n:{round: round.num} }}</span>
+                          }
                           <span class="round-date">{{ round.date }}</span>
                         </div>
                         @for (c of round.items; track c.id || $index) {
@@ -322,6 +325,16 @@ interface SectionOpenState {
                 }
               </div>
             </div>
+            } @else {
+              <!-- Analysis empty state -->
+              <div class="sidebar-panel sidebar-empty-state">
+                <div class="empty-icon-circle">
+                  <i class="fa-solid fa-magnifying-glass-chart"></i>
+                </div>
+                <p class="empty-title">{{ 'brief.noAnalysisYet' | i18n }}</p>
+                <p class="empty-hint">{{ 'brief.noAnalysisHint' | i18n }}</p>
+              </div>
+            }
           }
 
           <!-- History tab panel -->
@@ -434,6 +447,29 @@ interface SectionOpenState {
                 </button>
                 <button class="btn btn-secondary w-full" (click)="showMaxRoundsDialog = false">
                   {{ 'brief.maxRoundsClose' | i18n }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- Freeze Confirm Dialog -->
+      @if (showFreezeConfirmDialog) {
+        <div class="freeze-confirm-overlay">
+          <div class="freeze-confirm-modal">
+            <div class="freeze-confirm-header">
+              <h3 class="freeze-confirm-title"><i class="fa-solid fa-snowflake"></i> {{ 'brief.freezeConfirm' | i18n }}</h3>
+              <button class="freeze-confirm-close" (click)="showFreezeConfirmDialog = false"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="freeze-confirm-body">
+              <p class="freeze-confirm-desc">{{ 'brief.freezeConfirmDesc' | i18n }}</p>
+              <div class="freeze-confirm-actions">
+                <button class="btn btn-accent w-full" (click)="confirmFreeze()">
+                  <i class="fa-solid fa-snowflake"></i> {{ 'brief.freezeConfirmYes' | i18n }}
+                </button>
+                <button class="btn btn-secondary w-full" (click)="showFreezeConfirmDialog = false">
+                  {{ 'brief.freezeConfirmCancel' | i18n }}
                 </button>
               </div>
             </div>
@@ -583,12 +619,16 @@ interface SectionOpenState {
     .save-status {
       display: inline-flex;
       align-items: center;
+      gap: 4px;
+      min-width: 190px;
+      justify-content: center;
       font-size: 0.75rem;
       font-weight: 600;
       letter-spacing: 0.02em;
       padding: 3px 10px;
       border-radius: 0;
       border: 1px solid transparent;
+      flex-shrink: 0;
     }
     .save-status-saving {
       color: #58a6ff;
@@ -1047,6 +1087,44 @@ interface SectionOpenState {
       margin: 0;
     }
 
+    /* Sidebar-level empty state (analysis/history tabs when no data) */
+    .sidebar-empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 1.5rem;
+      text-align: center;
+      flex: 1;
+      min-height: 200px;
+    }
+    .empty-icon-circle {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(139, 148, 158, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+    }
+    .empty-icon-circle i {
+      font-size: 1.25rem;
+      color: rgba(139, 148, 158, 0.4);
+    }
+    .empty-title {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: rgba(255,255,255,0.5);
+      margin: 0 0 0.35rem 0;
+    }
+    .empty-hint {
+      font-size: 0.75rem;
+      color: rgba(139, 148, 158, 0.5);
+      margin: 0;
+      line-height: 1.4;
+    }
+
     .history-heading {
       font-size: 0.75rem;
       font-weight: 600;
@@ -1465,6 +1543,110 @@ interface SectionOpenState {
       width: 100%;
     }
 
+    /* ====== Freeze Confirm Dialog (reuse max-rounds style) ====== */
+    .freeze-confirm-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10001;
+      padding: 2rem;
+    }
+
+    .freeze-confirm-modal {
+      background: #16161e;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .freeze-confirm-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .freeze-confirm-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #58a6ff;
+      margin: 0;
+    }
+
+    .freeze-confirm-close {
+      background: none;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.875rem;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+
+    .freeze-confirm-close:hover {
+      color: white;
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .freeze-confirm-body {
+      padding: 24px 20px;
+      text-align: center;
+    }
+
+    .freeze-confirm-desc {
+      font-size: 0.8125rem;
+      color: rgba(255, 255, 255, 0.5);
+      margin: 0 0 20px 0;
+      line-height: 1.5;
+    }
+
+    .freeze-confirm-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .freeze-confirm-actions .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 16px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .freeze-confirm-actions .btn-accent {
+      background: linear-gradient(135deg, #d29922, #bf8a1d);
+      color: white;
+    }
+
+    .freeze-confirm-actions .btn-accent:hover {
+      filter: brightness(1.1);
+    }
+
+    .freeze-confirm-actions .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .freeze-confirm-actions .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+    }
+
+    .freeze-confirm-actions .w-full {
+      width: 100%;
+    }
+
     .diff-line {
       font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
       font-size: 0.75rem;
@@ -1775,14 +1957,12 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
     const result = await this.api.getClarifications(this.activeVersion);
     if (result.success && result.data?.clarifications) {
       this.clarificationHistory = result.data.clarifications;
-      // Group by round
+      // Group by round (hiển thị cả round=0 — inherited clarifications)
       const roundMap = new Map<number, any[]>();
       for (const c of this.clarificationHistory) {
         const r = c.round || 0;
-        if (r > 0) {
-          if (!roundMap.has(r)) roundMap.set(r, []);
-          roundMap.get(r)!.push(c);
-        }
+        if (!roundMap.has(r)) roundMap.set(r, []);
+        roundMap.get(r)!.push(c);
       }
       this.clarificationRounds = Array.from(roundMap.entries())
         .sort((a, b) => a[0] - b[0])
@@ -1868,6 +2048,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
   // Clarify complete modal
   showClarifyCompleteModal = false;
   showMaxRoundsDialog = false;
+  showFreezeConfirmDialog = false;
   _clarifyResult: { round: number; clarification_count: number } | null = null;
 
   openAnalysisModal(tab: 'result' | 'clarify' = 'result'): void {
@@ -1928,6 +2109,25 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
         // Reload lineage and clarification history
         await this.loadLineage();
         await this.loadClarificationHistory();
+
+        // Update quality_score and ambiguities from backend recompute (before re-analyze)
+        if (data.quality_score != null) {
+          if (!this.analysisResult) this.analysisResult = {};
+          if (!this.analysisResult.metadata) this.analysisResult.metadata = {};
+          this.analysisResult.metadata.quality_score = data.quality_score;
+          console.log('[BriefEditor] Quality score recomputed after clarify:', data.quality_score);
+        }
+        if (data.remaining_ambiguities != null) {
+          if (!this.analysisResult) this.analysisResult = {};
+          if (!this.analysisResult.analysis) this.analysisResult.analysis = {};
+          this.analysisResult.analysis.ambiguities = data.remaining_ambiguities;
+          console.log('[BriefEditor] Ambiguities recomputed:', data.remaining_ambiguities.length);
+        }
+        if (data.remaining_blockers != null) {
+          if (!this.analysisResult) this.analysisResult = {};
+          if (!this.analysisResult.analysis) this.analysisResult.analysis = {};
+          this.analysisResult.analysis.blockers = data.remaining_blockers;
+        }
 
         // Show post-clarify modal: user chooses re-analyze or go to contract
         this._clarifyResult = {
@@ -2120,6 +2320,12 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
   }
 
   async handleFreeze(): Promise<void> {
+    this.showFreezeConfirmDialog = true;
+    this.cdr.detectChanges();
+  }
+
+  async confirmFreeze(): Promise<void> {
+    this.showFreezeConfirmDialog = false;
     this.isFreezing = true;
     this.cdr.detectChanges();
 
@@ -2129,6 +2335,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
       if (result.success) {
         this.showToast(this.i18n.t('brief.freezedMsg'), 'success');
         await this.loadBrief();
+        await this.versionService.loadVersions();
       } else {
         this.showToast(result.error?.message || this.i18n.t('brief.freezeError'), 'error');
       }

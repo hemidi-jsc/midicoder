@@ -145,14 +145,7 @@
         <field name="recommend" type="string">A recommended default answer the user can accept directly (in {{ language_display_name }})</field>
       </item>
     </field>
-    <field name="domain" type="string">Detected domain (e.g., ecommerce, finance, healthcare)</field>
-    <field name="quality_score" type="float">
-      Overall brief completeness (0.0 to 1.0).
-      0.9+ = brief is very clear and complete, ready for contract generation.
-      0.7-0.89 = brief is fairly clear, 1-3 minor points need clarification.
-      0.5-0.69 = brief lacks important information, needs significant clarification.
-      Below 0.5 = brief is too vague, missing core entities or domain.
-    </field>
+    <field name="domain" type="string">Detected domain as a SINGLE lowercase word only, no spaces, no underscores, no hyphens (e.g., ecommerce, finance, healthcare, logistics)</field>
     <field name="blockers" type="array">
       IDs of ambiguities that are CRITICAL — must be resolved before contract gen.
       Each item is the "summary" of an ambiguity (e.g., "Chưa rõ domain chính").
@@ -187,12 +180,11 @@
     <rule>BEFORE generating ambiguities, review the clarification_history section — do NOT generate ambiguity for points already clarified there</rule>
     <rule>If the brief content contains "Clarification Answers" sections, treat those answers as confirmed facts — do not question them again</rule>
     <rule>Only generate NEW ambiguities that were NOT addressed in previous clarification rounds</rule>
-    <rule>Set quality_score >= 0.9 if the brief is very clear, 0.7-0.89 if fairly clear with minor gaps, below 0.5 if too vague</rule>
-    <rule>Be opinionated: if the brief is well-written, give quality_score >= 0.8</rule>
-    <rule>Set blockers to empty array [] if quality_score >= 0.9</rule>
-    <rule>Blockers should be a subset of ambiguity summaries — only include critical gaps that prevent contract generation</rule>
+    <rule>quality_score is computed by the system (not by LLM) based on ambiguity count and blockers</rule>
+    <rule>Set blockers to empty array [] if there are no critical gaps that prevent contract generation</rule>
 
     <rule>Each item across all 12 types must be unique and well-structured</rule>
+    <rule>The "domain" field MUST be a single lowercase word — no spaces, no underscores, no hyphens (e.g., ecommerce, not e-commerce or e_commerce)</rule>
     <rule>Use {{ language_display_name }} for all descriptions, summaries, and messages</rule>
     <rule>Keep technical identifiers (names, fields) in English PascalCase or follow the original brief</rule>
   </rules>

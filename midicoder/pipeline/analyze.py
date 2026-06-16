@@ -337,20 +337,20 @@ async def analyze_brief_with_llm_stream(
         # Parse final JSON
         _, json_data = _parse_llm_response(accumulated)
 
-        # Extract confidence & quality_score from root OR nested metadata dict
+        # Extract confidence from root OR nested metadata dict
         confidence = json_data.get("confidence")
-        quality_score = json_data.get("quality_score")
-        if confidence is None or quality_score is None:
+        if confidence is None:
             meta = json_data.get("metadata")
             if isinstance(meta, dict):
-                if confidence is None:
-                    confidence = meta.get("confidence")
-                if quality_score is None:
-                    quality_score = meta.get("quality_score")
+                confidence = meta.get("confidence")
         if confidence is None:
             confidence = 0.5
-        if quality_score is None:
-            quality_score = confidence
+
+        # quality_score — computed by code, NOT from LLM
+        _a = json_data.get("ambiguities", []) if isinstance(json_data.get("ambiguities"), list) else []
+        _b = json_data.get("blockers", []) if isinstance(json_data.get("blockers"), list) else []
+        quality_score = 1.0 - min(len(_a) * 0.05, 0.30) - len(_b) * 0.10
+        quality_score = round(max(0.3, min(1.0, quality_score)), 2)
 
         yield StreamChunk(
             type="complete",

@@ -49,6 +49,7 @@ export class VersionService {
    * Nếu fail và đã có data cũ → giữ data cũ (không wipe về []).
    */
   async loadVersions(): Promise<void> {
+    this.loadingSubject.next(true);
     try {
       // Load versions list từ backend
       const listResult = await this.api.listVersions();
@@ -117,6 +118,8 @@ export class VersionService {
     } catch (error) {
       // API fail — không wipe data cũ, giữ versions hiện tại
       console.warn('Failed to load versions from backend:', error);
+    } finally {
+      this.loadingSubject.next(false);
     }
   }
 
@@ -230,6 +233,9 @@ export class VersionService {
     localStorage.setItem('midicoder_active_version', newVersion.version);
     // Reload để sync toàn bộ danh sách versions + pipeline progress
     await this.loadVersions();
+
+    // Dispatch event — các page component sẽ reload data cho version mới
+    window.dispatchEvent(new CustomEvent('version-switched', { detail: { version: newVersion.version } }));
 
     return newVersion;
   }

@@ -17,7 +17,7 @@ import { ApiService } from '../../core/api.service';
   standalone: true,
   imports: [CommonModule, FormsModule, I18nPipe],
   template: `
-    <div class="py-8">
+    <div>
       <!-- Header -->
       <div class="mb-6">
         <div class="page-header-row">

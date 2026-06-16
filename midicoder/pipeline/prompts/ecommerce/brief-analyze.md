@@ -162,18 +162,11 @@
       </item>
     </field>
     <field name="domain" type="string">Domain — always "ecommerce" for this prompt</field>
-    <field name="quality_score" type="float">
-      Overall brief completeness (0.0 to 1.0).
-      0.9+ = brief is very clear and complete, ready for contract generation.
-      0.7-0.89 = brief is fairly clear, 1-3 minor points need clarification.
-      0.5-0.69 = brief lacks important information, needs significant clarification.
-      Below 0.5 = brief is too vague, missing core entities or domain.
-    </field>
     <field name="blockers" type="array">
       Summaries of ambiguities that are CRITICAL — must be resolved before contract gen.
       Blocker examples: "không biết payment method", "thiếu shipping strategy", "không rõ inventory model"
       Non-blocker examples: "không rõ loyalty points detail", "không rõ email template design"
-      Set to empty array [] if quality_score >= 0.9.
+      Set to empty array [] if there are no critical gaps that prevent contract generation.
     </field>
     <field name="summary" type="string">Comprehensive summary of the e-commerce system in {{ language_display_name }}</field>
   </output_schema>
@@ -346,9 +339,8 @@
     <rule>BEFORE generating ambiguities, review the clarification_history section — do NOT generate ambiguity for points already clarified there</rule>
     <rule>If the brief content contains "Clarification Answers" sections, treat those answers as confirmed facts — do not question them again</rule>
     <rule>Only generate NEW ambiguities that were NOT addressed in previous clarification rounds</rule>
-    <rule>Set quality_score >= 0.9 if the brief is very clear, 0.7-0.89 if fairly clear with minor gaps, below 0.5 if too vague</rule>
-    <rule>Be opinionated: if the brief is well-written, give quality_score >= 0.8</rule>
-    <rule>Set blockers to empty array [] if quality_score >= 0.9</rule>
+    <rule>quality_score is computed by the system (not by LLM) based on ambiguity count and blockers</rule>
+    <rule>Set blockers to empty array [] if there are no critical gaps that prevent contract generation</rule>
     <rule>Blockers should be a subset of ambiguity summaries — only include critical gaps that prevent contract generation</rule>
 
     <rule>Prioritize entities/commands/queries/events from the E-commerce reference sections above</rule>

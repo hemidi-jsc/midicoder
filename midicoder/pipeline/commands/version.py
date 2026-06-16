@@ -43,6 +43,33 @@ def validate_version_name(name: str) -> bool:
     return bool(SEMVER_PATTERN.match(name))
 
 
+def normalize_version(name: str) -> str:
+    """Luôn trả về version string có prefix 'v'.
+
+    Ví dụ: "1.0.0" → "v1.0.0", "v1.0.0" → "v1.0.0"
+    Đây là single source of truth cho format version.
+    """
+    if not name:
+        return name
+    stripped = name.lstrip("v")
+    return f"v{stripped}"
+
+
+def _version_query_variants(name: str) -> list:
+    """Trả về danh sách variants để query DB — cả có/không có prefix 'v'.
+
+    Dùng cho read path để khớp data cũ đã lưu không có 'v'.
+    """
+    if not name:
+        return []
+    variants = set()
+    variants.add(name)
+    stripped = name.lstrip("v")
+    variants.add(stripped)
+    variants.add(f"v{stripped}")
+    return list(variants)
+
+
 def _log_activity(action: str, resource_type: str = "version", resource_id: str = "", details: dict = None, status: str = "success") -> None:
     """Ghi activity log vào artifacts.db activity_log table."""
     log(action=action, resource_type=resource_type, resource_id=resource_id, details=details, status=status)
@@ -156,11 +183,11 @@ def list_versions() -> list[dict]:
         mgr = _get_manager()
         project_id = _get_project_id()
         for v in mgr.version_list(project_id):
-            vname = v.get("version_name", "")
+            vname = normalize_version(v.get("version_name", ""))
             metadata = {
-                "version": vname.lstrip("v"),
+                "version": vname,
                 "status": v.get("status", "draft"),
-                "parent_version": v.get("parent_version"),
+                "parent_version": normalize_version(v.get("parent_version")) if v.get("parent_version") else None,
                 "created_at": v.get("created_at", ""),
                 "active": bool(v.get("active")),
             }
@@ -206,8 +233,8 @@ def create_version(name: str, from_version: Optional[str] = None) -> None:
             version=name,
             suggestion="Sử dụng SemVer format (ví dụ: v1.0.0, v1.0.1-alpha)",
         )
-    if not name.startswith("v"):
-        name = "v" + name
+    # Normalize: luôn có prefix 'v'
+    name = normalize_version(name)
 
     # Check if already exists (file system check)
     version_dir = get_versions_dir() / name
@@ -220,17 +247,15 @@ def create_version(name: str, from_version: Optional[str] = None) -> None:
     project_id = _get_project_id()
     active_version_info = mgr.version_get_active(project_id)
     parent_version_name = active_version_info.get("version_name") if active_version_info else None
-    # Strip leading 'v' for storage
-    parent_version_for_storage = None
-    if parent_version_name:
-        parent_version_for_storage = parent_version_name.lstrip("v")
+    # Normalize parent version (luôn có prefix 'v')
+    parent_version_normalized = normalize_version(parent_version_name) if parent_version_name else None
 
     # 2. Save into SQLite (bắt buộc — fail thì abort)
     #    SQLite lifecycle: archive các version status='inbuild', deselect active, insert mới
     mgr.version_create(
         project_id=project_id,
         version_name=name,
-        parent_version=parent_version_for_storage,
+        parent_version=parent_version_normalized,
         set_active=True,
     )
     _log_activity("version.saved_to_sqlite", resource_id=name)
@@ -259,9 +284,9 @@ def create_version(name: str, from_version: Optional[str] = None) -> None:
         # else: parent has no src directory — nothing to inherit
 
     # 4.5. Clone SQLite data từ parent version (briefs, artifacts, decisions)
-    if parent_version_for_storage:
+    if parent_version_normalized:
         try:
-            _clone_sqlite_data(parent_version_for_storage, name.lstrip("v"))
+            _clone_sqlite_data(parent_version_normalized, name)
             _log_activity("version.sqlite_data_inherited", resource_id=name,
                           details={"from": parent_version_name})
         except Exception:
@@ -270,9 +295,9 @@ def create_version(name: str, from_version: Optional[str] = None) -> None:
 
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     metadata = {
-        "version": name.lstrip("v"),
+        "version": name,
         "created_at": now,
-        "parent_version": parent_version_for_storage,
+        "parent_version": parent_version_normalized,
         "status": "draft",
         "pipeline": {"brief": "none", "contract": "none", "ir": "none", "code": "none"},
         "artifacts": {"briefs": 0, "contracts": 0, "files": 0, "lines": 0},
@@ -313,9 +338,8 @@ def check_create_version(name: str) -> dict:
       - max_versions: int
       - current_count: int
     """
-    # Normalize
-    if not name.startswith("v"):
-        name = "v" + name
+    # Normalize: luôn có prefix 'v'
+    name = normalize_version(name)
 
     # Validate semver
     if not validate_version_name(name):
@@ -426,8 +450,7 @@ def check_create_version(name: str) -> dict:
 
 def use_version(name: str) -> None:
     """Switch sang version khác — SQLite + config file."""
-    if not name.startswith("v"):
-        name = "v" + name
+    name = normalize_version(name)
 
     # Validate version tồn tại trong SQLite (không require directory trong filesystem)
     mgr = _get_manager()
@@ -488,8 +511,7 @@ def list_versions_command() -> None:
 
 def delete_version(name: str, force: bool = False) -> None:
     """Xóa version — SQLite + file system."""
-    if not name.startswith("v"):
-        name = "v" + name
+    name = normalize_version(name)
 
     version_dir = get_versions_dir() / name
     if not version_dir.exists():
@@ -652,7 +674,13 @@ def _delete_sqlite_data(version_name: str) -> None:
     5. decisions — xóa theo related_version
     """
     data_dir = _get_data_dir()
-    vname = version_name.lstrip("v")
+    variants = _version_query_variants(version_name)
+    # Ensure we have at least the normalized + stripped forms
+    vname_stripped = version_name.lstrip("v")
+    if vname_stripped not in variants:
+        variants.append(vname_stripped)
+    if version_name not in variants:
+        variants.append(version_name)
 
     # 1. briefs.db: xóa clarifications → brief_revisions → briefs
     briefs_db = data_dir / "briefs.db"
@@ -660,30 +688,33 @@ def _delete_sqlite_data(version_name: str) -> None:
         from midicoder.storage.sqlite import get_connection
         try:
             with get_connection(briefs_db) as conn:
-                # Lấy tất cả brief_id thuộc version này (cần khớp cả "v1.0.0" và "1.0.0")
+                # Lấy tất cả brief_id thuộc version này (khớp tất cả variants)
+                placeholders = ",".join(["?"] * len(variants))
                 rows = conn.execute(
-                    "SELECT brief_id FROM briefs WHERE version = ? OR version = ?",
-                    (version_name, vname)
+                    f"SELECT brief_id FROM briefs WHERE version IN ({placeholders})",
+                    variants
                 ).fetchall()
                 brief_ids = [r[0] for r in rows]
 
                 if brief_ids:
-                    placeholders = ",".join(["?"] * len(brief_ids))
+                    placeholders_c = ",".join(["?"] * len(brief_ids))
                     # Xóa clarifications (FK → briefs)
                     conn.execute(
-                        f"DELETE FROM clarifications WHERE brief_id IN ({placeholders})",
+                        f"DELETE FROM clarifications WHERE brief_id IN ({placeholders_c})",
                         brief_ids
                     )
                     # Xóa brief_revisions theo version
+                    placeholders_r = ",".join(["?"] * len(variants))
                     conn.execute(
-                        "DELETE FROM brief_revisions WHERE version = ? OR version = ?",
-                        (version_name, vname)
+                        f"DELETE FROM brief_revisions WHERE version IN ({placeholders_r})",
+                        variants
                     )
 
                 # Xóa briefs theo version
+                placeholders_b = ",".join(["?"] * len(variants))
                 conn.execute(
-                    "DELETE FROM briefs WHERE version = ? OR version = ?",
-                    (version_name, vname)
+                    f"DELETE FROM briefs WHERE version IN ({placeholders_b})",
+                    variants
                 )
         except Exception:
             pass
@@ -694,9 +725,10 @@ def _delete_sqlite_data(version_name: str) -> None:
         from midicoder.storage.sqlite import get_connection
         try:
             with get_connection(artifacts_db) as conn:
+                placeholders_a = ",".join(["?"] * len(variants))
                 conn.execute(
-                    "DELETE FROM artifacts WHERE version = ? OR version = ?",
-                    (version_name, vname)
+                    f"DELETE FROM artifacts WHERE version IN ({placeholders_a})",
+                    variants
                 )
         except Exception:
             pass
@@ -725,11 +757,19 @@ def _clone_sqlite_data(parent_version: str, new_version: str) -> None:
     1. briefs → clarifications (clone brief + copy Q&A)
     2. artifacts (clone tất cả artifacts: analysis, contract, mir, plan)
     3. decisions (clone architectural decisions)
+
+    Note: Đọc data cũ với variants (backward compat), ghi mới luôn với prefix 'v'.
     """
     data_dir = _get_data_dir()
-    # Cần strip "v" prefix để khớp cả 2 format
+    # Normalize: luôn ghi mới với prefix 'v'
+    normalized_new = normalize_version(new_version)
+    # Read path: query cả variants để khớp data cũ
+    parent_variants = _version_query_variants(parent_version)
     parent_stripped = parent_version.lstrip("v")
-    new_stripped = new_version.lstrip("v")
+    new_stripped = normalized_new.lstrip("v")
+
+    # Brief ID mapping: old_brief_id → new_brief_id (dùng khi clone artifacts)
+    brief_id_map = {}
 
     # 1. briefs.db: clone briefs + clarifications
     briefs_db = data_dir / "briefs.db"
@@ -737,10 +777,11 @@ def _clone_sqlite_data(parent_version: str, new_version: str) -> None:
         from midicoder.storage.sqlite import get_connection
         try:
             with get_connection(briefs_db) as conn:
-                # Tìm tất cả briefs của parent version
+                # Tìm tất cả briefs của parent version (query tất cả variants)
+                placeholders = ", ".join(["?"] * len(parent_variants))
                 parent_briefs = conn.execute(
-                    "SELECT * FROM briefs WHERE version = ? OR version = ?",
-                    (parent_version, parent_stripped)
+                    f"SELECT * FROM briefs WHERE version IN ({placeholders})",
+                    parent_variants
                 ).fetchall()
 
                 for brief in parent_briefs:
@@ -752,23 +793,26 @@ def _clone_sqlite_data(parent_version: str, new_version: str) -> None:
                         # Fallback: thêm suffix version mới
                         new_brief_id = f"{old_brief_id}-{new_stripped}"
 
+                    # Ghi mapping để clone artifacts dùng sau
+                    brief_id_map[old_brief_id] = new_brief_id
+
                     try:
                         conn.execute(
                             """INSERT INTO briefs
-                            (brief_id, version, type, title, content, status, source_file, hash, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+                            (brief_id, version, title, content, status, content_hash, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
                             (
-                                new_brief_id, new_version,
-                                brief_dict.get("type", "working"),
+                                new_brief_id, normalized_new,
                                 brief_dict.get("title"),
                                 brief_dict.get("content"),
-                                brief_dict.get("status", "draft"),
-                                brief_dict.get("source_file"),
-                                brief_dict.get("hash"),
+                                "draft",  # Luôn set draft cho version mới
+                                brief_dict.get("content_hash"),
                             )
                         )
 
-                        # Clone clarifications theo brief cũ → brief mới
+                        # Clone clarifications — RESET round=0 để clarify counter mới bắt đầu từ 0
+                        # Giữ nguyên Q&A history để user thấy context, nhưng round=0
+                        # giúp max_rounds check (backend) đếm từ đầu cho version mới
                         clarifications = conn.execute(
                             "SELECT * FROM clarifications WHERE brief_id = ?",
                             (old_brief_id,)
@@ -781,20 +825,27 @@ def _clone_sqlite_data(parent_version: str, new_version: str) -> None:
                                 VALUES (?, ?, ?, ?, ?, datetime('now'))""",
                                 (
                                     new_brief_id,
-                                    clar_dict.get("round", 1),
+                                    0,  # Reset round → clarify counter = 0 cho version mới
                                     clar_dict.get("question"),
                                     clar_dict.get("answer"),
                                     clar_dict.get("is_memo", 0),
                                 )
                             )
 
-                        # Clone brief_revisions (tạo record mới ghi nhận là clone)
-                        conn.execute(
-                            """INSERT INTO brief_revisions
-                            (brief_id, parent_brief_id, version, change_type, change_description)
-                            VALUES (?, ?, ?, ?, ?)""",
-                            (new_brief_id, new_brief_id, new_version, "cloned", f"Cloned from {parent_version}")
-                        )
+                        # Chỉ tạo 1 revision "cloned" — không clone history cũ
+                        # Lưu content_snapshot để diff so với revision này không tính toàn bộ content là "added"
+                        import hashlib
+                        content_snapshot = brief_dict.get("content", "")
+                        snapshot_hash = hashlib.sha256(content_snapshot.encode()).hexdigest() if content_snapshot else None
+                        try:
+                            conn.execute(
+                                """INSERT INTO brief_revisions
+                                (brief_id, version, revision_number, event, snapshot_hash, diff_summary, content_snapshot, created_at)
+                                VALUES (?, ?, 1, 'cloned', ?, ?, ?, datetime('now'))""",
+                                (new_brief_id, normalized_new, snapshot_hash, f"Cloned from {parent_version}", content_snapshot)
+                            )
+                        except Exception:
+                            pass
                     except Exception:
                         pass  # Skip nếu brief_id trùng hoặc có lỗi
         except Exception:
@@ -806,9 +857,12 @@ def _clone_sqlite_data(parent_version: str, new_version: str) -> None:
         from midicoder.storage.sqlite import get_connection
         try:
             with get_connection(artifacts_db) as conn:
+                # Query tất cả variants của parent version (có/không có 'v' prefix)
+                parent_artifact_variants = _version_query_variants(parent_version)
+                placeholders = ", ".join(["?"] * len(parent_artifact_variants))
                 parent_artifacts = conn.execute(
-                    "SELECT * FROM artifacts WHERE version = ? OR version = ?",
-                    (parent_version, parent_stripped)
+                    f"SELECT * FROM artifacts WHERE version IN ({placeholders})",
+                    parent_artifact_variants
                 ).fetchall()
 
                 for art in parent_artifacts:
@@ -817,6 +871,10 @@ def _clone_sqlite_data(parent_version: str, new_version: str) -> None:
                     new_artifact_id = old_artifact_id.replace(parent_stripped, new_stripped, 1)
                     if new_artifact_id == old_artifact_id:
                         new_artifact_id = f"{old_artifact_id}-{new_stripped}"
+
+                    # Map brief_id từ parent → new (quan trọng: analysis phải link tới brief mới)
+                    old_brief_ref = art_dict.get("brief_id")
+                    new_brief_ref = brief_id_map.get(old_brief_ref, old_brief_ref)
 
                     try:
                         conn.execute(
@@ -827,8 +885,8 @@ def _clone_sqlite_data(parent_version: str, new_version: str) -> None:
                                 new_artifact_id,
                                 art_dict.get("type"),
                                 art_dict.get("name"),
-                                new_version,
-                                art_dict.get("brief_id"),
+                                normalized_new,
+                                new_brief_ref,
                                 art_dict.get("content"),
                                 art_dict.get("status", "pending"),
                                 art_dict.get("metadata"),
@@ -871,7 +929,7 @@ def _clone_sqlite_data(parent_version: str, new_version: str) -> None:
                                 dec_dict.get("consequences"),
                                 dec_dict.get("decided_by"),
                                 dec_dict.get("related_brief_id"),
-                                new_version,
+                                normalized_new,
                             )
                         )
                     except Exception:

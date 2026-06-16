@@ -17,7 +17,7 @@ import { DOCS_BASE } from '../../core/app.constants';
   standalone: true,
   imports: [CommonModule, FormsModule, I18nPipe],
   template: `
-    <div class="py-8">
+    <div>
       <!-- Header -->
       <div class="mb-6">
         <div class="page-header-row">
@@ -115,6 +115,22 @@ import { DOCS_BASE } from '../../core/app.constants';
           <details class="border-t border-border-primary pt-5">
             <summary class="text-base font-medium text-accent-primary cursor-pointer hover:text-accent-warning select-none">{{ 'llm.advanced' | i18n }}</summary>
             <div class="space-y-6 mt-6">
+              <!-- Tip box -->
+              <div class="tip-box">
+                <span class="tip-icon"><i class="fa-solid fa-circle-info"></i></span>
+                <div class="tip-content">
+                  <p class="tip-title">{{ 'llm.advancedTipTitle' | i18n }}</p>
+                  <ul class="tip-list">
+                    <li><span class="tip-term">{{ 'llm.temperature' | i18n }}</span> — {{ 'llm.tipTemperature' | i18n }}</li>
+                    <li><span class="tip-term">{{ 'llm.topP' | i18n }}</span> — {{ 'llm.tipTopP' | i18n }}</li>
+                    <li><span class="tip-term">{{ 'llm.topK' | i18n }}</span> — {{ 'llm.tipTopK' | i18n }}</li>
+                    <li><span class="tip-term">{{ 'llm.minP' | i18n }}</span> — {{ 'llm.tipMinP' | i18n }}</li>
+                    <li><span class="tip-term">{{ 'llm.presencePenalty' | i18n }}</span> — {{ 'llm.tipPresencePenalty' | i18n }}</li>
+                    <li><span class="tip-term">{{ 'llm.repetitionPenalty' | i18n }}</span> — {{ 'llm.tipRepetitionPenalty' | i18n }}</li>
+                  </ul>
+                </div>
+              </div>
+
               <div class="grid grid-cols-2 gap-6">
                 <div>
                   <label class="block text-base font-medium text-text-secondary mb-2">{{ 'llm.maxTokens' | i18n }}</label>
@@ -154,6 +170,71 @@ import { DOCS_BASE } from '../../core/app.constants';
                     [(ngModel)]="llm.retry_attempts"
                     name="retry_attempts"
                     type="number"
+                    class="w-full bg-bg-secondary border border-border-primary rounded-lg p-3 text-text-primary focus:outline-none focus:border-accent-primary"
+                  />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-6">
+                <div>
+                  <label class="block text-base font-medium text-text-secondary mb-2">{{ 'llm.topP' | i18n }}</label>
+                  <input
+                    [(ngModel)]="llm.top_p"
+                    name="top_p"
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    class="w-full bg-bg-secondary border border-border-primary rounded-lg p-3 text-text-primary focus:outline-none focus:border-accent-primary"
+                  />
+                </div>
+                <div>
+                  <label class="block text-base font-medium text-text-secondary mb-2">{{ 'llm.topK' | i18n }}</label>
+                  <input
+                    [(ngModel)]="llm.top_k"
+                    name="top_k"
+                    type="number"
+                    min="0"
+                    step="1"
+                    class="w-full bg-bg-secondary border border-border-primary rounded-lg p-3 text-text-primary focus:outline-none focus:border-accent-primary"
+                  />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-6">
+                <div>
+                  <label class="block text-base font-medium text-text-secondary mb-2">{{ 'llm.minP' | i18n }}</label>
+                  <input
+                    [(ngModel)]="llm.min_p"
+                    name="min_p"
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    class="w-full bg-bg-secondary border border-border-primary rounded-lg p-3 text-text-primary focus:outline-none focus:border-accent-primary"
+                  />
+                </div>
+                <div>
+                  <label class="block text-base font-medium text-text-secondary mb-2">{{ 'llm.presencePenalty' | i18n }}</label>
+                  <input
+                    [(ngModel)]="llm.presence_penalty"
+                    name="presence_penalty"
+                    type="number"
+                    min="-2"
+                    max="2"
+                    step="0.1"
+                    class="w-full bg-bg-secondary border border-border-primary rounded-lg p-3 text-text-primary focus:outline-none focus:border-accent-primary"
+                  />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-6">
+                <div>
+                  <label class="block text-base font-medium text-text-secondary mb-2">{{ 'llm.repetitionPenalty' | i18n }}</label>
+                  <input
+                    [(ngModel)]="llm.repetition_penalty"
+                    name="repetition_penalty"
+                    type="number"
+                    min="1"
+                    max="2"
+                    step="0.05"
                     class="w-full bg-bg-secondary border border-border-primary rounded-lg p-3 text-text-primary focus:outline-none focus:border-accent-primary"
                   />
                 </div>
@@ -274,6 +355,43 @@ import { DOCS_BASE } from '../../core/app.constants';
     details[open] summary::before {
       transform: rotate(90deg);
     }
+
+    /* Tip box — subtle, no flashy colors */
+    .tip-box {
+      display: flex;
+      gap: 10px;
+      padding: 12px 14px;
+      border-left: 3px solid var(--border-primary);
+      background: var(--bg-secondary);
+    }
+
+    .tip-icon {
+      flex-shrink: 0;
+      color: var(--text-tertiary);
+      font-size: 14px;
+      line-height: 1.5;
+      margin-top: 2px;
+    }
+
+    .tip-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin: 0 0 6px 0;
+    }
+
+    .tip-list {
+      margin: 0;
+      padding-left: 16px;
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--text-tertiary);
+    }
+
+    .tip-term {
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
   `],
 })
 export class LlmConfigComponent implements OnInit {
@@ -290,6 +408,11 @@ export class LlmConfigComponent implements OnInit {
     api_key: '' as string,
     max_tokens: 8192,
     temperature: 0.3,
+    top_p: 0.9,
+    top_k: 0,
+    min_p: 0.0,
+    presence_penalty: 0.0,
+    repetition_penalty: 1.0,
     timeout: 300,
     retry_attempts: 3,
   };
@@ -315,6 +438,11 @@ export class LlmConfigComponent implements OnInit {
       this.llm.api_key = llm.api_key || '';
       this.llm.max_tokens = llm.max_tokens ?? 8192;
       this.llm.temperature = llm.temperature ?? 0.3;
+      this.llm.top_p = llm.top_p ?? 0.9;
+      this.llm.top_k = llm.top_k ?? 0;
+      this.llm.min_p = llm.min_p ?? 0.0;
+      this.llm.presence_penalty = llm.presence_penalty ?? 0.0;
+      this.llm.repetition_penalty = llm.repetition_penalty ?? 1.0;
       this.llm.timeout = llm.timeout ?? 300;
       this.llm.retry_attempts = llm.retry_attempts ?? 3;
       this.providers = result.data.providers || [];
@@ -339,6 +467,11 @@ export class LlmConfigComponent implements OnInit {
         api_key: this.llm.api_key || undefined,
         max_tokens: this.llm.max_tokens,
         temperature: this.llm.temperature,
+        top_p: this.llm.top_p,
+        top_k: this.llm.top_k,
+        min_p: this.llm.min_p,
+        presence_penalty: this.llm.presence_penalty,
+        repetition_penalty: this.llm.repetition_penalty,
         timeout: this.llm.timeout,
         retry_attempts: this.llm.retry_attempts,
       });

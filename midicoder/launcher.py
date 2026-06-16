@@ -385,8 +385,8 @@ def _start_sqlite_viewer() -> Optional[ServerHandle]:
 
     # 2. Per-project DBs from registered projects
     try:
-        from midicoder.storage.projects import ProjectsManager
-        mgr = ProjectsManager()
+        from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
+        mgr = ProjectsManager(db_path=DB_PROJECTS)
         mgr.init()
         for proj in mgr.list_all():
             proj_data = Path(proj["path"]) / ".midicoder" / "data"
