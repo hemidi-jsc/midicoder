@@ -47,6 +47,26 @@ DB_ARTIFACTS = DATABASE_DIR / "artifacts.db"
 DB_PROVENANCE = DATABASE_DIR / "provenance.db"
 DB_CONTEXT = DATABASE_DIR / "context.db"
 
+
+def get_project_db_path(project_cwd: str, db_name: str) -> Path:
+    """Resolve project-level database path: <project>/.midicoder/data/<db_name>."""
+    return Path(project_cwd) / ".midicoder" / "data" / db_name
+
+
+def get_active_project_cwd() -> Optional[str]:
+    """Resolve active project working directory from projects.db."""
+    try:
+        from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
+        mgr = ProjectsManager(db_path=DB_PROJECTS)
+        mgr.init()
+        active = mgr.get_active()
+        if active:
+            return active.get("path")
+    except Exception:
+        pass
+    return None
+
+
 # ============================================================================
 # Database Connection Helper với Error Handling
 # ============================================================================

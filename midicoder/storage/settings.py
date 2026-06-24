@@ -60,7 +60,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "llm.retry_attempts": 3,
     "llm.cache_enabled": True,
     "mcp.host": "localhost",
-    "mcp.port": 2026,
+    "mcp.port": 7878,
     "neo4j.host": "localhost",
     "neo4j.port": 7687,
     "neo4j.username": "neo4j",

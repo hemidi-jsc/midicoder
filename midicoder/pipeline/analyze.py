@@ -275,6 +275,9 @@ async def analyze_brief_with_llm_stream(
         thinking_buffer = ""
         in_thinking = False
 
+        # Support both <thinking> and <antThinking> (Qwen DashScope)
+        THINKING_TAGS = [("<thinking>", "</thinking>"), ("<antThinking>", "</antThinking>")]
+
         async for chunk in call_llm_stream(
             config=llm_config,
             system=system_prompt,
@@ -284,24 +287,33 @@ async def analyze_brief_with_llm_stream(
             if content:
                 accumulated += content
 
-                # Detect <thinking> tags
-                if "<thinking>" in content and "</thinking>" not in content:
-                    in_thinking = True
+                if in_thinking:
+                    # Already inside thinking — look for any closing tag
                     thinking_buffer += content
+                    for _, close_tag in THINKING_TAGS:
+                        if close_tag in content:
+                            in_thinking = False
+                            yield StreamChunk(type="thinking_end", data=thinking_buffer)
+                            thinking_buffer = ""
+                            break
                     yield StreamChunk(type="thinking", data=content, accumulated=accumulated)
                     continue
-                if in_thinking:
-                    thinking_buffer += content
-                    if "</thinking>" in content:
-                        in_thinking = False
-                        yield StreamChunk(type="thinking_end", data=thinking_buffer)
-                        thinking_buffer = ""
-                    else:
-                        yield StreamChunk(type="thinking", data=content, accumulated=accumulated)
-                    continue
 
-                # Regular content chunk
-                yield StreamChunk(type="content", data=content, accumulated=accumulated)
+                # Not in thinking — check if a thinking tag opens in this chunk
+                for open_tag, close_tag in THINKING_TAGS:
+                    if open_tag in content:
+                        in_thinking = True
+                        thinking_buffer += content
+                        yield StreamChunk(type="thinking", data=content, accumulated=accumulated)
+                        # Handle case where open + close are in the same chunk
+                        if close_tag in content:
+                            in_thinking = False
+                            yield StreamChunk(type="thinking_end", data=thinking_buffer)
+                            thinking_buffer = ""
+                        break
+                else:
+                    # No thinking tag opened — regular content
+                    yield StreamChunk(type="content", data=content, accumulated=accumulated)
 
         latency_ms = int((time.time() - start_time) * 1000)
 

@@ -20,9 +20,6 @@ import {
   Brief,
   ContractGenRequest,
   ContractGenResponse,
-  ContractCheckRequest,
-  ContractCheckResponse,
-  ContractIR,
   IRBuildRequest,
   IRBuildResponse,
   MIR,
@@ -515,38 +512,117 @@ export class ApiService {
   // ============================================================================
 
   /**
-   * POST /contract/gen - Generate contract
+   * POST /contract/freeze - Freeze contracts
    */
-  async generateContract(request?: ContractGenRequest): Promise<ApiResponse<ContractGenResponse>> {
-    return this.post('/contract/gen', request || {});
+  async freezeContract(): Promise<ApiResponse<{
+    frozen_count: number;
+    validation_status: string;
+    errors: number;
+    warnings: number;
+  }>> {
+    return this.post('/contract/freeze', {});
   }
 
   /**
-   * POST /contract/gen/resume - Resume contract generation
+   * SSE Stream: GET /contract/gen-category-stream — gen 1 category riêng
+   * Compatible with llm-progress component events
    */
-  async resumeContractGen(): Promise<ApiResponse<any>> {
-    return this.post('/contract/gen/resume');
+  async* streamContractCategory(category: string): AsyncGenerator<{event: string; data: any}, void, unknown> {
+    const url = `http://localhost:6868/api/contract/gen-category-stream?category=${encodeURIComponent(category)}`;
+    yield* this._parseSseStream(url);
   }
 
   /**
-   * POST /contract/check - Check contract
+   * Internal helper: parse SSE stream from a URL
    */
-  async checkContract(request?: ContractCheckRequest): Promise<ApiResponse<ContractCheckResponse>> {
-    return this.post('/contract/check', request || {});
+  private async* _parseSseStream(url: string): AsyncGenerator<{event: string; data: any}, void, unknown> {
+    const response = await fetch(url, {
+      headers: {
+        'X-Language': this.i18n.getLanguage(),
+        'Accept-Language': this.i18n.getLanguage(),
+      },
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`Stream failed: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n\n');
+        // Keep the last incomplete chunk in buffer
+        buffer = lines.pop() || '';
+
+        for (const chunk of lines) {
+          const parts = chunk.split('\n');
+          let currentEvent = '';
+          let currentData = '';
+
+          for (const line of parts) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              currentData = line.slice(6).trim();
+            }
+          }
+
+          if (currentData) {
+            try {
+              yield { event: currentEvent, data: JSON.parse(currentData) };
+            } catch {
+              yield { event: currentEvent, data: currentData };
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 
   /**
-   * GET /contract/ir - Get contract IR
+   * GET /contract/artifacts?category={key} - Check existence + metadata for a contract category
    */
-  async getContractIR(): Promise<ApiResponse<ContractIR>> {
-    return this.get('/contract/ir');
+  async getContractArtifact(category: string): Promise<ApiResponse<{
+    exists: boolean;
+    artifact_id?: string;
+    status?: string;
+    content_length?: number;
+    updated_at?: string;
+  }>> {
+    return this.get<any>(`/contract/artifacts?category=${encodeURIComponent(category)}`);
   }
 
   /**
-   * POST /contract/feedback - Contract feedback
+   * GET /contract/artifacts/{category} - Get raw YAML content for a contract category
    */
-  async contractFeedback(): Promise<ApiResponse<any>> {
-    return this.post('/contract/feedback');
+  async getContractArtifactContent(category: string): Promise<ApiResponse<{
+    exists: boolean;
+    content: string;
+    artifact_id?: string;
+    status?: string;
+    updated_at?: string;
+  }>> {
+    return this.get<any>(`/contract/artifacts/${encodeURIComponent(category)}`);
+  }
+
+  /**
+   * GET /contract/manifest - Get contract manifest
+   */
+  async getContractManifest(): Promise<ApiResponse<{
+    total: number;
+    categories: Record<string, { name: string; status: string; updated_at: string }>;
+  }>> {
+    return this.get('/contract/manifest');
   }
 
   // ============================================================================

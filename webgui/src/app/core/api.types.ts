@@ -131,22 +131,6 @@ export interface ContractGenResponse {
   };
 }
 
-export interface ContractCheckRequest {
-  version: string;
-  auto_fix?: boolean;
-}
-
-export interface ContractCheckResponse {
-  status: string;
-  errors: {
-    before: number;
-    after: number;
-    auto_fixed: number;
-  };
-  warnings: number;
-  report_path: string;
-}
-
 export interface ContractIR {
   schema: string;
   domain: string;
@@ -156,6 +140,11 @@ export interface ContractIR {
   queries: any[];
   events: any[];
   workflows: any[];
+  value_objects: any[];
+  guards: any[];
+  roles: any[];
+  ui_components: any[];
+  [key: string]: any;
 }
 
 // ============================================================================

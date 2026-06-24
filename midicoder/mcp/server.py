@@ -9,7 +9,7 @@ Hỗ trợ 2 chế độ vận hành:
 2. **HTTP+SSE fallback**: Sử dụng aiohttp/http.server nếu MCP SDK không có
 
 Config:
-- Port: 2026 (mặc định từ global config, có thể override bằng env MCP_PORT)
+- Port: 7878 (mặc định từ global config, có thể override bằng env MCP_PORT)
 - Host: localhost (từ global config)
 
 Sử dụng:
@@ -29,12 +29,8 @@ import logging
 import os
 import signal
 import time
-import traceback
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from threading import Thread
 from typing import Any, Callable, Dict, List, Optional
-from urllib.parse import parse_qs, urlparse
 
 from midicoder.errors import MidicoderErrorManager as EM, ErrorCode
 from midicoder.mcp.tools import TOOLS
@@ -79,7 +75,7 @@ class MCPSDKServer:
     Tự động đăng ký tất cả tools từ TOOLS registry.
     """
 
-    def __init__(self, host: str = "localhost", port: int = 2026):
+    def __init__(self, host: str = "localhost", port: int = 7878):
         self.host = host
         self.port = port
         self._mcp: Optional[FastMCP] = None
@@ -126,126 +122,25 @@ class MCPSDKServer:
 
 
 # ============================================================================
-# HTTP+SSE Fallback Server (khi MCP SDK không có)
+# MCP Fallback Server — uvicorn + Starlette
 # ============================================================================
 
 
-class MCPFallbackHandler(BaseHTTPRequestHandler):
-    """HTTP request handler cho MCP fallback với SSE transport."""
+def _build_mcp_app():
+    """Tạo Starlette app với các MCP endpoints."""
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse, Response
+    from starlette.routing import Route
+    from starlette.requests import Request
 
-    server_instance: "MCPFallbackServer" = None  # type: ignore
+    starlette_app = Starlette(routes=[])
 
-    def log_message(self, format: str, *args: Any) -> None:  # type: ignore
-        logger.info(f"[MCP] {format % args}")
+    # ── /health ──
+    async def health(request: Request) -> JSONResponse:
+        return JSONResponse({"status": "ok", "server": "midicoder-ce-mcp"})
 
-    def do_GET(self):
-        """Xử lý GET request — SSE endpoint."""
-        parsed = urlparse(self.path)
-
-        if parsed.path == "/sse":
-            self._handle_sse()
-        elif parsed.path == "/health":
-            self._send_json(200, {"status": "ok", "server": "midicoder-ce-mcp"})
-        elif parsed.path == "/tools":
-            self._list_tools()
-        else:
-            self._send_json(404, {"error": "Not found"})
-
-    def do_POST(self):
-        """Xử lý POST request — tool call endpoint."""
-        parsed = urlparse(self.path)
-
-        if parsed.path == "/tools/call":
-            self._handle_tool_call()
-        else:
-            self._send_json(404, {"error": "Not found"})
-
-    def _handle_sse(self):
-        """Xử lý SSE connection."""
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
-
-        # Gửi initial event
-        self._write_sse_event(
-            "connected",
-            {
-                "server": "midicoder-ce-mcp",
-                "version": "0.1.0",
-                "tools": list(TOOLS.keys()),
-            }
-        )
-        self.flush_headers()
-
-    def _write_sse_event(self, event: str, data: Any):
-        """Gửi SSE event."""
-        self.wfile.write(f"event: {event}\n".encode())
-        self.wfile.write(f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode())
-        self.flush_headers()
-
-    def _handle_tool_call(self):
-        """Xử lý tool call request."""
-        try:
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length)
-            request = json.loads(body)
-
-            tool_name = request.get("name") or request.get("tool")
-            arguments = request.get("arguments", {})
-
-            if not tool_name:
-                self._send_json(400, {"error": "Thiếu tool name"})
-                return
-
-            if tool_name not in TOOLS:
-                self._send_json(404, {
-                    "error": f"Tool '{tool_name}' không tồn tại",
-                    "available_tools": list(TOOLS.keys()),
-                })
-                return
-
-            # Gọi tool function
-            start_time = time.time()
-            tool_info = TOOLS[tool_name]
-            func = tool_info["function"]
-
-            try:
-                result = func(**arguments)
-                duration_ms = int((time.time() - start_time) * 1000)
-
-                logger.info(
-                    f"Tool call: {tool_name} "
-                    f"(args={json.dumps(arguments)}, duration={duration_ms}ms)"
-                )
-
-                self._send_json(200, {
-                    "tool": tool_name,
-                    "result": result,
-                    "duration_ms": duration_ms,
-                })
-
-            except Exception as e:
-                duration_ms = int((time.time() - start_time) * 1000)
-                error_msg = f"{type(e).__name__}: {str(e)}"
-                logger.error(f"Tool call error: {tool_name} — {error_msg}")
-
-                self._send_json(500, {
-                    "tool": tool_name,
-                    "error": error_msg,
-                    "traceback": traceback.format_exc(),
-                    "duration_ms": duration_ms,
-                })
-
-        except json.JSONDecodeError:
-            self._send_json(400, {"error": "JSON không hợp lệ"})
-        except Exception as e:
-            logger.error(f"Lỗi khi xử lý tool call: {e}")
-            self._send_json(500, {"error": str(e)})
-
-    def _list_tools(self):
-        """Trả về danh sách tools."""
+    # ── /tools ──
+    async def list_tools(request: Request) -> JSONResponse:
         tools_list = []
         for name, info in TOOLS.items():
             tools_list.append({
@@ -254,63 +149,107 @@ class MCPFallbackHandler(BaseHTTPRequestHandler):
                 "parameters": info.get("parameters", {}),
                 "group": info.get("group", "unknown"),
             })
+        return JSONResponse({"tools": tools_list, "total": len(tools_list)})
 
-        self._send_json(200, {
-            "tools": tools_list,
-            "total": len(tools_list),
-            "groups": list(set(info.get("group", "") for info in TOOLS.values())),
-        })
+    # ── /tools/call (POST) ──
+    async def call_tool(request: Request) -> JSONResponse:
+        body = await request.json()
+        tool_name = body.get("name", "")
+        arguments = body.get("arguments", {})
 
-    def _send_json(self, status: int, data: Any):
-        """Gửi JSON response."""
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(data, ensure_ascii=False).encode())
+        if tool_name not in TOOLS:
+            return JSONResponse(
+                {"error": f"Unknown tool: {tool_name}"},
+                status_code=404,
+            )
 
-    def flush_headers(self):
-        """Flush response."""
-        self.wfile.flush()
+        func = TOOLS[tool_name]["function"]
+        try:
+            result = func(**arguments)
+            return JSONResponse({"result": result})
+        except Exception as e:
+            return JSONResponse(
+                {"error": str(e)},
+                status_code=500,
+            )
+
+    # ── /sse (SSE stream) ──
+    async def sse_endpoint(request: Request) -> Response:
+        import asyncio
+
+        async def event_generator():
+            # Send initial connected event
+            initial = {
+                "server": "midicoder-ce-mcp",
+                "version": "0.1.0",
+                "tools": list(TOOLS.keys()),
+            }
+            yield f"event: connected\ndata: {json.dumps(initial, ensure_ascii=False)}\n\n"
+
+            # Keep connection alive
+            while True:
+                try:
+                    await asyncio.sleep(30)
+                    yield ": heartbeat\n\n"
+                except asyncio.CancelledError:
+                    break
+
+        return Response(content=event_generator(), media_type="text/event-stream")
+
+    starlette_app.router.routes.append(Route("/health", health, methods=["GET"]))
+    starlette_app.router.routes.append(Route("/tools", list_tools, methods=["GET"]))
+    starlette_app.router.routes.append(Route("/tools/call", call_tool, methods=["POST"]))
+    starlette_app.router.routes.append(Route("/sse", sse_endpoint, methods=["GET"]))
+
+    return starlette_app
+
+
+# Module-level app — để start bằng CLI: uvicorn midicoder.mcp.server:app --port 7878
+app = _build_mcp_app()
 
 
 class MCPFallbackServer:
     """
-    MCP Server fallback — HTTP+SSE server khi MCP SDK không có.
+    MCP Server fallback — uvicorn + Starlette khi MCP SDK không có.
 
-    Chạy HTTPServer trong background thread.
+    Chạy uvicorn.Server (async) với clean shutdown qua should_exit.
     """
 
-    def __init__(self, host: str = "localhost", port: int = 2026):
+    def __init__(self, host: str = "localhost", port: int = 7878):
         self.host = host
         self.port = port
-        self._server: Optional[HTTPServer] = None
-        self._thread: Optional[Thread] = None
+        self._server: Any = None
 
     def run(self) -> None:
-        """Chạy HTTP+SSE server."""
+        """Chạy uvicorn server với clean shutdown."""
         _setup_logging()
-        MCPFallbackHandler.server_instance = self
 
-        self._server = HTTPServer((self.host, self.port), MCPFallbackHandler)
+        import uvicorn
+        config = uvicorn.Config(
+            app,
+            host=self.host,
+            port=self.port,
+            log_level="warning",
+            loop="asyncio",
+        )
+        self._server = uvicorn.Server(config)
 
         logger.info(
-            f"Starting Midicoder CE MCP Server (HTTP+SSE fallback) "
+            f"Starting Midicoder CE MCP Server (uvicorn fallback) "
             f"on {self.host}:{self.port}"
         )
         logger.info(f"Endpoints: SSE=/sse, Tools=/tools, Call=/tools/call, Health=/health")
         logger.info(f"Tổng số tools: {len(TOOLS)}")
 
         try:
-            self._server.serve_forever()
+            self._server.run()
         except KeyboardInterrupt:
             logger.info("Đã nhận tín hiệu dừng server")
-        finally:
-            self.stop()
 
     def stop(self) -> None:
-        """Dừng server."""
+        """Dừng server (uvicorn clean shutdown)."""
         if self._server:
-            self._server.shutdown()
+            self._server.should_exit = True
             logger.info("MCP Server đã dừng")
 
 
@@ -329,10 +268,10 @@ def get_mcp_config() -> tuple[str, int]:
     try:
         config = get_config()
         host = config.get("mcp.host", "localhost")
-        port = config.get("mcp.port", 2026)
+        port = config.get("mcp.port", 7878)
     except Exception:
         host = os.environ.get("MCP_HOST", "localhost")
-        port = int(os.environ.get("MCP_PORT", "2026"))
+        port = int(os.environ.get("MCP_PORT", "7878"))
 
     return host, port
 

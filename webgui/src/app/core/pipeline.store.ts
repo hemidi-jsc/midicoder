@@ -302,33 +302,6 @@ export class PipelineStore implements OnDestroy {
     }
   }
 
-  async runContractGen(): Promise<boolean> {
-    this.contractPhaseState.set({ status: 'in_progress' });
-    try {
-      const result = await this.api.generateContract();
-      if (result.success) {
-        this.contractPhaseState.set({ status: 'complete', completedAt: new Date().toISOString() });
-        return true;
-      } else {
-        this.contractPhaseState.set({ status: 'error', errorMessage: result.message || 'Contract gen failed' });
-        return false;
-      }
-    } catch (error) {
-      this.contractPhaseState.set({ status: 'error', errorMessage: String(error) });
-      return false;
-    }
-  }
-
-  async runContractCheck(): Promise<boolean> {
-    try {
-      const result = await this.api.checkContract();
-      return result.success;
-    } catch (error) {
-      console.error('Contract check failed:', error);
-      return false;
-    }
-  }
-
   async runIRBuild(): Promise<boolean> {
     this.irPhaseState.set({ status: 'in_progress' });
     try {

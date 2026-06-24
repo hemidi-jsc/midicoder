@@ -21,6 +21,7 @@ export interface StreamMessage {
   standalone: true,
   imports: [CommonModule, I18nPipe],
   template: `
+    @if (visible) {
     <div class="llm-progress-backdrop">
       <div class="llm-progress-card" (click)="$event.stopPropagation()">
         <!-- Header -->
@@ -66,70 +67,158 @@ export interface StreamMessage {
         <!-- Tab content -->
         <div class="overlay-content">
 
-          <!-- Stream tab — real-time LLM stream -->
+          <!-- Stream tab — vertical timeline -->
           @if (activeTab === 'stream') {
             <div class="stream-panel" #streamPanel>
-              <!-- Init phase events (compact) -->
+              <!-- Init phase (compact info lines) -->
               @for (evt of initEvents; track evt) {
                 @if (evt.type === 'started') {
-                  <div class="stream-line stream-line-info">
-                    <span class="line-label">{{ 'analyze.stream.started' | i18n }}</span>
-                    <span class="line-val">
-                      @if (evt.data?.brief_id) {
-                        #{{ evt.data.brief_id }}, {{ evt.data.brief_length }} {{ 'analyze.payload.chars' | i18n }}
-                      } @else {
-                        {{ 'analyze.stream.started' | i18n }}
-                      }
-                    </span>
+                  <div class="timeline-info">
+                    <i class="fa-solid fa-play"></i>
+                    <span>Bắt đầu: #{{ evt.data?.brief_id || 'unknown' }}</span>
                   </div>
                 } @else if (evt.type === 'llm_config') {
-                  <div class="stream-line stream-line-info">
-                    <span class="line-label">{{ 'analyze.stream.llmConfig' | i18n }}</span>
-                    <span class="line-val">{{ evt.data?.model }}, T={{ evt.data?.temperature }}</span>
-                  </div>
-                } @else if (evt.type === 'context_injected') {
-                  <div class="stream-line stream-line-info">
-                    <span class="line-label">{{ 'analyze.stream.contextInjected' | i18n }}</span>
-                    <span class="line-val">{{ evt.data?.token_count }} tokens ({{ evt.data?.query_time_ms }}ms)</span>
+                  <div class="timeline-info">
+                    <i class="fa-solid fa-server"></i>
+                    <span>{{ evt.data?.model }}, T={{ evt.data?.temperature }}</span>
                   </div>
                 } @else if (evt.type === 'user_payload') {
-                  <div class="stream-line stream-line-info">
-                    <span class="line-label">{{ 'analyze.stream.payloadSent' | i18n }}</span>
-                    <span class="line-val">{{ evt.data?.user_message_length }} {{ 'analyze.payload.chars' | i18n }}</span>
+                  <div class="timeline-info">
+                    <i class="fa-solid fa-paper-plane"></i>
+                    <span>{{ evt.data?.user_message_length }} ký tự</span>
                   </div>
                 }
               }
 
-              <!-- LLM thinking — shown as it arrives, stripped of tags -->
-              @if (accumulatedThinking) {
-                <div class="stream-thinking">
-                  @if (!thinkingDone) {
-                    <span class="thinking-label">{{ 'analyze.stream.thinking' | i18n }}</span>
+              <!-- Timeline — LLM conversation flow -->
+              @if (toolEvents.length > 0) {
+                <div class="timeline-separator"></div>
+
+                @for (te of toolEvents; track te) {
+                  <!-- Thinking — LLM internal reasoning (auto-expanded when streaming) -->
+                  @if (te.type === 'thinking' && te.text) {
+                    <div class="timeline-item timeline-thinking" [class.streaming]="te.isStreaming">
+                      <button class="timeline-header" (click)="te._expanded = !te._expanded">
+                        <span class="timeline-dot"><i class="fa-solid fa-brain"></i></span>
+                        <span class="timeline-label">Suy nghĩ</span>
+                        @if (te.isStreaming) {
+                          <span class="live-cursor-dot"></span>
+                        }
+                        <span class="timeline-toggle"><i class="fa-solid fa-chevron-right" [class.expanded]="te._expanded"></i></span>
+                      </button>
+                      @if (te._expanded) {
+                        <div class="timeline-body">
+                          <div class="timeline-thinking-text">
+                            {{ te.text }}
+                            @if (te.isStreaming) {<span class="live-cursor">|</span>}
+                          </div>
+                        </div>
+                      }
+                    </div>
                   }
-                  <div class="thinking-text">{{ accumulatedThinkingClean }}</div>
-                </div>
+
+                  <!-- Merged tool call + result (type === 'tool' after merge, or 'call' pending) -->
+                  @if (te.type === 'tool' || te.type === 'call') {
+                    <div class="timeline-item" [class.timeline-success]="te.summary?.valid !== false" [class.timeline-error]="te.summary?.valid === false" [class.timeline-pending]="te.type === 'call'">
+                      <button class="timeline-header" (click)="te._expanded = !te._expanded">
+                        <span class="timeline-dot">
+                          @if (te.type === 'tool' && te.summary?.valid !== false) {
+                            <i class="fa-solid fa-circle-check"></i>
+                          } @else if (te.type === 'tool' && te.summary?.valid === false) {
+                            <i class="fa-solid fa-circle-xmark"></i>
+                          } @else {
+                            <i class="fa-solid fa-wrench"></i>
+                          }
+                        </span>
+                        <span class="timeline-label">Gọi tool: <strong>{{ te.name }}</strong></span>
+                        @if (te.duration != null) {
+                          <span class="timeline-time">{{ te.duration }}ms</span>
+                        }
+                        <span class="timeline-toggle"><i class="fa-solid fa-chevron-right" [class.expanded]="te._expanded"></i></span>
+                      </button>
+                      @if (te._expanded) {
+                        <div class="timeline-body">
+                          @if (te.arguments) {
+                            <div class="timeline-section-label">Tham số:</div>
+                            <pre class="timeline-json">{{ jsonStr(te.arguments) }}</pre>
+                          }
+                          @if (te.full_result) {
+                            <div class="timeline-section-label">Kết quả:</div>
+                            <pre class="timeline-json">{{ jsonStr(te.full_result) }}</pre>
+                          }
+                          @if (!te.full_result && !te.arguments) {
+                            <span class="timeline-empty">không có dữ liệu</span>
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+
+                  <!-- Orphan result (no matching call) -->
+                  @if (te.type === 'result') {
+                    <div class="timeline-item" [class.timeline-success]="te.summary?.valid !== false" [class.timeline-error]="te.summary?.valid === false">
+                      <button class="timeline-header" (click)="te._expanded = !te._expanded">
+                        <span class="timeline-dot">
+                          @if (te.summary?.valid !== false) {
+                            <i class="fa-solid fa-circle-check"></i>
+                          } @else {
+                            <i class="fa-solid fa-circle-xmark"></i>
+                          }
+                        </span>
+                        <span class="timeline-label">Gọi tool: <strong>{{ te.name }}</strong></span>
+                        <span class="timeline-time">{{ te.duration || 0 }}ms</span>
+                        <span class="timeline-toggle"><i class="fa-solid fa-chevron-right" [class.expanded]="te._expanded"></i></span>
+                      </button>
+                      @if (te._expanded) {
+                        <div class="timeline-body">
+                          @if (te.full_result) {
+                            <pre class="timeline-json">{{ jsonStr(te.full_result) }}</pre>
+                          } @else if (te.summary) {
+                            <pre class="timeline-json">{{ jsonStr(te.summary) }}</pre>
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+
+                  <!-- Content — LLM text output (final YAML) (auto-expanded when streaming) -->
+                  @if (te.type === 'content' && te.text) {
+                    <div class="timeline-item timeline-content" [class.streaming]="te.isStreaming">
+                      <button class="timeline-header" (click)="te._expanded = !te._expanded">
+                        <span class="timeline-dot"><i class="fa-solid fa-file-code"></i></span>
+                        <span class="timeline-label">Output</span>
+                        @if (te.isStreaming) {
+                          <span class="live-cursor-dot"></span>
+                        }
+                        <span class="timeline-toggle"><i class="fa-solid fa-chevron-right" [class.expanded]="te._expanded"></i></span>
+                      </button>
+                      @if (te._expanded) {
+                        <div class="timeline-body">
+                          <pre class="timeline-content-text">
+                            {{ te.text }}
+                            @if (te.isStreaming) {<span class="live-cursor">|</span>}
+                          </pre>
+                        </div>
+                      }
+                    </div>
+                  }
+                }
               }
 
-              <!-- LLM content — inline, no card wrapper -->
-              @if (accumulatedContent) {
-                <div class="stream-content">
-                  <span class="content-label">{{ 'analyze.stream.output' | i18n }}</span>
-                  <div class="content-text">{{ accumulatedContent }}</div>
-                </div>
-              }
-
-              <!-- Pending shimmer — hidden when LLM starts outputting -->
-              @if (status === 'streaming' && !accumulatedContent && !accumulatedThinking) {
-                <div class="stream-pending">
-                  <span class="pending-text">{{ 'analyze.stream.thinkingPending' | i18n }}</span>
+              <!-- Pending shimmer -->
+              @if (shouldShowPendingShimmer) {
+                <div class="timeline-pending">
+                  <span class="pending-text">Đang suy nghĩ...</span>
                 </div>
               }
 
               <!-- Error -->
               @if (status === 'error' && lastError) {
-                <div class="stream-line stream-line-err">
-                  <span class="line-label">{{ 'analyze.stream.error' | i18n }}</span>
-                  <span class="line-val">{{ lastError }}</span>
+                <div class="timeline-item timeline-error">
+                  <div class="timeline-header">
+                    <span class="timeline-dot"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                    <span class="timeline-label timeline-error-label">Lỗi: {{ lastError }}</span>
+                  </div>
                 </div>
               }
             </div>
@@ -265,6 +354,7 @@ export interface StreamMessage {
         </div>
       </div>
     </div>
+    }
   `,
   styles: [`
     .llm-progress-backdrop {
@@ -404,10 +494,13 @@ export interface StreamMessage {
     .stream-panel {
       height: 100%;
       overflow-y: auto;
+      overflow-x: hidden;
       padding: 10px 14px;
       font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
       font-size: 0.78rem;
       line-height: 1.55;
+      width: 100%;
+      box-sizing: border-box;
     }
 
     .stream-panel::-webkit-scrollbar {
@@ -418,88 +511,212 @@ export interface StreamMessage {
       background: rgba(252, 103, 103, 0.2);
     }
 
-    /* Info lines (init events, complete, error) */
-    .stream-line {
+    /* Timeline info lines (init phase) */
+    .timeline-info {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 6px;
       padding: 2px 0;
+      font-size: 0.7rem;
+      color: rgba(255, 255, 255, 0.35);
+    }
+
+    .timeline-info i {
+      color: #3fb950;
+      font-size: 0.6rem;
+      width: 12px;
+      text-align: center;
+    }
+
+    .timeline-separator {
+      border: none;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      margin: 6px 0 8px 0;
+    }
+
+    /* Timeline items — vertical flow with left border line */
+    .timeline-item {
+      position: relative;
+      margin: 2px 0;
+      padding-left: 24px;
+      animation: timelineFadeIn 0.3s ease-out;
+    }
+
+    /* Vertical line connecting items */
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: 10px;
+      top: 0;
+      bottom: -6px;
+      width: 1px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .timeline-item:last-child::before {
+      bottom: 0;
+    }
+
+    @keyframes timelineFadeIn {
+      from { opacity: 0; transform: translateX(-6px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    /* Timeline header — clickable accordion */
+    .timeline-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 5px 8px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.15s;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 0.72rem;
+      border-radius: 3px;
+    }
+
+    .timeline-header:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    /* Timeline dot — positioned inline (not absolute) */
+    .timeline-dot {
+      flex-shrink: 0;
+      width: 14px;
+      text-align: center;
+      font-size: 0.7rem;
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    /* Icon colors by type */
+    .timeline-thinking .timeline-dot { color: #d2a83a; }
+    .timeline-call .timeline-dot { color: #58a6ff; }
+    .timeline-content .timeline-dot { color: #3fb950; }
+    .timeline-success .timeline-dot { color: #3fb950; }
+    .timeline-error .timeline-dot { color: #f85149; }
+
+    /* Timeline label */
+    .timeline-label {
+      flex: 1;
+      color: rgba(255, 255, 255, 0.7);
       font-size: 0.72rem;
     }
 
-    .line-label {
+    .timeline-label strong {
+      color: rgba(255, 255, 255, 0.9);
+      font-weight: 600;
+    }
+
+    .timeline-error-label {
+      color: #f85149;
+    }
+
+    .timeline-time {
+      font-size: 0.62rem;
+      color: rgba(255, 255, 255, 0.25);
+      font-family: monospace;
+    }
+
+    /* Toggle chevron */
+    .timeline-toggle {
+      font-size: 0.6rem;
+      color: rgba(255, 255, 255, 0.25);
       flex-shrink: 0;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
     }
 
-    .line-val {
-      flex: 1;
-      color: rgba(255, 255, 255, 0.5);
+    .timeline-toggle i.expanded {
+      transform: rotate(90deg);
+      transition: transform 0.2s;
     }
 
-    .stream-line-info { color: rgba(255, 255, 255, 0.35); }
-    .stream-line-info .line-label { color: #3fb950; }
-
-    .stream-line-err { color: #f85149; }
-    .stream-line-err .line-label { font-weight: 700; }
-
-    /* LLM thinking — compact, no card */
-    .stream-thinking {
-      margin: 6px 0;
-      font-size: 0.75rem;
+    /* Timeline body — expanded content */
+    .timeline-body {
+      padding: 4px 8px 8px 8px;
+      background: rgba(0, 0, 0, 0.2);
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
     }
 
-    .thinking-label {
+    /* JSON display */
+    .timeline-json {
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
       font-size: 0.65rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #d2a83a;
-      margin-bottom: 3px;
-      display: block;
+      line-height: 1.4;
+      color: rgba(255, 255, 255, 0.5);
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      max-height: 400px;
+      overflow-y: auto;
     }
 
-    .thinking-text {
-      color: rgba(210, 168, 58, 0.7);
+    /* Thinking text */
+    .timeline-thinking-text {
+      color: rgba(210, 168, 58, 0.75);
       font-style: italic;
+      font-size: 0.72rem;
       line-height: 1.5;
       white-space: pre-wrap;
       word-break: break-word;
-      padding-left: 10px;
-      border-left: 2px solid rgba(210, 168, 58, 0.25);
     }
 
-    /* LLM content — inline, no card */
-    .stream-content {
-      margin: 6px 0;
+    /* Live cursor — blinks at end of streaming text */
+    .live-cursor {
+      animation: cursorBlink 0.6s step-end infinite;
+      color: #fc6767;
+      font-weight: bold;
+      margin-left: 1px;
+    }
+
+    @keyframes cursorBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* Live cursor dot — small pulsing dot in header */
+    .live-cursor-dot {
+      width: 6px;
+      height: 6px;
+      background: #fc6767;
+      border-radius: 50%;
+      flex-shrink: 0;
+      animation: pulseDot 1s ease-in-out infinite;
+    }
+
+    @keyframes pulseDot {
+      0%, 100% { opacity: 0.4; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1.1); }
+    }
+
+    /* Streaming item — subtle highlight */
+    .timeline-item.streaming {
+      background: rgba(252, 103, 103, 0.03);
+    }
+
+    /* Content text (final output) */
+    .timeline-content-text {
+      color: rgba(255, 255, 255, 0.8);
       font-size: 0.75rem;
-    }
-
-    .content-label {
-      font-size: 0.65rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #58a6ff;
-      margin-bottom: 3px;
-      display: block;
-    }
-
-    .content-text {
-      color: rgba(255, 255, 255, 0.75);
       line-height: 1.55;
       white-space: pre-wrap;
       word-break: break-word;
-      padding-left: 10px;
-      border-left: 2px solid rgba(88, 166, 255, 0.25);
-      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      max-height: 500px;
+      overflow-y: auto;
     }
 
-    /* Pending shimmer — text glow only */
-    .stream-pending {
-      padding: 4px 0;
+    /* Empty state */
+    .timeline-empty {
+      font-size: 0.65rem;
+      color: rgba(255, 255, 255, 0.25);
+      font-style: italic;
+    }
+
+    /* Pending shimmer */
+    .timeline-pending {
+      padding: 6px 0 6px 24px;
     }
 
     .pending-text {
@@ -524,12 +741,6 @@ export interface StreamMessage {
     @keyframes textGlow {
       0% { background-position: 200% 0; }
       100% { background-position: -200% 0; }
-    }
-
-    /* blink (keep for other uses) */
-    @keyframes blink {
-      0%, 50% { opacity: 1; }
-      51%, 100% { opacity: 0; }
     }
 
     /* Prompt panel */
@@ -812,22 +1023,110 @@ export class LlmProgressComponent {
     return `$${val.toFixed(4)}`;
   }
 
-  /** Unwrap SSE data: backend wraps as {"data":"...","accumulated":"..."} when accumulated present */
+  jsonStr(obj: any): string {
+    try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
+  }
+
+  /** Show "Đang suy nghĩ..." whenever streaming is active AND no item is currently receiving chunks */
+  get shouldShowPendingShimmer(): boolean {
+    if (this.status !== 'streaming') return false;
+    // Don't show shimmer if an item is already streaming (has live cursor)
+    if (this.toolEvents.length > 0) {
+      const last = this.toolEvents[this.toolEvents.length - 1];
+      if (last.isStreaming) return false;
+    }
+    return true;
+  }
+
+  /** Merge consecutive thinking/content chunks into the last item of the same type */
+  private _tryMerge(last: any, newChunk: any): boolean {
+    if (last.type !== newChunk.type) return false;
+    if (last.type === 'thinking') {
+      last.text += newChunk.text;
+      last.isStreaming = true;
+      return true;
+    }
+    if (last.type === 'content') {
+      last.text += newChunk.text;
+      last.isStreaming = true;
+      return true;
+    }
+    return false;
+  }
+
+  /** Mark the previously active item as no longer streaming */
+  private _stopStreamingOnLast(): void {
+    if (this.toolEvents.length > 0) {
+      const last = this.toolEvents[this.toolEvents.length - 1];
+      if (last.isStreaming) {
+        last.isStreaming = false;
+      }
+    }
+  }
+
+  /** Truncate deeply nested objects for display — keeps structure but limits array/object depth */
+  private _truncateForDisplay(obj: any, maxDepth: number = 3, maxItems: number = 5): any {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+
+    if (Array.isArray(obj)) {
+      if (obj.length > maxItems) {
+        return obj.slice(0, maxItems).map(item =>
+          typeof item === 'object' && item ? this._truncateForDisplay(item, maxDepth - 1, maxItems) : item
+        ).concat(`... (${obj.length - maxItems} more items)`);
+      }
+      return obj.map(item =>
+        typeof item === 'object' && item ? this._truncateForDisplay(item, maxDepth - 1, maxItems) : item
+      );
+    }
+
+    if (maxDepth <= 0) {
+      const keys = Object.keys(obj);
+      if (keys.length > maxItems) {
+        const shown: any = {};
+        keys.slice(0, maxItems).forEach(k => shown[k] = obj[k]);
+        return { ...shown, [`... (${keys.length - maxItems} more keys)`]: '...' };
+      }
+      return { ...obj };
+    }
+
+    const result: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = typeof value === 'object' && value
+        ? this._truncateForDisplay(value, maxDepth - 1, maxItems)
+        : value;
+    }
+    return result;
+  }
+
+  /** Unwrap SSE data: handles both analyze brief format and contract gen format */
   private _extract(msg: StreamMessage): { text: string; accumulated?: string } {
     if (typeof msg.data === 'string') return { text: msg.data };
     if (msg.data && typeof msg.data === 'object') {
+      // Contract gen format: { text: "...", accumulated: "..." }
+      // Analyze brief format: { data: "...", accumulated: "..." }
       return {
-        text: msg.data.data ?? '',
+        text: (msg.data.text ?? msg.data.data ?? '') as string,
         accumulated: msg.data.accumulated,
       };
     }
     return { text: String(msg.data ?? '') };
   }
 
+  // Tool-use state
+  toolEvents: any[] = [];
+  currentRepairRound = 0;
+  maxRepairRounds = 10;
+
   /** Xử lý message từ SSE stream */
   onMessage(msg: StreamMessage): void {
     this.ngZone.run(() => {
       this.streamCount++;
+
+      // Debug: log every event type to see what backend sends
+      if (msg.type === 'thinking' || msg.type === 'content' || msg.type === 'tool_call') {
+        console.log('[LLM-PROGRESS]', msg.type, JSON.stringify(msg.data).substring(0, 120));
+      }
 
       switch (msg.type) {
         case 'started':
@@ -863,27 +1162,88 @@ export class LlmProgressComponent {
 
         case 'thinking': {
           const { text, accumulated } = this._extract(msg);
-          if (accumulated != null) {
-            this.accumulatedThinking = accumulated;
+          const chunk = { type: 'thinking' as const, text: text || '', isStreaming: true, _expanded: true };
+          // Merge with last thinking chunk
+          if (this.toolEvents.length > 0) {
+            const last = this.toolEvents[this.toolEvents.length - 1];
+            if (!this._tryMerge(last, chunk)) {
+              // Type switch — stop streaming on previous item
+              this._stopStreamingOnLast();
+              this.toolEvents.push(chunk);
+            } else {
+              last._expanded = true;
+            }
           } else {
-            this.accumulatedThinking += text;
+            this.toolEvents.push(chunk);
           }
           break;
         }
 
         case 'thinking_end':
           this.thinkingDone = true;
+          this._stopStreamingOnLast();
           break;
 
         case 'content': {
           const { text, accumulated } = this._extract(msg);
-          if (accumulated != null) {
-            this.accumulatedContent = accumulated;
-          } else {
-            this.accumulatedContent += text;
+          if (text) {
+            const chunk = { type: 'content' as const, text, isStreaming: true, _expanded: true };
+            if (this.toolEvents.length > 0) {
+              const last = this.toolEvents[this.toolEvents.length - 1];
+              if (!this._tryMerge(last, chunk)) {
+                // Type switch — stop streaming on previous item
+                this._stopStreamingOnLast();
+                this.toolEvents.push(chunk);
+              } else {
+                last._expanded = true;
+              }
+            } else {
+              this.toolEvents.push(chunk);
+            }
           }
           break;
         }
+
+        case 'tool_call':
+          // LLM is calling a tool — stop streaming on previous item
+          this._stopStreamingOnLast();
+          // LLM is calling a tool
+          this.toolEvents.push({
+            type: 'call',
+            name: msg.data?.name,
+            arguments: msg.data?.arguments,
+            duration: msg.data?.duration_ms,
+          });
+          break;
+
+        case 'tool_result':
+          // Tool returned result — stop streaming on previous item
+          this._stopStreamingOnLast();
+          // Tool returned result — MERGE into the last 'call' event
+          const fullResult = msg.data?.full_result || msg.data?.summary || {};
+          const truncated = this._truncateForDisplay(fullResult);
+          const lastItem = this.toolEvents.length > 0 ? this.toolEvents[this.toolEvents.length - 1] : null;
+          if (lastItem && lastItem.type === 'call' && lastItem.name === msg.data?.name) {
+            // Merge into existing call item
+            lastItem.full_result = truncated;
+            lastItem.summary = msg.data?.summary;
+            lastItem.duration = msg.data?.duration_ms;
+            lastItem.type = 'tool';  // Mark as complete call+result
+          } else {
+            // Orphan result — push as standalone
+            this.toolEvents.push({
+              type: 'result',
+              name: msg.data?.name,
+              summary: msg.data?.summary,
+              full_result: truncated,
+              duration: msg.data?.duration_ms,
+            });
+          }
+          break;
+
+        case 'repair_round':
+          // Legacy — backend no longer sends this
+          break;
 
         case 'complete':
           this.status = 'complete';
@@ -947,5 +1307,8 @@ export class LlmProgressComponent {
     this.activeTab = 'stream';
     this.streamCount = 0;
     this.sections = { systemPrompt: false, userMessage: false, rawRequest: false, rawResponse: false, tokenStats: false };
+    this.toolEvents = [];
+    this.currentRepairRound = 0;
+    this.maxRepairRounds = 10;
   }
 }

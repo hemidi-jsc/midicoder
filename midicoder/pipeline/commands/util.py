@@ -62,7 +62,7 @@ DEFAULT_CONFIG_SCHEMA = {
     },
     "mcp": {
         "host": "localhost",
-        "port": 2026
+        "port": 7878
     },
     "neo4j": {
         "host": "localhost",

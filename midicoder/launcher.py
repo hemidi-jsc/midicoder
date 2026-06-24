@@ -46,6 +46,7 @@ from midicoder import __version__ as APP_VERSION
 BACKEND_PORT = 6868
 FRONTEND_PORT = 7272
 SQLITE_VIEWER_PORT = 8080
+MCP_PORT = 7878
 
 # Logger for log file
 logger = logging.getLogger("midicoder.launcher")
@@ -263,7 +264,7 @@ def _kill_process_on_port(port: int) -> bool:
 
 def _ensure_ports_free() -> None:
     """Kill processes occupying our required ports before starting servers."""
-    for port in (BACKEND_PORT, FRONTEND_PORT, SQLITE_VIEWER_PORT):
+    for port in (BACKEND_PORT, FRONTEND_PORT, SQLITE_VIEWER_PORT, MCP_PORT):
         _kill_process_on_port(port)
 
 
@@ -423,6 +424,29 @@ def _start_sqlite_viewer() -> Optional[ServerHandle]:
         server.should_exit = True
 
     return ThreadServer("SQLite Viewer", SQLITE_VIEWER_PORT, run_func=run_ds, stop_func=stop_ds)
+
+
+def _start_mcp_server() -> Optional[ServerHandle]:
+    """Start MCP server in a thread (fallback HTTP+SSE mode for clean shutdown).
+
+    The MCP server exposes tools for LLM agent to use during contract generation.
+    Uses fallback mode (not SDK) because fallback has a clean stop() method.
+    """
+    try:
+        from midicoder.mcp.server import MCPFallbackServer
+    except ImportError:
+        _log("MCP server module không thể import")
+        return None
+
+    mcp_server = MCPFallbackServer(host="0.0.0.0", port=MCP_PORT)
+
+    def run_mcp():
+        mcp_server.run()
+
+    def stop_mcp():
+        mcp_server.stop()
+
+    return ThreadServer("MCP Server", MCP_PORT, run_func=run_mcp, stop_func=stop_mcp)
 
 
 # =============================================================================
@@ -589,6 +613,13 @@ def run() -> int:
     else:
         _log("SQLite viewer không khả dụng")
 
+    _log("Đang start MCP server...")
+    mcp_server = _start_mcp_server()
+    if mcp_server and mcp_server.start():
+        _servers.append(mcp_server)
+    else:
+        _log("MCP server không khả dụng (không ảnh hưởng)")
+
     # 3. Open browser
     time.sleep(1)
     try:
@@ -603,6 +634,8 @@ def run() -> int:
     _log(f"Frontend:     http://localhost:{FRONTEND_PORT}" if has_frontend else "Frontend:     [x]")
     has_sqlite = any(s.name == "SQLite Viewer" for s in _servers)
     _log(f"SQLite Viewer: http://localhost:{SQLITE_VIEWER_PORT}" if has_sqlite else "SQLite Viewer: [x]")
+    has_mcp = any(s.name == "MCP Server" for s in _servers)
+    _log(f"MCP Server:   http://localhost:{MCP_PORT}" if has_mcp else "MCP Server:   [x]")
 
     # 5. Toast notification
     _show_toast(f"Midicoder v{APP_VERSION}", "All servers ready — http://localhost:7272")
@@ -675,6 +708,7 @@ def _run_tray() -> None:
         MenuItem(f"🟢 Backend :{BACKEND_PORT}", lambda i, m: None, enabled=False),
         MenuItem(f"🟢 Frontend :{FRONTEND_PORT}", lambda i, m: None, enabled=False),
         MenuItem(f"🟢 SQLite Viewer :{SQLITE_VIEWER_PORT}", lambda i, m: None, enabled=False),
+        MenuItem(f"🟢 MCP Server :{MCP_PORT}", lambda i, m: None, enabled=False),
         MenuItem(None, None),
         MenuItem("🌐 Open Frontend", lambda i, m: webbrowser.open(f"http://localhost:{FRONTEND_PORT}")),
         MenuItem("📊 Open API Docs", lambda i, m: webbrowser.open(f"http://localhost:{BACKEND_PORT}/docs")),

@@ -14,11 +14,11 @@ Sử dụng:
     from midicoder.mcp import create_mcp_server, run_mcp_server
 
     # Tạo và chạy server
-    server = create_mcp_server()  # Default port 2026
+    server = create_mcp_server()  # Default port 7878
     server.run()
 
     # Hoặc chạy trực tiếp
-    run_mcp_server(port=2026)
+    run_mcp_server(port=7878)
 """
 
 from midicoder.mcp.server import (

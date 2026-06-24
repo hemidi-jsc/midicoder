@@ -86,13 +86,16 @@ Chạy ứng dụng:
 midicoder
 ```
 
-Midicoder sẽ khởi động 3 server tự động và mở browser:
+Midicoder sẽ khởi động **4 servers** tự động và mở browser:
 
 | Service | Port | URL |
 |---------|------|-----|
 | Backend (FastAPI) | 6868 | http://localhost:6868 |
 | Frontend (Angular) | 7272 | http://localhost:7272 |
 | SQLite Viewer (Datasette) | 8080 | http://localhost:8080 |
+| MCP Server (uvicorn) | 7878 | http://localhost:7878 |
+
+> **MCP Server** cung cấp 14 tools cho LLM agent tự query DSL schema, validate contracts, cross-check references, và truy vấn SQLite — dùng trong contract generation pipeline.
 
 ---
 
@@ -255,9 +258,45 @@ datasette ~/.midicoder/data --port 8080 --host 0.0.0.0 --cors
 Mở browser tại:
 - **Frontend:** http://localhost:7272
 - **Backend API:** http://localhost:6868/docs (Swagger UI)
+- **MCP Server:** http://localhost:7878/tools (list tools)
 - **SQLite Viewer:** http://localhost:8080
 
 > **Lưu ý:** Angular dev server (`ng serve`) proxy API requests về backend tự động. Bạn truy cập frontend là đủ, không cần mở backend tab riêng.
+
+### Terminal 4 — MCP Server (uvicorn) — Optional
+
+```bash
+# MCP server — cung cấp 14 tools cho LLM agent (watch mode)
+uvicorn midicoder.mcp.server:app --host 0.0.0.0 --port 7878 --reload
+```
+
+MCP Server expose **14 tools** trong 6 groups, dùng cho LLM self-validation trong contract generation pipeline:
+
+| Group | Tools | Mô tả |
+|-------|-------|-------|
+| **MCP-B: DSL Schema** | `get_dsl_schema`, `get_dsl_section` | LLM dùng để học DSL syntax trước khi generate |
+| **MCP-C: Packs** | `list_packs`, `get_pack` | Xem examples definitions/recipes của packs |
+| **MCP-D: Compiler** | `compile_contracts`, `validate_capability_graph` | Trigger compile + kiểm tra capability graph |
+| **MCP-E: SQLite** | `get_active_brief`, `get_clarifications`, `list_artifacts` | Truy vấn dữ liệu từ SQLite databases |
+| **MCP-F: Context** | `get_project_context`, `list_symbols` | Project context + symbols đã generate |
+| **MCP-G: Validation** | `validate_contract_yaml`, `cross_check_category`, `get_generated_artifact` | LLM self-validate contracts realtime |
+
+**Test MCP endpoints:**
+
+```bash
+# Health check
+curl http://localhost:7878/health
+
+# List tất cả tools
+curl http://localhost:7878/tools
+
+# Gọi tool — lấy DSL schema
+curl -X POST http://localhost:7878/tools/call \
+  -H "Content-Type: application/json" \
+  -d '{"name": "get_dsl_section", "arguments": {"section": "entities"}}'
+```
+
+> Trong production (launcher), MCP server tự động khởi động ở port 7878 và không cần start thủ công.
 
 ## Cấu trúc dự án
 
@@ -265,11 +304,20 @@ Mở browser tại:
 midicoder-ce/
 ├── midicoder/                 # Python package chính
 │   ├── __main__.py            # Entry point
-│   ├── launcher.py            # WebGUI launcher (start 3 servers)
+│   ├── launcher.py            # WebGUI launcher (start 4 servers)
 │   ├── spa_serve.py           # SPA static server (stdlib-only)
 │   ├── api/                   # FastAPI backend
 │   │   ├── main.py            # ASGI app
 │   │   └── routers/           # API endpoints
+│   ├── mcp/                   # MCP Server (uvicorn + Starlette, 14 tools)
+│   │   ├── server.py          # ASGI app (port 7878)
+│   │   └── tools/             # Tool registry
+│   │       ├── dsl_schema.py  # MCP-B: get_dsl_schema, get_dsl_section
+│   │       ├── packs.py       # MCP-C: list_packs, get_pack
+│   │       ├── compiler.py    # MCP-D: compile_contracts, validate_capability_graph
+│   │       ├── sqlite_tools.py # MCP-E: get_active_brief, get_clarifications, list_artifacts
+│   │       ├── context.py     # MCP-F: get_project_context, list_symbols
+│   │       └── contract_validation.py # MCP-G: validate, cross_check, get_artifact
 │   ├── pipeline/              # Pipeline logic
 │   ├── frontend/              # Angular dist (build artifact, trong .gitignore)
 │   ├── packs/                 # Capability packs

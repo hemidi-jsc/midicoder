@@ -114,17 +114,13 @@ class PipelineBridge:
     # ------------------------------------------------------------------ #
     #  Convenience shortcuts (used by routers)
     # ------------------------------------------------------------------ #
-    async def contract_gen(self) -> Dict[str, Any]:
-        return await self.execute_command("contract", "gen")
+    async def contract_category_gen_stream(self, category: str, force: bool = False):
+        """SSE streaming for single category gen — returns async generator."""
+        from midicoder.pipeline.commands.contract import generate_category_stream_for_api
+        return generate_category_stream_for_api(category=category, force=force)
 
-    async def contract_gen_resume(self) -> Dict[str, Any]:
-        return await self.execute_command("contract", "gen", force=True)
-
-    async def contract_check(self) -> Dict[str, Any]:
-        return await self.execute_command("contract", "check")
-
-    async def contract_feedback(self) -> Dict[str, Any]:
-        return await self.execute_command("contract", "check")
+    async def contract_freeze(self) -> Dict[str, Any]:
+        return await self.execute_command("contract", "freeze")
 
     async def ir_build(self, skip_diagrams: bool = False) -> Dict[str, Any]:
         return await self.execute_command("ir", "build")
@@ -252,6 +248,9 @@ class PipelineBridge:
         elif sub == "repair":
             from midicoder.pipeline.commands.contract import repair_contracts
             return _sync_wrap(lambda: repair_contracts())
+        elif sub == "freeze":
+            from midicoder.pipeline.commands.contract import freeze_contracts
+            return _sync_wrap(lambda: freeze_contracts())
         return _not_implemented("contract", sub)
 
     def _dispatch_ir(self, sub: str, kwargs) -> Dict[str, Any]:

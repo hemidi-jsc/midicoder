@@ -558,6 +558,10 @@ class DependencyBuilder:
             self._extract_workflow_dependencies(node)
         elif node.kind == NodeKind.ROLE:
             self._extract_role_dependencies(node)
+        elif node.kind == NodeKind.EVENT:
+            self._extract_event_dependencies(node)
+        elif node.kind == NodeKind.UI_COMPONENT:
+            self._extract_ui_component_dependencies(node)
         # P2-15: Domain-specific dependency extraction
         elif node.kind == NodeKind.PLUGIN_SLOT:
             self._extract_plugin_slot_dependencies(node)
@@ -1136,7 +1140,16 @@ class DependencyBuilder:
                     dep_type=DependencyType.COMMAND_EFFECT,
                     field="effects"
                 )
-    
+
+        # Emits (events published by command)
+        for event_id in node.params.get("emits", []):
+            self.graph.add_edge(
+                source=node.id,
+                target=event_id,
+                dep_type=DependencyType.COMMAND_EFFECT,
+                field="emits"
+            )
+
     def _extract_query_dependencies(self, node: ProjectionNode) -> None:
         """Extract dependencies from query."""
         # Reads from (entities queried)
@@ -1210,6 +1223,30 @@ class DependencyBuilder:
                 target=parent_id,
                 dep_type=DependencyType.ROLE_PARENT,
                 field="parent_roles"
+            )
+
+    def _extract_event_dependencies(self, node: ProjectionNode) -> None:
+        """Extract dependencies from event."""
+        # Source entity
+        source_entity = node.params.get("source_entity")
+        if source_entity:
+            self.graph.add_edge(
+                source=node.id,
+                target=source_entity,
+                dep_type=DependencyType.ENTITY_REFERENCE,
+                field="source_entity"
+            )
+
+    def _extract_ui_component_dependencies(self, node: ProjectionNode) -> None:
+        """Extract dependencies from UI component."""
+        # Entity binding
+        entity_id = node.params.get("entity_id")
+        if entity_id:
+            self.graph.add_edge(
+                source=node.id,
+                target=entity_id,
+                dep_type=DependencyType.GENERIC,
+                field="entity_id"
             )
 
 

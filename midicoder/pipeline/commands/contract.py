@@ -21,14 +21,21 @@ Version: 4.0.0 (LLM Contract Generation)
 from __future__ import annotations
 
 import json
+import logging
+import time
 import yaml
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from midicoder.errors import MidicoderErrorManager as EM, ErrorCode
 from midicoder.storage.sqlite import BriefsManager, ArtifactsManager, get_connection
 from midicoder.storage.activity import log
+from midicoder.storage.sqlite import get_project_db_path, get_active_project_cwd
+from midicoder.pipeline.commands.brief import _find_brief
+from midicoder.pipeline.commands.version import get_active_version as _get_active_version
 from midicoder.dsl.projection import ProjectionTree
 from midicoder.dsl.validator import validate_tree, ValidationStatus, ValidationReport
 from midicoder.pipeline.dsl_parser import DSLParser
@@ -40,10 +47,10 @@ from midicoder.pipeline.llm.client import (
     load_llm_config,
 )
 
-# 8 categories bắt buộc theo DSL strict mode
+# 9 categories bắt buộc theo DSL strict mode
 REQUIRED_CATEGORIES = [
     "entities", "commands", "queries", "events",
-    "workflows", "value_objects", "guards", "ui_components"
+    "workflows", "value_objects", "guards", "roles", "ui_components"
 ]
 
 # Số lần thử tối đa để LLM fix contracts
@@ -68,6 +75,7 @@ _CATEGORY_PROMPT_MAP = {
     "workflows": "contract_workflows",
     "value_objects": "contract_value_objects",
     "guards": "contract_guards",
+    "roles": "contract_roles",
     "ui_components": "contract_ui_components",
 }
 
@@ -164,11 +172,322 @@ def _get_styles_schema_for_category(category: str) -> str:
     return ""
 
 
+# ============================================================================
+# Pipeline validation functions (MCP tools delegate đến đây)
+# ============================================================================
+
+def _validate_single_category(category: str, yaml_content: str) -> Dict[str, Any]:
+    """
+    Validate YAML của 1 category qua DSL constraint system.
+
+    REUSES: DSLParser.parse_yaml_string(), validate_tree(), ValidationReport.to_dict()
+
+    Args:
+        category: Tên category (entities, commands, ...)
+        yaml_content: Raw YAML string
+
+    Returns:
+        Dict với: status, total_errors, total_warnings, errors (list), warnings (list), is_valid
+    """
+    try:
+        parser = DSLParser()
+        nodes = parser.parse_yaml_string(yaml_content, category)
+        tree = ProjectionTree(nodes={n.id: n for n in nodes})
+        tree.nodes_by_kind = {}
+        for n in nodes:
+            if n.kind not in tree.nodes_by_kind:
+                tree.nodes_by_kind[n.kind] = []
+            tree.nodes_by_kind[n.kind].append(n)
+        report = validate_tree(tree)
+        result = report.to_dict()
+        result["yaml_valid"] = True
+        return result
+    except yaml.YAMLError as e:
+        return {
+            "status": "error",
+            "yaml_valid": False,
+            "is_valid": False,
+            "total_errors": 1,
+            "total_warnings": 0,
+            "total_info": 0,
+            "errors": [{"constraint_id": "YAML001", "level": "error", "message": f"YAML parse error: {e}"}],
+            "warnings": [],
+            "info": [],
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "yaml_valid": False,
+            "is_valid": False,
+            "total_errors": 1,
+            "total_warnings": 0,
+            "total_info": 0,
+            "errors": [{"constraint_id": "DSL001", "level": "error", "message": f"DSL parse error: {e}"}],
+            "warnings": [],
+            "info": [],
+        }
+
+
+def _cross_check_category(category: str, yaml_content: str) -> Dict[str, Any]:
+    """
+    Cross-reference category hiện tại với các category đã generate trong SQLite.
+
+    Kiểm tra:
+    - Commands/Queries tham chiếu đến entities → entities phải tồn tại
+    - Commands tham chiếu đến events → events phải tồn tại
+    - Guards tham chiếu đến roles → roles phải tồn tại
+    - Workflows tham chiếu đến commands → commands phải tồn tại
+
+    REUSES: ArtifactsManager.get(), YAML parsing
+
+    Args:
+        category: Tên category đang check
+        yaml_content: Raw YAML string của category này
+
+    Returns:
+        Dict với: valid (bool), errors (list), warnings (list), checked_references (int)
+    """
+    errors: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
+    checked_refs = 0
+
+    try:
+        data = yaml.safe_load(yaml_content)
+        if not data or not isinstance(data, dict):
+            return {"valid": True, "errors": [], "warnings": [], "checked_references": 0}
+
+        # Lấy current nodes để extract IDs
+        current_ids: set = set()
+        current_nodes = data.get(category, [])
+        if isinstance(current_nodes, list):
+            for node in current_nodes:
+                if isinstance(node, dict):
+                    nid = node.get("id", node.get("name", ""))
+                    if nid:
+                        current_ids.add(nid)
+
+        # Load entities từ SQLite để check reference
+        entities: set = set()
+        events_ids: set = set()
+        roles_ids: set = set()
+
+        try:
+            project_cwd = get_active_project_cwd()
+            if project_cwd:
+                artifacts_db = get_project_db_path(project_cwd, "artifacts.db")
+                a_mgr = ArtifactsManager(db_path=artifacts_db)
+                a_mgr.init()
+
+                # Load entities
+                ent_art = a_mgr.get("contract_entities")
+                if ent_art:
+                    ent_content = ent_art.get("content", "{}")
+                    ent_data = yaml.safe_load(ent_content)
+                    if ent_data:
+                        ents_list = ent_data.get("entities", [])
+                        if isinstance(ents_list, list):
+                            for e in ents_list:
+                                if isinstance(e, dict):
+                                    eid = e.get("id", "")
+                                    if eid:
+                                        entities.add(eid)
+
+                # Load events
+                evt_art = a_mgr.get("contract_events")
+                if evt_art:
+                    evt_content = evt_art.get("content", "{}")
+                    evt_data = yaml.safe_load(evt_content)
+                    if evt_data:
+                        evts_list = evt_data.get("events", [])
+                        if isinstance(evts_list, list):
+                            for e in evts_list:
+                                if isinstance(e, dict):
+                                    eid = e.get("id", "")
+                                    if eid:
+                                        events_ids.add(eid)
+
+                # Load roles
+                rol_art = a_mgr.get("contract_roles")
+                if rol_art:
+                    rol_content = rol_art.get("content", "{}")
+                    rol_data = yaml.safe_load(rol_content)
+                    if rol_data:
+                        roles_list = rol_data.get("roles", [])
+                        if isinstance(roles_list, list):
+                            for r in roles_list:
+                                if isinstance(r, dict):
+                                    rid = r.get("id", "")
+                                    if rid:
+                                        roles_ids.add(rid)
+        except Exception:
+            pass  # SQLite không available — skip cross-check
+
+        # Cross-check logic dựa trên category
+        if category == "commands":
+            for cmd in current_nodes:
+                if not isinstance(cmd, dict):
+                    continue
+                # Check entity_references
+                ent_refs = cmd.get("entity_references", cmd.get("entity_reference", []))
+                if isinstance(ent_refs, dict):
+                    ent_refs = [ent_refs]
+                if isinstance(ent_refs, list):
+                    for ref in ent_refs:
+                        if isinstance(ref, dict):
+                            ref_id = ref.get("entity_id", ref.get("entity", ref.get("id", "")))
+                        else:
+                            ref_id = str(ref)
+                        if ref_id and ref_id not in entities:
+                            errors.append({
+                                "type": "missing_entity_reference",
+                                "node": cmd.get("id", "unknown"),
+                                "reference": ref_id,
+                                "message": f"Command '{cmd.get('id', '')}' tham chiếu entity '{ref_id}' không tồn tại"
+                            })
+                            checked_refs += 1
+                # Check output_events
+                out_events = cmd.get("output_events", cmd.get("output_event", []))
+                if isinstance(out_events, str):
+                    out_events = [out_events]
+                if isinstance(out_events, list):
+                    for ev in out_events:
+                        ev_id = str(ev)
+                        if ev_id and ev_id not in events_ids:
+                            warnings.append({
+                                "type": "missing_event_reference",
+                                "node": cmd.get("id", "unknown"),
+                                "reference": ev_id,
+                                "message": f"Command '{cmd.get('id', '')}' output event '{ev_id}' chưa được định nghĩa (có thể sẽ có sau)"
+                            })
+                            checked_refs += 1
+
+        elif category == "queries":
+            for qry in current_nodes:
+                if not isinstance(qry, dict):
+                    continue
+                ent_refs = qry.get("entity_references", qry.get("entity_reference", []))
+                if isinstance(ent_refs, dict):
+                    ent_refs = [ent_refs]
+                if isinstance(ent_refs, list):
+                    for ref in ent_refs:
+                        if isinstance(ref, dict):
+                            ref_id = ref.get("entity_id", ref.get("entity", ref.get("id", "")))
+                        else:
+                            ref_id = str(ref)
+                        if ref_id and ref_id not in entities:
+                            errors.append({
+                                "type": "missing_entity_reference",
+                                "node": qry.get("id", "unknown"),
+                                "reference": ref_id,
+                                "message": f"Query '{qry.get('id', '')}' tham chiếu entity '{ref_id}' không tồn tại"
+                            })
+                            checked_refs += 1
+
+        elif category == "guards":
+            for guard in current_nodes:
+                if not isinstance(guard, dict):
+                    continue
+                req_roles = guard.get("required_roles", guard.get("required_role", []))
+                if isinstance(req_roles, str):
+                    req_roles = [req_roles]
+                if isinstance(req_roles, list):
+                    for rid in req_roles:
+                        if rid and rid not in roles_ids:
+                            warnings.append({
+                                "type": "missing_role_reference",
+                                "node": guard.get("id", "unknown"),
+                                "reference": rid,
+                                "message": f"Guard '{guard.get('id', '')}' yêu cầu role '{rid}' chưa được định nghĩa"
+                            })
+                            checked_refs += 1
+
+        elif category == "workflows":
+            for wf in current_nodes:
+                if not isinstance(wf, dict):
+                    continue
+                steps = wf.get("steps", wf.get("transitions", []))
+                if isinstance(steps, list):
+                    for step in steps:
+                        if isinstance(step, dict):
+                            action = step.get("action", step.get("command", ""))
+                            if action and action not in current_ids:
+                                # Check if it references a command from commands category
+                                # (commands may not be generated yet, so warning not error)
+                                warnings.append({
+                                    "type": "missing_command_reference",
+                                    "node": wf.get("id", "unknown"),
+                                    "reference": action,
+                                    "message": f"Workflow '{wf.get('id', '')}' step tham chiếu command '{action}' chưa tìm thấy"
+                                })
+                                checked_refs += 1
+
+    except yaml.YAMLError:
+        return {"valid": True, "errors": [], "warnings": ["Cannot parse YAML for cross-check"], "checked_references": 0}
+    except Exception:
+        return {"valid": True, "errors": [], "warnings": ["Cross-check failed"], "checked_references": 0}
+
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "checked_references": checked_refs,
+    }
+
+
+def _get_artifact_for_category(category: str) -> Dict[str, Any]:
+    """
+    Lấy nội dung artifact đã generate từ SQLite.
+
+    REUSES: ArtifactsManager.get()
+
+    Args:
+        category: Tên category
+
+    Returns:
+        Dict với: found (bool), content (str hoặc None), artifact_id, metadata
+    """
+    try:
+        project_cwd = get_active_project_cwd()
+        if not project_cwd:
+            return {"found": False, "content": None, "artifact_id": None, "error": "No active project"}
+
+        artifacts_db = get_project_db_path(project_cwd, "artifacts.db")
+        a_mgr = ArtifactsManager(db_path=artifacts_db)
+        a_mgr.init()
+
+        artifact_id = f"contract_{category}"
+        art = a_mgr.get(artifact_id)
+
+        if art:
+            return {
+                "found": True,
+                "artifact_id": artifact_id,
+                "content": art.get("content", ""),
+                "metadata": art.get("metadata", {}),
+                "name": art.get("name", ""),
+            }
+        else:
+            return {
+                "found": False,
+                "artifact_id": artifact_id,
+                "content": None,
+                "metadata": {},
+                "message": f"Artifact '{artifact_id}' chưa được generate"
+            }
+    except Exception as e:
+        return {"found": False, "content": None, "artifact_id": None, "error": str(e)}
+
+
+# ============================================================================
+# Prompt building
+# ============================================================================
+
 def _build_category_prompt(
     category: str,
     analysis_data: dict,
     clarifications: list,
     brief_content: str,
+    include_mcp_context: bool = True,  # Set False for tool-use flow to avoid duplication
 ) -> tuple[str, str]:
     """
     Xây dựng prompt cho LLM để generate DSL contracts cho một category.
@@ -182,6 +501,7 @@ def _build_category_prompt(
         analysis_data: JSON data từ brief analysis
         clarifications: Danh sách Q&A clarifications
         brief_content: Content của brief ban đầu
+        include_mcp_context: If True, inject DSL schema into system prompt. Set False when using tool-use flow.
 
     Returns:
         Tuple (system_prompt, user_prompt)
@@ -194,10 +514,11 @@ def _build_category_prompt(
         # Fallback nếu không có prompt file
         system = f"Generate DSL contracts for the \"{category}\" category. Output valid YAML dict."
 
-    # MCP: Inject DSL schema context cho LLM biết property nào hợp lệ
-    mcp_context = _build_mcp_context(category)
-    if mcp_context:
-        system = system + "\n\n" + mcp_context
+    # MCP: Inject DSL schema context — ONLY when NOT using tool-use (to avoid duplication)
+    if include_mcp_context:
+        mcp_context = _build_mcp_context(category)
+        if mcp_context:
+            system = system + "\n\n" + mcp_context
 
     # Xây dựng user prompt
     user_parts = []
@@ -272,13 +593,8 @@ def _generate_category_with_retry(
                 messages=[{"role": "user", "content": user}],
             )
 
-            yaml_content = response.content.strip()
-
-            # Loại bỏ markdown code blocks
-            if yaml_content.startswith("```yaml"):
-                yaml_content = yaml_content.removeprefix("```yaml").removesuffix("```").strip()
-            elif yaml_content.startswith("```"):
-                yaml_content = yaml_content.removeprefix("```").removesuffix("```").strip()
+            # Extract YAML from LLM response
+            yaml_content = _extract_yaml_from_text(response.content, category)
 
             # Kiểm tra xem có phải valid YAML không
             yaml.safe_load(yaml_content)
@@ -428,11 +744,7 @@ Fix the YAML. Output ONLY the fixed YAML content."""
                     }],
                 )
 
-                fixed_yaml = response.content.strip()
-                if fixed_yaml.startswith("```yaml"):
-                    fixed_yaml = fixed_yaml.removeprefix("```yaml").removesuffix("```").strip()
-                elif fixed_yaml.startswith("```"):
-                    fixed_yaml = fixed_yaml.removeprefix("```").removesuffix("```").strip()
+                fixed_yaml = _extract_yaml_from_text(response.content, category)
 
                 # Validate là fixed YAML hợp lệ
                 yaml.safe_load(fixed_yaml)
@@ -480,6 +792,7 @@ def generate_contracts(force: bool = False):
 
     # Step 1: Check if brief exists và đã freezed
     briefs_manager = BriefsManager()
+    briefs_manager.init()
     briefs = briefs_manager.list()
 
     if not briefs:
@@ -514,23 +827,38 @@ def generate_contracts(force: bool = False):
     _log_activity("contract.gen.in_progress", resource_id=brief_id)
     _generate_contracts_to_sqlite(brief_id)
 
-    # Step 4: Self-validate + auto-fix
+    # Step 4: Self-validate + auto-fix nếu có errors
     _log_activity("contract.validate.self", resource_id=brief_id)
 
-    try:
-        tree = _load_contracts_from_sqlite()
-        if tree is not None:
-            report = validate_tree(tree)
-            if report.status == ValidationStatus.VALID:
-                _log_activity("contract.validate.valid", resource_id=brief_id)
-            elif report.status == ValidationStatus.WARNINGS:
-                _log_activity("contract.validate.warnings", resource_id=brief_id,
-                             details={"total_warnings": report.total_warnings}, status="warning")
-            else:
-                _log_activity("contract.validate.errors", resource_id=brief_id,
-                             details={"total_errors": report.total_errors}, status="warning")
-    except Exception as e:
-        _log_activity("contract.validate.error", details={"error": str(e)}, status="error")
+    tree = _load_contracts_from_sqlite()
+    if tree is not None:
+        report = validate_tree(tree)
+        if report.status == ValidationStatus.VALID:
+            _log_activity("contract.validate.valid", resource_id=brief_id)
+        elif report.status == ValidationStatus.WARNINGS:
+            _log_activity("contract.validate.warnings", resource_id=brief_id,
+                         details={"total_warnings": report.total_warnings}, status="warning")
+        else:
+            _log_activity("contract.validate.errors", resource_id=brief_id,
+                         details={"total_errors": report.total_errors}, status="warning")
+            # Tự động fix nếu có errors
+            _log_activity("contract.auto_fix.triggered", resource_id=brief_id,
+                         details={"total_errors": report.total_errors})
+            # Load yaml_dict từ SQLite để feed vào auto-fix
+            yaml_dict_for_fix = {}
+            for artifact in artifacts_manager.list_by_type("contract"):
+                aid = artifact.get("artifact_id", "")
+                if aid.startswith("contract_"):
+                    yaml_dict_for_fix[aid[len("contract_"):]] = artifact.get("content", "")
+            if yaml_dict_for_fix:
+                try:
+                    llm_config = load_llm_config()
+                    _auto_fix_contracts(artifacts_manager, yaml_dict_for_fix, brief_id, llm_config)
+                except Exception as fix_err:
+                    _log_activity("contract.auto_fix.failed", resource_id=brief_id,
+                                 details={"error": str(fix_err)}, status="error")
+    else:
+        _log_activity("contract.validate.no_tree", resource_id=brief_id, status="error")
 
     # Done
     _log_activity("contract.gen.completed", resource_id=brief_id, details={"status": "success"})
@@ -549,6 +877,7 @@ def _generate_contracts_to_sqlite(brief_id: str) -> None:
     artifacts_manager = ArtifactsManager()
     artifacts_manager.init()
     briefs_manager = BriefsManager()
+    briefs_manager.init()
 
     # Lấy brief content
     brief_record = briefs_manager.get(brief_id)
@@ -852,19 +1181,208 @@ def _build_placeholder_yaml(brief_id: str, generated_at: str) -> Dict[str, str]:
         ]
     }, default_flow_style=False, allow_unicode=True)
 
-    # ===== Placeholders cho 3 categories còn lại =====
-    placeholder_template = yaml.dump({
+    # ===== Placeholders cho 4 categories còn lại (với data mẫu) =====
+    placeholder_meta = {
         "meta": {
             "version": "1.0.0",
             "brief_id": brief_id,
             "generated_at": generated_at
         }
+    }
+
+    workflows_yaml = yaml.dump({
+        **placeholder_meta,
+        "workflows": [
+            {
+                "id": "OrderFulfillment",
+                "description": "Quy trình xử lý đơn hàng từ khi tạo đến khi giao hàng",
+                "states": [
+                    {"id": "pending", "description": "Chờ xử lý"},
+                    {"id": "processing", "description": "Đang xử lý"},
+                    {"id": "shipped", "description": "Đã giao hàng"},
+                    {"id": "delivered", "description": "Đã nhận hàng"},
+                    {"id": "cancelled", "description": "Đã hủy"}
+                ],
+                "transitions": [
+                    {"from": "pending", "to": "processing", "event": "OrderConfirmed", "guard": "PaymentVerified"},
+                    {"from": "processing", "to": "shipped", "event": "OrderShipped", "guard": "InventoryAvailable"},
+                    {"from": "shipped", "to": "delivered", "event": "OrderDelivered"},
+                    {"from": "pending", "to": "cancelled", "event": "OrderCancelled"},
+                    {"from": "processing", "to": "cancelled", "event": "OrderCancelled"}
+                ],
+                "tenant_scope": "tenant_isolated"
+            }
+        ]
     }, default_flow_style=False, allow_unicode=True)
 
-    workflows_yaml = placeholder_template.rstrip() + "\nworkflows: []\n"
-    value_objects_yaml = placeholder_template.rstrip() + "\nvalue_objects: []\n"
-    guards_yaml = placeholder_template.rstrip() + "\nguards: []\n"
-    ui_components_yaml = placeholder_template.rstrip() + "\nui_components: []\n"
+    value_objects_yaml = yaml.dump({
+        **placeholder_meta,
+        "value_objects": [
+            {
+                "id": "Money",
+                "description": "Giá trị tiền tệ với đơn vị",
+                "fields": [
+                    {"name": "amount", "type": "Decimal", "required": True},
+                    {"name": "currency", "type": "String", "required": True}
+                ],
+                "methods": [
+                    {"name": "add", "returns": "Money"},
+                    {"name": "multiply", "returns": "Money"},
+                    {"name": "to_string", "returns": "String"}
+                ],
+                "immutable": True,
+                "comparable": True
+            },
+            {
+                "id": "Address",
+                "description": "Địa chỉ giao hàng",
+                "fields": [
+                    {"name": "street", "type": "String", "required": True},
+                    {"name": "city", "type": "String", "required": True},
+                    {"name": "province", "type": "String", "required": True},
+                    {"name": "postal_code", "type": "String", "required": False},
+                    {"name": "country", "type": "String", "required": True}
+                ],
+                "methods": [
+                    {"name": "is_complete", "returns": "Boolean"},
+                    {"name": "to_string", "returns": "String"}
+                ],
+                "immutable": True
+            }
+        ]
+    }, default_flow_style=False, allow_unicode=True)
+
+    guards_yaml = yaml.dump({
+        **placeholder_meta,
+        "guards": [
+            {
+                "id": "PaymentVerified",
+                "description": "Kiểm tra thanh toán đã được xác nhận",
+                "type": "business_rule",
+                "condition": {"payment_status": "confirmed"},
+                "error": "Thanh toán chưa được xác nhận"
+            },
+            {
+                "id": "InventoryAvailable",
+                "description": "Kiểm tra kho còn hàng",
+                "type": "validation",
+                "condition": {"stock": {">": 0}},
+                "error": "Sản phẩm hết hàng"
+            },
+            {
+                "id": "OrderNotCancelled",
+                "description": "Kiểm tra đơn hàng chưa bị hủy",
+                "type": "validation",
+                "condition": {"order_status": {"!=": "cancelled"}},
+                "error": "Đơn hàng đã bị hủy"
+            }
+        ]
+    }, default_flow_style=False, allow_unicode=True)
+
+    roles_yaml = yaml.dump({
+        **placeholder_meta,
+        "roles": [
+            {
+                "id": "admin",
+                "description": "Quản trị viên hệ thống",
+                "permissions": [
+                    {"action": "manage", "resource": "*"},
+                    {"action": "create", "resource": "User"},
+                    {"action": "read", "resource": "User"},
+                    {"action": "update", "resource": "User"},
+                    {"action": "delete", "resource": "User"},
+                    {"action": "create", "resource": "Product"},
+                    {"action": "read", "resource": "Product"},
+                    {"action": "update", "resource": "Product"},
+                    {"action": "delete", "resource": "Product"},
+                    {"action": "manage", "resource": "Order"}
+                ],
+                "tenant_scope": "global"
+            },
+            {
+                "id": "customer",
+                "description": "Khách hàng mua hàng",
+                "permissions": [
+                    {"action": "create", "resource": "Order"},
+                    {"action": "read", "resource": "Order"},
+                    {"action": "read", "resource": "Product"},
+                    {"action": "read", "resource": "User"}
+                ],
+                "tenant_scope": "tenant_isolated"
+            },
+            {
+                "id": "staff",
+                "description": "Nhân viên xử lý đơn hàng",
+                "permissions": [
+                    {"action": "read", "resource": "Order"},
+                    {"action": "update", "resource": "Order"},
+                    {"action": "read", "resource": "Product"},
+                    {"action": "update", "resource": "Product"},
+                    {"action": "read", "resource": "User"}
+                ],
+                "tenant_scope": "tenant_isolated"
+            }
+        ]
+    }, default_flow_style=False, allow_unicode=True)
+
+    ui_components_yaml = yaml.dump({
+        **placeholder_meta,
+        "ui_components": [
+            {
+                "id": "UserForm",
+                "description": "Form nhập thông tin người dùng",
+                "component_type": "form_field",
+                "entity_id": "User",
+                "properties": {"layout": "single_column"}
+            },
+            {
+                "id": "UserTable",
+                "description": "Bảng danh sách người dùng",
+                "component_type": "data_table",
+                "entity_id": "User",
+                "properties": {"pagination": True, "sortable": True, "filterable": True}
+            },
+            {
+                "id": "ProductCardList",
+                "description": "Danh sách sản phẩm dạng card",
+                "component_type": "card_list",
+                "entity_id": "Product",
+                "properties": {"grid_columns": 3}
+            },
+            {
+                "id": "OrderDialog",
+                "description": "Dialog chi tiết đơn hàng",
+                "component_type": "dialog",
+                "entity_id": "Order",
+                "properties": {"size": "large"}
+            },
+            {
+                "id": "PrimaryTheme",
+                "description": "Theme mặc định",
+                "component_type": "theme_provider",
+                "entity_id": None,
+                "properties": {"primary_color": "#3b82f6", "dark_mode": True}
+            }
+        ],
+        "ui_layouts": [
+            {
+                "id": "UserListLayout",
+                "description": "Layout danh sách người dùng",
+                "layout_type": "page",
+                "regions": ["header", "main", "sidebar"],
+                "properties": {}
+            }
+        ],
+        "ui_themes": [
+            {
+                "id": "DefaultTheme",
+                "description": "Theme mặc định cho ứng dụng",
+                "name": "default",
+                "tokens": {"primary_color": "#3b82f6", "secondary_color": "#64748b"},
+                "dark_mode": True
+            }
+        ]
+    }, default_flow_style=False, allow_unicode=True)
 
     return {
         "entities": entities_yaml,
@@ -874,8 +1392,49 @@ def _build_placeholder_yaml(brief_id: str, generated_at: str) -> Dict[str, str]:
         "workflows": workflows_yaml,
         "value_objects": value_objects_yaml,
         "guards": guards_yaml,
+        "roles": roles_yaml,
         "ui_components": ui_components_yaml,
     }
+
+
+def _extract_yaml_from_text(text: str, category: str) -> str:
+    """Extract valid YAML from LLM text response.
+
+    Handles:
+    1. Thinking tags (<thinking>, <antThinking>)
+    2. Markdown code blocks (```yaml ... ```)
+    3. Preamble text before YAML block (e.g. "Looking at the schema...")
+    4. Pure YAML (no wrapping)
+
+    Returns the YAML string that starts with the expected category key (e.g., "entities:").
+    """
+    import re
+
+    # Step 1: strip thinking tags
+    cleaned = text
+    for tag in ["<thinking>", "</thinking>", "<antThinking>", "</antThinking>"]:
+        cleaned = cleaned.replace(tag, "")
+    cleaned = cleaned.strip()
+
+    # Step 2: try to extract from markdown code block ```yaml ... ``` or ``` ... ```
+    yaml_block = re.search(r"```(?:yaml|yml)?\s*\n(.*?)```", cleaned, re.DOTALL)
+    if yaml_block:
+        return yaml_block.group(1).strip()
+
+    # Step 3: try to find the YAML starting from category key (e.g., "entities:")
+    # This handles case where LLM outputs preamble before YAML without code fence
+    category_key = f"{category}:"
+    idx = cleaned.find(category_key)
+    if idx >= 0:
+        return cleaned[idx:].strip()
+
+    # Step 4: fallback — try to find first YAML dict key pattern at start of line
+    yaml_start = re.search(r"^\w[\w_]*:", cleaned, re.MULTILINE)
+    if yaml_start:
+        return cleaned[yaml_start.start():].strip()
+
+    # Step 5: nothing worked — return as-is
+    return cleaned
 
 
 def _upsert_contract_artifact(
@@ -1280,8 +1839,7 @@ def _try_fix_with_llm(
             messages=[{"role": "user", "content": user}],
         )
 
-        yaml_content = response.content.strip()
-        yaml_content = yaml_content.replace("```yaml", "").replace("```", "").strip()
+        yaml_content = _extract_yaml_from_text(response.content, category)
 
         fixed_content = yaml.safe_load(yaml_content)
 
@@ -1306,10 +1864,572 @@ def _try_fix_with_llm(
         return False, None
 
 
+# ============================================================================
+# Single-Category SSE Streaming (for per-category generation with llm-progress)
+# ============================================================================
+
+async def generate_category_stream_for_api(category: str, force: bool = False) -> AsyncIterator[Dict[str, Any]]:
+    """
+    Async generator cho SSE streaming — gen 1 category riêng với llm token streaming.
+
+    Compatible with llm-progress component (events: started, system_prompt, thinking, content, complete, error).
+
+    Enforces: category must come after its prerequisite categories are generated.
+
+    Yields dict with keys: "event" (str) and "data" (str|dict).
+    """
+    # ── Resolve project path ──
+    project_cwd = get_active_project_cwd()
+    if not project_cwd:
+        yield {"event": "error", "data": "Không có project active"}
+        return
+
+    # ── Category order enforcement ──
+    order = REQUIRED_CATEGORIES
+    idx = order.index(category) if category in order else -1
+
+    artifacts_db = get_project_db_path(project_cwd, "artifacts.db")
+    artifacts_manager = ArtifactsManager(db_path=artifacts_db)
+    artifacts_manager.init()
+
+    if idx > 0:
+        for prev_cat in order[:idx]:
+            art = artifacts_manager.get(f"contract_{prev_cat}")
+            if not art:
+                prev_display = _CATEGORY_PROMPT_MAP.get(prev_cat, prev_cat)
+                yield {"event": "error", "data": f"Vui lòng tạo {prev_cat} trước khi tạo {category}"}
+                return
+
+    # ── Pre-checks: find brief via project-level DB ──
+    briefs_db = get_project_db_path(project_cwd, "briefs.db")
+    briefs_manager = BriefsManager(db_path=briefs_db)
+    briefs_manager.init()
+
+    active_version = _get_active_version()
+    active_brief = _find_brief(briefs_manager, active_version)
+
+    if not active_brief:
+        yield {"event": "error", "data": "Không tìm thấy brief cho version này"}
+        return
+
+    if active_brief.get('status') != 'freezed':
+        yield {"event": "error", "data": "Brief chưa được freeze"}
+        return
+
+    brief_id = active_brief.get('brief_id')
+    brief_content = active_brief.get('content', '')
+
+    # Check if already exists (unless force)
+    if not force:
+        existing = artifacts_manager.get(f"contract_{category}")
+        if existing:
+            yield {"event": "error", "data": f"Contract {category} đã tồn tại"}
+            return
+
+    # Load analysis data
+    analysis_data = {}
+    try:
+        analysis_artifact = artifacts_manager.get(f"analysis-{brief_id}")
+        if analysis_artifact:
+            analysis_data = json.loads(analysis_artifact.get("content", "{}"))
+    except Exception:
+        pass
+
+    # Load clarifications
+    clarifications = []
+    try:
+        clarifications = briefs_manager.get_clarifications(brief_id)
+    except Exception:
+        pass
+
+    # Load LLM config
+    config = None
+    try:
+        config = load_llm_config()
+    except Exception:
+        yield {"event": "error", "data": "LLM chưa được cấu hình"}
+        return
+
+    # ── Build prompt ──
+    # Set include_mcp_context=False because LLM learns schema via get_dsl_section tool call
+    # Injecting schema in both system prompt AND tool result causes confusion/duplication
+    system, user = _build_category_prompt(category, analysis_data, clarifications, brief_content, include_mcp_context=False)
+
+    # Load tool-use workflow instructions from shared prompt file
+    try:
+        workflow_prompt = load_prompt("_shared/tool-use-workflow")
+        # Replace {{ category }} placeholder with actual category name (use regex to avoid JSON {} conflict)
+        import re
+        workflow_prompt = re.sub(r"\{\{\s*category\s*\}\}", category, workflow_prompt)
+        system = system + "\n\n" + workflow_prompt
+    except Exception:
+        # Fallback: inline instructions if shared prompt not found
+        pass
+
+    yield {"event": "started", "data": {"category": category, "brief_id": brief_id}}
+    yield {"event": "system_prompt", "data": system}
+    yield {"event": "llm_config", "data": {"model": config.model, "temperature": config.temperature, "max_tokens": config.max_tokens}}
+    yield {"event": "user_payload", "data": {"user_message_length": len(user)}}
+
+    # ── Tool definitions (OpenAI format) ──
+    # 7 tools: 4 DSL learning + 3 validation/reference
+    tool_definitions = [
+        # ── 1. get_dsl_schema — no params, returns full schema ──
+        {
+            "type": "function",
+            "function": {
+                "name": "get_dsl_schema",
+                "description": "Returns the COMPLETE DSL schema — all node types, fields, required/optional. Call this FIRST to learn DSL syntax before generating any YAML.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        },
+        # ── 2. get_dsl_section — ONE required param: section ──
+        {
+            "type": "function",
+            "function": {
+                "name": "get_dsl_section",
+                "description": f"Returns DSL schema for a specific section. Use to learn fields for category '{category}'. Example: get_dsl_section(section='entities') or get_dsl_section(section='{category}').",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "section": {
+                            "type": "string",
+                            "description": f"Section name. Valid values: entities, commands, queries, events, workflows, value_objects, guards, roles, ui_components, render_context, infrastructure, access_control, observability, api, supporting. For current category use '{category}'.",
+                        },
+                    },
+                    "required": ["section"],
+                },
+            },
+        },
+        # ── 3. list_packs — no params, returns pack list ──
+        {
+            "type": "function",
+            "function": {
+                "name": "list_packs",
+                "description": "Lists all available packs with metadata. Call this to find pack IDs before using get_pack.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        },
+        # ── 4. get_pack — ONE required param: pack_id ──
+        {
+            "type": "function",
+            "function": {
+                "name": "get_pack",
+                "description": "Returns detailed info of a specific pack: definitions, recipes, obligations, capabilities. Use to see DSL patterns examples. Call list_packs first to find pack IDs.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pack_id": {
+                            "type": "string",
+                            "description": "Pack ID string, e.g. 'CP01', 'CP02', etc. Use list_packs to discover available pack IDs.",
+                        },
+                    },
+                    "required": ["pack_id"],
+                },
+            },
+        },
+        # ── 5. validate_contract_yaml — ONE required param: yaml_content ──
+        {
+            "type": "function",
+            "function": {
+                "name": "validate_contract_yaml",
+                "description": f"Validate YAML + DSL constraints for category '{category}'. Returns errors/warnings. Call after generating YAML to check correctness.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "yaml_content": {
+                            "type": "string",
+                            "description": "Raw YAML string to validate",
+                        },
+                    },
+                    "required": ["yaml_content"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "cross_check_category",
+                "description": f"Cross-check references in category '{category}' against other generated categories.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "yaml_content": {
+                            "type": "string",
+                            "description": "Raw YAML string to cross-check",
+                        },
+                    },
+                    "required": ["yaml_content"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_generated_artifact",
+                "description": "Get YAML content of a previously generated category for reference.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "string",
+                            "description": "Category name (e.g. 'entities', 'commands', 'queries')",
+                        }
+                    },
+                    "required": ["category"],
+                },
+            },
+        },
+    ]
+
+    # ── Tool executor (in-process, calls pipeline/MCP directly) ──
+    # Required params per tool — enforced strictly to force LLM to learn
+    _TOOL_REQUIRED_PARAMS = {
+        "get_dsl_section": ["section"],
+        "get_pack": ["pack_id"],
+        "validate_contract_yaml": ["yaml_content"],
+        "cross_check_category": ["yaml_content"],
+        "get_generated_artifact": ["category"],
+    }
+
+    async def _tool_executor(tool_name: str, args: dict) -> str:
+        """Execute MCP tool in-process. Returns JSON string result.
+        Strict validation: required params MUST be present and non-empty.
+        """
+        import time as _time
+        start = _time.time()
+
+        try:
+            # ── Strict validation: reject empty required params ──
+            required = _TOOL_REQUIRED_PARAMS.get(tool_name, [])
+            missing = [p for p in required if not args.get(p)]
+            if missing:
+                return json.dumps({
+                    "error": f"Tool '{tool_name}' called with missing required parameters: {missing}. "
+                             f"You MUST provide: {', '.join(required)}. "
+                             f"Example: {tool_name}({', '.join(f'{p}=value' for p in required)})"
+                }, ensure_ascii=False)
+
+            if tool_name == "get_dsl_schema":
+                from midicoder.mcp.tools.dsl_schema import get_dsl_schema
+                result = get_dsl_schema()
+            elif tool_name == "get_dsl_section":
+                from midicoder.mcp.tools.dsl_schema import get_dsl_section
+                section = args["section"]
+                result = get_dsl_section(section)
+            elif tool_name == "list_packs":
+                from midicoder.mcp.tools.packs import list_packs
+                result = list_packs()
+            elif tool_name == "get_pack":
+                from midicoder.mcp.tools.packs import get_pack
+                result = get_pack(args["pack_id"])
+            elif tool_name == "validate_contract_yaml":
+                result = _validate_single_category(category, args["yaml_content"])
+            elif tool_name == "cross_check_category":
+                result = _cross_check_category(category, args["yaml_content"])
+            elif tool_name == "get_generated_artifact":
+                result = _get_artifact_for_category(args["category"])
+            else:
+                result = {"error": f"Unknown tool: {tool_name}"}
+        except Exception as e:
+            result = {"error": f"Tool execution failed: {str(e)}"}
+
+        return json.dumps(result, ensure_ascii=False)
+
+    # ── Call LLM with tool-use streaming ──
+    from midicoder.pipeline.llm.client import call_llm_with_tools_stream, LlmStreamChunkWithTools
+    try:
+        start_time = time.time()
+        accumulated = ""
+        in_thinking = False
+        thinking_buffer = ""
+        round_count = 0
+
+        async for chunk in call_llm_with_tools_stream(
+            config,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            tools=tool_definitions,
+            tool_executor=_tool_executor,
+            max_rounds=9999,  # Effectively no limit — LLM decides when to stop
+        ):
+            # Handle content
+            content = chunk.content or ""
+            if content:
+                # Detect thinking tags: both <thinking> and <antThinking> (Qwen)
+                thinking_tags_open = ["<thinking>", "<antThinking>"]
+                thinking_tags_close = ["</thinking>", "</antThinking>"]
+
+                if in_thinking:
+                    # Already inside thinking — look for closing tag
+                    thinking_buffer += content
+                    yield {"event": "thinking", "data": {"text": content, "accumulated": thinking_buffer}}
+                    for tag in thinking_tags_close:
+                        if tag in content:
+                            in_thinking = False
+                            yield {"event": "thinking_end", "data": thinking_buffer}
+                            thinking_buffer = ""
+                            break
+                    continue
+
+                # Not in thinking — check if a thinking tag opens in this chunk
+                for tag in thinking_tags_open:
+                    if tag in content:
+                        in_thinking = True
+                        thinking_buffer += content
+                        yield {"event": "thinking", "data": {"text": content, "accumulated": thinking_buffer}}
+                        # Handle case where open + close are in the same chunk
+                        for close_tag in thinking_tags_close:
+                            if close_tag in content:
+                                in_thinking = False
+                                yield {"event": "thinking_end", "data": thinking_buffer}
+                                thinking_buffer = ""
+                                break
+                        continue
+
+                accumulated += content
+                if content.strip():
+                    yield {"event": "content", "data": {"text": content, "accumulated": accumulated}}
+
+            # Handle tool_calls from LLM
+            if chunk.tool_calls:
+                for tc in chunk.tool_calls:
+                    tool_name = tc.get("function", {}).get("name", "unknown")
+                    args_json = tc.get("function", {}).get("arguments", "{}")
+                    round_count += 1
+
+                    try:
+                        parsed_args = json.loads(args_json) if args_json else {}
+                    except Exception:
+                        parsed_args = {}
+
+                    yield {"event": "tool_call", "data": {
+                        "name": tool_name,
+                        "arguments": parsed_args,
+                        "duration_ms": 0,
+                    }}
+
+            # Handle tool_results from executor
+            if chunk.tool_results:
+                for tr in chunk.tool_results:
+                    tool_name = tr.get("name", "unknown")
+                    result_str = tr.get("result", "")
+                    try:
+                        result_obj = json.loads(result_str) if result_str else {}
+                    except Exception:
+                        result_obj = {"raw": str(result_str)[:200]}
+
+                    # Ensure result_obj is a dict for .get() calls
+                    if not isinstance(result_obj, dict):
+                        result_obj = {"raw": str(result_obj)[:500]}
+
+                    # Detect error — if result has "error" key, mark as invalid
+                    is_error = "error" in result_obj
+
+                    if is_error:
+                        summary = {
+                            "valid": False,
+                            "error": result_obj.get("error", "Unknown error"),
+                        }
+                    elif tool_name == "validate_contract_yaml":
+                        summary = {
+                            "valid": result_obj.get("is_valid", False),
+                            "errors": result_obj.get("total_errors", 0),
+                            "warnings": result_obj.get("total_warnings", 0),
+                        }
+                    elif tool_name == "cross_check_category":
+                        summary = {
+                            "valid": result_obj.get("valid", False),
+                            "errors": len(result_obj.get("errors", [])),
+                            "warnings": len(result_obj.get("warnings", [])),
+                        }
+                    else:
+                        summary = {"found": bool(result_obj), "size": len(result_str)}
+
+                    yield {"event": "tool_result", "data": {
+                        "name": tool_name,
+                        "summary": summary,
+                        "full_result": result_obj,  # Full JSON result for expanded view
+                        "duration_ms": 0,
+                    }}
+
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        # Extract YAML from LLM response — handles preamble text, code fences, thinking tags
+        final_content = _extract_yaml_from_text(accumulated, category)
+
+        # Mandatory final validation: YAML syntax AND DSL constraints
+        yaml.safe_load(final_content)
+
+        parser = DSLParser()
+        nodes = parser.parse_yaml_string(final_content, category)
+        tree = ProjectionTree(nodes={n.id: n for n in nodes})
+        tree.nodes_by_kind = {}
+        for n in nodes:
+            if n.kind not in tree.nodes_by_kind:
+                tree.nodes_by_kind[n.kind] = []
+            tree.nodes_by_kind[n.kind].append(n)
+        report = validate_tree(tree)
+        if report.total_errors > 0:
+            error_msgs = [r.message for r in report.constraint_results if r.level.value == "error"][:3]
+            raise ValueError(
+                f"Final DSL validation failed with {report.total_errors} error(s). "
+                f"Contract NOT saved. Errors: {'; '.join(error_msgs)}"
+            )
+
+        # Save to SQLite
+        _upsert_contract_artifact(artifacts_manager, category, final_content, brief_id)
+        _log_activity("contract.category_gen", resource_id=category, details={"category": category, "tool_rounds": round_count})
+
+        # Estimate tokens via tiktoken
+        tokens_used = 0
+        prompt_tokens = 0
+        completion_tokens = 0
+        try:
+            from midicoder.pipeline.llm import count_tokens
+            pt = count_tokens(system + user, config.model)
+            ct = count_tokens(final_content, config.model)
+            prompt_tokens = pt
+            completion_tokens = ct
+            tokens_used = pt + ct
+        except Exception:
+            pass
+
+        yield {"event": "final_content", "data": final_content}
+        yield {"event": "complete", "data": {
+            "category": category,
+            "total_tokens": tokens_used,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "latency_ms": latency_ms,
+            "tool_rounds": round_count,
+        }}
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"[CONTRACT GEN ERROR] category={category}: {e}\n{tb}")
+        yield {"event": "error", "data": f"{e}\nTraceback:\n{tb}"}
+        _log_activity("contract.category_gen_error", resource_id=category, details={"error": str(e)}, status="error")
+
+
+# ============================================================================
+# Contract Freeze
+# ============================================================================
+
+def freeze_contracts() -> Dict[str, Any]:
+    """
+    Freeze all contract artifacts — lock as source of truth for code gen.
+
+    Process:
+    1. Load all contract artifacts
+    2. Validate they are complete (all 9 categories present)
+    3. Set status to 'freezed' for each
+    4. Record snapshot hash per category
+
+    Returns:
+        Dict with freeze result
+    """
+    _log_activity("contract.freeze.started")
+
+    artifacts_manager = ArtifactsManager()
+    artifacts_manager.init()
+
+    contracts = artifacts_manager.list_by_type("contract")
+    if not contracts:
+        _log_activity("contract.freeze.no_artifacts", status="error")
+        return {"success": False, "error": "Không có contracts để freeze"}
+
+    # Check all categories present
+    category_set = set()
+    for art in contracts:
+        aid = art.get("artifact_id", "")
+        if aid.startswith("contract_"):
+            category_set.add(aid[len("contract_"):])
+
+    missing = set(REQUIRED_CATEGORIES) - category_set
+    if missing:
+        _log_activity("contract.freeze.incomplete", details={"missing": sorted(missing)}, status="warning")
+        return {
+            "success": False,
+            "error": f"Thiếu categories: {', '.join(sorted(missing))}",
+            "missing": sorted(missing),
+        }
+
+    # Validate before freeze
+    try:
+        yaml_dict = {}
+        for art in contracts:
+            aid = art.get("artifact_id", "")
+            if aid.startswith("contract_"):
+                yaml_dict[aid[len("contract_"):]] = art.get("content", "")
+
+        dsl_parser = DSLParser()
+        tree = dsl_parser.build_projection_tree(yaml_dict)
+        report = validate_tree(tree)
+
+        if report.status == ValidationStatus.FATAL:
+            return {
+                "success": False,
+                "error": f"Contracts có {report.total_errors} lỗi nghiêm trọng, không thể freeze",
+                "errors": report.total_errors,
+            }
+    except Exception as e:
+        _log_activity("contract.freeze.validation_error", details={"error": str(e)}, status="error")
+        return {"success": False, "error": f"Validation failed: {e}"}
+
+    # Freeze: update status + record snapshot
+    import hashlib
+    frozen_count = 0
+    for art in contracts:
+        aid = art.get("artifact_id", "")
+        content = art.get("content", "")
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
+
+        artifacts_manager.update_content(aid, content)
+        # Update metadata with freeze info
+        existing_meta = art.get("metadata", {})
+        existing_meta.update({
+            "frozen": True,
+            "frozen_at": datetime.now(timezone.utc).isoformat(),
+            "content_hash": content_hash,
+            "validation_status": report.status.value,
+        })
+
+        frozen_count += 1
+        _log_activity("contract.freeze.category", resource_id=aid,
+                     details={"hash": content_hash})
+
+    _log_activity("contract.freeze.completed", details={
+        "frozen_count": frozen_count,
+        "validation_status": report.status.value,
+        "errors": report.total_errors,
+        "warnings": report.total_warnings,
+    })
+
+    return {
+        "success": True,
+        "frozen_count": frozen_count,
+        "validation_status": report.status.value,
+        "errors": report.total_errors,
+        "warnings": report.total_warnings,
+    }
+
+
 __all__ = [
     "generate_contracts",
+    "generate_category_stream_for_api",
     "check_contracts",
     "repair_contracts",
+    "freeze_contracts",
     "_generate_contracts_with_llm",
     "_build_category_prompt",
     "_build_mcp_context",

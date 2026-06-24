@@ -1965,6 +1965,12 @@ class ReferentialIntegrityConstraint(BaseConstraint):
         NodeKind.HTTP_ROUTE: ["command_id", "query_id"],
         NodeKind.NOTIFICATION_RULE: ["template_id", "channel_ids"],
         NodeKind.CQRS_PROJECTION: ["source_events", "target_entity"],
+        NodeKind.EVENT: [],  # source_entity — single string field, handled separately
+    }
+
+    # Single-string reference fields (not lists)
+    SINGLE_REFERENCE_FIELDS = {
+        NodeKind.EVENT: "source_entity",
     }
 
     def validate(
@@ -2001,13 +2007,27 @@ class ReferentialIntegrityConstraint(BaseConstraint):
                         actual=value,
                     ))
 
+        # Single-string reference fields
+        ref_field = self.SINGLE_REFERENCE_FIELDS.get(node.kind)
+        if ref_field:
+            ref_id = node.params.get(ref_field)
+            if ref_id and not tree.get_node(ref_id):
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"Reference '{ref_id}' in {ref_field} not found",
+                    node_id=node.id,
+                    field=ref_field,
+                    actual=ref_id,
+                ))
+
         return results
 
 
 class CircularDependencyConstraint(BaseConstraint):
     """
     C050: No circular dependencies between nodes.
-    
+
     Cross-node validation to detect circular dependencies.
     """
     id = "C050"
@@ -2058,6 +2078,99 @@ class CircularDependencyConstraint(BaseConstraint):
                         node_id=node_id,
                     ))
                     break
+
+        return results
+
+
+class GuardReferencesValid(BaseConstraint):
+    """
+    C050a: Guard references in commands/queries must point to existing guard nodes.
+
+    Validates that guard IDs referenced in command.guards and query.guards
+    actually exist in the tree.
+    """
+    id = "C050a"
+    description = "Guard references must exist"
+    level = ConstraintLevel.ERROR
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind not in (NodeKind.COMMAND, NodeKind.QUERY):
+            return []
+
+        results = []
+        guards = node.params.get("guards", [])
+        for guard in guards:
+            guard_id = guard.get("id") if isinstance(guard, dict) else guard
+            if guard_id and not tree.get_node(guard_id):
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"Guard reference '{guard_id}' not found in tree",
+                    node_id=node.id,
+                    field="guards",
+                    actual=guard_id,
+                ))
+
+        return results
+
+
+class NodeIdUnique(BaseConstraint):
+    """
+    C050b: Node IDs must be unique within their kind category.
+
+    Prevents silent merge when duplicate IDs are added to the tree.
+    """
+    id = "C050b"
+    description = "Node IDs must be unique within category"
+    level = ConstraintLevel.ERROR
+
+    # Node kinds that require uniqueness within their kind
+    UNIQUE_KINDS = frozenset([
+        NodeKind.ENTITY,
+        NodeKind.COMMAND,
+        NodeKind.QUERY,
+        NodeKind.EVENT,
+        NodeKind.WORKFLOW,
+        NodeKind.VALUE_OBJECT,
+        NodeKind.GUARD,
+        NodeKind.ROLE,
+        NodeKind.UI_COMPONENT,
+    ])
+
+    def validate(
+        self,
+        node: ProjectionNode,
+        tree: ProjectionTree,
+        ctx: ValidationContext
+    ) -> list[ConstraintResult]:
+        if node.kind not in self.UNIQUE_KINDS:
+            return []
+
+        # Only run once per kind per tree
+        check_key = f"_c050b_{node.kind.value}_done"
+        if getattr(tree, check_key, False):
+            return []
+        tree.__setattr__(check_key, True)
+
+        results = []
+        nodes_of_kind = tree.get_nodes_by_kind(node.kind)
+        seen_ids = {}
+        for n in nodes_of_kind:
+            if n.id in seen_ids:
+                results.append(ConstraintResult(
+                    constraint_id=self.id,
+                    level=self.level,
+                    message=f"Duplicate node ID '{n.id}' for kind {node.kind.value}",
+                    node_id=n.id,
+                    actual=n.id,
+                ))
+            else:
+                seen_ids[n.id] = n
 
         return results
 
@@ -3902,6 +4015,11 @@ for cls in [
     # CP49: Consent & Preference C092-C093
     ConsentTypeValid,
     CommFrequencyValid,
+    # Cross-node referential integrity C049-C050b
+    ReferentialIntegrityConstraint,
+    CircularDependencyConstraint,
+    GuardReferencesValid,
+    NodeIdUnique,
 ]:
     default_registry.register(cls())
 

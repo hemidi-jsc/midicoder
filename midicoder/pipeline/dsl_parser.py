@@ -353,6 +353,7 @@ class DSLParser:
                 "id": vo_id,
                 "description": vo_def.get("description", ""),
                 "fields": vo_def.get("fields", []),
+                "methods": vo_def.get("methods", []),
                 "immutable": vo_def.get("immutable", True),
                 "comparable": vo_def.get("comparable", False),
                 "extends": vo_def.get("extends"),
@@ -388,7 +389,7 @@ class DSLParser:
                 "description": guard_def.get("description", ""),
                 "type": guard_def.get("type", "validation"),
                 "condition": guard_def.get("condition", {}),
-                "error": guard_def.get("error"),
+                "error": guard_def.get("error") or guard_def.get("on_failure"),
             }
 
             node = ProjectionNode(
