@@ -1,6 +1,6 @@
 /**
- * LLM Progress Overlay — reusable modal showing real-time LLM streaming progress.
- * Used for brief analysis, contract generation, and any LLM pipeline step.
+ * Brief Analyze LLM Progress Overlay — dedicated to brief analysis streaming.
+ * NOT shared with contract generation (use contract-gen-progress instead).
  *
  * Shows: thinking, content tokens, prompt, payload tabs.
  * Emits: close, cancelAnalyze, viewResult (when done)
@@ -10,14 +10,14 @@ import { Component, Input, Output, EventEmitter, ChangeDetectorRef, NgZone, inje
 import { CommonModule } from '@angular/common';
 import { I18nPipe } from '../../../core/i18n.pipe';
 
-export interface StreamMessage {
+export interface BriefAnalyzeStreamMessage {
   type: string;
   data: any;
   accumulated?: string;
 }
 
 @Component({
-  selector: 'app-llm-progress',
+  selector: 'app-brief-analyze-llm-progress',
   standalone: true,
   imports: [CommonModule, I18nPipe],
   template: `
@@ -119,18 +119,20 @@ export interface StreamMessage {
 
                   <!-- Merged tool call + result (type === 'tool' after merge, or 'call' pending) -->
                   @if (te.type === 'tool' || te.type === 'call') {
-                    <div class="timeline-item" [class.timeline-success]="te.summary?.valid !== false" [class.timeline-error]="te.summary?.valid === false" [class.timeline-pending]="te.type === 'call'">
+                    <div class="timeline-item" [class.timeline-success]="te._valid === true" [class.timeline-error]="te._valid === false" [class.timeline-pending]="te.type === 'call'">
                       <button class="timeline-header" (click)="te._expanded = !te._expanded">
                         <span class="timeline-dot">
-                          @if (te.type === 'tool' && te.summary?.valid !== false) {
+                          @if (te.type === 'tool' && te._valid === true) {
                             <i class="fa-solid fa-circle-check"></i>
-                          } @else if (te.type === 'tool' && te.summary?.valid === false) {
+                          } @else if (te.type === 'tool' && te._valid === false) {
                             <i class="fa-solid fa-circle-xmark"></i>
+                          } @else if (te.type === 'tool') {
+                            <i class="fa-solid fa-wrench"></i>
                           } @else {
                             <i class="fa-solid fa-wrench"></i>
                           }
                         </span>
-                        <span class="timeline-label">Gọi tool: <strong>{{ te.name }}</strong></span>
+                        <span class="timeline-label">Gọi tool: <strong>{{ te.name }}</strong>{{ getToolArgPreview(te) }}</span>
                         @if (te.duration != null) {
                           <span class="timeline-time">{{ te.duration }}ms</span>
                         }
@@ -156,16 +158,18 @@ export interface StreamMessage {
 
                   <!-- Orphan result (no matching call) -->
                   @if (te.type === 'result') {
-                    <div class="timeline-item" [class.timeline-success]="te.summary?.valid !== false" [class.timeline-error]="te.summary?.valid === false">
+                    <div class="timeline-item" [class.timeline-success]="te._valid === true" [class.timeline-error]="te._valid === false">
                       <button class="timeline-header" (click)="te._expanded = !te._expanded">
                         <span class="timeline-dot">
-                          @if (te.summary?.valid !== false) {
+                          @if (te._valid === true) {
                             <i class="fa-solid fa-circle-check"></i>
-                          } @else {
+                          } @else if (te._valid === false) {
                             <i class="fa-solid fa-circle-xmark"></i>
+                          } @else {
+                            <i class="fa-solid fa-wrench"></i>
                           }
                         </span>
-                        <span class="timeline-label">Gọi tool: <strong>{{ te.name }}</strong></span>
+                        <span class="timeline-label">Gọi tool: <strong>{{ te.name }}</strong>{{ getToolArgPreview(te) }}</span>
                         <span class="timeline-time">{{ te.duration || 0 }}ms</span>
                         <span class="timeline-toggle"><i class="fa-solid fa-chevron-right" [class.expanded]="te._expanded"></i></span>
                       </button>
@@ -659,7 +663,7 @@ export interface StreamMessage {
       font-style: italic;
       font-size: 0.72rem;
       line-height: 1.5;
-      white-space: pre-wrap;
+      white-space: pre-line;
       word-break: break-word;
     }
 
@@ -701,7 +705,7 @@ export interface StreamMessage {
       color: rgba(255, 255, 255, 0.8);
       font-size: 0.75rem;
       line-height: 1.55;
-      white-space: pre-wrap;
+      white-space: pre-line;
       word-break: break-word;
       max-height: 500px;
       overflow-y: auto;
@@ -765,6 +769,8 @@ export interface StreamMessage {
       height: 100%;
       overflow-y: auto;
       padding: 10px 14px;
+      width: 100%;
+      box-sizing: border-box;
     }
 
     /* Payload collapsible sections */
@@ -772,6 +778,9 @@ export interface StreamMessage {
       margin-bottom: 6px;
       border: 1px solid rgba(255, 255, 255, 0.06);
       background: rgba(255, 255, 255, 0.02);
+      width: 100%;
+      box-sizing: border-box;
+      overflow: hidden;
     }
 
     .section-toggle {
@@ -788,6 +797,7 @@ export interface StreamMessage {
       cursor: pointer;
       text-align: left;
       transition: background 0.15s;
+      box-sizing: border-box;
     }
 
     .section-toggle:hover {
@@ -859,7 +869,7 @@ export interface StreamMessage {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 8px;
-      padding: 12px 10px;
+      padding: 12px 0;
     }
 
     .token-stat {
@@ -963,7 +973,7 @@ export interface StreamMessage {
     }
   `]
 })
-export class LlmProgressComponent {
+export class BriefAnalyzeLlmProgressComponent {
   @Input() visible = false;
   @Input() title = 'LLM Processing'; // Set by parent with i18n, English fallback
   @Output() closeOverlay = new EventEmitter<void>();
@@ -978,22 +988,64 @@ export class LlmProgressComponent {
   llmConfig: any = null;
   domain = '';
   userPayloadInfo: any = null;
-  rawRequestJson = '';
   rawResponseContent = '';
   tokenStats: any = null;
 
+  /** Build raw request JSON from accumulated stream data */
+  get rawRequestJson(): string {
+    if (!this.llmConfig && !this.systemPrompt) return '';
+    try {
+      const req: any = {
+        model: this.llmConfig?.model || '',
+        messages: [],
+      };
+      if (this.systemPrompt) {
+        req.messages.push({ role: 'system', content: this.systemPrompt });
+      }
+      if (this.userPayloadInfo) {
+        req.messages.push({ role: 'user', content: '(user message, ' + (this.userPayloadInfo.user_message_length || 0) + ' chars)' });
+      }
+      if (this.llmConfig) {
+        req.temperature = this.llmConfig.temperature;
+        req.max_tokens = this.llmConfig.max_tokens;
+        if (this.llmConfig.top_p != null) req.top_p = this.llmConfig.top_p;
+        if (this.llmConfig.top_k != null) req.top_k = this.llmConfig.top_k;
+        if (this.llmConfig.min_p != null) req.min_p = this.llmConfig.min_p;
+      }
+      req.stream = true;
+      req.tools = '(7 function definitions)';
+      return JSON.stringify(req, null, 2);
+    } catch {
+      return '';
+    }
+  }
+
+  /** Normalize token stats — backend may send keys with or without wrapper */
+  get _normalizedStats(): any {
+    if (!this.tokenStats) return null;
+    return {
+      model: this.tokenStats.model || this.llmConfig?.model || '',
+      prompt_tokens: this.tokenStats.prompt_tokens ?? this.tokenStats.input_tokens ?? 0,
+      completion_tokens: this.tokenStats.completion_tokens ?? this.tokenStats.output_tokens ?? 0,
+      tokens_used: this.tokenStats.tokens_used ?? this.tokenStats.total_tokens ?? 0,
+      latency_ms: this.tokenStats.latency_ms ?? 0,
+      estimated_cost_usd: this.tokenStats.estimated_cost_usd ?? 0,
+    };
+  }
+
   // Stream tab — user-friendly format
-  initEvents: StreamMessage[] = [];
+  initEvents: BriefAnalyzeStreamMessage[] = [];
   accumulatedThinking = '';
   thinkingDone = false;
   accumulatedContent = '';
   lastError = '';
 
-  /** Strip <thinking>...</thinking> tags from raw LLM output */
+  /** Strip `<thinking>` tags and collapse excessive whitespace */
   get accumulatedThinkingClean(): string {
     return this.accumulatedThinking
-      .replace(/<thinking>/gi, '')
-      .replace(/<\/thinking>/gi, '')
+      .replace(/<antThinking>|<\/antThinking>|<thinking>|<\/thinking>/gi, '')
+      .replace(/\n\s*\n\s*\n/g, '\n\n')  // collapse 3+ blank lines to single blank
+      .replace(/^[ \t]+$/gm, '')           // strip lines that are only whitespace
       .trim();
   }
 
@@ -1003,20 +1055,6 @@ export class LlmProgressComponent {
   streamCount = 0;
   sections = { systemPrompt: false, userMessage: false, rawRequest: false, rawResponse: false, tokenStats: false };
 
-  /** Normalize token stats — backend may send keys with or without wrapper */
-  get _normalizedStats(): any {
-    if (!this.tokenStats) return null;
-    // If tokenStats is the complete event wrapper {json_data: ..., prompt_tokens: ...}
-    return {
-      model: this.tokenStats.model || this.tokenStats?.llmConfig?.model || '',
-      prompt_tokens: this.tokenStats.prompt_tokens ?? 0,
-      completion_tokens: this.tokenStats.completion_tokens ?? 0,
-      tokens_used: this.tokenStats.tokens_used ?? 0,
-      latency_ms: this.tokenStats.latency_ms ?? 0,
-      estimated_cost_usd: this.tokenStats.estimated_cost_usd ?? 0,
-    };
-  }
-
   get formattedCost(): string {
     const val = this._normalizedStats?.estimated_cost_usd || 0;
     if (val === 0) return '$0.0000';
@@ -1025,6 +1063,32 @@ export class LlmProgressComponent {
 
   jsonStr(obj: any): string {
     try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
+  }
+
+  /** Get a short argument preview for tool call header */
+  getToolArgPreview(item: any): string {
+    if (!item.arguments) return '';
+    const args = item.arguments;
+    if (args.section) return ` <span style="opacity:0.5">(${args.section})</span>`;
+    if (args.yaml_content) return ` <span style="opacity:0.5">(${(args.yaml_content as string).length} chars)</span>`;
+    if (args.query) return ` <span style="opacity:0.5">(${args.query})</span>`;
+    return '';
+  }
+
+  /** Strip thinking tags and collapse excessive whitespace */
+  private _cleanThinkingText(text: string): string {
+    return text
+      .replace(/<antThinking>|<\/antThinking>|<thinking>|<\/thinking>|<anthinking>|<\/anthinking>/gi, '')
+      .replace(/\n\s*\n\s*\n/g, '\n\n')  // collapse 3+ blank lines to double
+      .replace(/^[ \t]+$/gm, '')           // strip lines that are only whitespace
+      .trim();
+  }
+
+  /** Strip thinking tags from content text */
+  private _cleanContentText(text: string): string {
+    return text
+      .replace(/<antThinking>|<\/antThinking>|<thinking>|<\/thinking>|<anthinking>|<\/anthinking>/gi, '')
+      .trim();
   }
 
   /** Show "Đang suy nghĩ..." whenever streaming is active AND no item is currently receiving chunks */
@@ -1042,12 +1106,16 @@ export class LlmProgressComponent {
   private _tryMerge(last: any, newChunk: any): boolean {
     if (last.type !== newChunk.type) return false;
     if (last.type === 'thinking') {
-      last.text += newChunk.text;
+      const cleaned = this._cleanThinkingText(newChunk.text);
+      if (!cleaned) return true;  // Merge (swallow) empty chunk
+      last.text = this._cleanThinkingText(last.text + cleaned);
       last.isStreaming = true;
       return true;
     }
     if (last.type === 'content') {
-      last.text += newChunk.text;
+      const cleaned = this._cleanContentText(newChunk.text);
+      if (!cleaned) return true;  // Merge (swallow) empty chunk
+      last.text = this._cleanContentText(last.text + cleaned);
       last.isStreaming = true;
       return true;
     }
@@ -1100,7 +1168,7 @@ export class LlmProgressComponent {
   }
 
   /** Unwrap SSE data: handles both analyze brief format and contract gen format */
-  private _extract(msg: StreamMessage): { text: string; accumulated?: string } {
+  private _extract(msg: BriefAnalyzeStreamMessage): { text: string; accumulated?: string } {
     if (typeof msg.data === 'string') return { text: msg.data };
     if (msg.data && typeof msg.data === 'object') {
       // Contract gen format: { text: "...", accumulated: "..." }
@@ -1117,16 +1185,18 @@ export class LlmProgressComponent {
   toolEvents: any[] = [];
   currentRepairRound = 0;
   maxRepairRounds = 10;
+  private idleTimer: any = null;
+  private lastMessageTime: number = Date.now();
 
   /** Xử lý message từ SSE stream */
-  onMessage(msg: StreamMessage): void {
+  onMessage(msg: BriefAnalyzeStreamMessage): void {
     this.ngZone.run(() => {
       this.streamCount++;
+      this.lastMessageTime = Date.now();
 
-      // Debug: log every event type to see what backend sends
-      if (msg.type === 'thinking' || msg.type === 'content' || msg.type === 'tool_call') {
-        console.log('[LLM-PROGRESS]', msg.type, JSON.stringify(msg.data).substring(0, 120));
-      }
+      // Check for idle timeout — warn if no data for > 2 minutes
+      const idleMs = Date.now() - this.lastMessageTime;
+      // (idle check is done by backend sending idle_warning event)
 
       switch (msg.type) {
         case 'started':
@@ -1154,15 +1224,14 @@ export class LlmProgressComponent {
         case 'user_payload':
           this.userPayloadInfo = msg.data;
           this.initEvents.push(msg);
-          // Store raw request as formatted JSON
-          if (msg.data?.raw_request) {
-            this.rawRequestJson = JSON.stringify(msg.data.raw_request, null, 2);
-          }
           break;
 
         case 'thinking': {
           const { text, accumulated } = this._extract(msg);
-          const chunk = { type: 'thinking' as const, text: text || '', isStreaming: true, _expanded: true };
+          const cleaned = this._cleanThinkingText(text);
+          // Skip empty thinking chunks
+          if (!cleaned) break;
+          const chunk = { type: 'thinking' as const, text: cleaned, isStreaming: true, _expanded: true };
           // Merge with last thinking chunk
           if (this.toolEvents.length > 0) {
             const last = this.toolEvents[this.toolEvents.length - 1];
@@ -1186,20 +1255,21 @@ export class LlmProgressComponent {
 
         case 'content': {
           const { text, accumulated } = this._extract(msg);
-          if (text) {
-            const chunk = { type: 'content' as const, text, isStreaming: true, _expanded: true };
-            if (this.toolEvents.length > 0) {
-              const last = this.toolEvents[this.toolEvents.length - 1];
-              if (!this._tryMerge(last, chunk)) {
-                // Type switch — stop streaming on previous item
-                this._stopStreamingOnLast();
-                this.toolEvents.push(chunk);
-              } else {
-                last._expanded = true;
-              }
-            } else {
+          const cleaned = this._cleanContentText(text);
+          // Skip empty content chunks
+          if (!cleaned) break;
+          const chunk = { type: 'content' as const, text: cleaned, isStreaming: true, _expanded: true };
+          if (this.toolEvents.length > 0) {
+            const last = this.toolEvents[this.toolEvents.length - 1];
+            if (!this._tryMerge(last, chunk)) {
+              // Type switch — stop streaming on previous item
+              this._stopStreamingOnLast();
               this.toolEvents.push(chunk);
+            } else {
+              last._expanded = true;
             }
+          } else {
+            this.toolEvents.push(chunk);
           }
           break;
         }
@@ -1207,13 +1277,19 @@ export class LlmProgressComponent {
         case 'tool_call':
           // LLM is calling a tool — stop streaming on previous item
           this._stopStreamingOnLast();
-          // LLM is calling a tool
+          // LLM is calling a tool — record timestamp for elapsed measurement
           this.toolEvents.push({
             type: 'call',
             name: msg.data?.name,
             arguments: msg.data?.arguments,
-            duration: msg.data?.duration_ms,
+            duration: 0,
+            _ts: Date.now(),  // client-side timestamp
           });
+          break;
+
+        case 'idle_warning':
+          // Backend detected idle — log but continue waiting
+          console.warn(`[LLM-PROGRESS] Idle warning: ${((msg.data?.idle_ms || 0) / 1000).toFixed(0)}s since last chunk`);
           break;
 
         case 'tool_result':
@@ -1224,11 +1300,20 @@ export class LlmProgressComponent {
           const truncated = this._truncateForDisplay(fullResult);
           const lastItem = this.toolEvents.length > 0 ? this.toolEvents[this.toolEvents.length - 1] : null;
           if (lastItem && lastItem.type === 'call' && lastItem.name === msg.data?.name) {
-            // Merge into existing call item
+            // Merge into existing call item — compute client-side elapsed time
             lastItem.full_result = truncated;
             lastItem.summary = msg.data?.summary;
-            lastItem.duration = msg.data?.duration_ms;
+            lastItem.duration = Date.now() - (lastItem._ts || Date.now());
+            delete lastItem._ts;
             lastItem.type = 'tool';  // Mark as complete call+result
+            // Determine validity for icon display
+            const s = msg.data?.summary || {};
+            if (s.error || s.errors?.length > 0) {
+              lastItem._valid = false;  // Has errors
+            } else if (s.valid === true && s.yaml) {
+              lastItem._valid = true;  // Validation passed
+            }
+            // For tools without valid field (get_dsl_section, etc.), _valid stays undefined → wrench icon
           } else {
             // Orphan result — push as standalone
             this.toolEvents.push({
@@ -1236,7 +1321,7 @@ export class LlmProgressComponent {
               name: msg.data?.name,
               summary: msg.data?.summary,
               full_result: truncated,
-              duration: msg.data?.duration_ms,
+              duration: msg.data?.duration_ms || 0,
             });
           }
           break;
@@ -1310,5 +1395,33 @@ export class LlmProgressComponent {
     this.toolEvents = [];
     this.currentRepairRound = 0;
     this.maxRepairRounds = 10;
+    this.lastMessageTime = Date.now();
+    this._startIdleTimer();
+  }
+
+  /** Start periodic idle check — warn if no data for > 2 minutes */
+  private _startIdleTimer(): void {
+    this._stopIdleTimer();
+    this.idleTimer = setInterval(() => {
+      if (this.status === 'complete' || this.status === 'error') {
+        this._stopIdleTimer();
+        return;
+      }
+      const idleMs = Date.now() - this.lastMessageTime;
+      if (idleMs > 180000) {
+        // > 3 minutes idle — show error in stream
+        console.error(`[LLM-PROGRESS] Stream stalled for ${(idleMs / 1000).toFixed(0)}s — connection likely dropped`);
+        this.status = 'error';
+        this.lastError = 'Stream stalled — LLM connection may have been dropped. Please try again.';
+        this._stopIdleTimer();
+      }
+    }, 10000);  // Check every 10 seconds
+  }
+
+  private _stopIdleTimer(): void {
+    if (this.idleTimer) {
+      clearInterval(this.idleTimer);
+      this.idleTimer = null;
+    }
   }
 }

@@ -288,19 +288,36 @@ def get_dsl_section(section: str) -> Dict[str, Any]:
     """
     section = section.strip().lower()
 
-    # Map aliases
+    # Map aliases — contract categories → DSL sections
     section_aliases = {
+        # render_context aliases
         "ui_components": "render_context",
         "render": "render_context",
         "style": "render_context",
         "styles": "render_context",
+        # entities aliases (events, value_objects live here)
         "entity": "entities",
         "domain": "entities",
+        "events": "entities",
+        "event": "entities",
+        "value_objects": "entities",
+        "value_object": "entities",
+        # commands aliases (queries, workflows, guards live here)
         "command": "commands",
         "application": "commands",
+        "queries": "commands",
+        "query": "commands",
+        "workflows": "commands",
+        "workflow": "commands",
+        "guards": "commands",
+        "guard": "commands",
+        # access_control aliases (roles live here)
         "infra": "infrastructure",
         "access": "access_control",
         "rbac": "access_control",
+        "roles": "access_control",
+        "role": "access_control",
+        # observability
         "ops": "observability",
     }
 

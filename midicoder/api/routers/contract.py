@@ -52,13 +52,20 @@ async def generate_contract_category_stream(request: Request, category: str = Qu
         return StreamingResponse(error_gen(str(e)), media_type="text/event-stream")
 
     async def event_generator():
+        last_event = None
         try:
             async for item in stream:
                 if await request.is_disconnected():
                     return
                 yield _sse(item["data"], item["event"])
+                last_event = item["event"]
         except Exception as e:
             yield _sse(str(e), "error")
+            return
+
+        # If stream ended without 'complete' or 'error' event — likely connection dropped
+        if last_event not in ("complete", "error"):
+            yield _sse("Stream ended unexpectedly. The LLM connection may have been dropped.", "error")
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -150,5 +157,60 @@ async def get_contract_manifest_endpoint(version: str = Query(None), request: Re
                     "updated_at": art.get("updated_at"),
                 }
         return ApiResponse(success=True, data={"total": len(artifacts), "categories": categories}, language=language)
+    except Exception as e:
+        return ApiResponse(success=False, data=None, message=str(e), language=language)
+
+
+@router.get("/traceability", response_model=ApiResponse)
+async def get_traceability(request: Request):
+    """Compute traceability matrix and drift detection between Brief Analysis and Contract YAML."""
+    language = i18n.get_language_from_request(request)
+    try:
+        from midicoder.storage.sqlite import ArtifactsManager, BriefsManager, get_active_project_cwd, get_project_db_path
+        from midicoder.pipeline.traceability import compute_traceability
+        import yaml as yaml_mod
+
+        cwd = get_active_project_cwd()
+        artifacts_mgr = _get_project_artifacts_mgr()
+
+        # Find the latest freezed brief
+        brief_mgr = None
+        brief_db_path = None
+        if cwd:
+            brief_db_path = get_project_db_path(cwd, "briefs.db")
+        brief_mgr = BriefsManager(db_path=brief_db_path)
+        brief_mgr.init()
+
+        # Find brief with status='freezed' (same logic as contract.py)
+        freezed_briefs = brief_mgr.search_by_status('freezed')
+        if not freezed_briefs:
+            return ApiResponse(success=False, data=None, message="No freezed brief found", language=language)
+
+        brief = freezed_briefs[0]
+        brief_id = brief["brief_id"]
+        brief_content = brief.get("content", "")
+
+        # Load analysis artifact
+        analysis_artifact = artifacts_mgr.get(f"analysis-{brief_id}")
+        if analysis_artifact is None:
+            return ApiResponse(success=False, data=None, message="Analysis artifact not found", language=language)
+
+        analysis_data = json.loads(analysis_artifact["content"])
+
+        # Load contract artifacts
+        from midicoder.pipeline.commands.contract import REQUIRED_CATEGORIES
+        contract_artifacts = {}
+        for category in REQUIRED_CATEGORIES:
+            art = artifacts_mgr.get(f"contract_{category}")
+            if art and art.get("content"):
+                try:
+                    contract_artifacts[category] = yaml_mod.safe_load(art["content"]) or {}
+                except Exception:
+                    contract_artifacts[category] = {}
+
+        # Compute traceability
+        result = compute_traceability(analysis_data, contract_artifacts, brief_content)
+
+        return ApiResponse(success=True, data=result, language=language)
     except Exception as e:
         return ApiResponse(success=False, data=None, message=str(e), language=language)

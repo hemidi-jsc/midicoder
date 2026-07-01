@@ -11,7 +11,7 @@
   <rules>
     <rule>Generate roles covering admin, end-user, and domain-specific access levels</rule>
     <rule>Use Vietnamese for human-readable descriptions</rule>
-    <rule>Output ONLY valid YAML dict, no markdown formatting, no explanations</rule>
+    <rule>BEFORE outputting final YAML, you MUST call validate_contract_yaml(yaml_content="...") to validate your output. Only output the YAML after validation passes (valid=true). If validation fails, fix errors and re-validate.</rule>
     <rule>Resource references must use entity IDs from the entities artifact</rule>
   </rules>
 </system>

@@ -20,13 +20,14 @@ Version: 4.0.0 (LLM Contract Generation)
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
 import yaml
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -1412,7 +1413,7 @@ def _extract_yaml_from_text(text: str, category: str) -> str:
 
     # Step 1: strip thinking tags
     cleaned = text
-    for tag in ["<thinking>", "</thinking>", "<antThinking>", "</antThinking>"]:
+    for tag in ["<thinking>", "</thinking>", "<antThinking>", "</antThinking>", "<anthinking>", "</anthinking>", "<think>", "</think>"]:
         cleaned = cleaned.replace(tag, "")
     cleaned = cleaned.strip()
 
@@ -1865,16 +1866,23 @@ def _try_fix_with_llm(
 
 
 # ============================================================================
-# Single-Category SSE Streaming (for per-category generation with llm-progress)
+# Single-Category SSE Streaming (for per-category generation with contract-gen-progress)
 # ============================================================================
 
 async def generate_category_stream_for_api(category: str, force: bool = False) -> AsyncIterator[Dict[str, Any]]:
     """
-    Async generator cho SSE streaming — gen 1 category riêng với llm token streaming.
+    Task-based SSE streaming — gen 1 category through 4 self-contained LLM tasks.
 
-    Compatible with llm-progress component (events: started, system_prompt, thinking, content, complete, error).
+    Tasks:
+      1. learn_schema  — LLM calls get_dsl_section, learns DSL rules
+      2. draft_yaml    — LLM writes YAML draft (NO tools, pure text output)
+      3. validate      — LLM validates + fixes YAML (tools: validate_contract_yaml, cross_check_category, tool loop allowed)
+      4. final_review  — LLM outputs final YAML (NO tools)
 
-    Enforces: category must come after its prerequisite categories are generated.
+    Each task starts with a FRESH conversation. Results are summarized and passed
+    to the next task's prompt — no conversation accumulation.
+
+    Compatible with contract-gen-progress component.
 
     Yields dict with keys: "event" (str) and "data" (str|dict).
     """
@@ -1950,98 +1958,502 @@ async def generate_category_stream_for_api(category: str, force: bool = False) -
         yield {"event": "error", "data": "LLM chưa được cấu hình"}
         return
 
-    # ── Build prompt ──
-    # Set include_mcp_context=False because LLM learns schema via get_dsl_section tool call
-    # Injecting schema in both system prompt AND tool result causes confusion/duplication
-    system, user = _build_category_prompt(category, analysis_data, clarifications, brief_content, include_mcp_context=False)
+    # ── Load prerequisite artifact YAMLs (injected into task prompts) ──
+    category_deps = {
+        "entities": [],
+        "commands": ["entities"],
+        "queries": ["entities"],
+        "events": ["entities"],
+        "workflows": ["commands", "events", "queries"],
+        "value_objects": ["entities"],
+        "guards": ["entities", "commands", "queries", "roles"],
+        "roles": ["entities"],
+        "ui_components": ["entities"],
+    }
+    prerequisites = category_deps.get(category, [])
+    prereq_yaml: Dict[str, str] = {}
+    for dep in prerequisites:
+        try:
+            dep_artifact = artifacts_manager.get(f"contract_{dep}")
+            if dep_artifact and dep_artifact.get("content"):
+                prereq_yaml[dep] = dep_artifact["content"]
+        except Exception:
+            pass
 
-    # Load tool-use workflow instructions from shared prompt file
-    try:
-        workflow_prompt = load_prompt("_shared/tool-use-workflow")
-        # Replace {{ category }} placeholder with actual category name (use regex to avoid JSON {} conflict)
-        import re
-        workflow_prompt = re.sub(r"\{\{\s*category\s*\}\}", category, workflow_prompt)
-        system = system + "\n\n" + workflow_prompt
-    except Exception:
-        # Fallback: inline instructions if shared prompt not found
-        pass
+    prereq_text = ""
+    if prereq_yaml:
+        parts = [f"## Pre-generated: {k}\n```yaml\n{v}\n```" for k, v in prereq_yaml.items()]
+        prereq_text = "\n\n".join(parts) + "\n\nIMPORTANT: Use entity IDs from the pre-generated sections above. Do NOT invent new IDs."
 
+    # ── Build category-specific base prompts ──
+    base_system, base_user = _build_category_prompt(
+        category, analysis_data, clarifications, brief_content, include_mcp_context=False
+    )
+
+    # ── Tool definitions (shared across tasks) ──
+    tool_definitions = _build_tool_definitions(category)
+
+    # ── Tool executor (in-process) ──
+    _tool_executor = _build_tool_executor(category)
+
+    # ── Send init events ──
     yield {"event": "started", "data": {"category": category, "brief_id": brief_id}}
-    yield {"event": "system_prompt", "data": system}
+    yield {"event": "system_prompt", "data": base_system}
     yield {"event": "llm_config", "data": {"model": config.model, "temperature": config.temperature, "max_tokens": config.max_tokens}}
-    yield {"event": "user_payload", "data": {"user_message_length": len(user)}}
+    yield {"event": "user_payload", "data": {"user_message_length": len(base_user)}}
 
-    # ── Tool definitions (OpenAI format) ──
-    # 7 tools: 4 DSL learning + 3 validation/reference
-    tool_definitions = [
-        # ── 1. get_dsl_schema — no params, returns full schema ──
-        {
-            "type": "function",
-            "function": {
-                "name": "get_dsl_schema",
-                "description": "Returns the COMPLETE DSL schema — all node types, fields, required/optional. Call this FIRST to learn DSL syntax before generating any YAML.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                },
-            },
-        },
-        # ── 2. get_dsl_section — ONE required param: section ──
+    # ── Load tool-use workflow instructions from shared prompt file ──
+    try:
+        workflow_prompt = load_prompt("_shared/tool_use_workflow")
+        import re as _re
+        workflow_prompt = _re.sub(r"\{\{\s*category\s*\}\}", category, workflow_prompt)
+    except Exception:
+        workflow_prompt = ""
+
+    # ── Define the 4 tasks ──
+    from midicoder.pipeline.llm.task_orchestrator import TaskOrchestrator, TaskDefinition
+
+    tasks: list[TaskDefinition] = []
+
+    # TASK 1: Learn Schema — LLM calls get_dsl_section to learn DSL rules
+    task1_system = (
+        f"You are a DSL schema learning assistant for the Midicoder platform.\n"
+        f"Your task: Learn the DSL schema for the \"{category}\" category.\n\n"
+        f"{workflow_prompt}"
+    )
+    task1_user = (
+        f"Learn the DSL schema for category \"{category}\".\n"
+        f"Call get_dsl_section(section=\"{category}\") to get the schema.\n"
+        f"Pass the section parameter: {{\"section\": \"{category}\"}}\n"
+        f"Do NOT call any other tools. Output the summary."
+    )
+    tasks.append(TaskDefinition(
+        task_id="learn_schema",
+        system=task1_system,
+        user=task1_user,
+        tools=[t for t in tool_definitions if t["function"]["name"] in ("get_dsl_section", "get_dsl_schema")],
+        allow_tool_loop=False,
+    ))
+
+    # TASK 2: Draft YAML — pure text output, NO tools
+    schema_summary = ""  # Will be filled after task 1
+    task2_system = base_system
+    task2_user = (
+        f"## Context\n"
+        f"You learned the DSL schema:\n{schema_summary}\n\n"
+        f"{base_user}\n\n"
+        f"{prereq_text}\n\n"
+        f"## Task\n"
+        f"Generate valid YAML contracts for the \"{category}\" category.\n"
+        f"Output ONLY the YAML dict. Do NOT call any tools. Do NOT wrap in markdown code fences."
+    )
+    tasks.append(TaskDefinition(
+        task_id="draft_yaml",
+        system=task2_system,
+        user=task2_user,
+        tools=[],  # No tools — pure text output
+        allow_tool_loop=False,
+    ))
+
+    # TASK 3: Validate & Fix — LLM validates + fixes YAML (tool loop allowed)
+    yaml_draft = ""  # Will be filled after task 2
+    task3_system = (
+        f"You are a DSL contract validation and repair expert for the Midicoder platform.\n\n"
+        f"{workflow_prompt}\n\n"
+        f"## CRITICAL REMINDER\n"
+        f"You MUST call validate_contract_yaml FIRST with the full YAML as yaml_content parameter.\n"
+        f"Then call cross_check_category with the same YAML.\n"
+        f"Never call tools without providing yaml_content.\n"
+        f"Example: validate_contract_yaml(yaml_content=\"entities:\\\\n  - id: user\\n    ...\")"
+    )
+    task3_user = (
+        f"Validate and fix this YAML for category \"{category}\":\n\n"
+        f"```yaml\n{yaml_draft}\n```\n\n"
+        f"## Steps:\n"
+        f"1. Call validate_contract_yaml(yaml_content=\"FULL_YAML_HERE\") — pass the full YAML string above\n"
+        f"2. If valid=true, call cross_check_category(yaml_content=\"FULL_YAML_HERE\") — cross-check references\n"
+        f"3. If errors found, fix them and repeat from step 1 (max 3 attempts)\n"
+        f"4. When both pass, output the validated YAML and stop\n\n"
+        f"IMPORTANT: The yaml_content parameter MUST be a non-empty string with the full YAML content.\n"
+        f"Wrong: validate_contract_yaml({{}})\n"
+        f"Correct: validate_contract_yaml(yaml_content=\"entities:\\\\n  - id: example\")"
+    )
+    tasks.append(TaskDefinition(
+        task_id="validate",
+        system=task3_system,
+        user=task3_user,
+        tools=[t for t in tool_definitions if t["function"]["name"] in ("validate_contract_yaml", "cross_check_category")],
+        allow_tool_loop=True,  # Allow tool loop for validate → fix → re-validate
+    ))
+
+    # TASK 4: Final Review — LLM outputs final YAML (no tools)
+    validated_yaml = ""  # Will be filled after task 3
+    validation_result = ""
+    task4_system = (
+        f"You are a DSL contract final review expert.\n"
+        f"Your task: Output the final validated YAML for \"{category}\".\n"
+        f"Do NOT call any tools. Output ONLY the YAML dict."
+    )
+    task4_user = (
+        f"Output the final YAML for category \"{category}\".\n\n"
+        f"Validation result: {validation_result}\n\n"
+        f"YAML to output:\n```yaml\n{validated_yaml}\n```\n\n"
+        f"Output the YAML dict directly. Do NOT call any tools."
+    )
+    tasks.append(TaskDefinition(
+        task_id="final_review",
+        system=task4_system,
+        user=task4_user,
+        tools=[],
+        allow_tool_loop=False,
+    ))
+
+    # ── Execute tasks sequentially, wiring intermediate results ──
+    start_time = time.time()
+    final_content = ""
+    round_count = 0
+
+    def _capture_result(evt: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract captured results from the special task_result event."""
+        data = evt.get("data", {})
+        if data.get("_captured"):
+            return {
+                "accumulated_text": data.get("accumulated_text", ""),
+                "tool_calls": data.get("tool_calls", []),
+                "tool_results": data.get("tool_results", []),
+            }
+        return {}
+
+    try:
+        # ── TASK 1: Learn Schema ──
+        schema_result = {}
+        async for evt in _execute_task_and_capture(config, tasks[0], _tool_executor, category):
+            yield evt
+            r = _capture_result(evt)
+            if r:
+                schema_result = r
+                round_count += len(r.get("tool_calls", []))
+        schema_result_data = schema_result.get("tool_results", [{}])[0].get("result", {}) if schema_result.get("tool_results") else {}
+        schema_text = json.dumps(schema_result_data, indent=2, ensure_ascii=False) if schema_result_data else ""
+
+        # ── TASK 2: Draft YAML ──
+        tasks[1] = TaskDefinition(
+            task_id="draft_yaml",
+            system=base_system,
+            user=(
+                f"## DSL Schema Context\n"
+                f"Here is the DSL schema for \"{category}\":\n"
+                f"{schema_text}\n\n"
+                f"## Project Context\n"
+                f"{base_user}\n\n"
+                f"{prereq_text}\n\n"
+                f"## Task\n"
+                f"Generate valid YAML contracts for the \"{category}\" category.\n"
+                f"Use the schema above for field structure. Use pre-generated IDs for references.\n"
+                f"Output ONLY the YAML dict. Do NOT call any tools. Do NOT wrap in markdown code fences."
+            ),
+            tools=[],
+            allow_tool_loop=False,
+        )
+        yaml_draft = ""
+        async for evt in _execute_task_and_capture(config, tasks[1], _tool_executor, category):
+            yield evt
+            r = _capture_result(evt)
+            if r:
+                yaml_draft = _extract_yaml_from_text(r.get("accumulated_text", ""), category)
+
+        # ── TASK 3: Validate & Fix ──
+        tasks[2] = TaskDefinition(
+            task_id="validate",
+            system=task3_system,
+            user=(
+                f"Validate and fix this YAML for category \"{category}\":\n\n"
+                f"```yaml\n{yaml_draft}\n```\n\n"
+                f"Call validate_contract_yaml(yaml_content=\"...\") with the full YAML string.\n"
+                f"If valid=true, output the validated YAML and stop.\n"
+                f"If valid=false, fix the listed errors and call validate_contract_yaml again.\n"
+                f"Max 3 validation attempts. Then output your best result."
+            ),
+            tools=[t for t in tool_definitions if t["function"]["name"] in ("validate_contract_yaml", "cross_check_category")],
+            allow_tool_loop=True,
+        )
+        validated_yaml = yaml_draft
+        validation_result_str = "PASSED ✓"
+        async for evt in _execute_task_and_capture(config, tasks[2], _tool_executor, category):
+            yield evt
+            r = _capture_result(evt)
+            if r:
+                round_count += len(r.get("tool_calls", []))
+                v_yaml = _extract_yaml_from_text(r.get("accumulated_text", ""), category)
+                if v_yaml and len(v_yaml) >= len(yaml_draft):
+                    validated_yaml = v_yaml
+                # Check validation status
+                for tr in r.get("tool_results", []):
+                    if tr.get("name") == "validate_contract_yaml":
+                        vr = tr.get("result", {})
+                        is_valid = vr.get("is_valid", False) if isinstance(vr, dict) else False
+                        val_errors = vr.get("total_errors", 0) if isinstance(vr, dict) else -1
+                        validation_result_str = "PASSED ✓" if is_valid else f"FAILED: {val_errors} errors"
+
+        # ── TASK 4: Final Review ──
+        tasks[3] = TaskDefinition(
+            task_id="final_review",
+            system=task4_system,
+            user=(
+                f"Output the final YAML for category \"{category}\".\n\n"
+                f"Validation: {validation_result_str}\n\n"
+                f"YAML:\n```yaml\n{validated_yaml}\n```\n\n"
+                f"Output the YAML dict directly. Do NOT call any tools. Do NOT add commentary."
+            ),
+            tools=[],
+            allow_tool_loop=False,
+        )
+        final_content = validated_yaml
+        async for evt in _execute_task_and_capture(config, tasks[3], _tool_executor, category):
+            yield evt
+            r = _capture_result(evt)
+            if r:
+                fc = _extract_yaml_from_text(r.get("accumulated_text", ""), category)
+                if fc:
+                    final_content = fc
+        if not final_content:
+            final_content = validated_yaml
+
+        # ── Mandatory server-side validation ──
+        validation_passed = False
+        repair_round = 0
+        while not validation_passed and repair_round < 3:
+            try:
+                yaml.safe_load(final_content)
+                parser = DSLParser()
+                nodes = parser.parse_yaml_string(final_content, category)
+                tree = ProjectionTree(nodes={n.id: n for n in nodes})
+                tree.nodes_by_kind = {}
+                for n in nodes:
+                    if n.kind not in tree.nodes_by_kind:
+                        tree.nodes_by_kind[n.kind] = []
+                    tree.nodes_by_kind[n.kind].append(n)
+                report = validate_tree(tree)
+
+                if report.total_errors == 0:
+                    validation_passed = True
+                else:
+                    repair_round += 1
+                    error_msgs = [r.message for r in report.constraint_results if r.level.value == "error"][:5]
+                    yield {"event": "repair_round", "data": {"round": repair_round, "errors": error_msgs}}
+                    logger.warning(f"[CONTRACT GEN] Post-validation failed (repair {repair_round}): {'; '.join(error_msgs)}")
+
+                    repair_prompt = (
+                        f"Fix validation errors in YAML for '{category}':\n\n"
+                        f"Errors:\n" + "\n".join(f"  - {e}" for e in error_msgs) + "\n\n"
+                        f"YAML:\n```\n{final_content}\n```\n\n"
+                        f"Output ONLY the fixed YAML. No commentary."
+                    )
+                    repair_result = await _execute_task_and_capture(
+                        config, TaskDefinition(
+                            task_id="validate",
+                            system="You are a YAML repair expert. Fix errors and output valid YAML.",
+                            user=repair_prompt,
+                            tools=[],
+                            allow_tool_loop=False,
+                        ),
+                        _tool_executor, category, yield_event=True
+                    )
+                    final_content = _extract_yaml_from_text(repair_result.get("accumulated_text", ""), category)
+
+            except yaml.YAMLError as ye:
+                repair_round += 1
+                yield {"event": "repair_round", "data": {"round": repair_round, "errors": [f"YAML syntax error: {str(ye)}"]}}
+                if repair_round >= 3:
+                    break
+
+        if not validation_passed:
+            raise ValueError(f"Contract validation failed after 3 repair rounds. Contract NOT saved.")
+
+        # Save to SQLite
+        _upsert_contract_artifact(artifacts_manager, category, final_content, brief_id)
+        latency_ms = int((time.time() - start_time) * 1000)
+        _log_activity("contract.category_gen", resource_id=category, details={"category": category, "tool_rounds": round_count, "repair_rounds": repair_round})
+
+        # Estimate tokens
+        tokens_used = prompt_tokens = completion_tokens = 0
+        try:
+            from midicoder.pipeline.llm import count_tokens
+            prompt_tokens = count_tasks_token_estimate(tasks, category)
+            completion_tokens = count_tokens(final_content, config.model)
+            tokens_used = prompt_tokens + completion_tokens
+        except Exception:
+            pass
+
+        yield {"event": "final_content", "data": final_content}
+        yield {"event": "complete", "data": {
+            "category": category,
+            "total_tokens": tokens_used,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "latency_ms": latency_ms,
+            "tool_rounds": round_count,
+        }}
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"[CONTRACT GEN ERROR] category={category}: {e}\n{tb}")
+        yield {"event": "error", "data": f"{e}\nTraceback:\n{tb}"}
+        _log_activity("contract.category_gen_error", resource_id=category, details={"error": str(e)}, status="error")
+
+
+def count_tasks_token_estimate(tasks: list, category: str) -> int:
+    """Rough estimate of prompt tokens across all tasks."""
+    try:
+        from midicoder.pipeline.llm import count_tokens
+        total = 0
+        for t in tasks:
+            total += count_tokens(t.system + t.user, "cl100k_base")
+        return total
+    except Exception:
+        return 0
+
+
+async def _execute_task_and_capture(
+    config: LlmConfig,
+    task: Any,
+    tool_executor,
+    category: str,
+) -> AsyncIterator[Dict[str, Any]]:
+    """
+    Async generator: yields SSE events in real-time as LLM streams.
+    The LAST event is a special 'task_result' with captured data.
+    """
+    from midicoder.pipeline.llm.task_orchestrator import call_llm_task
+
+    _TASK_LABEL_MAP = {
+        "learn_schema": "Học Schema",
+        "draft_yaml": "Viết YAML Draft",
+        "validate": "Validate & Sửa",
+        "final_review": "Output Final",
+    }
+
+    accumulated_text = ""
+    tool_calls_list: list[Dict[str, Any]] = []
+    tool_results_list: list[Dict[str, Any]] = []
+
+    task_name = _TASK_LABEL_MAP.get(task.task_id, task.task_id)
+    yield {"event": "task_started", "data": {"task": task.task_id, "task_name": task_name}}
+
+    async for chunk in call_llm_task(config, task, tool_executor):
+        if chunk.content:
+            content = chunk.content
+            if content == "\n":
+                yield {"event": "heartbeat", "data": {"round": len(tool_calls_list)}}
+                continue
+
+            if "<antThinking>" in content or "<thinking>" in content or "<think>" in content:
+                yield {"event": "thinking", "data": {"text": content}}
+            elif content.strip() and len(content.strip()) > 1:
+                accumulated_text += content
+                yield {"event": "content", "data": {"text": content, "accumulated": accumulated_text}}
+
+            if "</antThinking>" in content or "</thinking>" in content or "</think>" in content:
+                yield {"event": "thinking_end", "data": ""}
+
+        if chunk.tool_calls:
+            for tc in chunk.tool_calls:
+                tool_name = tc.get("function", {}).get("name", "unknown")
+                args_json = tc.get("function", {}).get("arguments", "{}")
+                try:
+                    parsed_args = json.loads(args_json) if args_json else {}
+                except Exception:
+                    parsed_args = {}
+                tool_calls_list.append({"name": tool_name, "arguments": parsed_args})
+                yield {"event": "tool_call", "data": {
+                    "name": tool_name, "arguments": parsed_args, "duration_ms": 0
+                }}
+
+        if chunk.tool_results:
+            for tr in chunk.tool_results:
+                tool_name = tr.get("name", "unknown")
+                result_str = tr.get("result", "")
+                try:
+                    result_obj = json.loads(result_str) if result_str else {}
+                except Exception:
+                    result_obj = {"raw": str(result_str)[:200]}
+
+                is_error = "error" in result_obj if isinstance(result_obj, dict) else False
+                summary = _result_summary(tool_name, result_obj, is_error)
+                tool_results_list.append({"name": tool_name, "result": result_obj, "is_error": is_error})
+                yield {"event": "tool_result", "data": {
+                    "name": tool_name, "summary": summary, "full_result": result_obj, "duration_ms": 0
+                }}
+
+    # Task completed summary
+    if task.task_id == "learn_schema":
+        summary_text = f"Schema đã tải ({len(tool_results_list)} tool calls)"
+    elif task.task_id == "draft_yaml":
+        summary_text = f"YAML draft ({len(accumulated_text)} chars)"
+    elif task.task_id == "validate":
+        valid_tr = [t for t in tool_results_list if t["name"] == "validate_contract_yaml"]
+        if valid_tr and valid_tr[-1].get("result", {}).get("is_valid"):
+            summary_text = "Validation passed ✓"
+        else:
+            summary_text = "Validation completed"
+    else:
+        summary_text = "Final YAML ready"
+    yield {"event": "task_completed", "data": {
+        "task": task.task_id, "task_name": task_name, "summary": summary_text
+    }}
+    # Last event: captured results for caller
+    yield {"event": "task_result", "data": {
+        "_captured": True,
+        "accumulated_text": accumulated_text,
+        "tool_calls": tool_calls_list,
+        "tool_results": tool_results_list,
+    }}
+
+
+def _result_summary(tool_name: str, result_obj: dict, is_error: bool) -> dict:
+    if is_error:
+        return {"valid": False, "error": result_obj.get("error", "Unknown error")}
+    if tool_name == "validate_contract_yaml":
+        return {
+            "valid": result_obj.get("is_valid", False),
+            "errors": result_obj.get("total_errors", 0),
+            "warnings": result_obj.get("total_warnings", 0),
+        }
+    if tool_name == "cross_check_category":
+        return {
+            "valid": result_obj.get("valid", True),
+            "errors": len(result_obj.get("errors", [])),
+            "warnings": len(result_obj.get("warnings", [])),
+        }
+    return {"found": bool(result_obj)}
+
+
+def _build_tool_definitions(category: str) -> list[dict]:
+    """Build OpenAI-format tool definitions for contract generation."""
+    return [
         {
             "type": "function",
             "function": {
                 "name": "get_dsl_section",
-                "description": f"Returns DSL schema for a specific section. Use to learn fields for category '{category}'. Example: get_dsl_section(section='entities') or get_dsl_section(section='{category}').",
+                "description": f"Returns DSL schema for a specific section. Use to learn fields for category '{category}'.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "section": {
                             "type": "string",
-                            "description": f"Section name. Valid values: entities, commands, queries, events, workflows, value_objects, guards, roles, ui_components, render_context, infrastructure, access_control, observability, api, supporting. For current category use '{category}'.",
+                            "description": f"Section name. For current category use '{category}'.",
                         },
                     },
                     "required": ["section"],
                 },
             },
         },
-        # ── 3. list_packs — no params, returns pack list ──
-        {
-            "type": "function",
-            "function": {
-                "name": "list_packs",
-                "description": "Lists all available packs with metadata. Call this to find pack IDs before using get_pack.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                },
-            },
-        },
-        # ── 4. get_pack — ONE required param: pack_id ──
-        {
-            "type": "function",
-            "function": {
-                "name": "get_pack",
-                "description": "Returns detailed info of a specific pack: definitions, recipes, obligations, capabilities. Use to see DSL patterns examples. Call list_packs first to find pack IDs.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "pack_id": {
-                            "type": "string",
-                            "description": "Pack ID string, e.g. 'CP01', 'CP02', etc. Use list_packs to discover available pack IDs.",
-                        },
-                    },
-                    "required": ["pack_id"],
-                },
-            },
-        },
-        # ── 5. validate_contract_yaml — ONE required param: yaml_content ──
         {
             "type": "function",
             "function": {
                 "name": "validate_contract_yaml",
-                "description": f"Validate YAML + DSL constraints for category '{category}'. Returns errors/warnings. Call after generating YAML to check correctness.",
+                "description": f"Validate YAML + DSL constraints for category '{category}'.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -2071,254 +2483,41 @@ async def generate_category_stream_for_api(category: str, force: bool = False) -
                 },
             },
         },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_generated_artifact",
-                "description": "Get YAML content of a previously generated category for reference.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "category": {
-                            "type": "string",
-                            "description": "Category name (e.g. 'entities', 'commands', 'queries')",
-                        }
-                    },
-                    "required": ["category"],
-                },
-            },
-        },
     ]
 
-    # ── Tool executor (in-process, calls pipeline/MCP directly) ──
-    # Required params per tool — enforced strictly to force LLM to learn
+
+def _build_tool_executor(category: str):
+    """Build the in-process tool executor for contract generation."""
     _TOOL_REQUIRED_PARAMS = {
         "get_dsl_section": ["section"],
-        "get_pack": ["pack_id"],
         "validate_contract_yaml": ["yaml_content"],
         "cross_check_category": ["yaml_content"],
-        "get_generated_artifact": ["category"],
     }
 
     async def _tool_executor(tool_name: str, args: dict) -> str:
-        """Execute MCP tool in-process. Returns JSON string result.
-        Strict validation: required params MUST be present and non-empty.
-        """
-        import time as _time
-        start = _time.time()
-
         try:
-            # ── Strict validation: reject empty required params ──
             required = _TOOL_REQUIRED_PARAMS.get(tool_name, [])
             missing = [p for p in required if not args.get(p)]
             if missing:
                 return json.dumps({
-                    "error": f"Tool '{tool_name}' called with missing required parameters: {missing}. "
-                             f"You MUST provide: {', '.join(required)}. "
-                             f"Example: {tool_name}({', '.join(f'{p}=value' for p in required)})"
+                    "error": f"Tool '{tool_name}' missing required parameters: {missing}. "
+                             f"Required: {', '.join(required)}."
                 }, ensure_ascii=False)
 
-            if tool_name == "get_dsl_schema":
-                from midicoder.mcp.tools.dsl_schema import get_dsl_schema
-                result = get_dsl_schema()
-            elif tool_name == "get_dsl_section":
+            if tool_name == "get_dsl_section":
                 from midicoder.mcp.tools.dsl_schema import get_dsl_section
-                section = args["section"]
-                result = get_dsl_section(section)
-            elif tool_name == "list_packs":
-                from midicoder.mcp.tools.packs import list_packs
-                result = list_packs()
-            elif tool_name == "get_pack":
-                from midicoder.mcp.tools.packs import get_pack
-                result = get_pack(args["pack_id"])
+                result = get_dsl_section(args["section"])
             elif tool_name == "validate_contract_yaml":
                 result = _validate_single_category(category, args["yaml_content"])
             elif tool_name == "cross_check_category":
                 result = _cross_check_category(category, args["yaml_content"])
-            elif tool_name == "get_generated_artifact":
-                result = _get_artifact_for_category(args["category"])
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
         except Exception as e:
             result = {"error": f"Tool execution failed: {str(e)}"}
-
         return json.dumps(result, ensure_ascii=False)
 
-    # ── Call LLM with tool-use streaming ──
-    from midicoder.pipeline.llm.client import call_llm_with_tools_stream, LlmStreamChunkWithTools
-    try:
-        start_time = time.time()
-        accumulated = ""
-        in_thinking = False
-        thinking_buffer = ""
-        round_count = 0
-
-        async for chunk in call_llm_with_tools_stream(
-            config,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-            tools=tool_definitions,
-            tool_executor=_tool_executor,
-            max_rounds=9999,  # Effectively no limit — LLM decides when to stop
-        ):
-            # Handle content
-            content = chunk.content or ""
-            if content:
-                # Detect thinking tags: both <thinking> and <antThinking> (Qwen)
-                thinking_tags_open = ["<thinking>", "<antThinking>"]
-                thinking_tags_close = ["</thinking>", "</antThinking>"]
-
-                if in_thinking:
-                    # Already inside thinking — look for closing tag
-                    thinking_buffer += content
-                    yield {"event": "thinking", "data": {"text": content, "accumulated": thinking_buffer}}
-                    for tag in thinking_tags_close:
-                        if tag in content:
-                            in_thinking = False
-                            yield {"event": "thinking_end", "data": thinking_buffer}
-                            thinking_buffer = ""
-                            break
-                    continue
-
-                # Not in thinking — check if a thinking tag opens in this chunk
-                for tag in thinking_tags_open:
-                    if tag in content:
-                        in_thinking = True
-                        thinking_buffer += content
-                        yield {"event": "thinking", "data": {"text": content, "accumulated": thinking_buffer}}
-                        # Handle case where open + close are in the same chunk
-                        for close_tag in thinking_tags_close:
-                            if close_tag in content:
-                                in_thinking = False
-                                yield {"event": "thinking_end", "data": thinking_buffer}
-                                thinking_buffer = ""
-                                break
-                        continue
-
-                accumulated += content
-                if content.strip():
-                    yield {"event": "content", "data": {"text": content, "accumulated": accumulated}}
-
-            # Handle tool_calls from LLM
-            if chunk.tool_calls:
-                for tc in chunk.tool_calls:
-                    tool_name = tc.get("function", {}).get("name", "unknown")
-                    args_json = tc.get("function", {}).get("arguments", "{}")
-                    round_count += 1
-
-                    try:
-                        parsed_args = json.loads(args_json) if args_json else {}
-                    except Exception:
-                        parsed_args = {}
-
-                    yield {"event": "tool_call", "data": {
-                        "name": tool_name,
-                        "arguments": parsed_args,
-                        "duration_ms": 0,
-                    }}
-
-            # Handle tool_results from executor
-            if chunk.tool_results:
-                for tr in chunk.tool_results:
-                    tool_name = tr.get("name", "unknown")
-                    result_str = tr.get("result", "")
-                    try:
-                        result_obj = json.loads(result_str) if result_str else {}
-                    except Exception:
-                        result_obj = {"raw": str(result_str)[:200]}
-
-                    # Ensure result_obj is a dict for .get() calls
-                    if not isinstance(result_obj, dict):
-                        result_obj = {"raw": str(result_obj)[:500]}
-
-                    # Detect error — if result has "error" key, mark as invalid
-                    is_error = "error" in result_obj
-
-                    if is_error:
-                        summary = {
-                            "valid": False,
-                            "error": result_obj.get("error", "Unknown error"),
-                        }
-                    elif tool_name == "validate_contract_yaml":
-                        summary = {
-                            "valid": result_obj.get("is_valid", False),
-                            "errors": result_obj.get("total_errors", 0),
-                            "warnings": result_obj.get("total_warnings", 0),
-                        }
-                    elif tool_name == "cross_check_category":
-                        summary = {
-                            "valid": result_obj.get("valid", False),
-                            "errors": len(result_obj.get("errors", [])),
-                            "warnings": len(result_obj.get("warnings", [])),
-                        }
-                    else:
-                        summary = {"found": bool(result_obj), "size": len(result_str)}
-
-                    yield {"event": "tool_result", "data": {
-                        "name": tool_name,
-                        "summary": summary,
-                        "full_result": result_obj,  # Full JSON result for expanded view
-                        "duration_ms": 0,
-                    }}
-
-        latency_ms = int((time.time() - start_time) * 1000)
-
-        # Extract YAML from LLM response — handles preamble text, code fences, thinking tags
-        final_content = _extract_yaml_from_text(accumulated, category)
-
-        # Mandatory final validation: YAML syntax AND DSL constraints
-        yaml.safe_load(final_content)
-
-        parser = DSLParser()
-        nodes = parser.parse_yaml_string(final_content, category)
-        tree = ProjectionTree(nodes={n.id: n for n in nodes})
-        tree.nodes_by_kind = {}
-        for n in nodes:
-            if n.kind not in tree.nodes_by_kind:
-                tree.nodes_by_kind[n.kind] = []
-            tree.nodes_by_kind[n.kind].append(n)
-        report = validate_tree(tree)
-        if report.total_errors > 0:
-            error_msgs = [r.message for r in report.constraint_results if r.level.value == "error"][:3]
-            raise ValueError(
-                f"Final DSL validation failed with {report.total_errors} error(s). "
-                f"Contract NOT saved. Errors: {'; '.join(error_msgs)}"
-            )
-
-        # Save to SQLite
-        _upsert_contract_artifact(artifacts_manager, category, final_content, brief_id)
-        _log_activity("contract.category_gen", resource_id=category, details={"category": category, "tool_rounds": round_count})
-
-        # Estimate tokens via tiktoken
-        tokens_used = 0
-        prompt_tokens = 0
-        completion_tokens = 0
-        try:
-            from midicoder.pipeline.llm import count_tokens
-            pt = count_tokens(system + user, config.model)
-            ct = count_tokens(final_content, config.model)
-            prompt_tokens = pt
-            completion_tokens = ct
-            tokens_used = pt + ct
-        except Exception:
-            pass
-
-        yield {"event": "final_content", "data": final_content}
-        yield {"event": "complete", "data": {
-            "category": category,
-            "total_tokens": tokens_used,
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "latency_ms": latency_ms,
-            "tool_rounds": round_count,
-        }}
-
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        logger.error(f"[CONTRACT GEN ERROR] category={category}: {e}\n{tb}")
-        yield {"event": "error", "data": f"{e}\nTraceback:\n{tb}"}
-        _log_activity("contract.category_gen_error", resource_id=category, details={"error": str(e)}, status="error")
+    return _tool_executor
 
 
 # ============================================================================

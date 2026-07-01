@@ -91,7 +91,7 @@ def get_domain_prompt(
     Raises:
         FileNotFoundError: Khi không tìm thấy prompt file
     """
-    prompt_filename = f"brief-{prompt_type}"
+    prompt_filename = f"brief_{prompt_type}"
     lang_info = _resolve_language_info(language)
 
     history_text = clarification_history.strip() or "No previous clarifications."

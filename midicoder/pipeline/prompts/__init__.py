@@ -12,11 +12,11 @@ Lý do: Tách prompt ra file riêng để:
 Cấu trúc:
     prompts/
     ├── contract_entities.md          # Generic contract prompts
-    ├── brief-analyze.md              # Default brief prompt
+    ├── brief_analyze.md              # Default brief prompt
     ├── ecommerce/                    # Domain-specific prompts
-    │   └── brief-analyze.md
+    │   └── brief_analyze.md
     ├── healthcare/
-    │   └── brief-analyze.md
+    │   └── brief_analyze.md
     └── ...
 
 Sử dụng:
@@ -26,7 +26,7 @@ Sử dụng:
     system_prompt = load_prompt("contract_entities")
 
     # Load domain-specific prompt (subfolder)
-    analyze_prompt = load_prompt("ecommerce/brief-analyze")
+    analyze_prompt = load_prompt("ecommerce/brief_analyze")
 
     # List available prompts
     prompts = list_available_prompts()
@@ -46,12 +46,12 @@ def load_prompt(name: str) -> str:
 
     Supports:
     - Flat names: "contract_entities" → prompts/contract_entities.md
-    - Subfolder names: "ecommerce/brief-analyze" → prompts/ecommerce/brief-analyze.md
-    - Dot names: "ecommerce.brief-analyze" → prompts/ecommerce/brief-analyze.md
+    - Subfolder names: "ecommerce/brief_analyze" → prompts/ecommerce/brief_analyze.md
+    - Dot names: "ecommerce.brief_analyze" → prompts/ecommerce/brief_analyze.md
 
     Args:
         name: Tên prompt (không có phần mở rộng .md).
-            Ví dụ: "contract_entities", "ecommerce/brief-analyze"
+            Ví dụ: "contract_entities", "ecommerce/brief_analyze"
 
     Returns:
         Nội dung prompt (string)

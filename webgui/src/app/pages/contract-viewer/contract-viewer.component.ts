@@ -6,15 +6,16 @@
  * Ràng buộc: phải gen theo thứ tự, category sau bị disabled nếu category trước chưa xong.
  */
 
-import { Component, inject, OnInit, OnDestroy, ViewChild } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, ViewChild, NgZone, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { I18nPipe } from '../../core/i18n.pipe';
 import { I18nService } from '../../core/i18n.service';
 import { ApiService } from '../../core/api.service';
 import { VersionService } from '../../core/version.service';
-import { LlmProgressComponent } from '../../components/shared/llm-progress/llm-progress.component';
+import { ContractGenProgressComponent } from '../../components/shared/contract-gen-progress/contract-gen-progress.component';
 import { ContractArtifactViewerComponent } from '../../components/shared/contract-artifact-viewer/contract-artifact-viewer.component';
+import { TraceabilityCardComponent } from '../../components/shared/traceability-card/traceability-card.component';
 import { DOCS_BASE } from '../../core/app.constants';
 
 interface CategoryDef {
@@ -31,7 +32,7 @@ interface CategoryDef {
 @Component({
   selector: 'app-contract-viewer',
   standalone: true,
-  imports: [CommonModule, RouterLink, I18nPipe, LlmProgressComponent, ContractArtifactViewerComponent],
+  imports: [CommonModule, RouterLink, I18nPipe, ContractGenProgressComponent, ContractArtifactViewerComponent, TraceabilityCardComponent],
   template: `
     <div>
       <!-- Header -->
@@ -68,6 +69,11 @@ interface CategoryDef {
           <div class="progress-fill" [style.width.%]="progressPct"></div>
         </div>
       </div>
+
+      <!-- Traceability Card (only when all 9/9 categories done) -->
+      @if (completedCount === categories.length && categories.length > 0) {
+        <app-traceability-card></app-traceability-card>
+      }
 
       <!-- Success/Error banner -->
       @if (successMessage) {
@@ -146,14 +152,15 @@ interface CategoryDef {
       }
     </div>
 
-    <!-- llm-progress overlay -->
-    <app-llm-progress
+    <!-- contract-gen-progress overlay -->
+    <app-contract-gen-progress
       [visible]="llmProgressVisible"
       [title]="llmProgressTitle"
+      [category]="llmProgressCategory"
       (closeOverlay)="closeLlmProgress()"
       (viewResult)="onLlmProgressDone()"
-    >
-    </app-llm-progress>
+      #contractProgressRef
+    ></app-contract-gen-progress>
 
     <!-- Artifact viewer modal -->
     <app-contract-artifact-viewer
@@ -406,6 +413,7 @@ export class ContractViewerComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly i18n = inject(I18nService);
   private readonly versionService = inject(VersionService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   readonly docsUrl = `${DOCS_BASE}/contract`;
 
@@ -443,11 +451,11 @@ export class ContractViewerComponent implements OnInit, OnDestroy {
   successMessage = '';
   errorMessage = '';
 
-  // llm-progress
+  // contract-gen-progress
   llmProgressVisible = false;
   llmProgressTitle = '';
   llmProgressCategory: string = '';
-  @ViewChild(LlmProgressComponent) llmProgressRef!: LlmProgressComponent;
+  @ViewChild('contractProgressRef') contractProgressRef!: ContractGenProgressComponent;
 
   // YAML viewer
   viewerVisible = false;
@@ -491,23 +499,26 @@ export class ContractViewerComponent implements OnInit, OnDestroy {
     this.successMessage = '';
     this.errorMessage = '';
 
-    // Check each category via /contract/artifacts
-    for (const cat of this.categories) {
-      cat.generating = false;
-      try {
-        const result = await this.api.getContractArtifact(cat.key);
-        if (result.success && result.data?.exists) {
-          cat.exists = true;
-          cat.count = result.data.content_length || 0;
-        } else {
-          cat.exists = false;
-          cat.count = 0;
+    // Fetch all categories in parallel, then batch-update to avoid incremental rendering
+    const results = await Promise.all(
+      this.categories.map(async (cat) => {
+        try {
+          const result = await this.api.getContractArtifact(cat.key);
+          return { key: cat.key, exists: result.success && !!result.data?.exists, count: result.data?.content_length || 0 };
+        } catch {
+          return { key: cat.key, exists: false, count: 0 };
         }
-      } catch {
-        cat.exists = false;
-        cat.count = 0;
-      }
+      })
+    );
+
+    for (const r of results) {
+      const cat = this.categories.find(c => c.key === r.key)!;
+      cat.exists = r.exists;
+      cat.generating = false;
+      cat.count = r.count;
     }
+    // Force change detection since Promise.all resolves outside Angular zone
+    this.cdr.detectChanges();
   }
 
   /* ── generate single category ── */
@@ -518,17 +529,17 @@ export class ContractViewerComponent implements OnInit, OnDestroy {
     this.errorMessage = '';
     this.successMessage = '';
 
-    // Set title for llm-progress
+    // Set title for contract-gen-progress
     this.llmProgressTitle = `${this.i18n.t('contract.generateStreaming')} — ${this.i18n.t('contract.' + cat.labelKey)}`;
     this.llmProgressCategory = cat.key;
 
-    // Open llm-progress overlay
+    // Open contract-gen-progress overlay
     this.llmProgressVisible = true;
 
-    // Reset llm-progress component state
-    if (this.llmProgressRef) {
-      this.llmProgressRef.reset();
-      this.llmProgressRef.status = 'streaming';
+    // Reset contract-gen-progress component state
+    if (this.contractProgressRef) {
+      this.contractProgressRef.reset();
+      this.contractProgressRef.status = 'streaming';
     }
 
     // Start SSE stream
@@ -536,24 +547,24 @@ export class ContractViewerComponent implements OnInit, OnDestroy {
 
     try {
       for await (const { event, data } of stream) {
-        if (this.llmProgressRef) {
-          this.llmProgressRef.onMessage({ type: event, data });
+        if (this.contractProgressRef) {
+          this.contractProgressRef.onMessage({ type: event, data });
           // Propagate error to banner
-          if (event === 'error' && this.llmProgressRef.lastError) {
-            this.errorMessage = this.llmProgressRef.lastError;
+          if (event === 'error' && this.contractProgressRef.lastError) {
+            this.errorMessage = this.contractProgressRef.lastError;
           }
         }
       }
 
       // If completed successfully
-      if (!this.llmProgressRef?.lastError) {
+      if (!this.contractProgressRef?.lastError) {
         this.successMessage = `${this.i18n.t('contract.' + cat.labelKey)} — ${this.i18n.t('contract.genSuccess')}`;
       }
     } catch (err: any) {
       this.errorMessage = err.message || 'Stream failed';
-      if (this.llmProgressRef) {
-        this.llmProgressRef.status = 'error';
-        this.llmProgressRef.lastError = this.errorMessage;
+      if (this.contractProgressRef) {
+        this.contractProgressRef.status = 'error';
+        this.contractProgressRef.lastError = this.errorMessage;
       }
     } finally {
       cat.generating = false;
@@ -574,6 +585,7 @@ export class ContractViewerComponent implements OnInit, OnDestroy {
     this.viewerCategoryKey = cat.key;
     this.viewerTitle = `${this.i18n.t('contract.viewArtifact')} — ${this.i18n.t('contract.' + cat.labelKey)}`;
     this.viewerVisible = true;
+    this.cdr.markForCheck();
   }
 
   /* ── freeze ── */

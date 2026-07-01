@@ -625,6 +625,47 @@ export class ApiService {
     return this.get('/contract/manifest');
   }
 
+  /**
+   * GET /contract/traceability - Get traceability matrix and drift detection
+   */
+  async getTraceability(): Promise<ApiResponse<{
+    trace_matrix: Record<string, Array<{
+      trace_id: string;
+      analysis_name: string | null;
+      contract_id: string | null;
+      status: 'matched' | 'orphan_analysis' | 'orphan_contract' | 'mismatch';
+      analysis_item?: any;
+      contract_node?: any;
+      description_similarity?: number;
+    }>>;
+    drifts: Array<{
+      type: string;
+      category: string;
+      name: string;
+      trace_id: string;
+      severity: 'error' | 'warning';
+      message: string;
+    }>;
+    summary: {
+      total_analysis: number;
+      total_contract: number;
+      matched: number;
+      orphan_analysis: number;
+      orphan_contract: number;
+      mismatched: number;
+    };
+    unmapped_analysis: Array<{ category: string; count: number }>;
+    brief_coverage: {
+      coverage_ratio: number;
+      covered_count: number;
+      uncovered_count: number;
+      uncovered_items: Array<{ name: string; category: string }>;
+    };
+    health_score: number;
+  }>> {
+    return this.get('/contract/traceability');
+  }
+
   // ============================================================================
   // IR ENDPOINTS
   // ============================================================================

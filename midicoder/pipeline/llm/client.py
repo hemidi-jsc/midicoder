@@ -28,6 +28,7 @@ Sử dụng:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import time
@@ -36,7 +37,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
 import tiktoken
-from openai import OpenAI, AsyncOpenAI, APIError, RateLimitError, AuthenticationError
+from openai import OpenAI, AsyncOpenAI, APIError, RateLimitError, AuthenticationError, BadRequestError
 
 from midicoder.pipeline.config import get_config
 
@@ -70,12 +71,41 @@ SUPPORTED_PROVIDERS = [
 # ============================================================================
 
 MAX_CONTEXT_WINDOWS = {
-    "qwen": 131072,
+    "qwen": 256000,
+    "gpt-4": 128000,
     "gpt": 128000,
     "claude": 200000,
     "llama": 128000,
     "default": 131072,
 }
+
+
+def _effective_max_tokens(config: LlmConfig, messages_list: list) -> int:
+    """
+    Compute effective max_tokens so input + output does NOT exceed context window.
+    Leaves 512 token margin for the response structure overhead.
+    """
+    context_window = _get_max_context_window(config.model)
+    input_tokens = count_tokens_messages(messages_list, config.model)
+    margin = 512
+    remaining = context_window - input_tokens - margin
+    return min(config.max_tokens, max(4096, remaining))
+
+
+def count_tokens_messages(messages_list: list, model: str) -> int:
+    """Rough token count of messages list (assumes ~4 tokens per message overhead)."""
+    try:
+        total = 0
+        for msg in messages_list:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                content = "".join(str(c.get("text", "")) for c in content if isinstance(c, dict))
+            total += len(content) // 3  # rough char-to-token estimate
+            total += 4  # role + structure overhead
+        return total
+    except Exception:
+        return 0
 
 
 # ============================================================================
@@ -538,10 +568,13 @@ async def call_llm_stream(
         if config.repetition_penalty is not None and config.repetition_penalty != 0:
             extra["repetition_penalty"] = config.repetition_penalty
 
+        effective_max = _effective_max_tokens(config, messages_list)
+        logger.info(f"[LLM-STREAM] model={config.model}, max_tokens={effective_max} (input={count_tokens_messages(messages_list, config.model)}, context={_get_max_context_window(config.model)})")
+
         stream = await client.chat.completions.create(
             model=config.model,
             messages=messages_list,
-            max_tokens=config.max_tokens,
+            max_tokens=effective_max,
             temperature=config.temperature,
             top_p=config.top_p,
             presence_penalty=config.presence_penalty,
@@ -617,133 +650,250 @@ async def call_llm_with_tools_stream(
     SAFETY_CAP = 9999  # LLM decides when to stop
 
     # Safety: track repeated same tool with same args — break if 3+ consecutive rounds
-    repeated_tool_name = None
-    repeated_args = None
-    repeat_count = 0
+    call_history: list[tuple[str, str]] = []  # (tool_name, args) per round
+
+    # Per-tool loop tracker: detect when the SAME tool name is called in 2+ consecutive rounds
+    # (even with different args — e.g. get_dsl_section called repeatedly)
+    tool_round_count: dict[str, int] = {}  # tool_name -> consecutive round count
+    last_tool_set: set[str] = set()  # tool names called in previous round
+
+    # Hard loop breaker: after N consecutive loop detections, exit entirely (prevents BadRequestError → truncate → reloop)
+    loop_break_count = 0
+    MAX_LOOP_BREAKS = 5  # After 5 loop breaks, give up and force output
 
     while round_num < SAFETY_CAP:
         round_num += 1
 
-        # Build extra_body — NO parallel_tool_calls flag (models may ignore it)
+        # Build extra_body for non-standard params
+        # Qwen/DashScope with tool-use: only supports top_k in extra_body
+        # repetition_penalty is NOT supported with tool-use streaming — causes 400 error
+        # min_p is NOT supported — causes JSON parse error
         extra = {}
         if config.top_k and config.top_k != 0:
             extra["top_k"] = config.top_k
-        if config.min_p is not None and config.min_p != 0:
-            extra["min_p"] = config.min_p
-        if config.repetition_penalty is not None and config.repetition_penalty != 0:
-            extra["repetition_penalty"] = config.repetition_penalty
 
+        # Use high timeout for streaming — LLM can take minutes between tool-use rounds
+        import httpx as _httpx
+        _timeout_val = config.timeout or 600
         client = AsyncOpenAI(
             base_url=config.api_url,
             api_key=config.api_key or "not-needed",
-            timeout=config.timeout,
+            timeout=_httpx.Timeout(connect=30, read=_timeout_val, pool=30, write=30),
         )
 
-        stream = await client.chat.completions.create(
-            model=config.model,
-            messages=conversation,
-            max_tokens=config.max_tokens,
-            temperature=config.temperature,
-            top_p=config.top_p,
-            presence_penalty=config.presence_penalty,
-            extra_body=extra if extra else None,
-            stream=True,
-            tools=tools,
-        )
+        # NOTE: DashScope with tool-use streaming does NOT tolerate extra_body or presence_penalty.
+        # Only use standard OpenAI params to avoid 400 "Expecting property name enclosed in double quotes".
+        effective_max = _effective_max_tokens(config, conversation)
+        logger.info(f"[LLM-TOOL-USE ROUND_{round_num}] model={config.model}, max_tokens={effective_max} (input={count_tokens_messages(conversation, config.model)}, context={_get_max_context_window(config.model)})")
+
+        create_kwargs: dict = {
+            "model": config.model,
+            "messages": conversation,
+            "max_tokens": effective_max,
+            "temperature": config.temperature,
+            "top_p": config.top_p,
+            "stream": True,
+            "tools": tools,
+        }
+
+        # DEBUG: log full request body for troubleshooting 400 errors
+        debug_body = {
+            "model": config.model,
+            "messages_count": len(conversation),
+            "tools_count": len(tools),
+            "max_tokens": config.max_tokens,
+            "temperature": config.temperature,
+            "top_p": config.top_p,
+            "stream": True,
+            "last_message": str(conversation[-1])[:200] if conversation else "",
+            "last_tool": str(tools[-1])[:200] if tools else "",
+        }
+        logger.info(f"[LLM-TOOL-USE ROUND_{round_num}] Request: {json.dumps(debug_body, ensure_ascii=False, indent=2)}")
+
+        # Retry on BadRequestError (DashScope can be flaky with large conversations)
+        max_api_retries = 2
+        api_retry = 0
+        stream = None
+
+        while api_retry <= max_api_retries and stream is None:
+            try:
+                stream = await client.chat.completions.create(**create_kwargs)
+            except BadRequestError as e:
+                api_retry += 1
+                raw_body = str(e)
+                logger.error(f"[LLM-TOOL-USE ROUND_{round_num}] BadRequestError (attempt {api_retry}/{max_api_retries}): {raw_body}")
+                if api_retry > max_api_retries:
+                    raise
+                # Retry with shorter conversation — remove stale tool messages that may confuse LLM
+                logger.warning(f"[LLM-TOOL-USE ROUND_{round_num}] Retrying with truncated conversation...")
+                # Keep system + first user + any corrective user messages (STOP/failed) + last tool result
+                system_msgs = [m for m in conversation if m.get("role") == "system"]
+                user_msgs = [m for m in conversation if m.get("role") == "user"]
+                original_user = user_msgs[:1] if user_msgs else []
+                # Keep corrective user messages (loop breakers, error fixes)
+                corrective_user = [m for m in user_msgs[1:] if "STOP" in str(m.get("content", "")) or "failed" in str(m.get("content", "")).lower()]
+                # Keep only last tool pair (assistant tool_call + tool result)
+                i = len(conversation) - 1
+                pair_count = 0
+                kept_tail = []
+                while i >= 0 and pair_count < 1:
+                    if conversation[i].get("role") == "tool":
+                        pair_count += 1
+                        kept_tail.append(conversation[i])
+                    elif conversation[i].get("role") == "assistant":
+                        kept_tail.append(conversation[i])
+                    i -= 1
+                kept_tail.reverse()
+                kept = system_msgs + original_user + corrective_user + kept_tail
+                create_kwargs["messages"] = kept
+                logger.info(f"[LLM-TOOL-USE ROUND_{round_num}] Truncated: {len(conversation)} -> {len(kept)} messages (kept {len(corrective_user)} corrective)")
+                await asyncio.sleep(1 * api_retry)  # Exponential backoff
 
         # Accumulate tool calls from stream
         pending_tool_calls: dict[str, dict] = {}  # call_id -> {id, type, function: {name, arguments}}
         last_chunk_usage = None
+        last_chunk_time_mono = time.monotonic()  # Track idle for dashscope stuck detection
 
-        async for chunk in stream:
-            if chunk.choices:
-                choice = chunk.choices[0]
-                delta = choice.get("delta", {}) if isinstance(choice, dict) else choice.delta
+        # Stream iterator with per-chunk timeout to avoid hanging on DashScope
+        stream_iterator = stream.__aiter__()
+        chunk_timeout = 60  # seconds per chunk — DashScope can hang after tool_calls
 
-                if isinstance(delta, dict):
-                    content = delta.get("content", "") or ""
-                    # Qwen DashScope sends thinking into reasoning_content when enable_thinking=True
-                    reasoning = delta.get("reasoning_content", "") or delta.get("reasoning", "") or ""
-                    raw_tool_calls = delta.get("tool_calls", []) or []
-                elif hasattr(delta, "content") and delta.content:
-                    content = delta.content
-                    reasoning = getattr(delta, "reasoning_content", "") or getattr(delta, "reasoning", "") or ""
-                    raw_tool_calls = getattr(delta, "tool_calls", []) or []
-                else:
-                    content = ""
-                    reasoning = ""
-                    raw_tool_calls = getattr(delta, "tool_calls", []) or []
+        try:
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(stream_iterator.__anext__(), timeout=chunk_timeout)
+                except asyncio.TimeoutError:
+                    logger.warning(f"[TOOL_USE ROUND_{round_num}] Chunk timeout after {chunk_timeout}s, breaking stream")
+                    break
 
-                # Yield reasoning as content with special marker for thinking detection
-                if reasoning:
-                    yield LlmStreamChunkWithTools(content=f"<antThinking>{reasoning}</antThinking>")
-                # Handle content
-                if content:
-                    yield LlmStreamChunkWithTools(content=content)
+                # Idle detection: if stream is stuck (DashScope doesn't close after tool_calls)
+                current_time = time.monotonic()
+                if pending_tool_calls and (current_time - last_chunk_time_mono) > 10:
+                    logger.info(f"[TOOL_USE ROUND_{round_num}] Stream idle >10s with {len(pending_tool_calls)} pending tool_calls, breaking to execute")
+                    break
+                last_chunk_time_mono = current_time
 
-                # Handle tool_calls deltas
-                if raw_tool_calls:
-                    # DEBUG: log each raw tool_call chunk from stream (first 3 rounds only)
-                    if round_num <= 3:
+                if chunk.choices:
+                    choice = chunk.choices[0]
+                    delta = choice.get("delta", {}) if isinstance(choice, dict) else choice.delta
+                    # Check finish_reason — LLM done when it finishes (stop or tool_calls)
+                    finish_reason = getattr(choice, "finish_reason", None) or (choice.get("finish_reason") if isinstance(choice, dict) else None)
+                    if finish_reason:
+                        fr = finish_reason.type if hasattr(finish_reason, "type") else str(finish_reason)
+                        if fr in ("stop", "tool_calls"):
+                            logger.info(f"[TOOL_USE ROUND_{round_num}] finish_reason={fr}, stream complete")
+                            break
+
+                    if isinstance(delta, dict):
+                        content = delta.get("content", "") or ""
+                        # Qwen3.6 sends thinking content with type="thinking" (content is in delta.content)
+                        delta_type = delta.get("type", "")
+                        if delta_type == "thinking":
+                            # Wrap thinking content in tags so downstream detectors pick it up
+                            if content:
+                                yield LlmStreamChunkWithTools(content=f"<antThinking>{content}</antThinking>")
+                            continue
+                        # Qwen DashScope sends thinking into reasoning_content when enable_thinking=True
+                        reasoning = delta.get("reasoning_content", "") or delta.get("reasoning", "") or ""
+                        raw_tool_calls = delta.get("tool_calls", []) or []
+                    elif hasattr(delta, "content") and delta.content:
+                        content = delta.content
+                        # Check if this is a thinking-type chunk
+                        delta_type = getattr(delta, "type", "")
+                        if delta_type == "thinking":
+                            if content:
+                                yield LlmStreamChunkWithTools(content=f"<antThinking>{content}</antThinking>")
+                            continue
+                        reasoning = getattr(delta, "reasoning_content", "") or getattr(delta, "reasoning", "") or ""
+                        raw_tool_calls = getattr(delta, "tool_calls", []) or []
+                    else:
+                        content = ""
+                        reasoning = ""
+                        raw_tool_calls = getattr(delta, "tool_calls", []) or []
+
+                    # Yield reasoning as content with special marker for thinking detection
+                    if reasoning:
+                        yield LlmStreamChunkWithTools(content=f"<antThinking>{reasoning}</antThinking>")
+                    # Handle content
+                    if content:
+                        yield LlmStreamChunkWithTools(content=content)
+
+                    # Handle tool_calls deltas
+                    if raw_tool_calls:
+                        # DEBUG: log each raw tool_call chunk from stream (first 3 rounds only)
+                        if round_num <= 3:
+                            for tc in raw_tool_calls:
+                                if isinstance(tc, dict):
+                                    tc_id = tc.get("id", "")
+                                    tc_func = tc.get("function", {})
+                                else:
+                                    tc_id = getattr(tc, "id", "")
+                                    tc_func = getattr(tc, "function", {})
+                                logger.info(f"[TOOL_USE ROUND_{round_num}] CHUNK tool_call: id={tc_id!r}, function={tc_func!r}")
+
                         for tc in raw_tool_calls:
                             if isinstance(tc, dict):
                                 tc_id = tc.get("id", "")
-                                tc_func = tc.get("function", {})
                             else:
                                 tc_id = getattr(tc, "id", "")
-                                tc_func = getattr(tc, "function", {})
-                            logger.info(f"[TOOL_USE ROUND_{round_num}] CHUNK tool_call: id={tc_id!r}, function={tc_func!r}")
 
-                    for tc in raw_tool_calls:
-                        if isinstance(tc, dict):
-                            tc_id = tc.get("id", "")
-                        else:
-                            tc_id = getattr(tc, "id", "")
-
-                        if tc_id:
-                            if tc_id not in pending_tool_calls:
-                                pending_tool_calls[tc_id] = {
-                                    "id": tc_id,
-                                    "type": "function",
-                                    "function": {"name": "", "arguments": ""}
-                                }
-                            last_tc_id = tc_id  # Track last known id for merging id=None chunks
-                        elif pending_tool_calls:
-                            # DashScope Qwen sends id=None in subsequent chunks — merge into last known tool call
-                            last_tc_id = list(pending_tool_calls.keys())[-1]
-                        else:
-                            last_tc_id = None
-
-                        if last_tc_id:
-                            func_info = tc.get("function", {}) if isinstance(tc, dict) else getattr(tc, "function", {})
-                            if isinstance(func_info, dict):
-                                name_delta = func_info.get("name", "") or ""
-                                args_delta = func_info.get("arguments", "") or ""
+                            if tc_id:
+                                if tc_id not in pending_tool_calls:
+                                    pending_tool_calls[tc_id] = {
+                                        "id": tc_id,
+                                        "type": "function",
+                                        "function": {"name": "", "arguments": ""}
+                                    }
+                                last_tc_id = tc_id  # Track last known id for merging id=None chunks
+                            elif pending_tool_calls:
+                                # DashScope Qwen sends id=None in subsequent chunks — merge into last known tool call
+                                last_tc_id = list(pending_tool_calls.keys())[-1]
                             else:
-                                name_delta = getattr(func_info, "name", "") or ""
-                                args_delta = getattr(func_info, "arguments", "") or ""
+                                last_tc_id = None
 
-                            if name_delta:
-                                pending_tool_calls[last_tc_id]["function"]["name"] = name_delta
-                            if args_delta:
-                                # Qwen DashScope may send FULL arguments in each chunk (not delta).
-                                # Detect: if args_delta is valid non-empty JSON, replace instead of append.
-                                # CRITICAL: {} (empty object) is valid JSON but NOT complete — keep accumulating.
-                                try:
-                                    parsed = json.loads(args_delta)
-                                    if isinstance(parsed, dict) and len(parsed) > 0:
-                                        # Valid JSON with keys — complete argument, replace
-                                        pending_tool_calls[last_tc_id]["function"]["arguments"] = args_delta
-                                    else:
-                                        # Empty {} or non-dict — keep accumulating
+                            if last_tc_id:
+                                func_info = tc.get("function", {}) if isinstance(tc, dict) else getattr(tc, "function", {})
+                                if isinstance(func_info, dict):
+                                    name_delta = func_info.get("name", "") or ""
+                                    args_delta = func_info.get("arguments", "") or ""
+                                else:
+                                    name_delta = getattr(func_info, "name", "") or ""
+                                    args_delta = getattr(func_info, "arguments", "") or ""
+
+                                if name_delta:
+                                    pending_tool_calls[last_tc_id]["function"]["name"] = name_delta
+                                if args_delta:
+                                    # Qwen DashScope may send FULL arguments in each chunk (not delta).
+                                    # Detect: if args_delta is valid non-empty JSON, replace instead of append.
+                                    # CRITICAL: {} (empty object) is valid JSON but NOT complete — keep accumulating.
+                                    try:
+                                        parsed = json.loads(args_delta)
+                                        if isinstance(parsed, dict) and len(parsed) > 0:
+                                            # Valid JSON with keys — complete argument, replace
+                                            pending_tool_calls[last_tc_id]["function"]["arguments"] = args_delta
+                                        else:
+                                            # Empty {} or non-dict — keep accumulating
+                                            pending_tool_calls[last_tc_id]["function"]["arguments"] += args_delta
+                                    except (ValueError, TypeError):
+                                        # Not valid JSON yet — accumulate as delta
                                         pending_tool_calls[last_tc_id]["function"]["arguments"] += args_delta
-                                except (ValueError, TypeError):
-                                    # Not valid JSON yet — accumulate as delta
-                                    pending_tool_calls[last_tc_id]["function"]["arguments"] += args_delta
+                                else:
+                                    # No new delta — check if accumulated args is still malformed (stream ended)
+                                    args_str = pending_tool_calls[last_tc_id]["function"]["arguments"]
+                                    try:
+                                        json.loads(args_str)
+                                    except (ValueError, TypeError):
+                                        if args_str and "{" in args_str:
+                                            pending_tool_calls[last_tc_id]["function"]["arguments"] = args_str + "}"
+                                            logger.info(f"[TOOL_USE ROUND_{round_num}] Fixed malformed args (no delta): {args_str} -> {args_str + '}'}")
 
-                # Handle usage
-                if hasattr(chunk, "usage") and chunk.usage:
-                    last_chunk_usage = _extract_usage(chunk.usage)
+                    # Handle usage
+                    if hasattr(chunk, "usage") and chunk.usage:
+                        last_chunk_usage = _extract_usage(chunk.usage)
+        except Exception as e:
+            # Catch ReadTimeout or any stream error — DashScope can hang the connection
+            logger.error(f"[TOOL_USE ROUND_{round_num}] Stream error (breaking to exec tools): {e}")
+            # Process any pending tool calls accumulated before the error
 
         # If we have tool calls, dedup, execute ALL unique ones, inject results.
         # LLM decides when to stop by not calling any tools in the next round.
@@ -776,20 +926,34 @@ async def call_llm_with_tools_stream(
                 tool_name = tc_info["function"]["name"]
                 args_str = tc_info["function"]["arguments"]
 
+                # Heartbeat: tell frontend we're still alive during tool execution
+                yield LlmStreamChunkWithTools(content="\n")
+
                 # Yield tool_call event to frontend
                 yield LlmStreamChunkWithTools(tool_calls=[tc_info])
 
-                # Parse args
+                # Parse args — auto-fix malformed JSON (missing closing brace)
                 try:
                     parsed_args = json.loads(args_str) if args_str else {}
-                except Exception:
-                    parsed_args = {}
+                except (ValueError, TypeError):
+                    logger.info(f"[TOOL_USE ROUND_{round_num}] Malformed args for {tool_name}: {args_str!r} — attempting fix")
+                    fixed = args_str + "}" if args_str and "{" in args_str else "{}"
+                    try:
+                        parsed_args = json.loads(fixed)
+                    except (ValueError, TypeError):
+                        parsed_args = {}
+
+                # Another heartbeat before (potentially long) tool execution
+                yield LlmStreamChunkWithTools(content="\n")
 
                 # Execute the tool IN-PROCESS
                 try:
                     result_str = await tool_executor(tool_name, parsed_args)
                 except Exception as e:
                     result_str = f"Error executing {tool_name}: {str(e)}"
+
+                # Heartbeat after tool execution
+                yield LlmStreamChunkWithTools(content="\n")
 
                 # Yield tool_result to frontend
                 yield LlmStreamChunkWithTools(
@@ -847,6 +1011,97 @@ async def call_llm_with_tools_stream(
                             })
                     except Exception:
                         pass
+
+            # Check for infinite loop: same tool + same args called 2+ consecutive rounds
+            this_round_calls = tuple((info["function"]["name"], info["function"]["arguments"]) for _, info in final_calls)
+            if len(call_history) >= 2 and this_round_calls == call_history[-1] == call_history[-2]:
+                tool_name_loop = this_round_calls[0][0]
+                loop_break_count += 1
+                logger.error(f"[TOOL_USE ROUND_{round_num}] INFINITE LOOP DETECTED: {tool_name_loop} called 2+ rounds with same args. (loop_break #{loop_break_count}/{MAX_LOOP_BREAKS})")
+
+                # Hard break: after MAX_LOOP_BREAKS consecutive loop detections, exit entirely
+                if loop_break_count >= MAX_LOOP_BREAKS:
+                    logger.error(f"[TOOL_USE ROUND_{round_num}] HARD BREAK: {loop_break_count} loop breaks, forcing output and exiting tool loop")
+                    yield LlmStreamChunkWithTools(content="\n")
+                    # Remove all tool messages from conversation so LLM just outputs text
+                    # Keep: system + original user + one corrective message
+                    sys_msgs = [m for m in conversation if m.get("role") == "system"]
+                    orig_user = [m for m in conversation if m.get("role") == "user"][:1]
+                    conversation = sys_msgs + orig_user + [{
+                        "role": "user",
+                        "content": (
+                            f"CRITICAL: You are stuck in a loop calling '{tool_name_loop}'. "
+                            f"DO NOT call any more tools. Output your best result based on information already gathered. "
+                            f"If you cannot produce valid output, explain what you have so far in plain text."
+                        ),
+                    }]
+                    # Don't continue — the while loop will fall through to `break` below
+                    # because pending_tool_calls is empty (no tools to call)
+                    pending_tool_calls.clear()
+                    continue
+
+                # Remove the last duplicate tool result to avoid confusion
+                for rm_msg in list(tool_call_messages):
+                    conversation.pop()  # Remove tool messages
+                for rm_msg in list(conversation[-1:]):
+                    if rm_msg.get("role") == "assistant" and rm_msg.get("tool_calls"):
+                        conversation.pop()
+                        break
+                # Inject a user message telling LLM to stop calling this tool and output result
+                conversation.append({
+                    "role": "user",
+                    "content": (
+                        f"STOP calling '{tool_name_loop}' repeatedly with the same arguments. "
+                        f"You already called this tool and got the result. "
+                        f"Use the information you already have and output your final result. "
+                        f"Do NOT call any more tools."
+                    ),
+                })
+                # Continue loop one more time to let LLM produce final output
+                continue
+
+            # Per-tool consecutive round detection: if the same tool name appears in 2+ consecutive rounds
+            this_tool_names = set(info["function"]["name"] for _, info in final_calls)
+            repeated_tools = this_tool_names & last_tool_set
+            if repeated_tools:
+                for t in repeated_tools:
+                    tool_round_count[t] = tool_round_count.get(t, 0) + 1
+                for t in this_tool_names:
+                    if t not in repeated_tools:
+                        tool_round_count[t] = 1
+                # Reset non-repeated tools
+                for t in last_tool_set - this_tool_names:
+                    tool_round_count[t] = 0
+
+                # If any tool called 3+ consecutive rounds, break the loop
+                for t, count in tool_round_count.items():
+                    if count >= 3:
+                        logger.error(f"[TOOL_USE ROUND_{round_num}] TOOL LOOP DETECTED: {t} called {count}+ consecutive rounds. Breaking.")
+                        # Remove last tool round to free the LLM
+                        for rm_msg in list(tool_call_messages):
+                            conversation.pop()
+                        # Remove assistant tool_calls message
+                        for i in range(len(conversation) - 1, -1, -1):
+                            if conversation[i].get("role") == "assistant" and conversation[i].get("tool_calls"):
+                                conversation.pop(i)
+                                break
+                        conversation.append({
+                            "role": "user",
+                            "content": (
+                                f"STOP calling '{t}' repeatedly. You have already received the result from this tool. "
+                                f"Stop calling tools and output your final result based on the information gathered so far. "
+                                f"If you need to validate, call validate_contract_yaml instead. "
+                                f"Do NOT call '{t}' again."
+                            ),
+                        })
+                        # Reset counter so we don't inject the message again
+                        tool_round_count[t] = 0
+                        break
+
+            last_tool_set = this_tool_names
+            call_history.append(this_round_calls)
+            if len(call_history) > 5:
+                call_history.pop(0)
 
             # DEBUG: log conversation state after each tool round
             logger.info(f"[TOOL_USE ROUND_{round_num}] Injected {len(final_calls)} tool call(s) + {len(tool_call_messages)} tool result(s)")

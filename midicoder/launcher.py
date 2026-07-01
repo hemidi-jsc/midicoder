@@ -386,13 +386,22 @@ def _start_sqlite_viewer() -> Optional[ServerHandle]:
 
     # 2. Per-project DBs from registered projects
     try:
-        from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
-        mgr = ProjectsManager(db_path=DB_PROJECTS)
+        from midicoder.storage.projects import ProjectsManager
+        from pathlib import Path
+
+        # Use absolute path to avoid cwd resolution issues when running from repo dir
+        global_data = Path.home() / ".midicoder" / "data"
+        db_projects_path = global_data / "projects.db"
+        mgr = ProjectsManager(db_path=db_projects_path)
         mgr.init()
-        for proj in mgr.list_all():
+        projects = mgr.list_all()
+        _log(f"Found {len(projects)} registered project(s) in projects.db")
+        for proj in projects:
             proj_data = Path(proj["path"]) / ".midicoder" / "data"
             if proj_data.exists():
-                db_files.extend([str(f) for f in proj_data.glob("*.db")])
+                dbs = list(proj_data.glob("*.db"))
+                _log(f"  Loading {len(dbs)} DB(s) from {proj['path']}")
+                db_files.extend([str(f) for f in dbs])
     except Exception as e:
         _log(f"Could not list project DBs: {e}")
 

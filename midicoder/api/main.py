@@ -6,6 +6,7 @@ Usage from launcher:
     uvicorn midicoder.api.main:server --host 0.0.0.0 --port 6868
 """
 
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -65,6 +66,55 @@ async def _auto_activate_active_project():
             cfg.set_project_path(active["path"])
     except Exception:
         pass  # Non-fatal — endpoints will still work, just no auto-activated project
+
+
+# Datasette DB paths endpoint — returns all DB paths for Datasette command
+@server.get("/api/datasette/paths", response_model=ApiResponse)
+async def get_datasette_paths(request: Request):
+    """Return all database file paths (global + per-project) for Datasette.
+
+    Usage: fetch this endpoint to build your Datasette command:
+        datasette <paths> --port 8080 --host 0.0.0.0 --cors
+    """
+    from midicoder.api.i18n import i18n as i18n_service
+    language = i18n_service.get_language_from_request(request)
+
+    db_files = []
+    seen = set()
+
+    # Global DBs
+    global_data = Path.home() / ".midicoder" / "data"
+    if global_data.exists():
+        for f in global_data.glob("*.db"):
+            abs = str(f.resolve())
+            if abs not in seen:
+                db_files.append(str(f))
+                seen.add(abs)
+
+    # Per-project DBs
+    try:
+        from midicoder.storage.projects import ProjectsManager, DB_PROJECTS
+        mgr = ProjectsManager(db_path=DB_PROJECTS)
+        mgr.init()
+        for proj in (mgr.list_all() or []):
+            proj_data = Path(proj.get("path", "")) / ".midicoder" / "data"
+            if proj_data.exists():
+                for f in proj_data.glob("*.db"):
+                    abs = str(f.resolve())
+                    if abs not in seen:
+                        db_files.append(str(f))
+                        seen.add(abs)
+    except Exception:
+        pass
+
+    # Build shell-ready command
+    cmd = "datasette " + " ".join(f'"{p}"' for p in db_files) + " --port 8080 --host 0.0.0.0 --cors"
+
+    return ApiResponse(
+        success=True,
+        data={"paths": db_files, "count": len(db_files), "command": cmd},
+        language=language,
+    )
 
 
 # Thiết lập CORS cho frontend Angular trên cùng máy

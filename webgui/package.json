@@ -19,7 +19,9 @@
     "@angular/router": "^21.2.0",
     "@ngx-translate/core": "^17.0.0",
     "@ngx-translate/http-loader": "^17.0.0",
+    "@types/p5": "^1.7.7",
     "highlight.js": "^11.11.1",
+    "p5": "^2.3.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "^0.16.1"

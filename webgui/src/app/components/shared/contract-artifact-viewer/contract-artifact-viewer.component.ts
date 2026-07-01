@@ -19,42 +19,41 @@ hljs.registerLanguage('yaml', yaml);
   encapsulation: ViewEncapsulation.None,
   template: `
     @if (visible) {
-    <div class="viewer-backdrop" (click)="onBackdropClick()">
-      <div class="viewer-card" (click)="$event.stopPropagation()">
-        <div class="viewer-header">
-          <div class="viewer-title">
+    <div class="cv-viewer-backdrop" (click)="onBackdropClick()">
+      <div class="cv-viewer-card" (click)="$event.stopPropagation()">
+        <div class="cv-viewer-header">
+          <div class="cv-viewer-title">
             <i class="fa-solid fa-file-code"></i>
             <span>{{ title }}</span>
             @if (loading) {
-              <span class="viewer-loading"><i class="fa-solid fa-spinner fa-spin"></i></span>
+              <span class="cv-viewer-loading"><i class="fa-solid fa-spinner fa-spin"></i></span>
             }
           </div>
-          <div class="viewer-actions">
+          <div class="cv-viewer-actions">
             @if (content) {
-              <button class="viewer-copy-btn" (click)="copyToClipboard()" title="Copy YAML">
+              <button class="cv-viewer-copy-btn" (click)="copyToClipboard()" title="Copy YAML">
                 <i class="fa-solid" [ngClass]="copied ? 'fa-check' : 'fa-copy'"></i>
                 {{ copied ? 'Copied!' : 'Copy' }}
               </button>
             }
-            <button class="viewer-close" (click)="onBackdropClick()">
+            <button class="cv-viewer-close" (click)="onBackdropClick()">
               <i class="fa-solid fa-xmark"></i>
             </button>
           </div>
         </div>
         @if (content) {
-          <pre class="viewer-content"><code [innerHTML]="highlightedContent"></code></pre>
+          <pre class="cv-viewer-content"><code [innerHTML]="highlightedContent"></code></pre>
         } @else if (error) {
-          <div class="viewer-error">{{ error }}</div>
+          <div class="cv-viewer-error">{{ error }}</div>
         } @else if (!loading) {
-          <div class="viewer-empty">{{ 'contract.noContent' | i18n }}</div>
+          <div class="cv-viewer-empty">{{ 'contract.noContent' | i18n }}</div>
         }
       </div>
     </div>
     }
   `,
   styles: [`
-    app-contract-artifact-viewer * { margin: 0; padding: 0; box-sizing: border-box; }
-    app-contract-artifact-viewer .viewer-backdrop {
+    .cv-viewer-backdrop {
       position: fixed;
       inset: 0;
       background: rgba(0,0,0,0.85);
@@ -65,7 +64,7 @@ hljs.registerLanguage('yaml', yaml);
       z-index: 10000;
       padding: 2rem;
     }
-    app-contract-artifact-viewer .viewer-card {
+    .cv-viewer-card {
       background: #16161e;
       border: 1px solid rgba(255,255,255,0.1);
       width: 100%;
@@ -75,7 +74,7 @@ hljs.registerLanguage('yaml', yaml);
       flex-direction: column;
       box-shadow: 0 0 40px rgba(0,0,0,0.5);
     }
-    app-contract-artifact-viewer .viewer-header {
+    .cv-viewer-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -83,7 +82,7 @@ hljs.registerLanguage('yaml', yaml);
       border-bottom: 1px solid rgba(255,255,255,0.08);
       flex-shrink: 0;
     }
-    app-contract-artifact-viewer .viewer-title {
+    .cv-viewer-title {
       display: flex;
       align-items: center;
       gap: 10px;
@@ -91,14 +90,14 @@ hljs.registerLanguage('yaml', yaml);
       font-weight: 600;
       color: #fff;
     }
-    app-contract-artifact-viewer .viewer-title i { color: #fc6767; }
-    app-contract-artifact-viewer .viewer-loading { color: rgba(255,255,255,0.4); font-size: 0.85rem; }
-    app-contract-artifact-viewer .viewer-actions {
+    .cv-viewer-title i { color: #fc6767; }
+    .cv-viewer-loading { color: rgba(255,255,255,0.4); font-size: 0.85rem; }
+    .cv-viewer-actions {
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    app-contract-artifact-viewer .viewer-copy-btn {
+    .cv-viewer-copy-btn {
       background: none;
       border: 1px solid rgba(255,255,255,0.15);
       color: rgba(255,255,255,0.5);
@@ -110,9 +109,9 @@ hljs.registerLanguage('yaml', yaml);
       align-items: center;
       gap: 5px;
     }
-    app-contract-artifact-viewer .viewer-copy-btn:hover { color: #fff; border-color: #58a6ff; }
-    app-contract-artifact-viewer .viewer-copy-btn .fa-check { color: #3fb950; }
-    app-contract-artifact-viewer .viewer-close {
+    .cv-viewer-copy-btn:hover { color: #fff; border-color: #58a6ff; }
+    .cv-viewer-copy-btn .fa-check { color: #3fb950; }
+    .cv-viewer-close {
       background: none;
       border: 1px solid rgba(255,255,255,0.15);
       color: rgba(255,255,255,0.5);
@@ -121,14 +120,14 @@ hljs.registerLanguage('yaml', yaml);
       cursor: pointer;
       transition: all 0.2s;
     }
-    app-contract-artifact-viewer .viewer-close:hover { color: #fff; border-color: #fc6767; }
-    app-contract-artifact-viewer .viewer-content {
+    .cv-viewer-close:hover { color: #fff; border-color: #fc6767; }
+    .cv-viewer-content {
       flex: 1;
       overflow-y: auto;
       padding: 14px 18px;
       margin: 0;
     }
-    app-contract-artifact-viewer .viewer-content code {
+    .cv-viewer-content code {
       font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
       font-size: 0.78rem;
       line-height: 1.6;
@@ -136,29 +135,29 @@ hljs.registerLanguage('yaml', yaml);
       padding: 0;
     }
     /* highlight.js dark theme */
-    app-contract-artifact-viewer .viewer-content .hljs { color: rgba(255,255,255,0.75); background: transparent; }
-    app-contract-artifact-viewer .viewer-content .hljs-keyword { color: #ff7b72; }
-    app-contract-artifact-viewer .viewer-content .hljs-string { color: #a5d6ff; }
-    app-contract-artifact-viewer .viewer-content .hljs-number { color: #79c0ff; }
-    app-contract-artifact-viewer .viewer-content .hljs-boolean { color: #79c0ff; }
-    app-contract-artifact-viewer .viewer-content .hljs-literal { color: #79c0ff; }
-    app-contract-artifact-viewer .viewer-content .hljs-null { color: #79c0ff; }
-    app-contract-artifact-viewer .viewer-content .hljs-type { color: #d2a8ff; }
-    app-contract-artifact-viewer .viewer-content .hljs-attr { color: #7ee787; }
-    app-contract-artifact-viewer .viewer-content .hljs-punctuation { color: rgba(255,255,255,0.35); }
-    app-contract-artifact-viewer .viewer-content .hljs-comment { color: rgba(255,255,255,0.3); font-style: italic; }
-    app-contract-artifact-viewer .viewer-content .hljs-name { color: #d2a8ff; }
-    app-contract-artifact-viewer .viewer-content .hljs-bullet { color: rgba(255,255,255,0.4); }
-    app-contract-artifact-viewer .viewer-empty,
-    app-contract-artifact-viewer .viewer-error {
+    .cv-viewer-content .hljs { color: rgba(255,255,255,0.75); background: transparent; }
+    .cv-viewer-content .hljs-keyword { color: #ff7b72; }
+    .cv-viewer-content .hljs-string { color: #a5d6ff; }
+    .cv-viewer-content .hljs-number { color: #79c0ff; }
+    .cv-viewer-content .hljs-boolean { color: #79c0ff; }
+    .cv-viewer-content .hljs-literal { color: #79c0ff; }
+    .cv-viewer-content .hljs-null { color: #79c0ff; }
+    .cv-viewer-content .hljs-type { color: #d2a8ff; }
+    .cv-viewer-content .hljs-attr { color: #7ee787; }
+    .cv-viewer-content .hljs-punctuation { color: rgba(255,255,255,0.35); }
+    .cv-viewer-content .hljs-comment { color: rgba(255,255,255,0.3); font-style: italic; }
+    .cv-viewer-content .hljs-name { color: #d2a8ff; }
+    .cv-viewer-content .hljs-bullet { color: rgba(255,255,255,0.4); }
+    .cv-viewer-empty,
+    .cv-viewer-error {
       flex: 1;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 0.85rem;
     }
-    app-contract-artifact-viewer .viewer-empty { color: rgba(255,255,255,0.3); }
-    app-contract-artifact-viewer .viewer-error { color: #f85149; }
+    .cv-viewer-empty { color: rgba(255,255,255,0.3); }
+    .cv-viewer-error { color: #f85149; }
   `]
 })
 export class ContractArtifactViewerComponent implements OnChanges {

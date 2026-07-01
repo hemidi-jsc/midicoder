@@ -18,7 +18,7 @@ import { formatDateLocal } from '../../core/date.util';
 import { DOCS_BASE } from '../../core/app.constants';
 import { ClarificationListComponent } from '../../components/shared/clarification-list/clarification-list.component';
 import { HistoryListComponent } from '../../components/shared/history-list/history-list.component';
-import { LlmProgressComponent } from '../../components/shared/llm-progress/llm-progress.component';
+import { BriefAnalyzeLlmProgressComponent, BriefAnalyzeStreamMessage } from '../../components/shared/brief-analyze-llm-progress/brief-analyze-llm-progress.component';
 import { AnalysisResultModalComponent } from '../../components/shared/analysis-result-modal/analysis-result-modal.component';
 
 interface SectionOpenState {
@@ -39,7 +39,7 @@ interface SectionOpenState {
 @Component({
   selector: 'app-brief-editor',
   standalone: true,
-  imports: [CommonModule, FormsModule, I18nPipe, HistoryListComponent, LlmProgressComponent, AnalysisResultModalComponent],
+  imports: [CommonModule, FormsModule, I18nPipe, HistoryListComponent, BriefAnalyzeLlmProgressComponent, AnalysisResultModalComponent],
   template: `
     <div class="brief-page">
 
@@ -386,14 +386,14 @@ interface SectionOpenState {
 
       <!-- LLM Progress Overlay -->
       @if (showAnalyzeOverlay) {
-        <app-llm-progress
+        <app-brief-analyze-llm-progress
           [visible]="showAnalyzeOverlay"
           [title]="'analyze.title' | i18n"
           (closeOverlay)="onCloseAnalyzeOverlay()"
           (cancelAnalyze)="onCancelAnalyze()"
           (viewResult)="openAnalysisModal()"
           #analyzeOverlay
-        ></app-llm-progress>
+        ></app-brief-analyze-llm-progress>
       }
 
       <!-- Analysis Result Modal -->
@@ -2033,7 +2033,7 @@ export class BriefEditorComponent implements OnInit, OnDestroy, AfterViewChecked
   // Actions: Analyze, Freeze
   // ============================================================================
 
-  @ViewChild('analyzeOverlay') analyzeOverlayRef?: LlmProgressComponent;
+  @ViewChild('analyzeOverlay') analyzeOverlayRef?: BriefAnalyzeLlmProgressComponent;
 
   // Analyze overlay state
   showAnalyzeOverlay = false;
