@@ -72,11 +72,45 @@ interface Node {
   w: number;
   h: number;
   entityGroup: string | null;
+  payload?: Array<{ icon: string; label: string }>;
 }
 interface Edge {
   from: string;
   to: string;
   type: string;
+}
+
+/** Sequence diagram lifeline (a participant with a vertical dashed line) */
+interface SeqLifeline {
+  uid: string;
+  label: string;
+  category: string;
+  x: number; // center X of the lifeline
+  status: string;
+  w: number; // box width
+  fields?: Array<{ name: string; type: string; is_pk?: boolean; is_fk?: boolean }>;
+  // UI component extras
+  componentType?: string;
+  properties?: Record<string, any>;
+}
+
+/** Sequence diagram message (arrow between two lifelines at a given Y) */
+interface SeqMessage {
+  fromUid: string;
+  toUid: string;
+  type: string; // edge type: writes_to, emits, guards, etc
+  label: string; // display label on the arrow
+  y: number; // vertical position of the arrow
+  // Action enrichment (when action is on the arrow, not a participant)
+  actionName?: string; // name of the command/query/event
+  actionType?: string; // 'command' | 'query' | 'ui_component'
+  guards?: string[]; // guard names
+  events?: string[]; // emitted event names
+  payload?: string[]; // payload detail lines (input, transaction, etc.)
+  // For command hub: target entities this command writes to
+  targetUids?: string[]; // multiple targets → drawn as hub with connectors
+  // Drift status of the command itself (from traceMatrix)
+  status?: string;
 }
 
 /** ERD entity with fields and FK references. */
@@ -142,13 +176,26 @@ interface Cluster {
           <i class="fa-solid fa-diagram-project"></i>
           <span>{{ clusters.length }} entities · {{ totalCount }} nodes</span>
         </div>
-        <div class="cg-stats cg-entity-title" *ngIf="selectedEntity">
+        <div class="cg-stats cg-entity-title" *ngIf="selectedEntity && !selectedUIComponent">
           <i class="fa-solid fa-cube"></i>
           <span>{{ selectedEntity }}</span>
         </div>
+        <div class="cg-stats cg-entity-title" *ngIf="selectedUIComponent">
+          <i class="fa-solid fa-palette"></i>
+          <span>{{ selectedUIComponent.data.label }} — Wireframe</span>
+        </div>
         <div class="cg-actions">
           <button
-            *ngIf="selectedEntity"
+            *ngIf="selectedUIComponent"
+            class="cg-btn cg-btn-back"
+            (click)="backToFlow($event)"
+            title="Back to flow diagram"
+          >
+            <i class="fa-solid fa-arrow-left"></i>
+            <span class="cg-btn-label">Flow</span>
+          </button>
+          <button
+            *ngIf="selectedEntity && !selectedUIComponent"
             class="cg-btn cg-btn-back"
             (click)="backToOverview($event)"
             title="Back to entities"
@@ -184,7 +231,7 @@ interface Cluster {
       </div>
 
       <div class="cg-legend" *ngIf="isFullscreen">
-        <div class="cg-leg-title">Edge Types</div>
+        <div class="cg-leg-title">Drift Status</div>
         @for (item of legendItems; track item.label) {
           <div class="cg-leg-row">
             <span class="cg-dot" [style.background]="item.color"></span> {{ item.label }}
@@ -201,6 +248,13 @@ interface Cluster {
       <div class="cg-mode-hint" *ngIf="selectedEntity">
         <i class="fa-solid fa-project-diagram" style="color:#58a6ff"></i>
         Flow diagram — {{ selectedEntity }}
+        <span *ngIf="!selectedUIComponent" style="margin-left:12px; color:#f0883e;">
+          · Click a UI component to preview wireframe
+        </span>
+      </div>
+      <div class="cg-mode-hint" *ngIf="selectedUIComponent">
+        <i class="fa-solid fa-palette" style="color:#f0883e"></i>
+        Wireframe preview — {{ selectedUIComponent.data.label }}
       </div>
 
       <div
@@ -480,6 +534,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
 
   isFullscreen = false;
   selectedEntity: string | null = null;
+  selectedUIComponent: { uid: string; data: { label: string; properties: Record<string, any>; componentType: string; fields: Array<{ name: string; type: string }> } } | null = null;
   totalCount = 0;
   tooltipNode: Node | null = null;
   tooltipX = 0;
@@ -487,17 +542,23 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
 
   private flowNodes: Node[] = [];
   private flowEdges: Edge[] = [];
+  private flowColumnHeights: { top: number; bottom: number } | null = null;
+
+  // Sequence diagram state (Level 2)
+  private seqLifelines: SeqLifeline[] = [];
+  private seqMessages: SeqMessage[] = [];
+  private flowLifelineTop = 0;
+  private flowLifelineBottom = 0;
+  private uiComponentBounds: Array<{ uid: string; x: number; y: number; w: number; h: number }> = [];
 
   private erdEntities: ERDEntity[] = [];
   private erdEdges: ERDEdge[] = [];
 
   legendItems = [
-    { label: 'writes_to', color: '#2ecc71' },
-    { label: 'fetches', color: '#3498db' },
-    { label: 'reads_from', color: '#1abc9c' },
-    { label: 'emits', color: '#f39c12' },
-    { label: 'uses_command', color: '#9b59b6' },
-    { label: 'guards', color: '#e74c3c' },
+    { label: 'matched', color: '#2ecc71' },
+    { label: 'orphan_analysis (in brief, missing contract)', color: '#ef4444' },
+    { label: 'orphan_contract (in contract, missing brief)', color: '#eab308' },
+    { label: 'mismatch', color: '#e67e22' },
   ];
 
   constructor(
@@ -558,18 +619,69 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     this.targetPanY = 0;
     this.targetZoom = 1;
     this.computeEntityDetailLayout(entityName);
+    // Auto-fit will happen after layout computes bounds
     this.ngZone.run(() => this.cdr.detectChanges());
+    // Fit to screen after a frame
+    requestAnimationFrame(() => this.autoFitSequenceDiagram());
+  }
+
+  private autoFitSequenceDiagram(): void {
+    if (!this.selectedEntity || !this.p5Inst) return;
+    const W = this.p5Inst.width;
+    const H = this.p5Inst.height;
+    const padding = 40;
+
+    // Compute bounds of all flow nodes + lifelines
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (const n of this.flowNodes) {
+      if (n.x - n.w / 2 < minX) minX = n.x - n.w / 2;
+      if (n.x + n.w / 2 > maxX) maxX = n.x + n.w / 2;
+      if (n.y - n.h / 2 < minY) minY = n.y - n.h / 2;
+      if (n.y + n.h / 2 > maxY) maxY = n.y + n.h / 2;
+    }
+    // Also account for lifelines (extend to bottom)
+    if (this.flowLifelineBottom && this.flowLifelineBottom > maxY) maxY = this.flowLifelineBottom;
+    if (this.flowLifelineTop !== undefined && this.flowLifelineTop < minY)
+      minY = this.flowLifelineTop;
+
+    const contentW = maxX - minX + padding * 2;
+    const contentH = maxY - minY + padding * 2;
+    if (contentH <= 0 || contentW <= 0) return;
+
+    // Fit to height first (primary constraint), then check width
+    const zoomFitH = H / contentH;
+    const zoomFitW = W / contentW;
+    const zoom = Math.min(zoomFitH, zoomFitW, 1.5); // cap at 1.5x
+    const finalZoom = Math.max(0.3, Math.min(zoom, 1.5));
+
+    this.targetZoom = finalZoom;
+    this.targetPanX = (W - contentW * finalZoom) / 2 - (minX - padding) * finalZoom;
+    this.targetPanY = (H - contentH * finalZoom) / 2 - (minY - padding) * finalZoom;
+    // Apply immediately
+    this.zoom = this.targetZoom;
+    this.panX = this.targetPanX;
+    this.panY = this.targetPanY;
   }
 
   backToOverview($event?: Event): void {
     $event?.stopPropagation();
     this.selectedEntity = null;
+    this.selectedUIComponent = null;
     this.panX = 0;
     this.panY = 0;
     this.zoom = 1;
     this.targetPanX = 0;
     this.targetPanY = 0;
     this.targetZoom = 1;
+    this.ngZone.run(() => this.cdr.detectChanges());
+  }
+
+  backToFlow($event?: Event): void {
+    $event?.stopPropagation();
+    this.selectedUIComponent = null;
     this.ngZone.run(() => this.cdr.detectChanges());
   }
 
@@ -665,33 +777,22 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
           sk.translate(this.panX, this.panY);
           sk.scale(this.zoom);
 
-          // ── Level 1: ERD overview / Level 2: entity detail ──
-          if (this.selectedEntity) {
+          // ── Level 1: ERD / Level 2: flow / Level 3: wireframe ──
+          if (this.selectedUIComponent) {
+            this.drawWireframe(sk);
+          } else if (this.selectedEntity) {
             this.drawEntityDetail(sk);
           } else {
             this.drawERD(sk);
           }
           sk.pop();
 
-          // Hover tooltip — both modes
+          // Hover tooltip — Level 1 only (Level 2 focuses on command drift, no hover)
           const wx = (sk.mouseX - this.panX) / this.zoom;
           const wy = (sk.mouseY - this.panY) / this.zoom;
           let hovered: Node | null = null;
 
-          if (this.selectedEntity) {
-            for (const n of this.flowNodes) {
-              if (!n) continue;
-              if (
-                wx > n.x - n.w / 2 &&
-                wx < n.x + n.w / 2 &&
-                wy > n.y - n.h / 2 &&
-                wy < n.y + n.h / 2
-              ) {
-                hovered = n;
-                break;
-              }
-            }
-          } else {
+          if (!this.selectedEntity) {
             // ERD overview: hover on entity boxes
             let hoveredEnt: ERDEntity | null = null;
             for (const e of this.erdEntities) {
@@ -760,8 +861,40 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
             return;
           }
 
-          // ── Entity detail: read-only (no interaction) ──
-          return;
+          // ── Entity detail: click UI component → Level 3 wireframe ──
+          if (this.selectedEntity && !this.selectedUIComponent) {
+            const wx = (sk.mouseX - this.panX) / this.zoom;
+            const wy = (sk.mouseY - this.panY) / this.zoom;
+            for (const b of this.uiComponentBounds) {
+              if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) {
+                // Find the uiComponentData for this UID
+                // Use the lifelines to find the data
+                const ll = this.seqLifelines.find((l) => l.uid === b.uid);
+                if (ll && ll.category === 'ui_components') {
+                  // Trigger from outside Angular
+                  this.ngZone.run(() => {
+                    this.selectedUIComponent = {
+                      uid: b.uid,
+                      data: {
+                        label: ll.label,
+                        properties: ll.properties || {},
+                        componentType: ll.componentType || '',
+                        fields: ll.fields || [],
+                      },
+                    };
+                    this.cdr.detectChanges();
+                  });
+                  return;
+                }
+              }
+            }
+          }
+
+          // ── Entity detail: allow panning ──
+          isPanning = true;
+          panStartX = sk.mouseX - this.targetPanX;
+          panStartY = sk.mouseY - this.targetPanY;
+          sk.cursor(sk.MOVE);
         };
 
         sk.mouseDragged = () => {
@@ -1979,420 +2112,841 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
 
   // ── Entity Detail Flow Layout ───────────────────────────
 
+  // ── Infer component type from UI component name ────────────
+
+  private inferComponentType(name: string): string {
+    const n = name.toLowerCase();
+    if (n.includes('table')) return 'data_table';
+    if (n.includes('form')) return 'form_builder';
+    if (n.includes('card')) return 'card';
+    if (n.includes('dialog') || n.includes('modal')) return 'dialog';
+    if (n.includes('list')) return 'list';
+    if (n.includes('input')) return 'input';
+    if (n.includes('select')) return 'select';
+    if (n.includes('nav')) return 'navbar';
+    if (n.includes('sidebar')) return 'sidebar';
+    if (n.includes('chart')) return 'data_table';
+    return 'data_table'; // default fallback for table-like UI components
+  }
+
+  // ── Entity Detail Layout ────────────────────────────────────
+
   private computeEntityDetailLayout(entityName: string): void {
     const W = this.p5Inst?.width || 960;
+    const H = this.p5Inst?.height || 420;
     const cluster = this.clusters.find((c) => c.name === entityName);
     if (!cluster || !cluster.entityNode) return;
 
-    const nodeW = 155;
-    const nodeH = 28;
-    const vGap = 18;
-    const hGap = 55;
+    const mainEntityUid = cluster.entityNode!.uid;
+    const entityNameLower = entityName.toLowerCase();
 
-    // Collect nodes per category
-    const guards: Node[] = [];
-    const commands: Node[] = [...cluster.commands];
-    const queries: Node[] = [...cluster.queries];
-    const events: Node[] = [...cluster.events];
-    const workflows: Node[] = cluster.other.filter((n) => n.category === 'workflows');
-    const uiComponents: Node[] = cluster.other.filter((n) => n.category === 'ui_components');
-
-    // ── Phase 1: Discover related nodes from contract references ──
-    const extraEntityUids = new Set<string>();
-    const extraEventUids = new Set<string>();
-    const extraCmdUids = new Set<string>();
-
-    const discoverTargets = (n: Node) => {
-      const rows = this.traceMatrix[n.category] || [];
-      for (const row of rows) {
-        if ((row.analysis_name || row.contract_id || '') !== n.label) continue;
-        const cn = row.contract_node;
-        if (!cn) continue;
-        if (n.category === 'commands') {
-          for (const ref of cn.writes_to || []) extraEntityUids.add(`entities:${String(ref)}`);
-          for (const ref of cn.fetches || []) {
-            if (typeof ref === 'object')
-              extraEntityUids.add(
-                `entities:${(ref as any).entity || (ref as any).entity_id || ''}`,
-              );
-          }
-          for (const eff of cn.effects || []) {
-            if (typeof eff === 'object' && (eff as any).entity)
-              extraEntityUids.add(`entities:${(eff as any).entity}`);
-          }
-          for (const evt of cn.emits || []) extraEventUids.add(`events:${evt}`);
-          for (const g of cn.guards || []) {
-            const gid = typeof g === 'string' ? g : (g as any).guard_id || '';
-            if (gid) extraCmdUids.add(`guards:${gid}`);
-          }
-        }
-        if (n.category === 'queries') {
-          for (const ref of cn.reads_from || []) extraEntityUids.add(`entities:${String(ref)}`);
-          for (const ref of cn.fetches || []) {
-            if (typeof ref === 'object')
-              extraEntityUids.add(
-                `entities:${(ref as any).entity || (ref as any).entity_id || ''}`,
-              );
-          }
-        }
-        if (n.category === 'workflows') {
-          for (const trans of cn.transitions || []) {
-            if (typeof trans === 'object') {
-              const cmd = (trans as any).on || (trans as any).command;
-              if (cmd) extraCmdUids.add(`commands:${cmd}`);
-            }
-          }
-        }
-        if (n.category === 'guards') {
-          const t = cn.target || '';
-          if (t) extraCmdUids.add(`commands:${t}`);
-        }
-        if (n.category === 'ui_components') {
-          const t = cn.entity_id || '';
-          if (t) extraEntityUids.add(`entities:${t}`);
-        }
+    // Helper: resolve entity name (case-insensitive) to UID
+    const resolveEntityUid = (refName: string): string | null => {
+      const refLower = refName.toLowerCase();
+      if (refLower === entityNameLower) return mainEntityUid;
+      for (const [uid, node] of this.uidMap) {
+        if (node.category === 'entities' && node.label.toLowerCase() === refLower) return uid;
       }
+      return `entities:${refName}`;
     };
 
-    for (const n of [
-      ...guards,
-      ...commands,
-      ...queries,
-      ...events,
-      ...workflows,
-      ...uiComponents,
-    ]) {
-      discoverTargets(n);
-    }
+    // ── Phase 1: Scan traceMatrix, collect actions referencing our entity ──
+    const messages: SeqMessage[] = [];
+    const participantEntityUids = new Set<string>([mainEntityUid]);
 
-    // Build base UID set and add extra nodes
-    const baseUids = new Set<string>([
-      cluster.entityNode.uid,
-      ...cluster.commands.map((n) => n.uid),
-      ...cluster.queries.map((n) => n.uid),
-      ...cluster.events.map((n) => n.uid),
-      ...workflows.map((n) => n.uid),
-      ...uiComponents.map((n) => n.uid),
-    ]);
-    const extraNodes: Node[] = [];
-    for (const uid of [...extraEntityUids, ...extraEventUids, ...extraCmdUids]) {
-      if (!baseUids.has(uid)) {
-        const src = this.uidMap.get(uid);
-        if (src) {
-          extraNodes.push({ ...src });
-          baseUids.add(uid);
-        }
-      }
-    }
-
-    // Categorize extra nodes
-    const extraGuards = extraNodes.filter((n) => n.category === 'guards');
-    const extraCommands = extraNodes.filter((n) => n.category === 'commands');
-    const extraEntities = extraNodes.filter(
-      (n) => n.category === 'entities' && n.uid !== (cluster?.entityNode?.uid || ''),
-    );
-    const extraEvents = extraNodes.filter((n) => n.category === 'events');
-
-    // ── Phase 2: 5-column CQRS layout ──
-    // [Guards] → [Commands] → [Entity + Related] → [Events] → [Queries + Workflows + UI]
-    const totalWidth = 5 * nodeW + 4 * hGap;
-    const startX = Math.max(40, (W - totalWidth) / 2);
-    const col = (i: number) => startX + i * (nodeW + hGap);
-    const startY = 50;
-
-    const posCol = (nodes: Node[], cx: number, cy: number) => {
-      nodes.forEach((n, i) => {
-        n.x = cx;
-        n.y = cy + i * (nodeH + vGap);
-        n.w = nodeW;
-        n.h = nodeH;
-      });
-      return cy + nodes.length * (nodeH + vGap);
-    };
-
-    // Col 0: Guards
-    posCol([...guards, ...extraGuards], col(0), startY);
-
-    // Col 1: Commands
-    posCol([...commands, ...extraCommands], col(1), startY);
-
-    // Col 2: Main entity + related entities
-    cluster.entityNode.x = col(2);
-    cluster.entityNode.y = startY;
-    cluster.entityNode.w = nodeW + 20;
-    cluster.entityNode.h = nodeH + 6;
-    posCol(extraEntities, col(2), startY + nodeH + vGap + 20);
-
-    // Col 3: Events
-    posCol([...events, ...extraEvents], col(3), startY);
-
-    // Col 4: Queries, Workflows, UI components stacked vertically
-    let ry = startY;
-    ry = posCol(queries, col(4), ry);
-    ry += 10;
-    ry = posCol(workflows, col(4), ry);
-    ry += 10;
-    ry = posCol(uiComponents, col(4), ry);
-
-    // ── Phase 3: Build edges ──
-    this.flowNodes = [
-      cluster.entityNode,
-      ...guards,
-      ...extraGuards,
-      ...commands,
-      ...extraCommands,
-      ...extraEntities,
-      ...events,
-      ...extraEvents,
-      ...queries,
-      ...workflows,
-      ...uiComponents,
-    ];
-    const uidSet = new Set(this.flowNodes.map((n) => n.uid));
-    this.flowEdges = [];
-
-    const conn = (from: string, to: string, type: string) => {
-      if (uidSet.has(from) && uidSet.has(to)) this.flowEdges.push({ from, to, type });
-    };
-
-    for (const n of this.flowNodes) {
-      if (n.category === 'entities') continue;
-      const rows = this.traceMatrix[n.category] || [];
-      for (const row of rows) {
-        if ((row.analysis_name || row.contract_id || '') !== n.label) continue;
-        const cn = row.contract_node;
-        if (!cn) continue;
-        if (n.category === 'guards') {
-          const t = cn.target || '';
-          if (t) conn(n.uid, `commands:${t}`, 'guards');
-        }
-        if (n.category === 'commands') {
-          for (const ref of cn.writes_to || []) conn(n.uid, `entities:${String(ref)}`, 'writes_to');
-          for (const ref of cn.fetches || []) {
-            if (typeof ref === 'object')
-              conn(
-                n.uid,
-                `entities:${(ref as any).entity || (ref as any).entity_id || ''}`,
-                'fetches',
-              );
-          }
-          for (const eff of cn.effects || []) {
-            if (typeof eff === 'object' && (eff as any).entity)
-              conn(n.uid, `entities:${(eff as any).entity}`, 'writes_to');
-          }
-          for (const evt of cn.emits || []) conn(n.uid, `events:${evt}`, 'emits');
-        }
-        if (n.category === 'queries') {
-          for (const ref of cn.reads_from || [])
-            conn(n.uid, `entities:${String(ref)}`, 'reads_from');
-          for (const ref of cn.fetches || []) {
-            if (typeof ref === 'object')
-              conn(
-                n.uid,
-                `entities:${(ref as any).entity || (ref as any).entity_id || ''}`,
-                'fetches',
-              );
-          }
-        }
-        if (n.category === 'workflows') {
-          for (const trans of cn.transitions || []) {
-            if (typeof trans === 'object') {
-              const cmd = (trans as any).on || (trans as any).command;
-              if (cmd) conn(n.uid, `commands:${cmd}`, 'uses_command');
-            }
-          }
-        }
-        if (n.category === 'ui_components') {
-          const t = cn.entity_id || '';
-          if (t) conn(n.uid, `entities:${t}`, 'entity_ref');
-        }
-      }
-    }
-
-    // Deduplicate
-    const seen = new Set<string>();
-    this.flowEdges = this.flowEdges.filter((e) => {
-      const key = `${e.from}|${e.to}|${e.type}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
+    // Deduplicate commands by contract_id (canonical name) — pick the row with contract_node
+    const seenCmdNames = new Set<string>();
+    const cmdRows = (this.traceMatrix['commands'] || []).filter((row) => {
+      const name = row.contract_id || row.analysis_name || '';
+      if (!name) return false;
+      if (seenCmdNames.has(name)) return false;
+      seenCmdNames.add(name);
       return true;
     });
-  }
+    for (const row of cmdRows) {
+      const cn = row.contract_node;
+      if (!cn) continue;
 
-  // ── Entity Detail Drawing ───────────────────────────────
+      // Find target entities (writes/effects) — deduplicate
+      const targetUidSet = new Set<string>();
+      for (const eff of cn.effects || []) {
+        if (typeof eff === 'object' && (eff as any).entity) {
+          if ((eff as any).entity.toLowerCase() === entityNameLower) {
+            targetUidSet.add(mainEntityUid);
+          } else {
+            const r = resolveEntityUid((eff as any).entity);
+            if (r) targetUidSet.add(r);
+          }
+        }
+      }
+      for (const ref of cn.writes_to || []) {
+        const r = resolveEntityUid(String(ref));
+        if (r) targetUidSet.add(r);
+      }
+      const targetUids = Array.from(targetUidSet);
 
-  private drawEntityDetail(sk: p5): void {
-    // Draw edges first (behind nodes)
-    this.drawFlowEdges(sk);
+      // Find source entities (fetches/reads)
+      const sourceUids: string[] = [];
+      for (const ref of cn.fetches || []) {
+        if (typeof ref === 'object') {
+          const r = resolveEntityUid((ref as any).entity || (ref as any).entity_id || '');
+          if (r) sourceUids.push(r);
+        }
+      }
 
-    // Draw nodes
-    for (const n of this.flowNodes) {
-      this.drawFlowNode(sk, n);
+      // Skip if this command doesn't reference our entity ecosystem
+      if (targetUids.length === 0) {
+        const fetchesOurEntity = cn.fetches?.some((ref: any) => {
+          if (typeof ref !== 'object') return false;
+          return (ref.entity || ref.entity_id || '').toLowerCase() === entityNameLower;
+        });
+        if (!fetchesOurEntity) continue;
+      } else {
+        // Only include commands that touch the main entity or a participant we already track
+        const touchesMain =
+          targetUids.includes(mainEntityUid) || sourceUids.includes(mainEntityUid);
+        const touchesParticipant =
+          targetUids.some((u) => participantEntityUids.has(u)) ||
+          sourceUids.some((u) => participantEntityUids.has(u));
+        if (!touchesMain && !touchesParticipant) continue;
+      }
+
+      // Collect related entity UIDs for participants
+      for (const u of [...targetUids, ...sourceUids]) participantEntityUids.add(u);
+
+      // Collect guards
+      const guardLabels: string[] = [];
+      for (const g of cn.guards || []) {
+        const gid = typeof g === 'string' ? g : (g as any).guard_id || '';
+        if (gid) guardLabels.push(gid);
+      }
+
+      // Build payload lines
+      const payloadLines: string[] = [];
+      if (cn.input?.length)
+        payloadLines.push(
+          `input: ${cn.input
+            .filter((i: any) => typeof i === 'object')
+            .map((i: any) => `${i.name}(${i.type})`)
+            .join(', ')}`,
+        );
+      if (cn.transaction) payloadLines.push('transaction: true');
+      if (cn.category) payloadLines.push(`category: ${cn.category}`);
+
+      // ── One message per command, with all target entities grouped ──
+      // External trigger: no source entity → special "__external__" marker
+      const fromUid = sourceUids.length > 0 ? sourceUids[0] : '__external__';
+      // effectiveTargets: all entities this command writes to
+      const effectiveTargets = targetUids.length > 0 ? targetUids : [mainEntityUid];
+      // toUid is the first target for the primary arrow direction
+      const toUid = effectiveTargets[0];
+
+      messages.push({
+        fromUid,
+        toUid,
+        type: 'writes_to',
+        label: row.contract_id || '',
+        actionName: row.contract_id || '',
+        actionType: 'command',
+        guards: guardLabels,
+        events: cn.emits || [],
+        payload: payloadLines,
+        targetUids: effectiveTargets,
+        status: row.status || 'matched',
+        y: 0,
+      });
     }
 
-    // Draw edge labels
-    this.drawEdgeLabels(sk);
-  }
+    // Scan queries — deduplicate by name
+    const seenQueryNames = new Set<string>();
+    const queryRows = (this.traceMatrix['queries'] || []).filter((row) => {
+      const name = row.contract_id || row.analysis_name || '';
+      if (!name) return false;
+      if (seenQueryNames.has(name)) return false;
+      seenQueryNames.add(name);
+      return true;
+    });
+    for (const row of queryRows) {
+      const cn = row.contract_node;
+      if (!cn) continue;
 
-  private drawFlowEdges(sk: p5): void {
-    const arrowSize = 7;
-    // Build local uid->Node map from flowNodes (positions are from flow layout)
-    const flowUidMap = new Map<string, Node>();
-    for (const n of this.flowNodes) flowUidMap.set(n.uid, n);
+      const targetUids: string[] = [];
+      for (const ref of cn.reads_from || []) {
+        const r = resolveEntityUid(String(ref));
+        if (r) targetUids.push(r);
+      }
+      for (const ref of cn.fetches || []) {
+        if (typeof ref === 'object') {
+          const r = resolveEntityUid((ref as any).entity || (ref as any).entity_id || '');
+          if (r) targetUids.push(r);
+        }
+      }
 
-    for (const e of this.flowEdges) {
-      const a = flowUidMap.get(e.from);
-      const b = flowUidMap.get(e.to);
-      if (!a || !b) continue;
-      const ec = EDGE_COLORS[e.type] || [100, 100, 120];
+      if (targetUids.length === 0 || !targetUids.includes(mainEntityUid)) continue;
+      for (const u of targetUids) participantEntityUids.add(u);
 
-      // Determine if edge is vertical (same x) or needs angled path
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-      if (Math.abs(dx) < 10) {
-        // Vertical edge (same column)
-        const fromBottom = a.y + a.h / 2;
-        const toTop = b.y - b.h / 2;
-
-        sk.noFill();
-        sk.stroke(ec[0], ec[1], ec[2], 120);
-        sk.strokeWeight(1.5);
-        sk.line(a.x, fromBottom, b.x, toTop);
-
-        // Arrowhead
-        const midY = (fromBottom + toTop) / 2;
-        sk.noStroke();
-        sk.fill(ec[0], ec[1], ec[2], 180);
-        sk.triangle(
-          b.x,
-          toTop + arrowSize,
-          b.x - arrowSize * 0.6,
-          toTop - arrowSize * 0.4,
-          b.x + arrowSize * 0.6,
-          toTop - arrowSize * 0.4,
+      const payloadLines: string[] = [];
+      if (cn.input?.length)
+        payloadLines.push(
+          `input: ${cn.input
+            .filter((i: any) => typeof i === 'object')
+            .map((i: any) => `${i.name}(${i.type})`)
+            .join(', ')}`,
         );
+
+      // Query: external caller reads from entity
+      messages.push({
+        fromUid: '__external__',
+        toUid: mainEntityUid,
+        type: 'reads_from',
+        label: row.contract_id || '',
+        actionName: row.contract_id || '',
+        actionType: 'query',
+        guards: [],
+        events: [],
+        payload: payloadLines,
+        status: row.status || 'matched',
+        y: 0,
+      });
+    }
+
+    // UI component data (properties to show in participant header)
+    const uiComponentData = new Map<string, { label: string; properties: Record<string, any>; componentType: string; fields: Array<{ name: string; type: string }> }>();
+    const seenUiNames = new Set<string>();
+    const uiRows = (this.traceMatrix['ui_components'] || []).filter((row) => {
+      const name = row.contract_id || row.analysis_name || '';
+      if (!name) return false;
+      if (seenUiNames.has(name)) return false;
+      seenUiNames.add(name);
+      return true;
+    });
+    for (const row of uiRows) {
+      const cn = row.contract_node;
+      if (!cn) continue;
+      const entityId = cn.entity_id || '';
+      if (entityId.toLowerCase() !== entityNameLower) continue;
+
+      // Use contract_id or analysis_name as canonical name — never undefined
+      const uiName = row.contract_id || row.analysis_name || '';
+      const uiUid = `ui_components:${uiName}`;
+
+      messages.push({
+        fromUid: uiUid,
+        toUid: mainEntityUid,
+        type: 'entity_ref',
+        label: uiName,
+        actionName: uiName,
+        actionType: 'ui_component',
+        guards: [],
+        events: [],
+        payload: [],
+        status: row.status || 'matched',
+        y: 0,
+      });
+      participantEntityUids.add(uiUid);
+
+      // Store UI component data for header rendering
+      // Build fields from related entity (for data_table, form, etc.) + component properties
+      const uiFields: Array<{ name: string; type: string; is_pk?: boolean; is_fk?: boolean }> = [];
+      // First, pull fields from the related entity if available
+      const norm = (s: string) => s.replace(/-/g, '_').replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
+      const relatedErd = this.erdEntities.find((e) => norm(e.label) === norm(entityId));
+      if (relatedErd && relatedErd.fields) {
+        for (const f of relatedErd.fields.slice(0, 8)) {
+          uiFields.push({ name: f.name, type: f.type, is_pk: f.is_pk, is_fk: f.is_fk });
+        }
+      }
+      // If no entity fields, fall back to component_type, description, and properties
+      if (uiFields.length === 0) {
+        if (cn.component_type) uiFields.push({ name: 'type', type: cn.component_type });
+        if (cn.description) uiFields.push({ name: 'desc', type: String(cn.description).slice(0, 25) + (String(cn.description).length > 25 ? '...' : '') });
+      }
+      const props = cn.properties || {};
+      for (const [k, v] of Object.entries(props).slice(0, 4)) {
+        uiFields.push({
+          name: k,
+          type: typeof v === 'object' ? 'Object' : String(v).slice(0, 20),
+        });
+      }
+      uiComponentData.set(uiUid, {
+        label: uiName,
+        properties: props,
+        componentType: cn.component_type || this.inferComponentType(uiName),
+        fields: uiFields,
+      });
+    }
+
+    // ── Phase 2: Build participant list (entities + UI only) ──
+    // Main entity first, then related entities, then UI components
+    const participantNodes: Array<{ uid: string; label: string; category: string }> = [];
+    const used = new Set<string>([mainEntityUid]);
+    participantNodes.push({
+      uid: mainEntityUid,
+      label: cluster.entityNode.label,
+      category: 'entities',
+    });
+
+    for (const uid of participantEntityUids) {
+      if (uid === mainEntityUid || used.has(uid)) continue;
+      used.add(uid);
+      const src = this.uidMap.get(uid);
+      if (src) {
+        participantNodes.push({ uid, label: src.label, category: src.category });
       } else {
-        // Angled edge with elbow
-        const fromBottom = a.y + a.h / 2;
-        const toTop = b.y - b.h / 2;
-        const elbowY = fromBottom + (toTop - fromBottom) * 0.5;
-
-        sk.noFill();
-        sk.stroke(ec[0], ec[1], ec[2], 100);
-        sk.strokeWeight(1.2);
-        // Elbow path: down from source, horizontal, up to target
-        sk.beginShape();
-        sk.vertex(a.x, fromBottom);
-        sk.vertex(a.x, elbowY);
-        sk.vertex(b.x, elbowY);
-        sk.vertex(b.x, toTop);
-        sk.endShape();
-
-        // Arrowhead at target
-        const midX = b.x;
-        const midY2 = toTop;
-        sk.noStroke();
-        sk.fill(ec[0], ec[1], ec[2], 150);
-        sk.triangle(
-          midX,
-          midY2 + arrowSize,
-          midX - arrowSize * 0.6,
-          midY2 - arrowSize * 0.4,
-          midX + arrowSize * 0.6,
-          midY2 - arrowSize * 0.4,
-        );
+        // Fallback for UI components not in uidMap
+        const uiData = uiComponentData.get(uid);
+        if (uiData) {
+          participantNodes.push({ uid, label: uiData.label, category: 'ui_components' });
+        }
       }
     }
-  }
 
-  private drawEdgeLabels(sk: p5): void {
-    for (const e of this.flowEdges) {
-      const a = this.uidMap.get(e.from);
-      const b = this.uidMap.get(e.to);
-      if (!a || !b) continue;
+    // ── Phase 3: Layout participants ──
+    const seqHeaderH = 48;
+    const sidePad = 40;
+    const participantCount = participantNodes.length;
+    const lifelineSpacing = Math.max(
+      110,
+      Math.min(180, (W - sidePad * 2) / Math.max(participantCount - 1, 1)),
+    );
+    const lifelineStartX =
+      sidePad + (W - sidePad * 2 - (participantCount - 1) * lifelineSpacing) / 2;
 
-      const label = EDGE_LABEL[e.type] || e.type;
-      const mx = (a.x + b.x) / 2;
-      const my = (a.y + b.y) / 2;
+    // Normalize helper
+    const labelNorm = (s: string) =>
+      s
+        .replace(/-/g, '_')
+        .replace(/([a-z])([A-Z])/g, '$1_$2')
+        .toLowerCase();
 
-      sk.noStroke();
-      sk.fill(139, 148, 158, 140);
-      sk.textSize(8);
-      sk.textAlign(sk.CENTER, sk.CENTER);
-      sk.text(label, mx, my);
-    }
-  }
+    const uidToLifelineX = new Map<string, number>();
 
-  private drawFlowNode(sk: p5, n: Node): void {
-    const cc = CAT_COLOR[n.category] || [150, 150, 150];
-    const sc = STATUS_BORDER[n.status] || STATUS_BORDER['matched'];
-    const hw = n.w / 2,
-      hh = n.h / 2;
-    const isEntity = n.category === 'entities';
+    // Compute dynamic header height based on fields
+    const fieldLineH = 16;
+    const headerBoxH = (fields: Array<{ name: string }> | undefined) =>
+      36 + (fields?.length || 0) * fieldLineH;
 
-    // Shadow
-    sk.noStroke();
-    sk.fill(0, 0, 0, 30);
-    sk.rect(n.x - hw + 2, n.y - hh + 2, n.w, n.h, 6);
+    // Find max header height across all participants
+    const maxHeaderH = Math.max(
+      ...participantNodes.map((n) => {
+        const erd = this.erdEntities.find((e) => labelNorm(e.label) === labelNorm(n.label));
+        return headerBoxH(erd?.fields);
+      }),
+    );
 
-    // Background
-    sk.fill(isEntity ? 22 : 18, isEntity ? 30 : 24, isEntity ? 45 : 35);
-    sk.stroke(sc[0], sc[1], sc[2], sc[3]);
-    sk.strokeWeight(isEntity ? 2.5 : n.status === 'matched' ? 1 : 2);
-    sk.rect(n.x - hw, n.y - hh, n.w, n.h, 6);
+    this.seqLifelines = participantNodes.map((n, i) => {
+      const x = lifelineStartX + i * lifelineSpacing;
+      uidToLifelineX.set(n.uid, x);
 
-    // Category accent bar (left side, wider for entity)
-    sk.noStroke();
-    const barW = isEntity ? 5 : 3;
-    sk.fill(cc[0], cc[1], cc[2], isEntity ? 255 : 220);
-    sk.rect(n.x - hw, n.y - hh + 2, barW, n.h - 4, 2);
+      // Lookup fields from ERD
+      const erd = this.erdEntities.find((e) => labelNorm(e.label) === labelNorm(n.label));
+      let fields = erd?.fields || [];
 
-    // Category icon/text
-    const catIcon = this.getCategoryIcon(n.category);
-    sk.fill(cc[0], cc[1], cc[2], 200);
-    sk.textSize(9);
-    sk.textAlign(sk.LEFT, sk.CENTER);
-    sk.text(catIcon, n.x - hw + 10, n.y);
+      // For UI components, use pre-built fields from uiComponentData
+      if (n.category === 'ui_components' && fields.length === 0) {
+        const uiData = uiComponentData.get(n.uid);
+        if (uiData && uiData.fields) {
+          fields = uiData.fields;
+        }
+      }
 
-    // Label
-    const maxChars = Math.floor((n.w - 30) / 5.2);
-    const label = n.label.length > maxChars ? n.label.substring(0, maxChars - 1) + '…' : n.label;
-    sk.fill(220, 225, 235);
-    sk.textSize(isEntity ? 11 : 9);
-    sk.textAlign(sk.LEFT, sk.CENTER);
-    sk.text(label, n.x - hw + 24, n.y);
+      // Lookup status from traceMatrix
+      const entStatus =
+        this.traceMatrix['entities']?.find(
+          (r) =>
+            labelNorm(r.analysis_name || '') === labelNorm(n.label) ||
+            labelNorm(r.contract_id || '') === labelNorm(n.label),
+        )?.status || 'matched';
 
-    // Status indicator
-    if (n.status !== 'matched') {
-      const warnColor =
-        n.status === 'orphan_analysis'
-          ? [231, 76, 60]
-          : n.status === 'orphan_contract'
-            ? [241, 196, 15]
-            : [230, 126, 34];
-      sk.fill(warnColor[0], warnColor[1], warnColor[2], 200);
-      sk.noStroke();
-      sk.textSize(11);
-      sk.textAlign(sk.RIGHT, sk.CENTER);
-      sk.text('!', n.x + hw - 5, n.y);
-    }
-  }
+      return {
+        uid: n.uid,
+        label: n.label,
+        category: n.category,
+        x,
+        status: entStatus,
+        w: 140,
+        fields,
+        componentType: n.category === 'ui_components' ? uiComponentData.get(n.uid)?.componentType : undefined,
+        properties: n.category === 'ui_components' ? uiComponentData.get(n.uid)?.properties : undefined,
+      };
+    });
 
-  private getCategoryIcon(cat: string): string {
-    const icons: Record<string, string> = {
-      entities: '◆',
-      commands: '⚡',
-      queries: '◉',
-      events: '◈',
-      workflows: '⟳',
-      value_objects: '◇',
-      guards: '⛨',
-      roles: '👤',
-      ui_components: '▣',
+    // ── Phase 4: Sort and position messages with dynamic height ──
+    // Order: commands first, then queries, then UI refs
+    const msgOrder: Record<string, number> = { command: 0, query: 1, entity_ref: 2 };
+    messages.sort((a, b) => {
+      const oa = msgOrder[a.actionType || ''] ?? 9;
+      const ob = msgOrder[b.actionType || ''] ?? 9;
+      if (oa !== ob) return oa - ob;
+      return (a.actionName || '').localeCompare(b.actionName || '');
+    });
+
+    // Compute dynamic height per message based on badge count
+    const msgBaseH = 36; // arrow line + label card
+    const badgeLineH = 14; // height per badge line
+    const computeMsgHeight = (m: SeqMessage): number => {
+      let h = msgBaseH;
+      h += (m.guards?.length ?? 0) * badgeLineH;
+      h += (m.events?.length ?? 0) * badgeLineH;
+      h += (m.payload?.length ?? 0) * badgeLineH;
+      return Math.max(msgBaseH, h);
     };
-    return icons[cat] || '●';
+
+    // Cumulative Y positioning — each message gets its own vertical space
+    const msgStartY = maxHeaderH + 80;
+    let currentY = msgStartY;
+    this.seqMessages = messages.map((m) => {
+      const h = computeMsgHeight(m);
+      const positioned = { ...m, y: currentY };
+      currentY += h;
+      return positioned;
+    });
+
+    // ── Phase 5: Store for drawing ──
+    // Use maxHeaderH as the actual header height (not fixed seqHeaderH)
+    this.flowLifelineTop = maxHeaderH;
+    if (this.seqMessages.length > 0) {
+      const lastMsg = this.seqMessages[this.seqMessages.length - 1];
+      // Dynamic height for last message too
+      const lastH =
+        msgBaseH +
+        (lastMsg.guards?.length ?? 0) * badgeLineH +
+        (lastMsg.events?.length ?? 0) * badgeLineH +
+        (lastMsg.payload?.length ?? 0) * badgeLineH;
+      this.flowLifelineBottom = lastMsg.y + lastH + 20;
+    } else {
+      this.flowLifelineBottom = Math.max(H - 40, maxHeaderH + 200);
+    }
+    this.flowLifelineBottom = Math.max(this.flowLifelineBottom, maxHeaderH + 200);
+
+    // Flow nodes for hover tooltip (position at header center)
+    this.flowNodes = participantNodes.map((n) => ({
+      uid: n.uid,
+      label: n.label,
+      category: n.category,
+      status: 'matched',
+      x: uidToLifelineX.get(n.uid) ?? 0,
+      y: maxHeaderH / 2,
+      w: 140,
+      h: headerBoxH(this.seqLifelines.find((l) => l.uid === n.uid)?.fields),
+      entityGroup: null,
+    }));
+
+    // Store UI component bounds for click detection (match actual drawn positions)
+    const maxHH = Math.max(...this.seqLifelines.map((ll) => headerBoxH(ll.fields)));
+    this.uiComponentBounds = this.seqLifelines
+      .filter((ll) => ll.category === 'ui_components')
+      .map((ll) => {
+        const boxH = headerBoxH(ll.fields);
+        return {
+          uid: ll.uid,
+          x: ll.x - ll.w / 2,
+          y: maxHH - boxH,
+          w: ll.w,
+          h: boxH,
+        };
+      });
+
+    this.flowColumnHeights = { top: this.flowLifelineTop, bottom: this.flowLifelineBottom };
+  }
+
+  // ── Entity Detail Drawing — Sequence Diagram ────────────
+
+  private drawEntityDetail(sk: p5): void {
+    const arrowSize = 9;
+    const mainEntityUid = this.clusters.find((c) => c.name === this.selectedEntity)?.entityNode
+      ?.uid;
+
+    const uidToX = new Map<string, number>();
+    for (const ll of this.seqLifelines) uidToX.set(ll.uid, ll.x);
+
+    // ── 1. Draw participant headers (ERD-style boxes with fields) ──
+    const fieldLineH = 16;
+    const headerBoxH = (fields: Array<{ name: string }> | undefined) =>
+      36 + (fields?.length || 0) * fieldLineH;
+    const maxHeaderH = Math.max(...this.seqLifelines.map((ll) => headerBoxH(ll.fields)));
+
+    for (const ll of this.seqLifelines) {
+      const cc = CAT_COLOR[ll.category] || [150, 150, 150];
+      const boxH = headerBoxH(ll.fields);
+      const px = ll.x - ll.w / 2;
+      // Align boxes to the bottom of the header area (straight on the separator line)
+      const py = maxHeaderH - boxH;
+
+      // Grey border for all participants — drift shown on Level 1
+      sk.fill(0, 0, 0, 0);
+      sk.stroke(80, 88, 100);
+      sk.strokeWeight(1);
+      sk.rect(px, py, ll.w, boxH, 6);
+
+      // Box background
+      sk.noStroke();
+      sk.fill(18, 22, 30);
+      sk.rect(px, py, ll.w, boxH, 6);
+
+      // Accent bar left (subtle grey)
+      sk.fill(cc[0], cc[1], cc[2], 120);
+      sk.rect(px, py + 3, 5, 30, 2);
+
+      // Header divider line
+      sk.stroke(50, 56, 68);
+      sk.strokeWeight(1);
+      sk.line(px + 10, py + 32, px + ll.w - 4, py + 32);
+
+      // Header text (entity label)
+      sk.noStroke();
+      sk.fill(220, 228, 234);
+      sk.textSize(13);
+      sk.textStyle(sk.BOLD);
+      sk.text(ll.label, px + 12, py + 15);
+      sk.textStyle(sk.NORMAL);
+
+      // Field list
+      const fields = ll.fields || [];
+      for (let i = 0; i < fields.length; i++) {
+        const f = fields[i];
+        const fy = py + 36 + 8 + i * fieldLineH;
+
+        // PK/FK icon
+        const icon = f.is_pk ? '\u{1F511}' : f.is_fk ? '\u{1F4CE}' : '  ';
+        const iconColor = f.is_pk ? [234, 179, 8] : f.is_fk ? [9, 132, 227] : [139, 148, 160];
+        sk.fill(iconColor[0], iconColor[1], iconColor[2]);
+        sk.textSize(10);
+        sk.text(icon, px + 10, fy);
+
+        // Field name (truncate if too long)
+        sk.fill(139, 148, 160);
+        sk.textSize(11);
+        const nameMaxW = (px + ll.w - 8) - 70; // leave room for type column
+        const nameText = sk.textWidth(f.name) > nameMaxW ? f.name.slice(0, 10) + '...' : f.name;
+        sk.text(nameText, px + 30, fy);
+
+        // Type (right aligned, truncate if too long)
+        sk.fill(100, 110, 125);
+        sk.textAlign(sk.RIGHT, sk.BASELINE);
+        const typeMaxW = 60;
+        let typeText = f.type;
+        if (sk.textWidth(typeText) > typeMaxW) {
+          const maxChars = Math.floor(typeMaxW / sk.textWidth('a'));
+          typeText = typeText.slice(0, Math.min(maxChars, typeText.length)) + '...';
+        }
+        sk.text(typeText, px + ll.w - 8, fy);
+        sk.textAlign(sk.LEFT, sk.BASELINE);
+      }
+    }
+
+    // Separator
+    sk.noFill();
+    sk.stroke(30, 40, 55);
+    sk.strokeWeight(1);
+    const sepY = maxHeaderH;
+    sk.line(20, sepY, sk.width - 20, sepY);
+
+    // ── 2. Draw dashed lifelines ──
+    const ctx2d = sk.drawingContext as CanvasRenderingContext2D;
+    ctx2d.setLineDash([4, 4]);
+    for (const ll of this.seqLifelines) {
+      const isMain = ll.uid === mainEntityUid;
+      const cc = CAT_COLOR[ll.category] || [150, 150, 150];
+      sk.stroke(isMain ? cc[0] : 60, isMain ? cc[1] : 70, isMain ? cc[2] : 90, isMain ? 160 : 100);
+      sk.strokeWeight(isMain ? 1.5 : 1);
+      sk.line(ll.x, sepY + 2, ll.x, this.flowLifelineBottom);
+    }
+    ctx2d.setLineDash([]);
+
+    // ── 3. Draw enriched message cards ──
+    const externalX = 20; // left edge position for external triggers
+
+    for (const msg of this.seqMessages) {
+      const y = msg.y;
+      const guards = msg.guards || [];
+      const events = msg.events || [];
+      const payload = msg.payload || [];
+
+      // Determine message color based on drift status (not action type)
+      // This way the arrow color shows whether this command/query is matched or has drift
+      const driftColor: [number, number, number] =
+        msg.status === 'orphan_analysis'
+          ? [239, 68, 68] // red — in brief but missing from contract
+          : msg.status === 'orphan_contract'
+            ? [234, 179, 8] // yellow — in contract but missing from brief
+            : msg.status === 'mismatch'
+              ? [230, 126, 34] // orange — exists in both but different
+              : [46, 204, 113]; // green — matched
+      let msgColor: [number, number, number] = driftColor;
+
+      const cardLabel = msg.actionName || msg.label;
+
+      // ── Command Hub: multiple targets ──
+      const targets = msg.targetUids || [msg.toUid];
+      const isHub = msg.actionType === 'command' && targets.length > 1;
+
+      if (isHub) {
+        // Compute card bounds spanning all targets
+        const targetXs = targets
+          .map((t) => uidToX.get(t))
+          .filter((x): x is number => x !== undefined);
+        if (targetXs.length === 0) continue;
+
+        const hubMinX = Math.min(...targetXs);
+        const hubMaxX = Math.max(...targetXs);
+        const hubCenterX = (hubMinX + hubMaxX) / 2;
+        const hubCardW = Math.max(sk.textWidth(cardLabel) + 32, hubMaxX - hubMinX + 20);
+        const hubCardH = 18; // label row height
+
+        // External trigger icon
+        const isExternal = msg.fromUid === '__external__';
+        if (isExternal) {
+          sk.noStroke();
+          sk.fill(msgColor[0], msgColor[1], msgColor[2], 200);
+          sk.ellipse(externalX, y, 10, 10);
+          sk.fill(255);
+          sk.textSize(7);
+          sk.textAlign(sk.CENTER, sk.CENTER);
+          sk.text('→', externalX, y);
+        }
+
+        // Activation bars on each target lifeline
+        for (const tx of targetXs) {
+          sk.noStroke();
+          sk.fill(msgColor[0], msgColor[1], msgColor[2], 40);
+          sk.rect(tx - 7, y - 12, 14, 24, 3);
+        }
+
+        // Connector lines: thin angled lines from card top to each lifeline
+        sk.noFill();
+        sk.stroke(msgColor[0], msgColor[1], msgColor[2], 120);
+        sk.strokeWeight(1);
+        for (const tx of targetXs) {
+          // Clamp to card edge if target is inside card
+          const anchorX = Math.max(
+            hubCenterX - hubCardW / 2,
+            Math.min(hubCenterX + hubCardW / 2, tx),
+          );
+          sk.line(tx, y, anchorX, y - 6);
+        }
+
+        // Horizontal bar connecting all lifelines at hub Y
+        sk.stroke(msgColor[0], msgColor[1], msgColor[2], 160);
+        sk.strokeWeight(1.5);
+        sk.line(hubCenterX - hubCardW / 2, y - 6, hubCenterX + hubCardW / 2, y - 6);
+
+        // Hub card background
+        sk.noStroke();
+        sk.fill(16, 20, 30, 240);
+        sk.rect(hubCenterX - hubCardW / 2, y - 28, hubCardW, hubCardH, 4);
+
+        // Card accent bar left
+        sk.fill(msgColor[0], msgColor[1], msgColor[2]);
+        sk.rect(hubCenterX - hubCardW / 2, y - 25, 3, hubCardH - 6, 1);
+
+        // Action name + target count badge
+        sk.fill(msgColor[0], msgColor[1], msgColor[2], 255);
+        sk.textSize(10);
+        sk.textAlign(sk.LEFT, sk.CENTER);
+        sk.text(cardLabel, hubCenterX - hubCardW / 2 + 8, y - 19);
+
+        // Target count badge on right side — count only targets with visible lifelines
+        const countBadge = `→ ${targetXs.length} entities`;
+        const badgeW = sk.textWidth(countBadge) + 8;
+        sk.fill(msgColor[0], msgColor[1], msgColor[2], 60);
+        sk.rect(hubCenterX + hubCardW / 2 - badgeW - 2, y - 25, badgeW, 14, 3);
+        sk.fill(msgColor[0], msgColor[1], msgColor[2], 220);
+        sk.textSize(8);
+        sk.textAlign(sk.CENTER, sk.CENTER);
+        sk.text(countBadge, hubCenterX + hubCardW / 2 - badgeW / 2 - 2, y - 19);
+
+        // ── Badges below card ──
+        let badgeY = y + 10;
+        const guardColor: [number, number, number] = [231, 76, 60];
+        const eventColor: [number, number, number] = [241, 196, 15];
+        const payloadColor: [number, number, number] = [139, 148, 160];
+
+        if (guards.length > 0) {
+          const guardText = `\u26A0 ${guards.join(', ')}`;
+          const gW = sk.textWidth(guardText) + 10;
+          sk.noStroke();
+          sk.fill(guardColor[0], guardColor[1], guardColor[2], 30);
+          sk.rect(hubCenterX - gW / 2, badgeY - 7, gW, 12, 3);
+          sk.fill(guardColor[0], guardColor[1], guardColor[2], 200);
+          sk.textSize(8);
+          sk.textAlign(sk.CENTER, sk.CENTER);
+          sk.text(guardText, hubCenterX, badgeY - 1);
+          badgeY += 14;
+        }
+
+        if (events.length > 0) {
+          const evtText = `\u25B8 ${events.join(', ')}`;
+          const eW = sk.textWidth(evtText) + 10;
+          sk.noStroke();
+          sk.fill(eventColor[0], eventColor[1], eventColor[2], 30);
+          sk.rect(hubCenterX - eW / 2, badgeY - 7, eW, 12, 3);
+          sk.fill(eventColor[0], eventColor[1], eventColor[2], 200);
+          sk.textSize(8);
+          sk.textAlign(sk.CENTER, sk.CENTER);
+          sk.text(evtText, hubCenterX, badgeY - 1);
+          badgeY += 14;
+        }
+
+        for (const pl of payload.slice(0, 2)) {
+          const pW = sk.textWidth(pl) + 10;
+          sk.noStroke();
+          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 20);
+          sk.rect(hubCenterX - pW / 2, badgeY - 7, pW, 12, 3);
+          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 160);
+          sk.textSize(8);
+          sk.textAlign(sk.CENTER, sk.CENTER);
+          sk.text(pl, hubCenterX, badgeY - 1);
+          badgeY += 14;
+        }
+
+        // Target entity labels below badge area
+        let labelY = badgeY + 4;
+        const labelPerTarget = 14;
+        sk.textSize(8);
+        sk.textAlign(sk.CENTER, sk.CENTER);
+        for (const tx of targetXs.sort((a, b) => a - b)) {
+          const uid = targets.find((t) => uidToX.get(t) === tx);
+          const label = uid ? uid.split(':')[1] || uid : '';
+          sk.fill(msgColor[0], msgColor[1], msgColor[2], 140);
+          const lw = sk.textWidth(label) + 10;
+          sk.noStroke();
+          sk.fill(msgColor[0], msgColor[1], msgColor[2], 30);
+          sk.rect(tx - lw / 2, labelY - 6, lw, 12, 3);
+          sk.fill(msgColor[0], msgColor[1], msgColor[2], 200);
+          sk.text(label, tx, labelY);
+        }
+      } else {
+        // ── Single target: normal arrow ──
+        let fromX: number | undefined = uidToX.get(msg.fromUid);
+        const toX = uidToX.get(msg.toUid);
+        if (toX === undefined) continue;
+
+        const isExternal = msg.fromUid === '__external__';
+        if (fromX === undefined) fromX = externalX;
+
+        const isSelf = !isExternal && Math.abs(fromX - toX) < 5;
+
+        // Activation bar on target lifeline
+        sk.noStroke();
+        sk.fill(msgColor[0], msgColor[1], msgColor[2], 40);
+        sk.rect(toX - 7, y - 12, 14, 24, 3);
+
+        // Arrow line
+        sk.noFill();
+        sk.stroke(msgColor[0], msgColor[1], msgColor[2], 180);
+        sk.strokeWeight(1.5);
+
+        if (isSelf) {
+          sk.arc(fromX + 22, y, 44, 44, sk.HALF_PI, sk.TWO_PI - sk.HALF_PI);
+          sk.noStroke();
+          sk.fill(msgColor[0], msgColor[1], msgColor[2], 255);
+          sk.triangle(fromX + 19, y + 22, fromX + 28, y + 18, fromX + 28, y + 26);
+        } else {
+          const dir = toX > fromX ? 1 : -1;
+          sk.line(fromX, y, toX - dir * arrowSize, y);
+          sk.noStroke();
+          sk.fill(msgColor[0], msgColor[1], msgColor[2], 255);
+          sk.triangle(
+            toX,
+            y,
+            toX - dir * arrowSize * 1.3,
+            y - arrowSize * 0.6,
+            toX - dir * arrowSize * 1.3,
+            y + arrowSize * 0.6,
+          );
+        }
+
+        // External trigger icon
+        if (isExternal) {
+          sk.noStroke();
+          sk.fill(msgColor[0], msgColor[1], msgColor[2], 200);
+          sk.ellipse(externalX, y, 10, 10);
+          sk.fill(255);
+          sk.textSize(7);
+          sk.textAlign(sk.CENTER, sk.CENTER);
+          sk.text('→', externalX, y);
+        }
+
+        // Message card above arrow
+        const midX = isSelf ? fromX + 35 : (fromX + toX) / 2;
+        sk.noStroke();
+        sk.fill(16, 20, 30, 240);
+        sk.rect(
+          midX - (sk.textWidth(cardLabel) + 16) / 2,
+          y - 28,
+          sk.textWidth(cardLabel) + 16,
+          20,
+          4,
+        );
+
+        sk.fill(msgColor[0], msgColor[1], msgColor[2], 255);
+        sk.textSize(10);
+        sk.textAlign(sk.CENTER, sk.CENTER);
+        sk.text(cardLabel, midX, y - 18);
+
+        // Badges below arrow
+        let badgeY = y + 10;
+        const guardColor: [number, number, number] = [231, 76, 60];
+        const eventColor: [number, number, number] = [241, 196, 15];
+        const payloadColor: [number, number, number] = [139, 148, 160];
+
+        if (guards.length > 0) {
+          const guardText = `\u26A0 ${guards.join(', ')}`;
+          const gW = sk.textWidth(guardText) + 10;
+          sk.noStroke();
+          sk.fill(guardColor[0], guardColor[1], guardColor[2], 30);
+          sk.rect(midX - gW / 2, badgeY - 7, gW, 12, 3);
+          sk.fill(guardColor[0], guardColor[1], guardColor[2], 200);
+          sk.textSize(8);
+          sk.textAlign(sk.CENTER, sk.CENTER);
+          sk.text(guardText, midX, badgeY - 1);
+          badgeY += 14;
+        }
+
+        if (events.length > 0) {
+          const evtText = `\u25B8 ${events.join(', ')}`;
+          const eW = sk.textWidth(evtText) + 10;
+          sk.noStroke();
+          sk.fill(eventColor[0], eventColor[1], eventColor[2], 30);
+          sk.rect(midX - eW / 2, badgeY - 7, eW, 12, 3);
+          sk.fill(eventColor[0], eventColor[1], eventColor[2], 200);
+          sk.textSize(8);
+          sk.textAlign(sk.CENTER, sk.CENTER);
+          sk.text(evtText, midX, badgeY - 1);
+          badgeY += 14;
+        }
+
+        for (const pl of payload.slice(0, 2)) {
+          const pW = sk.textWidth(pl) + 10;
+          sk.noStroke();
+          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 20);
+          sk.rect(midX - pW / 2, badgeY - 7, pW, 12, 3);
+          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 160);
+          sk.textSize(8);
+          sk.textAlign(sk.CENTER, sk.CENTER);
+          sk.text(pl, midX, badgeY - 1);
+          badgeY += 14;
+        }
+      }
+    }
+
+    sk.textAlign(sk.LEFT, sk.BASELINE);
+  }
+
+  private getSeqCategoryIcon(cat: string): string {
+    const icons: Record<string, string> = {
+      entities: '\u25C6',
+      commands: '\u26A1',
+      queries: '\u25C8',
+      events: '\u25B8',
+      workflows: '\u27F3',
+      value_objects: '\u25C7',
+      guards: '\u26A0',
+      roles: '\u2640',
+      ui_components: '\u25A0',
+    };
+    return icons[cat] || '\u25CF';
   }
 
   // ── Helpers ─────────────────────────────────────────────
@@ -2410,5 +2964,267 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       ui_components: 'UI Component',
     };
     return labels[cat] || cat;
+  }
+
+  // ── Level 3: Wireframe Drawing ───────────────────────────
+
+  private drawWireframe(sk: p5): void {
+    const W = sk.width;
+    const H = sk.height;
+    const comp = this.selectedUIComponent?.data;
+    if (!comp) return;
+
+    const compType = comp.componentType || 'unknown';
+
+    // Title area
+    sk.noStroke();
+    sk.fill(100, 116, 139);
+    sk.textSize(11);
+    sk.textAlign(sk.LEFT, sk.TOP);
+    sk.text(`${comp.label}  ·  ${compType}`, 30, 20);
+
+    // Wireframe viewport frame (centered, Figma-like)
+    const vw = Math.min(W - 100, 800);
+    const vh = Math.min(H - 120, 500);
+    const vx = (W - vw) / 2;
+    const vy = 50;
+
+    // Frame shadow
+    sk.fill(0, 0, 0, 40);
+    sk.noStroke();
+    sk.rect(vx + 4, vy + 4, vw, vh, 8);
+
+    // Frame background
+    sk.fill(30, 35, 45);
+    sk.stroke(48, 58, 72);
+    sk.strokeWeight(1);
+    sk.rect(vx, vy, vw, vh, 8);
+
+    // Canvas inside frame
+    const cx = vx + 20;
+    const cy = vy + 20;
+    const cw = vw - 40;
+    const ch = vh - 40;
+
+    // Draw based on component type
+    this.drawWireframeForType(sk, compType, cx, cy, cw, ch, comp.fields || []);
+
+    // Hint
+    sk.noStroke();
+    sk.fill(60, 70, 85);
+    sk.textSize(10);
+    sk.textAlign(sk.CENTER, sk.BOTTOM);
+    sk.text('Wireframe preview — generated from component spec', W / 2, H - 15);
+    sk.textAlign(sk.LEFT, sk.TOP);
+  }
+
+  private drawWireframeForType(
+    sk: p5,
+    compType: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    fields: Array<{ name: string; type: string; is_pk?: boolean; is_fk?: boolean }>,
+  ): void {
+    const isTable = compType.includes('table');
+    const isForm = compType.includes('form') || compType.includes('input') || compType.includes('field');
+    const isCard = compType.includes('card');
+    const isDialog = compType.includes('dialog') || compType.includes('modal');
+
+    if (isTable) {
+      // ── Table wireframe ──
+      const colCount = Math.min(fields.length, 5) || 4;
+      const headerH = 28;
+      const rowH = 32;
+      const rowCount = Math.min(8, Math.floor((h - headerH) / rowH));
+      const colW = w / colCount;
+
+      // Header
+      sk.noStroke();
+      sk.fill(40, 48, 60);
+      sk.rect(x, y, w, headerH, 4, 4, 0, 0);
+      sk.fill(139, 148, 160);
+      sk.textSize(10);
+      for (let c = 0; c < colCount; c++) {
+        const label = fields[c]?.name || `col_${c + 1}`;
+        sk.textAlign(sk.LEFT, sk.CENTER);
+        sk.text(label, x + c * colW + 8, y + headerH / 2);
+      }
+
+      // Rows
+      for (let r = 0; r < rowCount; r++) {
+        const ry = y + headerH + r * rowH;
+        sk.noStroke();
+        sk.fill(r % 2 === 0 ? 25 : 20, 30, 38);
+        sk.rect(x, ry, w, rowH);
+        sk.fill(80, 90, 105);
+        sk.textSize(9);
+        for (let c = 0; c < colCount; c++) {
+          sk.textAlign(sk.LEFT, sk.CENTER);
+          sk.text(c === 0 ? 'ID' : '---', x + c * colW + 8, ry + rowH / 2);
+        }
+        sk.stroke(30, 36, 45);
+        sk.line(x, ry + rowH, x + w, ry + rowH);
+      }
+    } else if (isForm) {
+      // ── Form wireframe ──
+      const fieldH = 36;
+      const gap = 12;
+      const maxFields = Math.min(fields.length, Math.floor((h - 20) / (fieldH + gap)));
+      if (maxFields <= 0) {
+        sk.noStroke();
+        sk.fill(80, 90, 105);
+        sk.textSize(12);
+        sk.textAlign(sk.CENTER, sk.CENTER);
+        sk.text('No fields defined', x + w / 2, y + h / 2);
+        return;
+      }
+
+      for (let i = 0; i < maxFields; i++) {
+        const fy = y + i * (fieldH + gap);
+        const f = fields[i];
+        const label = f?.name || `field_${i + 1}`;
+        const ftype = f?.type || 'String';
+
+        // Label
+        sk.noStroke();
+        sk.fill(139, 148, 160);
+        sk.textSize(10);
+        sk.textAlign(sk.LEFT, sk.BOTTOM);
+        sk.text(label, x + 10, fy + 14);
+
+        // Input box
+        sk.fill(25, 30, 40);
+        sk.stroke(48, 58, 72);
+        sk.strokeWeight(1);
+        sk.rect(x + 10, fy + 16, w - 20, 22, 4);
+
+        // Placeholder hint
+        sk.noStroke();
+        sk.fill(50, 60, 75);
+        sk.textSize(9);
+        sk.textAlign(sk.LEFT, sk.CENTER);
+        sk.text(`${ftype}...`, x + 16, fy + 27);
+      }
+    } else if (isCard) {
+      // ── Card wireframe ──
+      const cardW = Math.min(w - 20, 300);
+      const cardH = Math.min(h - 20, 250);
+
+      sk.noStroke();
+      sk.fill(25, 30, 40);
+      sk.rect(x + 10, y + 10, cardW, cardH, 8);
+
+      // Card image placeholder
+      sk.fill(35, 42, 55);
+      sk.rect(x + 20, y + 20, cardW - 40, cardH * 0.4, 4);
+      sk.fill(50, 60, 75);
+      sk.textSize(10);
+      sk.textAlign(sk.CENTER, sk.CENTER);
+      sk.text('Image', x + 10 + (cardW - 40) / 2, y + 20 + cardH * 0.2);
+
+      // Card content
+      sk.fill(139, 148, 160);
+      sk.textSize(12);
+      sk.textAlign(sk.LEFT, sk.BOTTOM);
+      sk.text('Card Title', x + 20, y + 20 + cardH * 0.4 + 20);
+
+      sk.fill(80, 90, 105);
+      sk.textSize(10);
+      sk.text('Card description text goes here...', x + 20, y + 20 + cardH * 0.4 + 38);
+
+      // Fields as labels
+      for (let i = 0; i < Math.min(fields.length, 3); i++) {
+        const fy = y + 20 + cardH * 0.4 + 54 + i * 20;
+        sk.fill(60, 70, 85);
+        const label = fields[i]?.name || `field_${i + 1}`;
+        const val = fields[i]?.type || 'value';
+        sk.text(`${label}: ${val}`, x + 20, fy);
+      }
+    } else if (isDialog) {
+      // ── Dialog/Modal wireframe ──
+      const dw = Math.min(w - 40, 400);
+      const dh = Math.min(h - 40, 300);
+      const dx = x + (w - dw) / 2;
+      const dy = y + (h - dh) / 2;
+
+      // Backdrop
+      sk.noStroke();
+      sk.fill(0, 0, 0, 80);
+      sk.rect(x, y, w, h);
+
+      // Dialog box
+      sk.fill(25, 30, 40);
+      sk.stroke(48, 58, 72);
+      sk.strokeWeight(1);
+      sk.rect(dx, dy, dw, dh, 8);
+
+      // Title bar
+      sk.fill(40, 48, 60);
+      sk.noStroke();
+      sk.rect(dx, dy, dw, 32, 8, 8, 0, 0);
+      sk.fill(139, 148, 160);
+      sk.textSize(12);
+      sk.textAlign(sk.CENTER, sk.CENTER);
+      sk.text(compType.toUpperCase(), dx + dw / 2, dy + 16);
+
+      // Content
+      sk.fill(80, 90, 105);
+      sk.textSize(10);
+      sk.textAlign(sk.LEFT, sk.TOP);
+      sk.text('Dialog content area...', dx + 16, dy + 48);
+
+      // Fields
+      for (let i = 0; i < Math.min(fields.length, 4); i++) {
+        const fy = dy + 70 + i * 28;
+        sk.fill(60, 70, 85);
+        const label = fields[i]?.name || `field_${i + 1}`;
+        sk.text(label, dx + 16, fy);
+        sk.fill(25, 30, 40);
+        sk.stroke(48, 58, 72);
+        sk.rect(dx + 120, fy - 2, dw - 140, 20, 3);
+      }
+
+      // Buttons
+      sk.noStroke();
+      sk.fill(37, 99, 235);
+      sk.rect(dx + dw - 110, dy + dh - 40, 50, 26, 4);
+      sk.fill(255);
+      sk.textSize(9);
+      sk.textAlign(sk.CENTER, sk.CENTER);
+      sk.text('OK', dx + dw - 85, dy + dh - 27);
+
+      sk.fill(48, 58, 72);
+      sk.rect(dx + dw - 165, dy + dh - 40, 50, 26, 4);
+      sk.fill(200);
+      sk.text('Cancel', dx + dw - 140, dy + dh - 27);
+    } else {
+      // ── Default generic wireframe ──
+      sk.noStroke();
+      sk.fill(25, 30, 40);
+      sk.stroke(48, 58, 72);
+      sk.strokeWeight(1);
+      sk.rect(x + 10, y + 10, w - 20, h - 20, 8);
+
+      sk.noStroke();
+      sk.fill(100, 116, 139);
+      sk.textSize(14);
+      sk.textAlign(sk.CENTER, sk.CENTER);
+      sk.text(`${compType.toUpperCase()}`, x + w / 2, y + h / 2 - 20);
+      sk.fill(60, 70, 85);
+      sk.textSize(10);
+      sk.text(`Component type: ${compType}`, x + w / 2, y + h / 2 + 10);
+
+      // Fields list
+      for (let i = 0; i < Math.min(fields.length, 6); i++) {
+        const fy = y + h / 2 + 30 + i * 22;
+        sk.fill(50, 60, 75);
+        const label = fields[i]?.name || `field_${i + 1}`;
+        const ftype = fields[i]?.type || 'unknown';
+        sk.textAlign(sk.LEFT, sk.CENTER);
+        sk.text(`  ${label}  :  ${ftype}`, x + 30, fy);
+      }
+    }
   }
 }
