@@ -124,6 +124,8 @@ interface ERDEntity {
   h: number;
   fields: Array<{ name: string; type: string; is_pk?: boolean; is_fk?: boolean }>;
   foreignKeys: Array<{ field: string; target_entity: string; cardinality: string }>;
+  // Names of analysis entities matched to this contract entity (for drift awareness)
+  analysisNames: string[];
   hovered: boolean;
 }
 
@@ -498,6 +500,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       contract_id: string | null;
       status: string;
       contract_node?: any;
+      analysis_item?: any;
     }>
   > = {};
 
@@ -777,6 +780,23 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
           sk.translate(this.panX, this.panY);
           sk.scale(this.zoom);
 
+          // ── Pre-compute hover state BEFORE drawing ──
+          if (!this.selectedEntity && !this.selectedUIComponent) {
+            const hwx = (sk.mouseX - this.panX) / this.zoom;
+            const hwy = (sk.mouseY - this.panY) / this.zoom;
+            let hit = false;
+            for (const e of this.erdEntities) {
+              if (hwx >= e.x && hwx <= e.x + e.w && hwy >= e.y && hwy <= e.y + e.h) {
+                e.hovered = true;
+                hit = true;
+                break;
+              }
+            }
+            if (!hit) {
+              for (const e of this.erdEntities) e.hovered = false;
+            }
+          }
+
           // ── Level 1: ERD / Level 2: flow / Level 3: wireframe ──
           if (this.selectedUIComponent) {
             this.drawWireframe(sk);
@@ -793,7 +813,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
           let hovered: Node | null = null;
 
           if (!this.selectedEntity) {
-            // ERD overview: hover on entity boxes
+            // ERD overview: hover on entity boxes (for tooltip, edge filtering already done above)
             let hoveredEnt: ERDEntity | null = null;
             for (const e of this.erdEntities) {
               if (wx >= e.x && wx <= e.x + e.w && wy >= e.y && wy <= e.y + e.h) {
@@ -813,8 +833,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
                 h: hoveredEnt.h,
                 entityGroup: null,
               };
-              for (const ent of this.erdEntities) ent.hovered = false;
-              hoveredEnt.hovered = true;
+              // No longer need to set/reset hovered here — done above before draw
             } else {
               for (const ent of this.erdEntities) ent.hovered = false;
             }
@@ -1600,6 +1619,71 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         .replace(/([a-z])([A-Z])/g, '$1_$2')
         .toLowerCase();
 
+    // Build analysis→contract mapping from traceMatrix
+    const contractToAnalysisNames = new Map<string, string[]>();
+    // Collect orphan analysis entities (in brief but not matched to contract)
+    const orphanAnalysis: Array<{ name: string; fields: string[]; desc: string }> = [];
+    const orphanContract = new Set<string>();
+    for (const row of (this.traceMatrix['entities'] || [])) {
+      const cid = row.contract_id;
+      const aname = row.analysis_name;
+      if (cid && aname && row.status === 'matched') {
+        const key = labelNorm(cid);
+        const arr = contractToAnalysisNames.get(key);
+        if (arr) {
+          arr.push(aname);
+        } else {
+          contractToAnalysisNames.set(key, [aname]);
+        }
+      }
+      if (row.status === 'orphan_analysis' && aname) {
+        orphanAnalysis.push({
+          name: aname,
+          fields: (row.analysis_item?.fields || []).map((f: string) => labelNorm(f)),
+          desc: (row.analysis_item?.description || '').toLowerCase(),
+        });
+      }
+      if (row.status === 'orphan_contract' && cid) {
+        orphanContract.add(labelNorm(cid));
+      }
+    }
+
+    // Heuristic: map orphan_contract entities to orphan_analysis by field overlap + desc similarity
+    // Build a lookup: contract label → contract_node from traceMatrix
+    const contractNodeMap = new Map<string, any>();
+    for (const row of (this.traceMatrix['entities'] || [])) {
+      if (row.contract_id && row.contract_node) {
+        contractNodeMap.set(labelNorm(row.contract_id), row.contract_node);
+      }
+    }
+
+    for (const node of entityNodes) {
+      const nk = labelNorm(node.label);
+      if (contractToAnalysisNames.has(nk)) continue; // already matched
+      if (!orphanContract.has(nk)) continue;          // not orphan
+
+      // Score each orphan analysis by field overlap
+      const nodeFieldNorms = (node.fields || []).map((f: any) => labelNorm(f.name));
+      const cn = contractNodeMap.get(nk);
+      const nodeDesc = cn?.description ? cn.description.toLowerCase() : '';
+      let bestName = '';
+      let bestScore = 0;
+      for (const oa of orphanAnalysis) {
+        // Field overlap score
+        const overlap = nodeFieldNorms.filter((nf) => oa.fields.includes(nf)).length;
+        // Description similarity
+        const descOverlap = nodeDesc.split(' ').filter((w: string) => oa.desc.includes(w)).length;
+        const score = overlap * 2 + descOverlap;
+        if (score > bestScore) {
+          bestScore = score;
+          bestName = oa.name;
+        }
+      }
+      if (bestScore >= 3 && bestName) {
+        contractToAnalysisNames.set(nk, [bestName]);
+      }
+    }
+
     this.erdEntities = entityNodes.map((n) => {
       const fields = (n.fields || []).map((f) => ({
         name: f.name,
@@ -1623,6 +1707,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         h: 0,
         fields,
         foreignKeys,
+        analysisNames: contractToAnalysisNames.get(labelNorm(n.label)) || [],
         hovered: false,
       };
       uidToEntity.set(n.uid, ent);
@@ -1672,110 +1757,135 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       }
     }
 
+    // Auto-detect FK edges from field names ending with _id (catches missing foreign_keys in YAML)
+    for (const ent of this.erdEntities) {
+      for (const f of ent.fields) {
+        if (!f.name.endsWith('_id')) continue;
+        // Infer target entity name: remove trailing _id, then try heuristics
+        const stem = f.name.replace(/_id$/, '');
+        // Common patterns: from_warehouse → warehouse, created_by → user, to_warehouse → warehouse
+        const candidates = [
+          stem, // direct: category_id → category
+          stem.replace(/^(from_|to_)/, ''), // strip prefix: from_warehouse → warehouse
+          stem.replace(/^(created|updated|modified)_by$/, 'user'), // created_by → user
+          stem.replace(/^(owner|author|editor)/, 'user'), // owner → user
+          // parent_id → self-referencing (e.g. category.parent_id → category)
+          ...(stem === 'parent' ? [ent.label] : []),
+        ];
+        let target: ERDEntity | null = null;
+        for (const c of candidates) {
+          if (!c) continue;
+          target =
+            labelToEntity.get(labelNorm(c)) ||
+            labelToEntity.get(c) ||
+            null;
+          // Allow self-referencing only for parent_id
+          if (target && (ent.label === target.label && stem === 'parent')) break;
+          if (target && ent.label !== target.label) break;
+          target = null;
+        }
+        if (target) {
+          const key = `${ent.label}→${target.label}`;
+          if (!edgeSet.has(key)) {
+            edgeSet.add(key);
+            allEdges.push({
+              from: ent,
+              to: target,
+              type: 'foreign_key',
+              cardinality: 'N:1',
+            });
+          }
+        }
+      }
+    }
+
     this.erdEdges = allEdges;
   }
 
-  // ── Auto Arrange — hierarchical layout minimizing line-entity crossings ──
+  // ── Auto Arrange — center-most-connected-entity layout ────
 
   autoArrange(event: Event): void {
     event?.stopPropagation();
     if (this.erdEntities.length === 0) return;
 
-    // Build adjacency + in-degree from FK edges
-    const labelIdx = new Map<string, number>();
-    this.erdEntities.forEach((e, i) => labelIdx.set(e.label, i));
-
-    const adj: number[][] = Array.from({ length: this.erdEntities.length }, () => []);
-    const inDegree = new Array(this.erdEntities.length).fill(0);
-
-    for (const edge of this.erdEdges) {
-      if (!edge.from || !edge.to) continue;
-      const fi = labelIdx.get(edge.from.label);
-      const ti = labelIdx.get(edge.to.label);
-      if (fi === undefined || ti === undefined || fi === ti) continue;
-      adj[fi].push(ti);
-      inDegree[ti]++;
-    }
-
-    // Longest-path layering: entities with no incoming FK are layer 0 (leftmost)
-    const layer = new Array(this.erdEntities.length).fill(0);
-    const queue: number[] = [];
-    const dist = new Array(this.erdEntities.length).fill(0);
-
-    for (let i = 0; i < inDegree.length; i++) {
-      if (inDegree[i] === 0) {
-        queue.push(i);
-        dist[i] = 0;
-      }
-    }
-
-    const tempIn = [...inDegree];
-    while (queue.length > 0) {
-      const u = queue.shift()!;
-      layer[u] = dist[u];
-      for (const v of adj[u]) {
-        dist[v] = Math.max(dist[v], dist[u] + 1);
-        tempIn[v]--;
-        if (tempIn[v] === 0) queue.push(v);
-      }
-    }
-
-    // Handle cycles — assign to layer 0
-    for (let i = 0; i < inDegree.length; i++) {
-      if (tempIn[i] > 0) layer[i] = 0;
-    }
-
-    // Group by layer
-    const layers = new Map<number, number[]>();
-    for (let i = 0; i < this.erdEntities.length; i++) {
-      if (!layers.has(layer[i])) layers.set(layer[i], []);
-      layers.get(layer[i])!.push(i);
-    }
-
-    // Barycenter crossing minimization
-    const sortedLayers = Array.from(layers.keys()).sort((a, b) => a - b);
-
-    for (const l of sortedLayers) {
-      const group = layers.get(l)!;
-      if (l === sortedLayers[0]) continue;
-      const prevLayer = layers.get(sortedLayers[sortedLayers.indexOf(l) - 1])!;
-      const prevOrder = new Map<number, number>();
-      prevLayer.forEach((idx, pos) => prevOrder.set(idx, pos));
-
-      group.sort((a, b) => {
-        const aNeighbors = adj[a].filter((n) => prevOrder.has(n));
-        const bNeighbors = adj[b].filter((n) => prevOrder.has(n));
-        const aBar =
-          aNeighbors.length > 0
-            ? aNeighbors.reduce((s, n) => s + prevOrder.get(n)!, 0) / aNeighbors.length
-            : 999;
-        const bBar =
-          bNeighbors.length > 0
-            ? bNeighbors.reduce((s, n) => s + prevOrder.get(n)!, 0) / bNeighbors.length
-            : 999;
-        return aBar - bBar;
-      });
-    }
-
-    // Assign coordinates: layers as columns (left to right)
     const boxW = 200;
-    const gapX = 80;
-    const gapY = 28;
-    const marginX = 40;
-    const marginY = 20;
-
-    for (let ci = 0; ci < sortedLayers.length; ci++) {
-      const group = layers.get(sortedLayers[ci])!;
-      const colX = marginX + ci * (boxW + gapX);
-      for (let ri = 0; ri < group.length; ri++) {
-        const idx = group[ri];
-        const e = this.erdEntities[idx];
-        e.x = colX;
-        e.y = marginY + ri * (e.h + gapY);
-      }
+    // Recalculate heights
+    for (const e of this.erdEntities) {
+      e.w = boxW;
+      const analysisH = e.analysisNames.length > 0 ? 18 : 0;
+      e.h = 36 + analysisH + 8 + e.fields.length * 18 + 14;
     }
 
-    // Force canvas redraw without calling rebuild() (which would reset grid layout)
+    // Count edges per entity (undirected)
+    const edgeCount = new Map<ERDEntity, number>();
+    for (const e of this.erdEntities) edgeCount.set(e, 0);
+    for (const edge of this.erdEdges) {
+      if (edge.from) edgeCount.set(edge.from, (edgeCount.get(edge.from) || 0) + 1);
+      if (edge.to) edgeCount.set(edge.to, (edgeCount.get(edge.to) || 0) + 1);
+    }
+
+    // Sort entities by edge count descending
+    const sorted = [...this.erdEntities].sort((a, b) => edgeCount.get(b)! - edgeCount.get(a)!);
+    const centerEntity = sorted[0];
+    const around = sorted.slice(1);
+
+    // Layout dimensions
+    const W = this.p5Inst?.width || 960;
+    const H = this.p5Inst?.height || 420;
+    const gapX = 140; // larger horizontal gap for edge visibility
+    const gapY = 50;  // larger vertical gap
+
+    // Center the most connected entity
+    centerEntity.x = W / 2 - boxW / 2;
+    centerEntity.y = H / 2 - centerEntity.h / 2;
+
+    // Place remaining entities in columns left and right of center
+    const leftX = Math.max(20, centerEntity.x - boxW - gapX);
+    const rightX = Math.min(W - boxW - 20, centerEntity.x + boxW + gapX);
+
+    const leftCol: ERDEntity[] = [];
+    const rightCol: ERDEntity[] = [];
+
+    // Alternate left/right, prefer placing connected entities closer to center
+    for (let i = 0; i < around.length; i++) {
+      if (i % 2 === 0) leftCol.push(around[i]);
+      else rightCol.push(around[i]);
+    }
+
+    // Position left column (top to bottom)
+    let leftY = 20;
+    for (const e of leftCol) {
+      e.x = leftX;
+      e.y = leftY;
+      leftY += e.h + gapY;
+    }
+
+    // Position right column (top to bottom)
+    let rightY = 20;
+    for (const e of rightCol) {
+      e.x = rightX;
+      e.y = rightY;
+      rightY += e.h + gapY;
+    }
+
+    // Center vertically if space allows
+    const leftTotalH = leftCol.reduce((s, e) => s + e.h, 0) + (leftCol.length - 1 > 0 ? (leftCol.length - 1) * gapY : 0);
+    const leftStartY = Math.max(20, (H - leftTotalH) / 2);
+    let curY = leftStartY;
+    for (const e of leftCol) {
+      e.y = curY;
+      curY += e.h + gapY;
+    }
+
+    const rightTotalH = rightCol.reduce((s, e) => s + e.h, 0) + (rightCol.length - 1 > 0 ? (rightCol.length - 1) * gapY : 0);
+    const rightStartY = Math.max(20, (H - rightTotalH) / 2);
+    curY = rightStartY;
+    for (const e of rightCol) {
+      e.y = curY;
+      curY += e.h + gapY;
+    }
+
+    // Force canvas redraw
     this.ngZone.run(() => {
       this.cdr.detectChanges();
       if (this.p5Inst) this.p5Inst.redraw();
@@ -1793,7 +1903,9 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
 
     for (const e of this.erdEntities) {
       e.w = boxW;
-      e.h = 36 + e.fields.length * 18;
+      // Height: header (36) + analysis name (18 if present) + fields padding (8) + fields * 18 + bottom padding (14)
+      const analysisH = e.analysisNames.length > 0 ? 18 : 0;
+      e.h = 36 + analysisH + 8 + e.fields.length * 18 + 14;
     }
 
     // Find max height per column to layout rows
@@ -1828,14 +1940,32 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
   // ── ERD Drawing ─────────────────────────────────────────
 
   private drawERD(sk: p5): void {
-    // Draw FK edges first (behind entity boxes)
-    this.drawERDEdges(sk);
+    // Find currently hovered entity
+    const hovered = this.erdEntities.find((e) => e.hovered) || null;
 
-    // Draw entity boxes on top (cover edges)
-    for (const e of this.erdEntities) this.drawERDBox(sk, e);
+    // Collect entities connected to hovered entity (for pink glow highlight)
+    const connectedSet = new Set<ERDEntity>();
+    if (hovered) {
+      for (const edge of this.erdEdges) {
+        if (edge.from === hovered && edge.to) connectedSet.add(edge.to);
+        if (edge.to === hovered && edge.from) connectedSet.add(edge.from);
+      }
+    }
+
+    // Draw entity boxes first
+    for (const e of this.erdEntities) {
+      const isConn = connectedSet.has(e);
+      const isHovered = e === hovered;
+      // Skip drawing nodes that are not hovered and not connected when hovering
+      if (hovered && !isHovered && !isConn) continue;
+      this.drawERDBox(sk, e, isConn, isHovered);
+    }
+
+    // Draw FK edges on top (so edges are never behind nodes) — only show edges connected to hovered entity
+    this.drawERDEdges(sk, hovered);
   }
 
-  private drawERDBox(sk: p5, e: ERDEntity): void {
+  private drawERDBox(sk: p5, e: ERDEntity, isConnected: boolean, isHovered: boolean): void {
     const headerH = 36;
     const borderColor =
       e.status === 'orphan_analysis'
@@ -1870,7 +2000,12 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     sk.stroke(50, 56, 68);
     sk.strokeWeight(1);
     sk.noFill();
-    sk.line(e.x + 10, e.y + headerH - 4, e.x + e.w - 4, e.y + headerH - 4);
+    // If there are analysis names, shift the divider line down
+    const analysisNameCount = e.analysisNames.length;
+    const hasAnalysis = analysisNameCount > 0;
+    const analysisHeight = hasAnalysis ? 18 : 0;
+    const adjustedHeaderH = headerH + analysisHeight;
+    sk.line(e.x + 10, e.y + adjustedHeaderH - 4, e.x + e.w - 4, e.y + adjustedHeaderH - 4);
 
     sk.noStroke();
     sk.fill(220, 228, 234);
@@ -1879,12 +2014,20 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     sk.text(e.label, e.x + 12, e.y + 15);
     sk.textStyle(sk.NORMAL);
 
+    // Analysis entity name(s) below contract name (subtle hint)
+    if (hasAnalysis) {
+      sk.fill(90, 100, 115);
+      sk.textSize(9);
+      const analysisLabel = e.analysisNames.join(', ');
+      sk.text(`analysis: ${analysisLabel}`, e.x + 12, e.y + 28);
+    }
+
     // Field list
     sk.fill(139, 148, 160);
     sk.textSize(11);
     for (let i = 0; i < e.fields.length; i++) {
       const f = e.fields[i];
-      const fy = e.y + headerH + 8 + i * 18;
+      const fy = e.y + adjustedHeaderH + 8 + i * 18;
       const icon = f.is_pk ? '\u{1F511}' : f.is_fk ? '\u{1F4CE}' : '  ';
       const iconColor = f.is_pk ? [234, 179, 8] : f.is_fk ? [9, 132, 227] : [139, 148, 160];
       sk.fill(iconColor[0], iconColor[1], iconColor[2]);
@@ -1899,9 +2042,14 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     }
   }
 
-  private drawERDEdges(sk: p5): void {
+  private drawERDEdges(sk: p5, hoveredEntity: ERDEntity | null): void {
     for (const edge of this.erdEdges) {
       if (!edge.from || !edge.to) continue;
+
+      // Only draw edges connected to the hovered entity (or none if nothing hovered)
+      if (hoveredEntity && edge.from !== hoveredEntity && edge.to !== hoveredEntity) continue;
+      if (!hoveredEntity) continue; // Default: no edges shown
+
       const a = edge.from;
       const b = edge.to;
 
@@ -1909,71 +2057,70 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       const bRight = b.x + b.w;
       const aMidY = a.y + a.h / 2;
       const bMidY = b.y + b.h / 2;
+      const aCenterX = a.x + a.w / 2;
+      const bCenterX = b.x + b.w / 2;
+      const aBottom = a.y + a.h;
+      const bBottom = b.y + b.h;
 
-      // Route points: array of {x, y}
-      let pts: { x: number; y: number }[];
+      // Bezier control points: [start, cp1, cp2, end]
+      let bezier: { x: number; y: number }[];
 
-      // Case 1: a is fully left of b — route rightward
+      // Case 1: a is fully left of B — horizontal curve
       if (aRight <= b.x) {
-        const midX = (aRight + b.x) / 2;
-        pts = [
-          { x: aRight, y: aMidY }, // source right edge
-          { x: midX, y: aMidY }, // turn point 1
-          { x: midX, y: bMidY }, // turn point 2
-          { x: b.x, y: bMidY }, // target left edge
+        const dx = (b.x - aRight);
+        bezier = [
+          { x: aRight, y: aMidY },
+          { x: aRight + dx * 0.4, y: aMidY },
+          { x: b.x - dx * 0.4, y: bMidY },
+          { x: b.x, y: bMidY },
         ];
       }
-      // Case 2: b is fully left of a — route leftward
+      // Case 2: b is fully left of a — horizontal curve (reverse)
       else if (bRight <= a.x) {
-        const midX = (bRight + a.x) / 2;
-        pts = [
+        const dx = (a.x - bRight);
+        bezier = [
           { x: bRight, y: bMidY },
-          { x: midX, y: bMidY },
-          { x: midX, y: aMidY },
+          { x: bRight + dx * 0.4, y: bMidY },
+          { x: a.x - dx * 0.4, y: aMidY },
           { x: a.x, y: aMidY },
         ];
       }
       // Case 3: horizontally overlapping
       else {
-        const aBottom = a.y + a.h;
-        const bBottom = b.y + b.h;
-        const aCenterX = a.x + a.w / 2;
-        const bCenterX = b.x + b.w / 2;
-
-        // a is above b — route downward
+        // a is above b — vertical curve
         if (aBottom <= b.y) {
-          const midY = (aBottom + b.y) / 2;
-          pts = [
+          const dy = (b.y - aBottom);
+          bezier = [
             { x: aCenterX, y: aBottom },
-            { x: aCenterX, y: midY },
-            { x: bCenterX, y: midY },
+            { x: aCenterX, y: aBottom + dy * 0.4 },
+            { x: bCenterX, y: b.y - dy * 0.4 },
             { x: bCenterX, y: b.y },
           ];
         }
-        // b is above a — route downward from b
+        // b is above a — vertical curve (reverse)
         else if (bBottom <= a.y) {
-          const midY = (bBottom + a.y) / 2;
-          pts = [
+          const dy = (a.y - bBottom);
+          bezier = [
             { x: bCenterX, y: bBottom },
-            { x: bCenterX, y: midY },
-            { x: aCenterX, y: midY },
+            { x: bCenterX, y: bBottom + dy * 0.4 },
+            { x: aCenterX, y: a.y - dy * 0.4 },
             { x: aCenterX, y: a.y },
           ];
         }
-        // Fully overlapping — detour to the right
+        // Fully overlapping — detour curve to the right
         else {
-          const detourX = Math.max(aRight, bRight) + 30;
-          pts = [
+          const detourX = Math.max(aRight, bRight) + 40;
+          bezier = [
             { x: aRight, y: aMidY },
             { x: detourX, y: aMidY },
             { x: detourX, y: bMidY },
-            { x: aRight, y: bMidY }, // connect to right side of b or a
+            { x: Math.max(aRight, bRight), y: (aMidY + bMidY) / 2 },
           ];
-          if (bRight > aRight) {
-            pts[3] = { x: bRight, y: bMidY };
-            pts[0] = { x: aRight, y: aMidY };
+          // Adjust endpoint based on which node is further right
+          if (bRight >= aRight) {
+            bezier[3] = { x: bRight, y: bMidY };
           } else {
-            pts = [
+            bezier = [
               { x: bRight, y: bMidY },
               { x: detourX, y: bMidY },
               { x: detourX, y: aMidY },
@@ -1983,42 +2130,43 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         }
       }
 
-      // Determine color: yellow if connected to hovered entity, otherwise normal
-      const isHighlighted = a.hovered || b.hovered;
-      const lineColor = isHighlighted ? [254, 210, 40] : [200, 210, 220];
-      const labelBg = isHighlighted ? [50, 45, 10] : [10, 14, 20];
-      const labelColor = isHighlighted ? [254, 210, 40] : [200, 210, 220];
-      const weight = isHighlighted ? 2 : 1;
+      // Edge color: pink
+      const lineColor = [236, 72, 153];
+      const labelBg = [40, 10, 30];
+      const labelColor = [247, 134, 197];
+      const weight = 2.5;
 
-      // Draw orthogonal path
+      // Draw Bezier curve
       sk.noFill();
       sk.stroke(lineColor[0], lineColor[1], lineColor[2]);
       sk.strokeWeight(weight);
-      for (let i = 0; i < pts.length - 1; i++) {
-        sk.line(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y);
-      }
+      sk.bezier(
+        bezier[0].x, bezier[0].y,
+        bezier[1].x, bezier[1].y,
+        bezier[2].x, bezier[2].y,
+        bezier[3].x, bezier[3].y,
+      );
 
-      // Arrowhead at last point (target)
-      const tip = pts[pts.length - 1];
-      const prev = pts[pts.length - 2];
-      const arrowSize = isHighlighted ? 8 : 7;
-      const angle = Math.atan2(tip.y - prev.y, tip.x - prev.x);
+      // Arrowhead at bezier end — tangent direction at t=1
+      const tip = bezier[3];
+      const angle = Math.atan2(bezier[3].y - bezier[2].y, bezier[3].x - bezier[2].x);
+      const arrowSize = 8;
       sk.fill(lineColor[0], lineColor[1], lineColor[2]);
       sk.noStroke();
       sk.triangle(
-        tip.x,
-        tip.y,
+        tip.x, tip.y,
         tip.x - arrowSize * Math.cos(angle - Math.PI / 6),
         tip.y - arrowSize * Math.sin(angle - Math.PI / 6),
         tip.x - arrowSize * Math.cos(angle + Math.PI / 6),
         tip.y - arrowSize * Math.sin(angle + Math.PI / 6),
       );
 
-      // Cardinality label at center of vertical segment
-      const midTop = pts[1];
-      const midBot = pts[2];
-      const lx = (midTop.x + midBot.x) / 2;
-      const ly = (midTop.y + midBot.y) / 2;
+      // Cardinality label at bezier midpoint (t=0.5)
+      // Bezier midpoint approximation: average of control points
+      const t = 0.5;
+      const mt = 1 - t;
+      const lx = mt * mt * mt * bezier[0].x + 3 * mt * mt * t * bezier[1].x + 3 * mt * t * t * bezier[2].x + t * t * t * bezier[3].x;
+      const ly = mt * mt * mt * bezier[0].y + 3 * mt * mt * t * bezier[1].y + 3 * mt * t * t * bezier[2].y + t * t * t * bezier[3].y;
       sk.noStroke();
       sk.fill(labelBg[0], labelBg[1], labelBg[2]);
       sk.rect(lx - 16, ly - 8, 32, 16, 4);
@@ -2050,63 +2198,6 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       c.w = cardW;
       c.h = cardH;
       i++;
-    }
-  }
-
-  // ── Draw methods ────────────────────────────────────────
-
-  private drawEntityCards(sk: p5): void {
-    for (const c of this.clusters) {
-      const hw = c.w / 2;
-
-      sk.noStroke();
-      sk.fill(18, 24, 34, 220);
-      sk.rect(c.x, c.y, c.w, c.h, 8);
-
-      sk.noFill();
-      sk.stroke(c.hasDrift ? 231 : 46, c.hasDrift ? 76 : 204, c.hasDrift ? 60 : 113, 80);
-      sk.strokeWeight(1.5);
-      sk.rect(c.x, c.y, c.w, c.h, 8);
-
-      sk.noStroke();
-      sk.fill(200, 210, 220);
-      sk.textSize(12);
-      sk.textAlign(sk.CENTER, sk.CENTER);
-      sk.text(c.name, c.x + hw, c.y + 20);
-
-      sk.stroke(40, 50, 70, 100);
-      sk.strokeWeight(1);
-      sk.line(c.x + 12, c.y + 30, c.x + c.w - 12, c.y + 30);
-
-      sk.noStroke();
-      const counts = [
-        { label: 'commands', color: CAT_COLOR['commands'], count: c['commands'].length },
-        { label: 'queries', color: CAT_COLOR['queries'], count: c['queries'].length },
-        { label: 'events', color: CAT_COLOR['events'], count: c['events'].length },
-        { label: 'other', color: [150, 150, 150], count: c.other.length },
-      ];
-
-      let iy = c.y + 44;
-      sk.textSize(9);
-      sk.textAlign(sk.LEFT, sk.CENTER);
-      for (const item of counts) {
-        if (item.count === 0) continue;
-        sk.fill(item.color[0], item.color[1], item.color[2], 200);
-        sk.ellipse(c.x + 20, iy, 6, 6);
-        sk.fill(180, 190, 200);
-        sk.text(`${item.count} ${item.label}`, c.x + 28, iy);
-        iy += 16;
-      }
-
-      const hCol =
-        c.healthScore >= 90 ? [46, 204, 113] : c.healthScore >= 70 ? [241, 196, 15] : [231, 76, 60];
-      sk.fill(hCol[0], hCol[1], hCol[2], 160);
-      sk.noStroke();
-      sk.ellipse(c.x + c.w - 18, c.y + 18, 14, 14);
-      sk.fill(255);
-      sk.textSize(7);
-      sk.textAlign(sk.CENTER, sk.CENTER);
-      sk.text(`${c.healthScore}`, c.x + c.w - 18, c.y + 19);
     }
   }
 
