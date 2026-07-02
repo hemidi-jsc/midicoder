@@ -924,8 +924,11 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
             dragEntity.y = wy - dragOffsetY;
           }
           if (isPanning) {
-            this.targetPanX = sk.mouseX - panStartX;
-            this.targetPanY = sk.mouseY - panStartY;
+            // Only pan when cursor is inside canvas bounds
+            if (sk.mouseX >= 0 && sk.mouseY >= 0 && sk.mouseX <= sk.width && sk.mouseY <= sk.height) {
+              this.targetPanX = sk.mouseX - panStartX;
+              this.targetPanY = sk.mouseY - panStartY;
+            }
           }
         };
 
@@ -2367,13 +2370,18 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         if (r) targetUids.push(r);
       }
       for (const ref of cn.fetches || []) {
-        if (typeof ref === 'object') {
-          const r = resolveEntityUid((ref as any).entity || (ref as any).entity_id || '');
+        // fetches can be either strings ["stock", "product"] or objects {entity: "stock", ...}
+        const entityName = typeof ref === 'object' ? ((ref as any).entity || (ref as any).entity_id || '') : String(ref);
+        if (entityName) {
+          const r = resolveEntityUid(entityName);
           if (r) targetUids.push(r);
         }
       }
 
-      if (targetUids.length === 0 || !targetUids.includes(mainEntityUid)) continue;
+      // Include if any target entity is in our participant ecosystem (not just main entity)
+      if (targetUids.length === 0) continue;
+      const hasParticipant = targetUids.some((u) => participantEntityUids.has(u));
+      if (!hasParticipant) continue;
       for (const u of targetUids) participantEntityUids.add(u);
 
       const payloadLines: string[] = [];
@@ -2385,10 +2393,11 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
             .join(', ')}`,
         );
 
-      // Query: external caller reads from entity
+      // Query: external caller reads from entity — point to first resolved target
+      const queryTargetUid = targetUids.length > 0 ? targetUids[0] : mainEntityUid;
       messages.push({
         fromUid: '__external__',
-        toUid: mainEntityUid,
+        toUid: queryTargetUid,
         type: 'reads_from',
         label: row.contract_id || '',
         actionName: row.contract_id || '',
@@ -2396,6 +2405,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         guards: [],
         events: [],
         payload: payloadLines,
+        targetUids: targetUids.length > 1 ? targetUids : undefined,
         status: row.status || 'matched',
         y: 0,
       });
@@ -2415,7 +2425,11 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       const cn = row.contract_node;
       if (!cn) continue;
       const entityId = cn.entity_id || '';
-      if (entityId.toLowerCase() !== entityNameLower) continue;
+      if (!entityId) continue;
+
+      // Include if entity_id matches the main entity OR any participant entity in our ecosystem
+      const resolvedUid = resolveEntityUid(entityId);
+      if (!resolvedUid || !participantEntityUids.has(resolvedUid)) continue;
 
       // Use contract_id or analysis_name as canonical name — never undefined
       const uiName = row.contract_id || row.analysis_name || '';
@@ -2423,7 +2437,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
 
       messages.push({
         fromUid: uiUid,
-        toUid: mainEntityUid,
+        toUid: resolvedUid,
         type: 'entity_ref',
         label: uiName,
         actionName: uiName,
@@ -2496,12 +2510,20 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     const seqHeaderH = 48;
     const sidePad = 40;
     const participantCount = participantNodes.length;
+    // Dynamic spacing: fit all participants within canvas, min 80px, max 200px
     const lifelineSpacing = Math.max(
-      110,
-      Math.min(180, (W - sidePad * 2) / Math.max(participantCount - 1, 1)),
+      80,
+      Math.min(200, (W - sidePad * 2) / Math.max(participantCount - 1, 1)),
     );
-    const lifelineStartX =
-      sidePad + (W - sidePad * 2 - (participantCount - 1) * lifelineSpacing) / 2;
+    // Center participants within canvas; if they exceed canvas, start from left edge with panning
+    const totalContentW = (participantCount - 1) * lifelineSpacing + 140;
+    const lifelineStartX = Math.max(sidePad, (W - totalContentW) / 2);
+
+    // If content exceeds canvas, set up initial pan to center
+    if (totalContentW > W) {
+      this.targetPanX = (W - totalContentW) / 2;
+      this.panX = this.targetPanX;
+    }
 
     // Normalize helper
     const labelNorm = (s: string) =>
@@ -2511,6 +2533,45 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         .toLowerCase();
 
     const uidToLifelineX = new Map<string, number>();
+
+    // Compute dynamic box width per participant based on label + fields
+    const computeBoxWidth = (label: string, fields?: Array<{ name: string; type: string }>): number => {
+      const minW = 90;
+      const labelW = label.length * 7 + 24;
+      let fieldsW = 0;
+      if (fields) {
+        for (const f of fields) {
+          const fw = f.name.length * 6 + f.type.length * 6 + 50;
+          if (fw > fieldsW) fieldsW = fw;
+        }
+      }
+      return Math.max(minW, Math.max(labelW, fieldsW));
+    };
+
+    // Pre-compute widths for spacing
+    const participantWidths = participantNodes.map((n) => {
+      const erd = this.erdEntities.find((e) => labelNorm(e.label) === labelNorm(n.label));
+      const uiData = n.category === 'ui_components' ? uiComponentData.get(n.uid) : null;
+      const fields = erd?.fields || uiData?.fields || [];
+      return computeBoxWidth(n.label, fields);
+    });
+
+    // Calculate total width needed and dynamic gaps
+    const minGap = 8;
+    const totalNeededW = participantWidths.reduce((s, w) => s + w, 0) + (participantCount - 1) * minGap;
+    const canvasAvailW = W - sidePad * 2;
+    const gapExtra = canvasAvailW > totalNeededW ? Math.max(0, canvasAvailW - totalNeededW) / Math.max(participantCount - 1, 1) : 0;
+    const actualGap = minGap + gapExtra;
+
+    // Compute positions
+    const contentStartX = canvasAvailW > totalNeededW ? (W - totalNeededW - (participantCount - 1) * actualGap) / 2 : sidePad;
+    let curX = contentStartX;
+
+    // If content exceeds canvas, pan to center it
+    if (totalNeededW > W) {
+      this.targetPanX = (W - totalNeededW) / 2;
+      this.panX = this.targetPanX;
+    }
 
     // Compute dynamic header height based on fields
     const fieldLineH = 16;
@@ -2526,7 +2587,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     );
 
     this.seqLifelines = participantNodes.map((n, i) => {
-      const x = lifelineStartX + i * lifelineSpacing;
+      const x = curX + participantWidths[i] / 2;
       uidToLifelineX.set(n.uid, x);
 
       // Lookup fields from ERD
@@ -2549,13 +2610,15 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
             labelNorm(r.contract_id || '') === labelNorm(n.label),
         )?.status || 'matched';
 
+      curX += participantWidths[i] + actualGap;
+
       return {
         uid: n.uid,
         label: n.label,
         category: n.category,
         x,
         status: entStatus,
-        w: 140,
+        w: participantWidths[i],
         fields,
         componentType: n.category === 'ui_components' ? uiComponentData.get(n.uid)?.componentType : undefined,
         properties: n.category === 'ui_components' ? uiComponentData.get(n.uid)?.properties : undefined,
