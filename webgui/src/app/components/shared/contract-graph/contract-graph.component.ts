@@ -21,6 +21,7 @@ import { CommonModule } from '@angular/common';
 import p5 from 'p5';
 
 const CAT_COLOR: Record<string, [number, number, number]> = {
+  client: [200, 200, 200],    // light grey — the external caller
   entities: [52, 152, 219],
   commands: [46, 204, 113],
   queries: [26, 188, 156],
@@ -546,6 +547,27 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
   private flowNodes: Node[] = [];
   private flowEdges: Edge[] = [];
   private flowColumnHeights: { top: number; bottom: number } | null = null;
+
+  // Client participant UID — represents the external caller (REST API/WebSocket)
+  private readonly CLIENT_UID = '__client__';
+
+  // Sequence diagram spacing constants (shared by layout + drawing)
+  // msg.y is the arrow center line; all Y offsets below are relative to msg.y.
+  private readonly S = {
+    cardH: 24,              // message card height
+    cardAboveArrow: 6,      // gap: card bottom → arrow line
+    actBarHalfH: 16,        // activation bar half-height (total 32)
+    badgeGapBelowArrow: 12, // gap: actbar bottom → first badge top
+    badgeH: 16,             // badge rect height
+    badgeStep: 14,          // vertical step per badge line
+    hubLabelGap: 6,         // gap: last badge bottom → target label center (hub only)
+    hubLabelH: 12,          // target label rect height (hub only)
+    hubCardH: 24,           // hub card height (synced with cardH)
+    selfArrowExtra: 15,     // self-loop arrowhead extends this far below y+actBarHalfH
+    intraGap: 120,           // gap between consecutive arrows (same group)
+    groupGap: 160,          // gap when switching actionType groups
+    headerBreath: 20,       // breathing room below headers → first message card top
+  };
 
   // Sequence diagram state (Level 2)
   private seqLifelines: SeqLifeline[] = [];
@@ -1454,20 +1476,9 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         c.events.length +
         c.other.length;
 
-      // Domain merge rules: only explicit sub-entity → parent relationships
-      // E.g. StockSlipItem is a child of StockSlip. Independent entities (Product, Warehouse, etc.) stay separate.
-      const domainMergeRules: Record<string, string[]> = {
-        StockSlip: ['stockslipitem'],
-      };
-
-      const shouldMergeInto = (childName: string): string | null => {
-        const childNorm = norm(childName);
-        for (const [parent, children] of Object.entries(domainMergeRules)) {
-          if (!clusters.some((c) => norm(c.name) === norm(parent))) continue;
-          for (const child of children) {
-            if (childNorm === norm(child)) return parent;
-          }
-        }
+      // Do NOT auto-merge clusters — each entity is independent.
+      // Parent-child relationships are visualized via FK edges, not cluster merging.
+      const shouldMergeInto = (_childName: string): string | null => {
         return null;
       };
 
@@ -1766,12 +1777,28 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         if (!f.name.endsWith('_id')) continue;
         // Infer target entity name: remove trailing _id, then try heuristics
         const stem = f.name.replace(/_id$/, '');
-        // Common patterns: from_warehouse → warehouse, created_by → user, to_warehouse → warehouse
+
+        // For audit fields (created_by, updated_by, modified_by), try to find a real
+        // entity that could be an "actor" — do NOT assume a specific entity name.
+        const findActorEntity = (): string | null => {
+          // Check all entity labels to see if any match common actor names
+          const actorPatterns = ['user', 'actor', 'account', 'member', 'operator', 'employee', 'staff', 'author'];
+          for (const pattern of actorPatterns) {
+            if (labelToEntity.has(labelNorm(pattern))) return pattern;
+          }
+          return null;
+        };
+        const actorEntity = findActorEntity();
+
+        // For owner/author/editor fields, try direct match first, then fall back to actor entity
+        const ownerTarget = actorEntity && (stem === 'owner' || stem === 'author' || stem === 'editor') ? actorEntity : stem;
+
+        // Common patterns: category_id → category, from_warehouse → warehouse
         const candidates = [
           stem, // direct: category_id → category
           stem.replace(/^(from_|to_)/, ''), // strip prefix: from_warehouse → warehouse
-          stem.replace(/^(created|updated|modified)_by$/, 'user'), // created_by → user
-          stem.replace(/^(owner|author|editor)/, 'user'), // owner → user
+          ...(stem.match(/^(created|updated|modified)_by$/) && actorEntity ? [actorEntity] : []), // created_by → resolved actor entity
+          ...(stem.match(/^(owner|author|editor)$/)? [ownerTarget] : []), // owner → resolved actor entity or stem
           // parent_id → self-referencing (e.g. category.parent_id → category)
           ...(stem === 'parent' ? [ent.label] : []),
         ];
@@ -2228,11 +2255,12 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
   private computeEntityDetailLayout(entityName: string): void {
     const W = this.p5Inst?.width || 960;
     const H = this.p5Inst?.height || 420;
-    const cluster = this.clusters.find((c) => c.name === entityName);
+    const entityNameLower = entityName.toLowerCase();
+    // Match cluster case-insensitively — graph labels may be "warehouse" while cluster name is "Warehouse"
+    const cluster = this.clusters.find((c) => c.name.toLowerCase() === entityNameLower);
     if (!cluster || !cluster.entityNode) return;
 
     const mainEntityUid = cluster.entityNode!.uid;
-    const entityNameLower = entityName.toLowerCase();
 
     // Helper: resolve entity name (case-insensitive) to UID
     const resolveEntityUid = (refName: string): string | null => {
@@ -2244,9 +2272,13 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       return `entities:${refName}`;
     };
 
+    // ── Client participant: always first, represents the external caller (REST API/WebSocket) ──
+    const clientUid = this.CLIENT_UID;
+    const clientLabel = 'Client';
+
     // ── Phase 1: Scan traceMatrix, collect actions referencing our entity ──
     const messages: SeqMessage[] = [];
-    const participantEntityUids = new Set<string>([mainEntityUid]);
+    const participantEntityUids = new Set<string>([clientUid, mainEntityUid]);
 
     // Deduplicate commands by contract_id (canonical name) — pick the row with contract_node
     const seenCmdNames = new Set<string>();
@@ -2288,25 +2320,25 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         }
       }
 
-      // Skip if this command doesn't reference our entity ecosystem
-      if (targetUids.length === 0) {
-        const fetchesOurEntity = cn.fetches?.some((ref: any) => {
-          if (typeof ref !== 'object') return false;
-          return (ref.entity || ref.entity_id || '').toLowerCase() === entityNameLower;
+      // Only include commands whose PRIMARY target is our main entity
+      // Primary target = first effect (the entity this command mainly operates on)
+      const primaryEffect = (cn.effects || [])[0];
+      const primaryEntity = typeof primaryEffect === 'object' ? (primaryEffect as any).entity : null;
+      if (primaryEntity) {
+        // Command has effects — check if primary effect matches our entity
+        if (primaryEntity.toLowerCase() !== entityNameLower) continue;
+      } else if (cn.fetches?.length) {
+        // Command has no effects (e.g., queries with side effects) — check fetches
+        const fetchesMain = cn.fetches.some((ref: any) => {
+          const refName = typeof ref === 'object' ? (ref.entity || ref.entity_id || '') : String(ref);
+          return refName.toLowerCase() === entityNameLower;
         });
-        if (!fetchesOurEntity) continue;
+        if (!fetchesMain) continue;
       } else {
-        // Only include commands that touch the main entity or a participant we already track
-        const touchesMain =
-          targetUids.includes(mainEntityUid) || sourceUids.includes(mainEntityUid);
-        const touchesParticipant =
-          targetUids.some((u) => participantEntityUids.has(u)) ||
-          sourceUids.some((u) => participantEntityUids.has(u));
-        if (!touchesMain && !touchesParticipant) continue;
+        // No effects or fetches — check if writes_to references our entity
+        const writesMain = (cn.writes_to || []).some((w: any) => String(w).toLowerCase() === entityNameLower);
+        if (!writesMain) continue;
       }
-
-      // Collect related entity UIDs for participants
-      for (const u of [...targetUids, ...sourceUids]) participantEntityUids.add(u);
 
       // Collect guards
       const guardLabels: string[] = [];
@@ -2328,8 +2360,8 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       if (cn.category) payloadLines.push(`category: ${cn.category}`);
 
       // ── One message per command, with all target entities grouped ──
-      // External trigger: no source entity → special "__external__" marker
-      const fromUid = sourceUids.length > 0 ? sourceUids[0] : '__external__';
+      // External trigger: no source entity → comes from Client
+      const fromUid = sourceUids.length > 0 ? sourceUids[0] : clientUid;
       // effectiveTargets: all entities this command writes to
       const effectiveTargets = targetUids.length > 0 ? targetUids : [mainEntityUid];
       // toUid is the first target for the primary arrow direction
@@ -2378,11 +2410,9 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         }
       }
 
-      // Include if any target entity is in our participant ecosystem (not just main entity)
-      if (targetUids.length === 0) continue;
-      const hasParticipant = targetUids.some((u) => participantEntityUids.has(u));
-      if (!hasParticipant) continue;
-      for (const u of targetUids) participantEntityUids.add(u);
+      // Include if any target entity is the main entity
+      if (targetUids.length === 0 || !targetUids.includes(mainEntityUid)) continue;
+      // DO NOT add query targets to participants — only the main entity is a participant
 
       const payloadLines: string[] = [];
       if (cn.input?.length)
@@ -2393,10 +2423,10 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
             .join(', ')}`,
         );
 
-      // Query: external caller reads from entity — point to first resolved target
+      // Query: external caller reads from entity — comes from Client
       const queryTargetUid = targetUids.length > 0 ? targetUids[0] : mainEntityUid;
       messages.push({
-        fromUid: '__external__',
+        fromUid: clientUid,
         toUid: queryTargetUid,
         type: 'reads_from',
         label: row.contract_id || '',
@@ -2427,17 +2457,17 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       const entityId = cn.entity_id || '';
       if (!entityId) continue;
 
-      // Include if entity_id matches the main entity OR any participant entity in our ecosystem
+      // Only include UI components that directly reference the main entity
       const resolvedUid = resolveEntityUid(entityId);
-      if (!resolvedUid || !participantEntityUids.has(resolvedUid)) continue;
+      if (!resolvedUid || resolvedUid !== mainEntityUid) continue;
 
       // Use contract_id or analysis_name as canonical name — never undefined
       const uiName = row.contract_id || row.analysis_name || '';
       const uiUid = `ui_components:${uiName}`;
 
       messages.push({
-        fromUid: uiUid,
-        toUid: resolvedUid,
+        fromUid: clientUid,
+        toUid: uiUid, // Client interacts with UI component (arrow goes Client → UI)
         type: 'entity_ref',
         label: uiName,
         actionName: uiName,
@@ -2481,10 +2511,19 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       });
     }
 
-    // ── Phase 2: Build participant list (entities + UI only) ──
-    // Main entity first, then related entities, then UI components
+    // ── Phase 2: Build participant list (Client + entities + UI) ──
+    // Client first, then main entity, then related entities, then UI components
     const participantNodes: Array<{ uid: string; label: string; category: string }> = [];
-    const used = new Set<string>([mainEntityUid]);
+    const used = new Set<string>([clientUid, mainEntityUid]);
+
+    // Client participant always first
+    participantNodes.push({
+      uid: clientUid,
+      label: clientLabel,
+      category: 'client',
+    });
+
+    // Main entity second
     participantNodes.push({
       uid: mainEntityUid,
       label: cluster.entityNode.label,
@@ -2492,7 +2531,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     });
 
     for (const uid of participantEntityUids) {
-      if (uid === mainEntityUid || used.has(uid)) continue;
+      if (uid === clientUid || uid === mainEntityUid || used.has(uid)) continue;
       used.add(uid);
       const src = this.uidMap.get(uid);
       if (src) {
@@ -2635,24 +2674,50 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       return (a.actionName || '').localeCompare(b.actionName || '');
     });
 
-    // Compute dynamic height per message based on badge count
-    const msgBaseH = 36; // arrow line + label card
-    const badgeLineH = 14; // height per badge line
-    const computeMsgHeight = (m: SeqMessage): number => {
-      let h = msgBaseH;
-      h += (m.guards?.length ?? 0) * badgeLineH;
-      h += (m.events?.length ?? 0) * badgeLineH;
-      h += (m.payload?.length ?? 0) * badgeLineH;
-      return Math.max(msgBaseH, h);
-    };
+    // ── Shared spacing constants (this.S — used by BOTH layout and drawing) ──
+    const S = this.S;
 
-    // Cumulative Y positioning — each message gets its own vertical space
-    const msgStartY = maxHeaderH + 80;
-    let currentY = msgStartY;
+    // Helper: compute the bottom-most Y offset for a message (relative to msg.y)
+    function msgBottomOffset(m: SeqMessage): number {
+      const isHub = m.actionType === 'command' && (m.targetUids?.length ?? 1) > 1;
+      const badgeCount =
+        (m.guards?.length ?? 0) +
+        (m.events?.length ?? 0) +
+        (m.payload?.length ?? 0);
+      // base bottom = activation bar bottom
+      let bottom = S.actBarHalfH;
+      // self-loop check: same from/to (excluding Client)
+      const isSelf = m.fromUid !== clientUid && m.fromUid === m.toUid;
+      if (isSelf) bottom = Math.max(bottom, S.actBarHalfH + S.selfArrowExtra);
+      if (badgeCount > 0) {
+        const lastBadgeBottom = S.badgeGapBelowArrow + (badgeCount - 1) * S.badgeStep + S.badgeH;
+        bottom = Math.max(bottom, lastBadgeBottom);
+      }
+      return bottom;
+    }
+
+    function msgTopOffset(): number {
+      return S.cardAboveArrow + S.cardH;
+    }
+
+    // Cumulative Y positioning — auto-spacing between groups (commands / queries / ui_refs)
+    // msg.y is the arrow center line.
+    // Card top = msg.y - topOff, bottom extent = msg.y + bottomOff
+    const firstMsgTopOffset = msgTopOffset() + S.headerBreath;
+    let arrowY = maxHeaderH + firstMsgTopOffset;
+    let prevGroup = '';
+
     this.seqMessages = messages.map((m) => {
-      const h = computeMsgHeight(m);
-      const positioned = { ...m, y: currentY };
-      currentY += h;
+      const curGroup = m.actionType || '';
+      const bottomOff = msgBottomOffset(m);
+
+      const positioned = { ...m, y: arrowY };
+
+      // Advance arrowY for next message: current arrowY + this message's bottom extent + gap
+      const gap = (curGroup !== prevGroup && prevGroup !== '') ? S.groupGap : S.intraGap;
+      arrowY += bottomOff + gap;
+
+      prevGroup = curGroup;
       return positioned;
     });
 
@@ -2661,13 +2726,8 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     this.flowLifelineTop = maxHeaderH;
     if (this.seqMessages.length > 0) {
       const lastMsg = this.seqMessages[this.seqMessages.length - 1];
-      // Dynamic height for last message too
-      const lastH =
-        msgBaseH +
-        (lastMsg.guards?.length ?? 0) * badgeLineH +
-        (lastMsg.events?.length ?? 0) * badgeLineH +
-        (lastMsg.payload?.length ?? 0) * badgeLineH;
-      this.flowLifelineBottom = lastMsg.y + lastH + 20;
+      const lastBottomOff = msgBottomOffset(lastMsg);
+      this.flowLifelineBottom = lastMsg.y + lastBottomOff + 20;
     } else {
       this.flowLifelineBottom = Math.max(H - 40, maxHeaderH + 200);
     }
@@ -2707,8 +2767,9 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
   // ── Entity Detail Drawing — Sequence Diagram ────────────
 
   private drawEntityDetail(sk: p5): void {
-    const arrowSize = 9;
-    const mainEntityUid = this.clusters.find((c) => c.name === this.selectedEntity)?.entityNode
+    const S = this.S;
+    const selEntityLower = (this.selectedEntity || '').toLowerCase();
+    const mainEntityUid = this.clusters.find((c) => c.name.toLowerCase() === selEntityLower)?.entityNode
       ?.uid;
 
     const uidToX = new Map<string, number>();
@@ -2724,38 +2785,45 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       const cc = CAT_COLOR[ll.category] || [150, 150, 150];
       const boxH = headerBoxH(ll.fields);
       const px = ll.x - ll.w / 2;
-      // Align boxes to the bottom of the header area (straight on the separator line)
       const py = maxHeaderH - boxH;
+      const isMain = ll.uid === mainEntityUid;
 
-      // Grey border for all participants — drift shown on Level 1
+      // Glow behind main entity
+      if (isMain) {
+        sk.noStroke();
+        sk.fill(cc[0], cc[1], cc[2], 20);
+        sk.rect(px - 6, py - 6, ll.w + 12, boxH + 12, 10);
+      }
+
+      // Border — bright for main entity
       sk.fill(0, 0, 0, 0);
-      sk.stroke(80, 88, 100);
-      sk.strokeWeight(1);
+      sk.stroke(isMain ? cc[0] : 70, isMain ? cc[1] : 75, isMain ? cc[2] : 85, isMain ? 255 : 140);
+      sk.strokeWeight(isMain ? 2.5 : 1);
       sk.rect(px, py, ll.w, boxH, 6);
 
       // Box background
       sk.noStroke();
-      sk.fill(18, 22, 30);
+      sk.fill(isMain ? 24 : 16, isMain ? 28 : 20, isMain ? 38 : 28);
       sk.rect(px, py, ll.w, boxH, 6);
 
-      // Accent bar left (subtle grey)
-      sk.fill(cc[0], cc[1], cc[2], 120);
-      sk.rect(px, py + 3, 5, 30, 2);
+      // Accent bar left
+      sk.fill(cc[0], cc[1], cc[2], isMain ? 255 : 100);
+      sk.rect(px + 1, py + 4, 4, 28, 2);
 
-      // Header divider line
-      sk.stroke(50, 56, 68);
+      // Header divider
+      sk.stroke(55, 60, 75);
       sk.strokeWeight(1);
       sk.line(px + 10, py + 32, px + ll.w - 4, py + 32);
 
-      // Header text (entity label)
+      // Header label — bright white for main
       sk.noStroke();
-      sk.fill(220, 228, 234);
-      sk.textSize(13);
+      sk.fill(isMain ? 255 : 220, isMain ? 255 : 225, isMain ? 255 : 235);
+      sk.textSize(14);
       sk.textStyle(sk.BOLD);
-      sk.text(ll.label, px + 12, py + 15);
+      sk.text(ll.label, px + 12, py + 16);
       sk.textStyle(sk.NORMAL);
 
-      // Field list
+      // Fields
       const fields = ll.fields || [];
       for (let i = 0; i < fields.length; i++) {
         const f = fields[i];
@@ -2768,15 +2836,15 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         sk.textSize(10);
         sk.text(icon, px + 10, fy);
 
-        // Field name (truncate if too long)
-        sk.fill(139, 148, 160);
+        // Field name
+        sk.fill(isMain ? 200 : 160, isMain ? 210 : 168, isMain ? 225 : 180);
         sk.textSize(11);
-        const nameMaxW = (px + ll.w - 8) - 70; // leave room for type column
+        const nameMaxW = (px + ll.w - 8) - 70;
         const nameText = sk.textWidth(f.name) > nameMaxW ? f.name.slice(0, 10) + '...' : f.name;
         sk.text(nameText, px + 30, fy);
 
-        // Type (right aligned, truncate if too long)
-        sk.fill(100, 110, 125);
+        // Type (right aligned)
+        sk.fill(isMain ? 160 : 110, isMain ? 170 : 120, isMain ? 185 : 135);
         sk.textAlign(sk.RIGHT, sk.BASELINE);
         const typeMaxW = 60;
         let typeText = f.type;
@@ -2791,25 +2859,27 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
 
     // Separator
     sk.noFill();
-    sk.stroke(30, 40, 55);
+    sk.stroke(35, 45, 60);
     sk.strokeWeight(1);
     const sepY = maxHeaderH;
     sk.line(20, sepY, sk.width - 20, sepY);
 
     // ── 2. Draw dashed lifelines ──
     const ctx2d = sk.drawingContext as CanvasRenderingContext2D;
-    ctx2d.setLineDash([4, 4]);
+    ctx2d.setLineDash([5, 5]);
     for (const ll of this.seqLifelines) {
       const isMain = ll.uid === mainEntityUid;
       const cc = CAT_COLOR[ll.category] || [150, 150, 150];
-      sk.stroke(isMain ? cc[0] : 60, isMain ? cc[1] : 70, isMain ? cc[2] : 90, isMain ? 160 : 100);
-      sk.strokeWeight(isMain ? 1.5 : 1);
+      sk.stroke(isMain ? cc[0] : 60, isMain ? cc[1] : 70, isMain ? cc[2] : 90, isMain ? 200 : 110);
+      sk.strokeWeight(isMain ? 2 : 1);
       sk.line(ll.x, sepY + 2, ll.x, this.flowLifelineBottom);
     }
     ctx2d.setLineDash([]);
 
     // ── 3. Draw enriched message cards ──
-    const externalX = 20; // left edge position for external triggers
+    // Client lifeline is always at index 0
+    const clientLifeline = this.seqLifelines[0];
+    const clientX = clientLifeline?.x ?? 20; // fallback to 20 if missing
 
     for (const msg of this.seqMessages) {
       const y = msg.y;
@@ -2845,130 +2915,95 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         const hubMinX = Math.min(...targetXs);
         const hubMaxX = Math.max(...targetXs);
         const hubCenterX = (hubMinX + hubMaxX) / 2;
+        // Hub section: draw arrow from source (Client) to the hub card
+        const fromX = uidToX.get(msg.fromUid) ?? clientX;
+        const hubCardMidX = hubCenterX;
+        const arrowMidX = (fromX + hubCardMidX) / 2;
         const hubCardW = Math.max(sk.textWidth(cardLabel) + 32, hubMaxX - hubMinX + 20);
-        const hubCardH = 18; // label row height
+        const hubCardTop = y - S.cardAboveArrow - S.hubCardH;
+        const arrowSize = 14;
 
-        // External trigger icon
-        const isExternal = msg.fromUid === '__external__';
-        if (isExternal) {
-          sk.noStroke();
-          sk.fill(msgColor[0], msgColor[1], msgColor[2], 200);
-          sk.ellipse(externalX, y, 10, 10);
-          sk.fill(255);
-          sk.textSize(7);
-          sk.textAlign(sk.CENTER, sk.CENTER);
-          sk.text('→', externalX, y);
-        }
+        // Arrow from source (Client) to hub card
+        sk.noFill();
+        sk.stroke(msgColor[0], msgColor[1], msgColor[2], 230);
+        sk.strokeWeight(2.5);
+        const dirToHub = hubCardMidX > fromX ? 1 : -1;
+        sk.line(fromX, y, hubCardMidX - dirToHub * arrowSize, y);
+        sk.noStroke();
+        sk.fill(msgColor[0], msgColor[1], msgColor[2], 255);
+        sk.triangle(
+          hubCardMidX,
+          y,
+          hubCardMidX - dirToHub * arrowSize * 1.3,
+          y - arrowSize * 0.6,
+          hubCardMidX - dirToHub * arrowSize * 1.3,
+          y + arrowSize * 0.6,
+        );
 
-        // Activation bars on each target lifeline
+        // Activation bars on each target lifeline — synced with S.actBarHalfH
         for (const tx of targetXs) {
           sk.noStroke();
           sk.fill(msgColor[0], msgColor[1], msgColor[2], 40);
-          sk.rect(tx - 7, y - 12, 14, 24, 3);
+          sk.rect(tx - 7, y - S.actBarHalfH + 4, 14, S.actBarHalfH * 2 - 8, 3);
         }
 
-        // Connector lines: thin angled lines from card top to each lifeline
-        sk.noFill();
-        sk.stroke(msgColor[0], msgColor[1], msgColor[2], 120);
-        sk.strokeWeight(1);
-        for (const tx of targetXs) {
-          // Clamp to card edge if target is inside card
-          const anchorX = Math.max(
-            hubCenterX - hubCardW / 2,
-            Math.min(hubCenterX + hubCardW / 2, tx),
-          );
-          sk.line(tx, y, anchorX, y - 6);
-        }
-
-        // Horizontal bar connecting all lifelines at hub Y
-        sk.stroke(msgColor[0], msgColor[1], msgColor[2], 160);
-        sk.strokeWeight(1.5);
-        sk.line(hubCenterX - hubCardW / 2, y - 6, hubCenterX + hubCardW / 2, y - 6);
-
-        // Hub card background
+        // Hub card background — synced with S.hubCardH and S.cardAboveArrow (matching query card style)
         sk.noStroke();
-        sk.fill(16, 20, 30, 240);
-        sk.rect(hubCenterX - hubCardW / 2, y - 28, hubCardW, hubCardH, 4);
+        sk.fill(msgColor[0], msgColor[1], msgColor[2], 25);
+        sk.rect(arrowMidX - hubCardW / 2, hubCardTop, hubCardW, S.hubCardH, 5);
 
         // Card accent bar left
-        sk.fill(msgColor[0], msgColor[1], msgColor[2]);
-        sk.rect(hubCenterX - hubCardW / 2, y - 25, 3, hubCardH - 6, 1);
-
-        // Action name + target count badge
         sk.fill(msgColor[0], msgColor[1], msgColor[2], 255);
-        sk.textSize(10);
-        sk.textAlign(sk.LEFT, sk.CENTER);
-        sk.text(cardLabel, hubCenterX - hubCardW / 2 + 8, y - 19);
+        sk.rect(arrowMidX - hubCardW / 2, hubCardTop + 2, 3, S.hubCardH - 4, 1);
 
-        // Target count badge on right side — count only targets with visible lifelines
-        const countBadge = `→ ${targetXs.length} entities`;
-        const badgeW = sk.textWidth(countBadge) + 8;
-        sk.fill(msgColor[0], msgColor[1], msgColor[2], 60);
-        sk.rect(hubCenterX + hubCardW / 2 - badgeW - 2, y - 25, badgeW, 14, 3);
-        sk.fill(msgColor[0], msgColor[1], msgColor[2], 220);
-        sk.textSize(8);
+        // Action name label
+        sk.fill(255, 255, 255);
+        sk.textSize(11);
         sk.textAlign(sk.CENTER, sk.CENTER);
-        sk.text(countBadge, hubCenterX + hubCardW / 2 - badgeW / 2 - 2, y - 19);
+        sk.text(cardLabel, arrowMidX, hubCardTop + S.hubCardH / 2);
 
-        // ── Badges below card ──
-        let badgeY = y + 10;
+        // ── Badges right below arrow ── synced with S
+        let badgeY = y + S.badgeGapBelowArrow;
         const guardColor: [number, number, number] = [231, 76, 60];
         const eventColor: [number, number, number] = [241, 196, 15];
         const payloadColor: [number, number, number] = [139, 148, 160];
 
         if (guards.length > 0) {
           const guardText = `\u26A0 ${guards.join(', ')}`;
-          const gW = sk.textWidth(guardText) + 10;
-          sk.noStroke();
-          sk.fill(guardColor[0], guardColor[1], guardColor[2], 30);
-          sk.rect(hubCenterX - gW / 2, badgeY - 7, gW, 12, 3);
-          sk.fill(guardColor[0], guardColor[1], guardColor[2], 200);
           sk.textSize(8);
+          const guardW = sk.textWidth(guardText) + 32;
+          sk.noStroke();
+          sk.fill(guardColor[0], guardColor[1], guardColor[2], 60);
+          sk.rect(arrowMidX - guardW / 2, badgeY, guardW, S.badgeH, 3);
+          sk.fill(guardColor[0], guardColor[1], guardColor[2], 240);
           sk.textAlign(sk.CENTER, sk.CENTER);
-          sk.text(guardText, hubCenterX, badgeY - 1);
-          badgeY += 14;
+          sk.text(guardText, arrowMidX, badgeY + S.badgeH / 2);
+          badgeY += S.badgeStep;
         }
 
         if (events.length > 0) {
           const evtText = `\u25B8 ${events.join(', ')}`;
-          const eW = sk.textWidth(evtText) + 10;
-          sk.noStroke();
-          sk.fill(eventColor[0], eventColor[1], eventColor[2], 30);
-          sk.rect(hubCenterX - eW / 2, badgeY - 7, eW, 12, 3);
-          sk.fill(eventColor[0], eventColor[1], eventColor[2], 200);
           sk.textSize(8);
+          const evtW = sk.textWidth(evtText) + 32;
+          sk.noStroke();
+          sk.fill(eventColor[0], eventColor[1], eventColor[2], 60);
+          sk.rect(arrowMidX - evtW / 2, badgeY, evtW, S.badgeH, 3);
+          sk.fill(eventColor[0], eventColor[1], eventColor[2], 200);
           sk.textAlign(sk.CENTER, sk.CENTER);
-          sk.text(evtText, hubCenterX, badgeY - 1);
-          badgeY += 14;
+          sk.text(evtText, arrowMidX, badgeY + S.badgeH / 2);
+          badgeY += S.badgeStep;
         }
 
         for (const pl of payload.slice(0, 2)) {
-          const pW = sk.textWidth(pl) + 10;
-          sk.noStroke();
-          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 20);
-          sk.rect(hubCenterX - pW / 2, badgeY - 7, pW, 12, 3);
-          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 160);
           sk.textSize(8);
-          sk.textAlign(sk.CENTER, sk.CENTER);
-          sk.text(pl, hubCenterX, badgeY - 1);
-          badgeY += 14;
-        }
-
-        // Target entity labels below badge area
-        let labelY = badgeY + 4;
-        const labelPerTarget = 14;
-        sk.textSize(8);
-        sk.textAlign(sk.CENTER, sk.CENTER);
-        for (const tx of targetXs.sort((a, b) => a - b)) {
-          const uid = targets.find((t) => uidToX.get(t) === tx);
-          const label = uid ? uid.split(':')[1] || uid : '';
-          sk.fill(msgColor[0], msgColor[1], msgColor[2], 140);
-          const lw = sk.textWidth(label) + 10;
+          const plW = sk.textWidth(pl) + 32;
           sk.noStroke();
-          sk.fill(msgColor[0], msgColor[1], msgColor[2], 30);
-          sk.rect(tx - lw / 2, labelY - 6, lw, 12, 3);
-          sk.fill(msgColor[0], msgColor[1], msgColor[2], 200);
-          sk.text(label, tx, labelY);
+          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 80);
+          sk.rect(arrowMidX - plW / 2, badgeY, plW, S.badgeH, 3);
+          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 240);
+          sk.textAlign(sk.CENTER, sk.CENTER);
+          sk.text(pl, arrowMidX, badgeY + S.badgeH / 2);
+          badgeY += S.badgeStep;
         }
       } else {
         // ── Single target: normal arrow ──
@@ -2976,26 +3011,28 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         const toX = uidToX.get(msg.toUid);
         if (toX === undefined) continue;
 
-        const isExternal = msg.fromUid === '__external__';
-        if (fromX === undefined) fromX = externalX;
+        // Client is now a real participant; fromX resolves from uidToX
+        // Fallback to left edge only for truly missing from-uids
+        if (fromX === undefined) fromX = clientX;
 
-        const isSelf = !isExternal && Math.abs(fromX - toX) < 5;
+        const isSelf = msg.fromUid !== this.CLIENT_UID && Math.abs(fromX - toX) < 5;
 
-        // Activation bar on target lifeline
+        // Activation bar on target lifeline — synced with S.actBarHalfH
         sk.noStroke();
-        sk.fill(msgColor[0], msgColor[1], msgColor[2], 40);
-        sk.rect(toX - 7, y - 12, 14, 24, 3);
+        sk.fill(msgColor[0], msgColor[1], msgColor[2], 55);
+        sk.rect(toX - 8, y - S.actBarHalfH, 16, S.actBarHalfH * 2, 3);
 
-        // Arrow line
+        // Arrow line — thicker and more visible
+        const arrowSize = 14; // bigger arrowhead
         sk.noFill();
-        sk.stroke(msgColor[0], msgColor[1], msgColor[2], 180);
-        sk.strokeWeight(1.5);
+        sk.stroke(msgColor[0], msgColor[1], msgColor[2], 230);
+        sk.strokeWeight(2.5);
 
         if (isSelf) {
-          sk.arc(fromX + 22, y, 44, 44, sk.HALF_PI, sk.TWO_PI - sk.HALF_PI);
+          sk.arc(fromX + 26, y, 52, 52, sk.HALF_PI, sk.TWO_PI - sk.HALF_PI);
           sk.noStroke();
           sk.fill(msgColor[0], msgColor[1], msgColor[2], 255);
-          sk.triangle(fromX + 19, y + 22, fromX + 28, y + 18, fromX + 28, y + 26);
+          sk.triangle(fromX + 22, y + S.actBarHalfH + S.selfArrowExtra - 4, fromX + 33, y + S.actBarHalfH + S.selfArrowExtra - 9, fromX + 33, y + S.actBarHalfH + S.selfArrowExtra + 1);
         } else {
           const dir = toX > fromX ? 1 : -1;
           sk.line(fromX, y, toX - dir * arrowSize, y);
@@ -3011,76 +3048,65 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
           );
         }
 
-        // External trigger icon
-        if (isExternal) {
-          sk.noStroke();
-          sk.fill(msgColor[0], msgColor[1], msgColor[2], 200);
-          sk.ellipse(externalX, y, 10, 10);
-          sk.fill(255);
-          sk.textSize(7);
-          sk.textAlign(sk.CENTER, sk.CENTER);
-          sk.text('→', externalX, y);
-        }
-
-        // Message card above arrow
+        // Message card above arrow — synced with S.cardH and S.cardAboveArrow
         const midX = isSelf ? fromX + 35 : (fromX + toX) / 2;
+        sk.textSize(11);
+        const cardW = sk.textWidth(cardLabel) + 24;
+        const cardY = y - S.cardAboveArrow - S.cardH;
         sk.noStroke();
-        sk.fill(16, 20, 30, 240);
-        sk.rect(
-          midX - (sk.textWidth(cardLabel) + 16) / 2,
-          y - 28,
-          sk.textWidth(cardLabel) + 16,
-          20,
-          4,
-        );
-
+        // Semi-transparent dark background with color accent
+        sk.fill(msgColor[0], msgColor[1], msgColor[2], 25);
+        sk.rect(midX - cardW / 2, cardY, cardW, S.cardH, 5);
+        // Left accent bar
         sk.fill(msgColor[0], msgColor[1], msgColor[2], 255);
-        sk.textSize(10);
-        sk.textAlign(sk.CENTER, sk.CENTER);
-        sk.text(cardLabel, midX, y - 18);
+        sk.rect(midX - cardW / 2, cardY + 2, 3, S.cardH - 4, 1);
 
-        // Badges below arrow
-        let badgeY = y + 10;
+        sk.fill(255, 255, 255);
+        sk.textAlign(sk.CENTER, sk.CENTER);
+        sk.text(cardLabel, midX, cardY + S.cardH / 2);
+
+        // Badges below arrow — synced with S.badgeGapBelowArrow
+        let badgeY = y + S.badgeGapBelowArrow;
         const guardColor: [number, number, number] = [231, 76, 60];
         const eventColor: [number, number, number] = [241, 196, 15];
         const payloadColor: [number, number, number] = [139, 148, 160];
 
         if (guards.length > 0) {
           const guardText = `\u26A0 ${guards.join(', ')}`;
-          const gW = sk.textWidth(guardText) + 10;
-          sk.noStroke();
-          sk.fill(guardColor[0], guardColor[1], guardColor[2], 30);
-          sk.rect(midX - gW / 2, badgeY - 7, gW, 12, 3);
-          sk.fill(guardColor[0], guardColor[1], guardColor[2], 200);
           sk.textSize(8);
+          const guardW = sk.textWidth(guardText) + 32;
+          sk.noStroke();
+          sk.fill(guardColor[0], guardColor[1], guardColor[2], 60);
+          sk.rect(midX - guardW / 2, badgeY, guardW, S.badgeH, 3);
+          sk.fill(guardColor[0], guardColor[1], guardColor[2], 240);
           sk.textAlign(sk.CENTER, sk.CENTER);
-          sk.text(guardText, midX, badgeY - 1);
-          badgeY += 14;
+          sk.text(guardText, midX, badgeY + S.badgeH / 2);
+          badgeY += S.badgeStep;
         }
 
         if (events.length > 0) {
           const evtText = `\u25B8 ${events.join(', ')}`;
-          const eW = sk.textWidth(evtText) + 10;
-          sk.noStroke();
-          sk.fill(eventColor[0], eventColor[1], eventColor[2], 30);
-          sk.rect(midX - eW / 2, badgeY - 7, eW, 12, 3);
-          sk.fill(eventColor[0], eventColor[1], eventColor[2], 200);
           sk.textSize(8);
+          const evtW = sk.textWidth(evtText) + 32;
+          sk.noStroke();
+          sk.fill(eventColor[0], eventColor[1], eventColor[2], 60);
+          sk.rect(midX - evtW / 2, badgeY, evtW, S.badgeH, 3);
+          sk.fill(eventColor[0], eventColor[1], eventColor[2], 240);
           sk.textAlign(sk.CENTER, sk.CENTER);
-          sk.text(evtText, midX, badgeY - 1);
-          badgeY += 14;
+          sk.text(evtText, midX, badgeY + S.badgeH / 2);
+          badgeY += S.badgeStep;
         }
 
         for (const pl of payload.slice(0, 2)) {
-          const pW = sk.textWidth(pl) + 10;
-          sk.noStroke();
-          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 20);
-          sk.rect(midX - pW / 2, badgeY - 7, pW, 12, 3);
-          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 160);
           sk.textSize(8);
+          const plW = sk.textWidth(pl) + 32;
+          sk.noStroke();
+          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 80);
+          sk.rect(midX - plW / 2, badgeY, plW, S.badgeH, 3);
+          sk.fill(payloadColor[0], payloadColor[1], payloadColor[2], 240);
           sk.textAlign(sk.CENTER, sk.CENTER);
-          sk.text(pl, midX, badgeY - 1);
-          badgeY += 14;
+          sk.text(pl, midX, badgeY + S.badgeH / 2);
+          badgeY += S.badgeStep;
         }
       }
     }
