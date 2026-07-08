@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 import re
 import difflib
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Categories that exist in both analysis and contract
 TRACEABLE_CATEGORIES = [
@@ -32,6 +33,300 @@ CATEGORY_PREFIX = {
     "roles": "ROL",
     "ui_components": "UI",
 }
+
+
+# ============================================================================
+# Structural Drift Data Model
+# ============================================================================
+
+@dataclass
+class StructuralDrift:
+    """One structural gap between an analysis claim and its contract node."""
+    drift_type: str            # e.g. "missing_fields", "type_mismatch"
+    analysis_field: str        # which analysis field triggered the check
+    details: str               # human-readable detail
+    severity: str              # "high" | "medium" | "low"
+
+    def to_dict(self) -> dict:
+        return {
+            "drift_type": self.drift_type,
+            "analysis_field": self.analysis_field,
+            "details": self.details,
+            "severity": self.severity,
+        }
+
+
+# Comparator: receives (analysis_value, contract_value) → list of StructuralDrift
+Comparator = Callable[[Any, Any], List[StructuralDrift]]
+
+
+# ============================================================================
+# Pure Comparator Functions (no category knowledge)
+# ============================================================================
+
+def _extract_names(items: Any) -> set[str]:
+    """
+    Generic: extract normalized names from either:
+    - string list:  ["name", "address"]
+    - dict list:    [{"name": "id"}, {"name": "name"}]
+    - dict with "items"/"fields" sub-list
+    """
+    if not items:
+        return set()
+    if isinstance(items, str):
+        return {_normalize_name(items)}
+    if isinstance(items, dict):
+        # Try common sub-keys that hold the actual list
+        for sub_key in ("items", "fields", "entities", "members"):
+            if sub_key in items:
+                return _extract_names(items[sub_key])
+        return set()
+    if not isinstance(items, list):
+        return set()
+    names = set()
+    for item in items:
+        if isinstance(item, str):
+            names.add(_normalize_name(item))
+        elif isinstance(item, dict):
+            # Try common name-bearing keys
+            for key in ("name", "entity", "id", "entity_id", "target"):
+                n = item.get(key)
+                if n:
+                    names.add(_normalize_name(n))
+                    break
+    return names
+
+
+def _compare_flat_named_subset(analysis_val: Any, contract_val: Any) -> List[StructuralDrift]:
+    """
+    Compare two sets of named items.
+    Analysis may be string list; contract is usually dict list with "name" key.
+    Reports missing (analysis has but contract lacks).
+    """
+    a_names = _extract_names(analysis_val)
+    c_names = _extract_names(contract_val)
+    if not a_names:
+        return []
+    missing = sorted(a_names - c_names)
+    if not missing:
+        return []
+    # Filter out system-generated fields that analysis wouldn't specify
+    system_fields = {"id", "created_at", "updated_at", "tenant_id", "deleted_at"}
+    meaningful_missing = [m for m in missing if m not in system_fields]
+    if not meaningful_missing:
+        return []
+    return [
+        StructuralDrift(
+            drift_type="missing_fields",
+            analysis_field="fields",
+            details=f"Missing fields in contract: {', '.join(meaningful_missing)}",
+            severity="high",
+        )
+    ]
+
+
+def _compare_flat_string_subset(analysis_val: Any, contract_val: Any) -> List[StructuralDrift]:
+    """Compare two flat string sets (e.g. permissions)."""
+    a_names = _extract_names(analysis_val)
+    c_names = _extract_names(contract_val)
+    if not a_names:
+        return []
+    missing = sorted(a_names - c_names)
+    if not missing:
+        return []
+    return [
+        StructuralDrift(
+            drift_type="missing_items",
+            analysis_field="items",
+            details=f"Missing in contract: {', '.join(missing)}",
+            severity="high",
+        )
+    ]
+
+
+def _compare_effect_target(analysis_val: Any, contract_val: Any) -> List[StructuralDrift]:
+    """
+    Analysis target="Warehouse", Contract effects=[{entity: "warehouse"}].
+    Check if the analysis target entity appears in contract effects.
+    """
+    if not analysis_val:
+        return []
+    a_target = _normalize_name(str(analysis_val))
+    c_entities = _extract_names(contract_val)  # extracts from effects[].entity
+    if a_target in c_entities:
+        return []
+    return [
+        StructuralDrift(
+            drift_type="target_mismatch",
+            analysis_field="target",
+            details=f"Analysis target '{analysis_val}' not found in contract effects",
+            severity="high",
+        )
+    ]
+
+
+def _compare_exact(analysis_val: Any, contract_val: Any) -> List[StructuralDrift]:
+    """Exact match (case-insensitive, normalized)."""
+    if not analysis_val:
+        return []
+    if _normalize_name(str(analysis_val)) == _normalize_name(str(contract_val)):
+        return []
+    return [
+        StructuralDrift(
+            drift_type="value_mismatch",
+            analysis_field="type",
+            details=f"Analysis: '{analysis_val}', Contract: '{contract_val}'",
+            severity="medium",
+        )
+    ]
+
+
+def _compare_step_count_range(analysis_val: Any, contract_val: Any) -> List[StructuralDrift]:
+    """
+    Analysis steps: list of strings. Contract transitions: list of dicts.
+    Compare count — allow ±2 tolerance (LLM may split/merge steps).
+    """
+    a_count = len(analysis_val) if isinstance(analysis_val, list) else 0
+    c_count = len(contract_val) if isinstance(contract_val, list) else 0
+    if a_count == 0 or c_count == 0:
+        return []
+    if abs(a_count - c_count) > 2:
+        return [
+            StructuralDrift(
+                drift_type="step_count_mismatch",
+                analysis_field="steps",
+                details=f"Analysis has {a_count} steps, contract has {c_count} transitions",
+                severity="low",
+            )
+        ]
+    return []
+
+
+def _compare_transition_target(analysis_val: Any, contract_val: Any) -> List[StructuralDrift]:
+    """
+    Analysis transitions: [{"from": "a", "to": "b", "on": "evt"}].
+    Contract transitions: similar structure.
+    Compare if analysis "to" states appear in contract transitions.
+    """
+    if not analysis_val or not isinstance(analysis_val, list):
+        return []
+    a_targets = set()
+    for t in analysis_val:
+        if isinstance(t, dict):
+            to = t.get("to", "")
+            if to:
+                a_targets.add(_normalize_name(to))
+    if not a_targets:
+        return []
+    c_targets = set()
+    if isinstance(contract_val, list):
+        for t in contract_val:
+            if isinstance(t, dict):
+                to = t.get("to", "")
+                if to:
+                    c_targets.add(_normalize_name(to))
+    missing = sorted(a_targets - c_targets)
+    if not missing:
+        return []
+    return [
+        StructuralDrift(
+            drift_type="missing_states",
+            analysis_field="transitions",
+            details=f"Missing target states in contract: {', '.join(missing)}",
+            severity="medium",
+        )
+    ]
+
+
+# ============================================================================
+# FIELD_COMPARISON_REGISTRY — data-driven, no hardcoded category logic
+# ============================================================================
+# Maps: category → { analysis_key → (contract_key, comparator_fn) }
+# Adding a new category = adding an entry here, NO code change needed.
+
+FIELD_COMPARISON_REGISTRY: Dict[str, Dict[str, Tuple[str, Comparator]]] = {
+    "entities": {
+        "fields":          ("fields",        _compare_flat_named_subset),
+        "relationships":   ("relationships", _compare_flat_named_subset),
+    },
+    "commands": {
+        "input":           ("input",         _compare_flat_named_subset),
+        "target":          ("effects",       _compare_effect_target),
+    },
+    "queries": {
+        "input":           ("input",         _compare_flat_named_subset),
+    },
+    "events": {
+        "fields":          ("fields",        _compare_flat_named_subset),
+    },
+    "workflows": {
+        "steps":           ("transitions",   _compare_step_count_range),
+    },
+    "value_objects": {
+        "fields":          ("fields",        _compare_flat_named_subset),
+    },
+    "guards": {
+        "type":            ("type",          _compare_exact),
+    },
+    "roles": {
+        "permissions":     ("permissions",   _compare_flat_string_subset),
+    },
+    "ui_components": {
+        "type":            ("component_type",_compare_exact),
+    },
+    # Analysis-only categories — ready for when contract counterparts are added:
+    "state_machines": {
+        "states":          ("states",        _compare_flat_string_subset),
+        "transitions":     ("transitions",   _compare_transition_target),
+    },
+    "aggregates": {
+        "member_entities": ("member_entities", _compare_flat_named_subset),
+    },
+}
+
+
+# ============================================================================
+# Generic Structural Diff Engine
+# ============================================================================
+
+def _structural_diff(
+    category: str,
+    analysis_item: dict,
+    contract_node: dict,
+) -> List[StructuralDrift]:
+    """
+    Generic structural diff engine.
+    Reads FIELD_COMPARISON_REGISTRY to know WHAT to compare.
+    No if/elif for category — fully data-driven.
+    """
+    drifts: List[StructuralDrift] = []
+    registry = FIELD_COMPARISON_REGISTRY.get(category)
+    if not registry:
+        return drifts
+
+    for analysis_key, (contract_key, comparator) in registry.items():
+        a_val = analysis_item.get(analysis_key)
+        c_val = contract_node.get(contract_key)
+
+        if a_val is None or (isinstance(a_val, list) and len(a_val) == 0):
+            continue  # analysis didn't specify this field — skip
+
+        if c_val is None:
+            drifts.append(StructuralDrift(
+                drift_type="missing_contract_field",
+                analysis_field=analysis_key,
+                details=f"Contract node missing field '{contract_key}'",
+                severity="high",
+            ))
+            continue
+
+        try:
+            drifts.extend(comparator(a_val, c_val))
+        except Exception:
+            # Comparator error — don't break the traceability run
+            pass
+
+    return drifts
 
 
 def annotate_analysis_items(analysis_data: dict) -> dict:
@@ -92,6 +387,179 @@ def _fuzzy_ratio(a: str, b: str) -> float:
     if not a or not b:
         return 0.0
     return difflib.SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
+
+
+def _enrich_trace_matrix(trace_matrix: dict, contract_artifacts: Dict[str, dict]) -> None:
+    """
+    Post-process trace_matrix to enrich contract_nodes with cross-category data.
+
+    Modifies trace_matrix in-place. Generic — works with any DSL YAML structure.
+    Handles:
+    1. Commands: add `emits` from events YAML, normalize guard IDs
+    2. Guards: add `required_roles` from roles YAML
+    3. Workflows: ensure `transitions` list is populated
+    4. Value Objects: ensure `fields` list is populated
+    """
+    norm = _normalize_name
+
+    # Build normalized-name → contract_node lookup for all categories
+    cat_nodes: Dict[str, Dict[str, dict]] = {}  # category -> {norm_name -> node}
+    for cat in TRACEABLE_CATEGORIES:
+        cat_nodes[cat] = {}
+        raw = contract_artifacts.get(cat, {})
+        if not raw or not isinstance(raw, dict):
+            continue
+        list_key = cat
+        items = raw.get(list_key, [])
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            iid = item.get("id", "")
+            if iid:
+                cat_nodes[cat][norm(iid)] = item
+
+    # ── 1. Enrich commands with emits and normalize guard IDs ──
+    for row in trace_matrix.get("commands", []):
+        cn = row.get("contract_node")
+        if not cn or not isinstance(cn, dict):
+            continue
+
+        # 1a. Infer emits: find events whose analysis_item.source references this command
+        # Always re-compute, don't trust old cached emits
+        emitted: list[str] = []
+        cmd_contract_id = cn.get("id", "")
+        cmd_norm = norm(cmd_contract_id)
+        cmd_analysis_name = row.get("analysis_name", "")
+        cmd_analysis_norm = norm(cmd_analysis_name)
+
+        for evt_row in trace_matrix.get("events", []):
+            evt_cn = evt_row.get("contract_node")
+            if not evt_cn:
+                continue
+            eid = evt_cn.get("id", "")
+            if not eid:
+                continue
+            ai = evt_row.get("analysis_item")
+            if ai and isinstance(ai, dict):
+                # Strategy 1: analysis_item.source matches our command name
+                source = ai.get("source", "")
+                if source and norm(source) in (cmd_norm, cmd_analysis_norm):
+                    if eid not in emitted:
+                        emitted.append(eid)
+                # Strategy 2: source_entity matches our command's effect entities
+                if eid not in emitted:
+                    src_ent = ai.get("source_entity", "")
+                    if src_ent:
+                        for eff in (cn.get("effects") or []):
+                            if isinstance(eff, dict) and norm(eff.get("entity", "")) == norm(src_ent):
+                                if eid not in emitted:
+                                    emitted.append(eid)
+                                break
+            else:
+                # Strategy 3: orphan event (no analysis_item) — use contract-level refs
+                # 3a: event has source_entity → match against command's effect entities
+                evt_source_entity = evt_cn.get("source_entity", "")
+                if evt_source_entity:
+                    for eff in (cn.get("effects") or []):
+                        if isinstance(eff, dict) and norm(eff.get("entity", "")) == norm(evt_source_entity):
+                            if eid not in emitted:
+                                emitted.append(eid)
+                            break
+                # 3b: command's emits field already lists this event
+                elif eid in (cn.get("emits") or []):
+                    emitted.append(eid)
+
+        if emitted:
+            cn["emits"] = emitted
+
+        # 1b. Normalize guard IDs to snake_case so they match traceMatrix guard keys
+        for g in (cn.get("guards") or []):
+            if isinstance(g, dict):
+                old_id = g.get("guard_id", "")
+                if old_id:
+                    g["guard_id"] = norm(old_id)
+
+    # ── 2. Enrich guards with required_roles ──
+    for row in trace_matrix.get("guards", []):
+        cn = row.get("contract_node")
+        if not cn or not isinstance(cn, dict):
+            continue
+        # Add required_roles if not present
+        if not cn.get("required_roles") and not cn.get("required_role"):
+            roles = cn.get("roles", cn.get("allowed_roles", []))
+            if roles:
+                cn["required_roles"] = roles if isinstance(roles, list) else [roles]
+
+    # ── 3. Enrich commands with workflow state transitions ──
+    # For each command, find which workflow state transitions it triggers.
+    # Generic: match via _normalize_name, no hardcoded verbs or separator stripping.
+    for row in trace_matrix.get("commands", []):
+        cn = row.get("contract_node")
+        if not cn or not isinstance(cn, dict):
+            continue
+        cmd_id = cn.get("id", "")
+        if not cmd_id:
+            continue
+        cmd_norm = norm(cmd_id)
+        cmd_analysis_norm = norm(row.get("analysis_name", ""))
+
+        for wf_row in trace_matrix.get("workflows", []):
+            wf_cn = wf_row.get("contract_node")
+            if not wf_cn:
+                continue
+            wf_name = wf_row.get("contract_id") or wf_row.get("analysis_name", "")
+            if not wf_name:
+                continue
+
+            transitions = wf_cn.get("transitions", []) or wf_cn.get("steps", [])
+            if not transitions:
+                continue
+
+            matched_any = False
+            for t in transitions:
+                if not isinstance(t, dict):
+                    continue
+
+                # Collect all possible trigger references from this transition
+                trigger_refs: list[str] = []
+                for field_key in ("event", "on", "command", "action"):
+                    val = t.get(field_key)
+                    if val:
+                        trigger_refs.append(str(val))
+
+                # Also check workflow's analysis trigger
+                ai = wf_row.get("analysis_item")
+                if ai and isinstance(ai, dict):
+                    wf_trigger = ai.get("trigger", "")
+                    if wf_trigger:
+                        trigger_refs.append(wf_trigger)
+
+                for ref in trigger_refs:
+                    if norm(ref) in (cmd_norm, cmd_analysis_norm):
+                        wfrom = t.get("from", "")
+                        wto = t.get("to", "")
+                        if wfrom and wto:
+                            if "workflow_transitions" not in cn:
+                                cn["workflow_transitions"] = []
+                            cn["workflow_transitions"].append({
+                                "workflow": wf_name,
+                                "from": wfrom,
+                                "to": wto,
+                            })
+                        matched_any = True
+                        break  # found match for this transition
+                if matched_any:
+                    break  # only attach first matching transition per workflow
+
+    # ── 4. Enrich value_objects with fields ──
+    for row in trace_matrix.get("value_objects", []):
+        cn = row.get("contract_node")
+        if not cn or not isinstance(cn, dict):
+            continue
+        if not cn.get("fields"):
+            cn["fields"] = cn.get("properties", [])
 
 
 def compute_traceability(
@@ -187,6 +655,27 @@ def compute_traceability(
             else:
                 status = "matched"
 
+            # ── Structural diff: check fields, inputs, effects, etc. ──
+            structural_drifts = _structural_diff(category, a_item, c_node)
+            if structural_drifts:
+                has_high = any(d.severity == "high" for d in structural_drifts)
+                if has_high and status != "mismatch":
+                    status = "mismatch"
+                    totals["mismatched"] += 1
+                    totals["matched"] -= 1
+                elif status == "matched":
+                    status = "partial"
+
+                for sd in structural_drifts:
+                    drifts.append({
+                        "type": sd.drift_type,
+                        "category": category,
+                        "name": a_orig_name,
+                        "trace_id": trace_id,
+                        "severity": sd.severity,
+                        "message": sd.details,
+                    })
+
             totals["matched"] += 1
             category_rows.append({
                 "trace_id": trace_id,
@@ -196,6 +685,7 @@ def compute_traceability(
                 "analysis_item": a_item,
                 "contract_node": c_node,
                 "description_similarity": round(desc_similarity, 2),
+                "structural_drifts": [sd.to_dict() for sd in structural_drifts] if structural_drifts else None,
             })
 
         # Orphan analysis items (in analysis but not in contract)
@@ -260,6 +750,9 @@ def compute_traceability(
 
     # Brief text analysis (simple keyword coverage)
     brief_coverage = _compute_brief_text_coverage(analysis_data, brief_content)
+
+    # ── Post-process: enrich trace_matrix contract_nodes with cross-category data ──
+    _enrich_trace_matrix(trace_matrix, contract_artifacts)
 
     # Extract graph data (nodes + edges) for visualization
     graph_data = extract_graph_data(contract_artifacts, trace_matrix)

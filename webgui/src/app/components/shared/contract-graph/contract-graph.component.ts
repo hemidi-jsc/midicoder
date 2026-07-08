@@ -38,6 +38,7 @@ const STATUS_BORDER: Record<string, [number, number, number, number]> = {
   orphan_analysis: [231, 76, 60, 255],
   orphan_contract: [241, 196, 15, 255],
   mismatch: [230, 126, 34, 255],
+  partial: [243, 156, 18, 220], // amber — name matched but structural drift detected
 };
 
 const EDGE_COLORS: Record<string, [number, number, number]> = {
@@ -74,6 +75,7 @@ interface Node {
   h: number;
   entityGroup: string | null;
   payload?: Array<{ icon: string; label: string }>;
+  structural_drifts?: Array<{ drift_type: string; details: string; severity: string }>;
 }
 interface Edge {
   from: string;
@@ -112,6 +114,8 @@ interface SeqMessage {
   targetUids?: string[]; // multiple targets → drawn as hub with connectors
   // Drift status of the command itself (from traceMatrix)
   status?: string;
+  // Workflow state transitions (Option A: badges on command arrows)
+  workflowTransitions?: Array<{ workflow: string; from: string; to: string }>;
 }
 
 /** ERD entity with fields and FK references. */
@@ -128,6 +132,7 @@ interface ERDEntity {
   // Names of analysis entities matched to this contract entity (for drift awareness)
   analysisNames: string[];
   hovered: boolean;
+  structural_drifts?: Array<{ drift_type: string; details: string; severity: string }>;
 }
 
 /** ERD FK edge between entities. */
@@ -273,6 +278,12 @@ interface Cluster {
         <div class="cg-tooltip-name">{{ tooltipNode.label }}</div>
         <div class="cg-tooltip-status" [class]="tooltipNode.status">
           {{ tooltipNode.status }}
+        </div>
+        <div class="cg-tooltip-drifts" *ngIf="tooltipNode.structural_drifts?.length">
+          <div class="cg-drift-title">⚠ Structural drifts:</div>
+          <div class="cg-drift-item" *ngFor="let d of tooltipNode.structural_drifts">
+            {{ d.drift_type }}: {{ d.details }}
+          </div>
         </div>
       </div>
     </div>
@@ -490,6 +501,28 @@ interface Cluster {
         background: rgba(230, 126, 34, 0.15);
         color: #e67e22;
       }
+      .cg-tooltip-status.partial {
+        background: rgba(243, 156, 18, 0.15);
+        color: #f39c12;
+      }
+      /* Structural drifts section in tooltip */
+      .cg-tooltip-drifts {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #21262d;
+      }
+      .cg-drift-title {
+        font-size: 10px;
+        font-weight: 600;
+        color: #f39c12;
+        margin-bottom: 4px;
+      }
+      .cg-drift-item {
+        font-size: 10px;
+        color: #8b949e;
+        padding-left: 8px;
+        line-height: 1.4;
+      }
     `,
   ],
 })
@@ -575,6 +608,8 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
   private flowLifelineTop = 0;
   private flowLifelineBottom = 0;
   private uiComponentBounds: Array<{ uid: string; x: number; y: number; w: number; h: number }> = [];
+  // Workflow orchestration groups for drawing (name → list of message Y positions with bounds)
+  private seqWorkflowGroups: Map<string, { minY: number; maxY: number; status: string }> = new Map();
 
   private erdEntities: ERDEntity[] = [];
   private erdEdges: ERDEdge[] = [];
@@ -584,6 +619,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     { label: 'orphan_analysis (in brief, missing contract)', color: '#ef4444' },
     { label: 'orphan_contract (in contract, missing brief)', color: '#eab308' },
     { label: 'mismatch', color: '#e67e22' },
+    { label: 'partial (name matched, structural drift)', color: '#f39c12' },
   ];
 
   constructor(
@@ -1665,9 +1701,21 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     // Heuristic: map orphan_contract entities to orphan_analysis by field overlap + desc similarity
     // Build a lookup: contract label → contract_node from traceMatrix
     const contractNodeMap = new Map<string, any>();
+    // Also collect structural_drifts per contract label (from any category)
+    const contractDriftsMap = new Map<string, any[]>();
     for (const row of (this.traceMatrix['entities'] || [])) {
       if (row.contract_id && row.contract_node) {
         contractNodeMap.set(labelNorm(row.contract_id), row.contract_node);
+      }
+    }
+    for (const cat of ['entities', 'commands', 'queries', 'events', 'workflows', 'guards', 'value_objects', 'roles', 'ui_components']) {
+      for (const row of ((this.traceMatrix as any)[cat] || [])) {
+        if (row.contract_id && row.structural_drifts) {
+          const key = labelNorm(row.contract_id);
+          const arr = contractDriftsMap.get(key);
+          if (!arr) contractDriftsMap.set(key, []);
+          contractDriftsMap.get(key)!.push(...row.structural_drifts);
+        }
       }
     }
 
@@ -1723,6 +1771,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         foreignKeys,
         analysisNames: contractToAnalysisNames.get(labelNorm(n.label)) || [],
         hovered: false,
+        structural_drifts: contractDriftsMap.get(labelNorm(n.label)) || undefined,
       };
       uidToEntity.set(n.uid, ent);
       labelToEntity.set(n.label, ent);
@@ -2280,6 +2329,32 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     const messages: SeqMessage[] = [];
     const participantEntityUids = new Set<string>([clientUid, mainEntityUid]);
 
+    // ── Build enrichment lookups from traceMatrix ──
+    // Events: name → contract_node (for event detail on badges)
+    const eventLookup = new Map<string, any>();
+    for (const row of this.traceMatrix['events'] || []) {
+      const name = row.contract_id || row.analysis_name || '';
+      if (name && row.contract_node) eventLookup.set(name, row.contract_node);
+    }
+    // Guards: name → contract_node (for role names on guard badges)
+    const guardLookup = new Map<string, any>();
+    for (const row of this.traceMatrix['guards'] || []) {
+      const name = row.contract_id || row.analysis_name || '';
+      if (name && row.contract_node) guardLookup.set(name, row.contract_node);
+    }
+    // Value Objects: name → { contract_node, status }
+    const voLookup = new Map<string, { cn: any; status: string }>();
+    for (const row of this.traceMatrix['value_objects'] || []) {
+      const name = row.contract_id || row.analysis_name || '';
+      if (name) voLookup.set(name, { cn: row.contract_node, status: row.status || 'matched' });
+    }
+    // Workflows: name → { contract_node, status }
+    const wfLookup = new Map<string, { cn: any; status: string }>();
+    for (const row of this.traceMatrix['workflows'] || []) {
+      const name = row.contract_id || row.analysis_name || '';
+      if (name) wfLookup.set(name, { cn: row.contract_node, status: row.status || 'matched' });
+    }
+
     // Deduplicate commands by contract_id (canonical name) — pick the row with contract_node
     const seenCmdNames = new Set<string>();
     const cmdRows = (this.traceMatrix['commands'] || []).filter((row) => {
@@ -2320,31 +2395,37 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         }
       }
 
-      // Only include commands whose PRIMARY target is our main entity
-      // Primary target = first effect (the entity this command mainly operates on)
-      const primaryEffect = (cn.effects || [])[0];
-      const primaryEntity = typeof primaryEffect === 'object' ? (primaryEffect as any).entity : null;
-      if (primaryEntity) {
-        // Command has effects — check if primary effect matches our entity
-        if (primaryEntity.toLowerCase() !== entityNameLower) continue;
-      } else if (cn.fetches?.length) {
-        // Command has no effects (e.g., queries with side effects) — check fetches
-        const fetchesMain = cn.fetches.some((ref: any) => {
+      // Include commands whose ANY effect targets our main entity
+      // (not just effects[0] — a command can write to multiple entities)
+      const effects = cn.effects || [];
+      const hasMatchingEffect = effects.some((eff: any) => {
+        const ent = typeof eff === 'object' ? (eff.entity || '') : '';
+        return ent && ent.toLowerCase() === entityNameLower;
+      });
+
+      if (!hasMatchingEffect) {
+        // No matching effect — check fetches
+        const fetchesMain = (cn.fetches || []).some((ref: any) => {
           const refName = typeof ref === 'object' ? (ref.entity || ref.entity_id || '') : String(ref);
           return refName.toLowerCase() === entityNameLower;
         });
-        if (!fetchesMain) continue;
-      } else {
-        // No effects or fetches — check if writes_to references our entity
+        // Check writes_to
         const writesMain = (cn.writes_to || []).some((w: any) => String(w).toLowerCase() === entityNameLower);
-        if (!writesMain) continue;
+        if (!fetchesMain && !writesMain) continue;
       }
 
-      // Collect guards
+      // Collect guards — enrich with role names from traceMatrix['guards']
       const guardLabels: string[] = [];
       for (const g of cn.guards || []) {
         const gid = typeof g === 'string' ? g : (g as any).guard_id || '';
-        if (gid) guardLabels.push(gid);
+        if (gid) {
+          // Try to resolve roles from guard contract_node
+          const guardCn = guardLookup.get(gid);
+          const requiredRoles = guardCn?.required_roles || guardCn?.required_role || [];
+          const roleList = Array.isArray(requiredRoles) ? requiredRoles : [requiredRoles];
+          const roleNameStr = roleList.filter((r: any) => r).join(', ');
+          guardLabels.push(roleNameStr ? `${gid} (${roleNameStr})` : gid);
+        }
       }
 
       // Build payload lines
@@ -2375,10 +2456,16 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         actionName: row.contract_id || '',
         actionType: 'command',
         guards: guardLabels,
-        events: cn.emits || [],
+        events: (cn.emits || []).map((ev: any) => {
+          const evName = typeof ev === 'string' ? ev : (ev as any).event_id || '';
+          const evCn = eventLookup.get(evName);
+          const evDesc = evCn?.description || '';
+          return evDesc ? `${evName} (${evDesc.slice(0, 40)})` : evName;
+        }),
         payload: payloadLines,
         targetUids: effectiveTargets,
         status: row.status || 'matched',
+        workflowTransitions: cn.workflow_transitions || [],
         y: 0,
       });
     }
@@ -2511,6 +2598,72 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       });
     }
 
+    // ── Value Objects: add as participants when referenced in scope ──
+    // VOs are state-bearing (like entities) so they get lifelines, per architecture rule exception
+    const voData = new Map<string, { label: string; fields: Array<{ name: string; type: string; is_pk?: boolean; is_fk?: boolean }>; status: string }>();
+    // Find VOs referenced by entity field types or command inputs in our scope
+    const referencedVOs = new Set<string>();
+    // Check main entity's field types against VO names
+    const mainErd = this.erdEntities.find((e) => e.uid === mainEntityUid);
+    if (mainErd) {
+      for (const f of mainErd.fields || []) {
+        for (const voName of voLookup.keys()) {
+          if (f.type.toLowerCase().includes(voName.toLowerCase()) || voName.toLowerCase().includes(f.type.toLowerCase())) {
+            referencedVOs.add(voName);
+          }
+        }
+      }
+    }
+    // Check command inputs that reference VOs
+    for (const row of cmdRows) {
+      const cn = row.contract_node;
+      if (!cn) continue;
+      for (const inp of cn.input || []) {
+        if (typeof inp !== 'object') continue;
+        const inpType = (inp as any).type || '';
+        for (const voName of voLookup.keys()) {
+          if (inpType.toLowerCase().includes(voName.toLowerCase())) {
+            referencedVOs.add(voName);
+          }
+        }
+      }
+    }
+    // Add VOs as participants
+    for (const voName of referencedVOs) {
+      const { cn: voCn, status: voStatus } = voLookup.get(voName) || { cn: null, status: 'matched' };
+      const voUid = `value_objects:${voName}`;
+      participantEntityUids.add(voUid);
+      const voFields: Array<{ name: string; type: string; is_pk?: boolean; is_fk?: boolean }> = [];
+      if (voCn?.fields) {
+        for (const f of voCn.fields) {
+          const fname = typeof f === 'string' ? f : (f as any).name || '';
+          const ftype = typeof f === 'string' ? 'string' : (f as any).type || 'string';
+          voFields.push({ name: fname, type: ftype });
+        }
+      }
+      if (voCn?.properties) {
+        for (const [k, v] of Object.entries(voCn.properties)) {
+          if (voFields.length < 8)
+            voFields.push({ name: k, type: typeof v === 'object' ? 'Object' : String(v).slice(0, 20) });
+        }
+      }
+      voData.set(voUid, { label: voName, fields: voFields, status: voStatus });
+      // Message: Client → VO (data provided by caller)
+      messages.push({
+        fromUid: clientUid,
+        toUid: voUid,
+        type: 'entity_ref',
+        label: voName,
+        actionName: voName,
+        actionType: 'value_object',
+        guards: [],
+        events: [],
+        payload: [],
+        status: voStatus,
+        y: 0,
+      });
+    }
+
     // ── Phase 2: Build participant list (Client + entities + UI) ──
     // Client first, then main entity, then related entities, then UI components
     const participantNodes: Array<{ uid: string; label: string; category: string }> = [];
@@ -2541,6 +2694,12 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
         const uiData = uiComponentData.get(uid);
         if (uiData) {
           participantNodes.push({ uid, label: uiData.label, category: 'ui_components' });
+        } else {
+          // Fallback for Value Objects not in uidMap
+          const voInfo = voData.get(uid);
+          if (voInfo) {
+            participantNodes.push({ uid, label: voInfo.label, category: 'value_objects' });
+          }
         }
       }
     }
@@ -2591,7 +2750,8 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     const participantWidths = participantNodes.map((n) => {
       const erd = this.erdEntities.find((e) => labelNorm(e.label) === labelNorm(n.label));
       const uiData = n.category === 'ui_components' ? uiComponentData.get(n.uid) : null;
-      const fields = erd?.fields || uiData?.fields || [];
+      const voInfo = n.category === 'value_objects' ? voData.get(n.uid) : null;
+      const fields = erd?.fields || uiData?.fields || voInfo?.fields || [];
       return computeBoxWidth(n.label, fields);
     });
 
@@ -2640,14 +2800,23 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
           fields = uiData.fields;
         }
       }
+      // For Value Objects, use pre-built fields from voData
+      if (n.category === 'value_objects' && fields.length === 0) {
+        const voInfo = voData.get(n.uid);
+        if (voInfo && voInfo.fields) {
+          fields = voInfo.fields;
+        }
+      }
 
       // Lookup status from traceMatrix
       const entStatus =
-        this.traceMatrix['entities']?.find(
-          (r) =>
-            labelNorm(r.analysis_name || '') === labelNorm(n.label) ||
-            labelNorm(r.contract_id || '') === labelNorm(n.label),
-        )?.status || 'matched';
+        n.category === 'value_objects'
+          ? voData.get(n.uid)?.status || 'matched'
+          : this.traceMatrix['entities']?.find(
+              (r) =>
+                labelNorm(r.analysis_name || '') === labelNorm(n.label) ||
+                labelNorm(r.contract_id || '') === labelNorm(n.label),
+            )?.status || 'matched';
 
       curX += participantWidths[i] + actualGap;
 
@@ -2665,8 +2834,8 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     });
 
     // ── Phase 4: Sort and position messages with dynamic height ──
-    // Order: commands first, then queries, then UI refs
-    const msgOrder: Record<string, number> = { command: 0, query: 1, entity_ref: 2 };
+    // Order: commands first, then queries, then UI refs, then value objects
+    const msgOrder: Record<string, number> = { command: 0, query: 1, entity_ref: 2, value_object: 3 };
     messages.sort((a, b) => {
       const oa = msgOrder[a.actionType || ''] ?? 9;
       const ob = msgOrder[b.actionType || ''] ?? 9;
@@ -2683,6 +2852,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       const badgeCount =
         (m.guards?.length ?? 0) +
         (m.events?.length ?? 0) +
+        (m.workflowTransitions?.length ?? 0) +
         (m.payload?.length ?? 0);
       // base bottom = activation bar bottom
       let bottom = S.actBarHalfH;
@@ -2698,6 +2868,59 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
 
     function msgTopOffset(): number {
       return S.cardAboveArrow + S.cardH;
+    }
+
+    // ── Workflow orchestration groups: match workflows to commands in scope ──
+    // Workflows are NOT participants (per architecture rule) — they group related commands
+    const workflowGroups = new Map<string, SeqMessage[]>();
+    for (const [wfName, { cn: wfCn }] of wfLookup) {
+      if (!wfCn) continue;
+      const transitions = wfCn.transitions || wfCn.steps || [];
+      const cmdRefs = new Set<string>();
+      for (const trans of transitions) {
+        if (typeof trans === 'object') {
+          // Workflow transitions may reference commands via various field names
+          const cmd = trans.event || trans.command || trans.action || trans.on || '';
+          if (cmd) {
+            // Normalize: add both original and snake_case versions for matching
+            cmdRefs.add(cmd);
+            cmdRefs.add(cmd.toLowerCase().replace(/([A-Z])/g, '_$1').slice(1));
+            // Also add the analysis_name style (e.g., "ExecuteStockTransfer")
+            cmdRefs.add(cmd.replace(/_/g, '').replace(/([A-Z])/g, ''));
+          }
+        }
+      }
+      // Find matching command messages (normalize command actionName too)
+      // Workflow transitions use state machine event names, not command IDs.
+      // We match by: analysis_item.trigger (direct), or by normalized name overlap.
+      const matched = messages.filter((m) => {
+        if (m.actionType !== 'command') return false;
+        const an = m.actionName || '';
+        if (cmdRefs.has(an)) return true;
+        const anLower = an.toLowerCase();
+        const anNoSep = anLower.replace(/[_\s-]/g, '');
+
+        for (const ref of cmdRefs) {
+          const refLower = ref.toLowerCase();
+          const refNoSep = refLower.replace(/[_\s-]/g, '');
+
+          // Exact match (separator-agnostic)
+          if (anNoSep === refNoSep) return true;
+
+          // Command contains the ref (e.g., "create_stock_transfer" contains "stocktransfer")
+          if (anNoSep.includes(refNoSep) && refNoSep.length > 6) return true;
+          // Ref contains the command
+          if (refNoSep.includes(anNoSep) && anNoSep.length > 6) return true;
+        }
+        return false;
+      });
+      if (matched.length > 0) {
+        // Tag messages with workflow group
+        for (const m of matched) {
+          if (!workflowGroups.has(wfName)) workflowGroups.set(wfName, []);
+          workflowGroups.get(wfName)!.push(m);
+        }
+      }
     }
 
     // Cumulative Y positioning — auto-spacing between groups (commands / queries / ui_refs)
@@ -2722,6 +2945,23 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
     });
 
     // ── Phase 5: Store for drawing ──
+    // Compute workflow group bounds from positioned messages
+    this.seqWorkflowGroups = new Map();
+    for (const [wfName, msgList] of workflowGroups) {
+      const positioned = msgList.map((m) => this.seqMessages.find((sm) => sm.actionName === m.actionName && sm.y > 0));
+      const ys = positioned.filter((m): m is SeqMessage => !!m).map((m) => m.y);
+      if (ys.length > 0) {
+        const bottomOffsets = positioned
+          .filter((m): m is SeqMessage => !!m)
+          .map((m) => m.y + msgBottomOffset(m));
+        this.seqWorkflowGroups.set(wfName, {
+          minY: Math.min(...ys),
+          maxY: Math.max(...bottomOffsets),
+          status: wfLookup.get(wfName)?.status || 'matched',
+        });
+      }
+    }
+
     // Use maxHeaderH as the actual header height (not fixed seqHeaderH)
     this.flowLifelineTop = maxHeaderH;
     if (this.seqMessages.length > 0) {
@@ -2885,6 +3125,7 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
       const y = msg.y;
       const guards = msg.guards || [];
       const events = msg.events || [];
+      const wfs = msg.workflowTransitions || [];
       const payload = msg.payload || [];
 
       // Determine message color based on drift status (not action type)
@@ -2994,6 +3235,22 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
           badgeY += S.badgeStep;
         }
 
+        if (wfs.length > 0) {
+          const wfColor: [number, number, number] = [155, 89, 182];
+          for (const wf of wfs) {
+            const wfText = `\u2B25 ${wf.from} \u2192 ${wf.to}`;
+            sk.textSize(8);
+            const wfW = sk.textWidth(wfText) + 32;
+            sk.noStroke();
+            sk.fill(wfColor[0], wfColor[1], wfColor[2], 60);
+            sk.rect(arrowMidX - wfW / 2, badgeY, wfW, S.badgeH, 3);
+            sk.fill(wfColor[0], wfColor[1], wfColor[2], 230);
+            sk.textAlign(sk.CENTER, sk.CENTER);
+            sk.text(wfText, arrowMidX, badgeY + S.badgeH / 2);
+            badgeY += S.badgeStep;
+          }
+        }
+
         for (const pl of payload.slice(0, 2)) {
           sk.textSize(8);
           const plW = sk.textWidth(pl) + 32;
@@ -3095,6 +3352,22 @@ export class ContractGraphComponent implements AfterViewInit, OnDestroy, OnChang
           sk.textAlign(sk.CENTER, sk.CENTER);
           sk.text(evtText, midX, badgeY + S.badgeH / 2);
           badgeY += S.badgeStep;
+        }
+
+        if (wfs.length > 0) {
+          const wfColor: [number, number, number] = [155, 89, 182];
+          for (const wf of wfs) {
+            const wfText = `\u2B25 ${wf.from} \u2192 ${wf.to}`;
+            sk.textSize(8);
+            const wfW = sk.textWidth(wfText) + 32;
+            sk.noStroke();
+            sk.fill(wfColor[0], wfColor[1], wfColor[2], 60);
+            sk.rect(midX - wfW / 2, badgeY, wfW, S.badgeH, 3);
+            sk.fill(wfColor[0], wfColor[1], wfColor[2], 230);
+            sk.textAlign(sk.CENTER, sk.CENTER);
+            sk.text(wfText, midX, badgeY + S.badgeH / 2);
+            badgeY += S.badgeStep;
+          }
         }
 
         for (const pl of payload.slice(0, 2)) {
