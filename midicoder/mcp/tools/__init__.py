@@ -9,7 +9,7 @@ Tool registry:
 - MCP-D (Compiler): compile_contracts, validate_capability_graph
 - MCP-E (SQLite): get_active_brief, get_clarifications, list_artifacts
 - MCP-F (Context): get_project_context, list_symbols
-- MCP-G (Contract Validation): validate_contract_yaml, cross_check_category, get_generated_artifact
+- MCP-G (Contract Validation): validate_contract_yaml, cross_check_category, verify_structural_fidelity, get_generated_artifact
 """
 
 from midicoder.mcp.tools.dsl_schema import get_dsl_schema, get_dsl_section
@@ -24,6 +24,7 @@ from midicoder.mcp.tools.context import get_project_context, list_symbols
 from midicoder.mcp.tools.contract_validation import (
     validate_contract_yaml,
     cross_check_category,
+    verify_structural_fidelity,
     get_generated_artifact,
 )
 
@@ -194,6 +195,25 @@ TOOLS = {
         },
         "group": "contract_validation",
     },
+    "verify_structural_fidelity": {
+        "function": verify_structural_fidelity,
+        "description": "So sánh contract YAML với analysis data để phát hiện structural drifts (missing fields, inputs, permissions, missing nodes).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": "Tên category đang verify",
+                },
+                "yaml_content": {
+                    "type": "string",
+                    "description": "Raw YAML string của contract đang kiểm tra",
+                },
+            },
+            "required": ["category", "yaml_content"],
+        },
+        "group": "contract_validation",
+    },
     "get_generated_artifact": {
         "function": get_generated_artifact,
         "description": "Lấy nội dung artifact đã generate từ SQLite cho một category. Dùng để cross-check hoặc tham khảo category trước đó.",
@@ -226,6 +246,7 @@ __all__ = [
     "list_symbols",
     "validate_contract_yaml",
     "cross_check_category",
+    "verify_structural_fidelity",
     "get_generated_artifact",
     # Registry
     "TOOLS",

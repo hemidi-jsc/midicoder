@@ -1,9 +1,10 @@
 """
 MCP-G: Contract Validation Tools.
 
-Cung cấp 3 MCP tools cho LLM agent tự xác thực contract trong quá trình generate:
+Cung cấp 4 MCP tools cho LLM agent tự xác thực contract trong quá trình generate:
 - validate_contract_yaml: Validate YAML + DSL constraints của 1 category
 - cross_check_category: Cross-reference với các category đã generate
+- verify_structural_fidelity: So sánh contract YAML với analysis data (detect drifts)
 - get_generated_artifact: Lấy nội dung artifact đã tồn tại
 
 Tất cả đều delegate đến midicoder.pipeline.commands.contract để tránh duplicate logic.
@@ -106,3 +107,36 @@ def get_generated_artifact(category: str) -> Dict[str, Any]:
     """
     from midicoder.pipeline.commands.contract import _get_artifact_for_category
     return _get_artifact_for_category(category)
+
+
+# ============================================================================
+# MCP Tool: verify_structural_fidelity
+# ============================================================================
+
+
+def verify_structural_fidelity(category: str, yaml_content: str) -> Dict[str, Any]:
+    """
+    So sánh contract YAML với analysis data để phát hiện structural drifts.
+
+    Detects:
+    - missing_fields: fields có trong analysis nhưng thiếu trong contract
+    - missing_node: analysis item không có contract node tương ứng
+    - missing_items: permissions/inputs/effects thiếu trong contract
+    - target_mismatch: target entity không khớp
+    - value_mismatch: type/triggers khác nhau
+
+    Delegate đến midicoder.pipeline.commands.contract._verify_structural_fidelity().
+
+    Args:
+        category: Tên category đang verify
+        yaml_content: Raw YAML string của contract đang kiểm tra
+
+    Returns:
+        Dictionary với:
+        - has_drifts: True nếu có drifts
+        - drift_count: Số drifts tìm thấy
+        - drifts: List chi tiết (drift_type, analysis_field, details, severity)
+        - summary: Text summary ngắn gọn
+    """
+    from midicoder.pipeline.commands.contract import _verify_structural_fidelity
+    return _verify_structural_fidelity(category, yaml_content)

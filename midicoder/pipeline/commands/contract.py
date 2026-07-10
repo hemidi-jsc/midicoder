@@ -82,6 +82,77 @@ _CATEGORY_PROMPT_MAP = {
 
 
 # ============================================================================
+# Analysis filtering & rendering (drift reduction — P0)
+# ============================================================================
+
+# Mapping: category → list of related categories whose analysis data to include
+CATEGORY_RELATED_ANALYSIS: Dict[str, List[str]] = {
+    "entities": [],
+    "commands": ["entities"],
+    "queries": ["entities"],
+    "events": ["entities", "commands"],
+    "workflows": ["commands", "events"],
+    "value_objects": [],
+    "guards": ["commands"],
+    "roles": [],
+    "ui_components": ["entities"],
+}
+
+
+def _render_analysis_items(category: str, items: list) -> str:
+    """Render analysis items as readable structured text with MUST-include markers."""
+    if not items:
+        return "(No analysis items for this category)"
+    lines = []
+    for i, item in enumerate(items, 1):
+        name = item.get("name", "unnamed")
+        lines.append(f"### {i}. {name}")
+
+        if "fields" in item:
+            lines.append(f"   - **Fields (MUST include all):** {', '.join(item['fields'])}")
+        if "input" in item:
+            lines.append(f"   - **Input (MUST include all):** {', '.join(item['input'])}")
+        if "target" in item:
+            lines.append(f"   - **Target entity:** {item['target']}")
+        if "source" in item:
+            lines.append(f"   - **Source:** {item['source']}")
+        if "source_entity" in item:
+            lines.append(f"   - **Source entity:** {item['source_entity']}")
+        if "description" in item:
+            lines.append(f"   - **Description:** {item['description']}")
+        if "permissions" in item:
+            lines.append(f"   - **Permissions (MUST include all):** {', '.join(item['permissions'])}")
+        if "relationships" in item:
+            for r in item["relationships"]:
+                if isinstance(r, dict):
+                    lines.append(f"   - **Relationship:** {r.get('target', '?')} ({r.get('type', '?')})")
+        if "steps" in item:
+            lines.append(f"   - **Steps:** {' -> '.join(item['steps'])}")
+        if "transitions" in item:
+            for t in item["transitions"]:
+                if isinstance(t, dict):
+                    lines.append(f"   - **Transition:** {t.get('from', '?')} -> {t.get('to', '?')} on {t.get('on', t.get('event', '?'))}")
+        if "type" in item:
+            lines.append(f"   - **Type:** {item['type']}")
+        if "trigger" in item:
+            lines.append(f"   - **Trigger:** {item['trigger']}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _build_fidelity_rules(category: str) -> str:
+    """Build fidelity rules block for task 2 prompt."""
+    return (
+        f"## FIDELITY RULES (MUST FOLLOW):\n"
+        f"1. Every item listed in the Analysis Items section above MUST have a corresponding contract node. Do NOT skip any.\n"
+        f"2. All fields listed in analysis items MUST appear in the contract node's fields[]. Do NOT omit fields.\n"
+        f"3. Do NOT create contract nodes that are NOT present in the analysis data.\n"
+        f"4. System fields (id, created_at, updated_at, tenant_id) are allowed as additions.\n"
+        f"5. Use entity IDs from the Pre-generated Contracts section for references.\n"
+    )
+
+
+# ============================================================================
 # MCP context helpers (Step 3 — Wire MCP tools vào contract gen)
 # ============================================================================
 
@@ -190,6 +261,19 @@ def _validate_single_category(category: str, yaml_content: str) -> Dict[str, Any
     Returns:
         Dict với: status, total_errors, total_warnings, errors (list), warnings (list), is_valid
     """
+    # Reject empty/whitespace-only YAML content
+    if not yaml_content or not yaml_content.strip():
+        return {
+            "status": "error",
+            "yaml_valid": False,
+            "is_valid": False,
+            "total_errors": 1,
+            "total_warnings": 0,
+            "total_info": 0,
+            "errors": [{"constraint_id": "YAML000", "level": "error", "message": "yaml_content parameter is empty. You MUST provide the full YAML string to validate."}],
+            "warnings": [],
+            "info": [],
+        }
     try:
         parser = DSLParser()
         nodes = parser.parse_yaml_string(yaml_content, category)
@@ -251,6 +335,15 @@ def _cross_check_category(category: str, yaml_content: str) -> Dict[str, Any]:
     errors: List[Dict[str, Any]] = []
     warnings: List[Dict[str, Any]] = []
     checked_refs = 0
+
+    # Reject empty/whitespace-only YAML content
+    if not yaml_content or not yaml_content.strip():
+        return {
+            "valid": False,
+            "errors": [{"check": "YAML000", "message": "yaml_content parameter is empty. You MUST provide the full YAML string to cross-check."}],
+            "warnings": [],
+            "checked_references": 0,
+        }
 
     try:
         data = yaml.safe_load(yaml_content)
@@ -433,6 +526,105 @@ def _cross_check_category(category: str, yaml_content: str) -> Dict[str, Any]:
         "warnings": warnings,
         "checked_references": checked_refs,
     }
+
+
+def _verify_structural_fidelity(category: str, yaml_content: str) -> Dict[str, Any]:
+    """
+    MCP Tool: Compare contract YAML against analysis data for structural drift.
+
+    Reuses _structural_diff() and FIELD_COMPARISON_REGISTRY from traceability.py.
+    Returns list of drifts (missing fields, missing inputs, target mismatches, etc.).
+
+    Args:
+        category: Category name
+        yaml_content: Raw YAML string of the contract being verified
+
+    Returns:
+        Dict with: has_drifts, drift_count, drifts (list), summary
+    """
+    try:
+        project_cwd = get_active_project_cwd()
+        if not project_cwd:
+            return {"has_drifts": False, "drift_count": 0, "drifts": [], "summary": "No project context"}
+
+        artifacts_db = get_project_db_path(project_cwd, "artifacts.db")
+        artifacts_manager = ArtifactsManager(db_path=artifacts_db)
+        artifacts_manager.init()
+
+        # Load analysis data from brief
+        briefs_db = get_project_db_path(project_cwd, "briefs.db")
+        briefs_manager = BriefsManager(db_path=briefs_db)
+        briefs_manager.init()
+        active_version = _get_active_version()
+        active_brief = _find_brief(briefs_manager, active_version)
+
+        analysis_data: Dict[str, Any] = {}
+        if active_brief:
+            art = artifacts_manager.get(f"analysis-{active_brief.get('brief_id')}")
+            if art:
+                analysis_data = json.loads(art.get("content", "{}"))
+
+        if not analysis_data:
+            return {"has_drifts": False, "drift_count": 0, "drifts": [], "summary": "No analysis data found"}
+
+        # Reject empty/whitespace-only YAML content
+        if not yaml_content or not yaml_content.strip():
+            return {
+                "has_drifts": True,
+                "drift_count": 1,
+                "drifts": [{"drift_type": "YAML000", "analysis_field": "yaml_content", "details": "yaml_content parameter is empty. You MUST provide the full YAML string to verify.", "severity": "error"}],
+                "summary": "yaml_content parameter is empty. You MUST provide the full YAML string to verify.",
+            }
+
+        # Parse contract YAML
+        contract_data = yaml.safe_load(yaml_content)
+        if not contract_data or not isinstance(contract_data, dict):
+            return {"has_drifts": False, "drift_count": 0, "drifts": [], "summary": "Invalid contract YAML"}
+
+        contract_nodes = contract_data.get(category, [])
+        analysis_items = analysis_data.get(category, [])
+
+        # Import traceability helpers
+        from midicoder.pipeline.traceability import _structural_diff, _normalize_name
+
+        # Match analysis items to contract nodes by normalized name
+        all_drifts: List[Dict[str, Any]] = []
+
+        # Build contract node lookup by normalized name
+        contract_lookup: Dict[str, dict] = {}
+        for cn in contract_nodes:
+            if isinstance(cn, dict):
+                cid = cn.get("id", "")
+                if cid:
+                    contract_lookup[_normalize_name(cid)] = cn
+
+        for a_item in analysis_items:
+            if not isinstance(a_item, dict):
+                continue
+            a_name = _normalize_name(a_item.get("name", ""))
+            if not a_name:
+                continue
+
+            c_node = contract_lookup.get(a_name)
+            if c_node:
+                drifts = _structural_diff(category, a_item, c_node)
+                all_drifts.extend([d.to_dict() for d in drifts])
+            else:
+                all_drifts.append({
+                    "drift_type": "missing_node",
+                    "analysis_field": "name",
+                    "details": f"Analysis item '{a_item.get('name')}' has no matching contract node",
+                    "severity": "high",
+                })
+
+        return {
+            "has_drifts": len(all_drifts) > 0,
+            "drift_count": len(all_drifts),
+            "drifts": all_drifts,
+            "summary": f"{len(all_drifts)} structural drifts found" if all_drifts else "No drifts — fidelity OK",
+        }
+    except Exception as e:
+        return {"has_drifts": False, "drift_count": 0, "drifts": [], "summary": f"Verification error: {e}"}
 
 
 def _get_artifact_for_category(category: str) -> Dict[str, Any]:
@@ -2062,6 +2254,7 @@ async def generate_category_stream_for_api(category: str, force: bool = False) -
         f"{workflow_prompt}\n\n"
         f"## CRITICAL REMINDER\n"
         f"You MUST call validate_contract_yaml FIRST with the full YAML as yaml_content parameter.\n"
+        f"Then call verify_structural_fidelity to check for missing fields/inputs vs analysis data.\n"
         f"Then call cross_check_category with the same YAML.\n"
         f"Never call tools without providing yaml_content.\n"
         f"Example: validate_contract_yaml(yaml_content=\"entities:\\\\n  - id: user\\n    ...\")"
@@ -2071,9 +2264,10 @@ async def generate_category_stream_for_api(category: str, force: bool = False) -
         f"```yaml\n{yaml_draft}\n```\n\n"
         f"## Steps:\n"
         f"1. Call validate_contract_yaml(yaml_content=\"FULL_YAML_HERE\") — pass the full YAML string above\n"
-        f"2. If valid=true, call cross_check_category(yaml_content=\"FULL_YAML_HERE\") — cross-check references\n"
-        f"3. If errors found, fix them and repeat from step 1 (max 3 attempts)\n"
-        f"4. When both pass, output the validated YAML and stop\n\n"
+        f"2. If valid=true, call verify_structural_fidelity(yaml_content=\"FULL_YAML_HERE\") — check for missing fields/inputs vs analysis\n"
+        f"3. If drifts found, fix them and repeat from step 1 (max 3 attempts)\n"
+        f"4. If no drifts, call cross_check_category(yaml_content=\"FULL_YAML_HERE\") — cross-check references\n"
+        f"5. When all pass, output the validated YAML and stop\n\n"
         f"IMPORTANT: The yaml_content parameter MUST be a non-empty string with the full YAML content.\n"
         f"Wrong: validate_contract_yaml({{}})\n"
         f"Correct: validate_contract_yaml(yaml_content=\"entities:\\\\n  - id: example\")"
@@ -2082,7 +2276,7 @@ async def generate_category_stream_for_api(category: str, force: bool = False) -
         task_id="validate",
         system=task3_system,
         user=task3_user,
-        tools=[t for t in tool_definitions if t["function"]["name"] in ("validate_contract_yaml", "cross_check_category")],
+        tools=[t for t in tool_definitions if t["function"]["name"] in ("validate_contract_yaml", "cross_check_category", "verify_structural_fidelity")],
         allow_tool_loop=True,  # Allow tool loop for validate → fix → re-validate
     ))
 
@@ -2136,20 +2330,41 @@ async def generate_category_stream_for_api(category: str, force: bool = False) -
         schema_result_data = schema_result.get("tool_results", [{}])[0].get("result", {}) if schema_result.get("tool_results") else {}
         schema_text = json.dumps(schema_result_data, indent=2, ensure_ascii=False) if schema_result_data else ""
 
-        # ── TASK 2: Draft YAML ──
+        # ── TASK 2: Draft YAML — with filtered analysis + fidelity rules (P0) ──
+        cat_items = analysis_data.get(category, [])
+        analysis_items_text = _render_analysis_items(category, cat_items)
+
+        # Build related analysis reference text
+        related_lines = []
+        for rel_cat in CATEGORY_RELATED_ANALYSIS.get(category, []):
+            rel_items = analysis_data.get(rel_cat, [])
+            if rel_items:
+                related_lines.append(f"### {rel_cat}:")
+                for ri in rel_items:
+                    rid = ri.get("id", ri.get("name", ""))
+                    rfields = ri.get("fields", [])
+                    if rfields:
+                        related_lines.append(f"  - {rid}: fields = {', '.join(rfields)}")
+                    else:
+                        related_lines.append(f"  - {rid}")
+        related_text = "\n".join(related_lines) if related_lines else "(No related analysis)"
+
         tasks[1] = TaskDefinition(
             task_id="draft_yaml",
             system=base_system,
             user=(
-                f"## DSL Schema Context\n"
-                f"Here is the DSL schema for \"{category}\":\n"
+                f"## Analysis Items for \"{category}\" (CRITICAL — include ALL items below):\n"
+                f"{analysis_items_text}\n\n"
+                f"## Related Analysis (for reference):\n"
+                f"{related_text}\n\n"
+                f"## DSL Schema for \"{category}\"\n"
                 f"{schema_text}\n\n"
-                f"## Project Context\n"
-                f"{base_user}\n\n"
+                f"## Pre-generated Contracts (for entity ID references)\n"
                 f"{prereq_text}\n\n"
                 f"## Task\n"
                 f"Generate valid YAML contracts for the \"{category}\" category.\n"
-                f"Use the schema above for field structure. Use pre-generated IDs for references.\n"
+                f"Use the DSL Schema above for field structure.\n\n"
+                f"{_build_fidelity_rules(category)}\n\n"
                 f"Output ONLY the YAML dict. Do NOT call any tools. Do NOT wrap in markdown code fences."
             ),
             tools=[],
@@ -2162,19 +2377,20 @@ async def generate_category_stream_for_api(category: str, force: bool = False) -
             if r:
                 yaml_draft = _extract_yaml_from_text(r.get("accumulated_text", ""), category)
 
-        # ── TASK 3: Validate & Fix ──
+        # ── TASK 3: Validate & Fix (with structural fidelity check — P1) ──
         tasks[2] = TaskDefinition(
             task_id="validate",
             system=task3_system,
             user=(
                 f"Validate and fix this YAML for category \"{category}\":\n\n"
                 f"```yaml\n{yaml_draft}\n```\n\n"
-                f"Call validate_contract_yaml(yaml_content=\"...\") with the full YAML string.\n"
-                f"If valid=true, output the validated YAML and stop.\n"
-                f"If valid=false, fix the listed errors and call validate_contract_yaml again.\n"
-                f"Max 3 validation attempts. Then output your best result."
+                f"1. Call validate_contract_yaml(yaml_content=\"...\") with the full YAML string.\n"
+                f"2. If valid=true, call verify_structural_fidelity(yaml_content=\"...\") to check for missing fields/inputs vs analysis.\n"
+                f"3. If drifts found, fix them and repeat from step 1 (max 3 attempts).\n"
+                f"4. If no drifts, call cross_check_category(yaml_content=\"...\").\n"
+                f"5. When all pass, output the validated YAML and stop."
             ),
-            tools=[t for t in tool_definitions if t["function"]["name"] in ("validate_contract_yaml", "cross_check_category")],
+            tools=[t for t in tool_definitions if t["function"]["name"] in ("validate_contract_yaml", "cross_check_category", "verify_structural_fidelity")],
             allow_tool_loop=True,
         )
         validated_yaml = yaml_draft
@@ -2195,14 +2411,20 @@ async def generate_category_stream_for_api(category: str, force: bool = False) -
                         val_errors = vr.get("total_errors", 0) if isinstance(vr, dict) else -1
                         validation_result_str = "PASSED ✓" if is_valid else f"FAILED: {val_errors} errors"
 
-        # ── TASK 4: Final Review ──
+        # ── TASK 4: Final Review (with analysis summary — P2) ──
+        cat_items_for_p2 = analysis_data.get(category, [])
+        analysis_summary_for_p2 = _render_analysis_items(category, cat_items_for_p2)
+
         tasks[3] = TaskDefinition(
             task_id="final_review",
             system=task4_system,
             user=(
                 f"Output the final YAML for category \"{category}\".\n\n"
+                f"## Analysis Items (ensure ALL are preserved):\n"
+                f"{analysis_summary_for_p2}\n\n"
                 f"Validation: {validation_result_str}\n\n"
                 f"YAML:\n```yaml\n{validated_yaml}\n```\n\n"
+                f"Do NOT remove any fields listed in the analysis items above.\n"
                 f"Output the YAML dict directly. Do NOT call any tools. Do NOT add commentary."
             ),
             tools=[],
@@ -2483,6 +2705,23 @@ def _build_tool_definitions(category: str) -> list[dict]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "verify_structural_fidelity",
+                "description": f"Compare contract YAML against analysis data. Detects missing fields, inputs, permissions, and other structural drifts for category '{category}'.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "yaml_content": {
+                            "type": "string",
+                            "description": "Raw YAML string to verify against analysis data",
+                        },
+                    },
+                    "required": ["yaml_content"],
+                },
+            },
+        },
     ]
 
 
@@ -2492,6 +2731,7 @@ def _build_tool_executor(category: str):
         "get_dsl_section": ["section"],
         "validate_contract_yaml": ["yaml_content"],
         "cross_check_category": ["yaml_content"],
+        "verify_structural_fidelity": ["yaml_content"],
     }
 
     async def _tool_executor(tool_name: str, args: dict) -> str:
@@ -2511,6 +2751,8 @@ def _build_tool_executor(category: str):
                 result = _validate_single_category(category, args["yaml_content"])
             elif tool_name == "cross_check_category":
                 result = _cross_check_category(category, args["yaml_content"])
+            elif tool_name == "verify_structural_fidelity":
+                result = _verify_structural_fidelity(category, args["yaml_content"])
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
         except Exception as e:

@@ -12,5 +12,7 @@
     <rule>Use Vietnamese for human-readable descriptions</rule>
     <rule>BEFORE outputting final YAML, you MUST call validate_contract_yaml(yaml_content="...") to validate your output. Only output the YAML after validation passes (valid=true). If validation fails, fix errors and re-validate.</rule>
     <rule>Source entity IDs must exist in the entities artifact</rule>
+    <rule>Do NOT create events that are NOT present in the analysis data. If the analysis does not mention an event, do NOT invent it.</rule>
+    <rule>System fields (id, created_at, updated_at) are the ONLY allowed additions beyond what the analysis specifies.</rule>
   </rules>
 </system>

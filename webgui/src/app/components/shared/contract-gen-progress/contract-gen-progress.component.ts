@@ -298,7 +298,7 @@ const MAX_PREVIEW_CHARS = 200;
     /* Stage Progress */
     .cgp-stages {
       display: flex;
-      align-items: center;
+      align-items: stretch;
       gap: 0;
       padding: 16px 24px;
       background: rgba(0, 0, 0, 0.3);
@@ -310,16 +310,18 @@ const MAX_PREVIEW_CHARS = 200;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 6px;
+      justify-content: flex-start;
       position: relative;
+      padding-top: 16px;
+      padding-bottom: 16px;
     }
-    /* Connector line between stages */
+    /* Connector line between stages — from right edge of current icon to left edge of next icon */
     .cgp-stage:not(:last-child)::after {
       content: '';
       position: absolute;
-      right: 0;
-      top: 16px;
-      width: calc(50% + 16px);
+      left: calc(50% + 17px);
+      top: 33px;
+      width: calc(100% - 34px);
       height: 3px;
       background: rgba(255, 255, 255, 0.08);
       border-radius: 2px;
@@ -396,6 +398,7 @@ const MAX_PREVIEW_CHARS = 200;
       flex: 1;
       overflow: hidden;
       display: flex;
+      flex-direction: column;
       min-height: 0;
     }
 
@@ -411,6 +414,7 @@ const MAX_PREVIEW_CHARS = 200;
       min-width: 0;
       box-sizing: border-box;
       background: #0d0d12;
+      display: block;
     }
     .cgp-stream-panel::-webkit-scrollbar { width: 5px; }
     .cgp-stream-panel::-webkit-scrollbar-thumb { background: rgba(252, 103, 103, 0.2); }
@@ -466,6 +470,7 @@ const MAX_PREVIEW_CHARS = 200;
       margin: 2px 0;
       padding-left: 22px;
       animation: cgpFadeIn 0.3s ease-out;
+      flex-shrink: 0;
     }
     @keyframes cgpFadeIn {
       from { opacity: 0; transform: translateX(-6px); }
@@ -477,7 +482,7 @@ const MAX_PREVIEW_CHARS = 200;
       position: absolute;
       left: 4px;
       top: 4px;
-      bottom: -4px;
+      bottom: 4px;
       width: 3px;
       border-radius: 2px;
       background: rgba(255, 255, 255, 0.2);
@@ -639,6 +644,7 @@ const MAX_PREVIEW_CHARS = 200;
     .cgp-pending {
       padding: 8px 0;
       animation: cgpShimmer 1.5s ease-in-out infinite;
+      flex-shrink: 0;
     }
     .cgp-pending-text {
       font-size: 0.7rem;
@@ -957,7 +963,7 @@ export class ContractGenProgressComponent {
         case 'thinking': {
           const text = typeof msg.data === 'string' ? msg.data : (msg.data?.text || '');
           const cleaned = this._cleanText(text);
-          if (!cleaned) break;
+          if (!cleaned.trim()) break;
           const chunk = { type: 'thinking' as const, text: cleaned, isStreaming: true, _expanded: true };
           if (this.timelineItems.length > 0) {
             const last = this.timelineItems[this.timelineItems.length - 1];
@@ -982,7 +988,7 @@ export class ContractGenProgressComponent {
         case 'content': {
           const text = typeof msg.data === 'string' ? msg.data : (msg.data?.text || '');
           const cleaned = this._cleanText(text);
-          if (!cleaned) break;
+          if (!cleaned.trim()) break;
           const chunk = { type: 'content' as const, text: cleaned, isStreaming: true, _expanded: true };
           if (this.timelineItems.length > 0) {
             const last = this.timelineItems[this.timelineItems.length - 1];

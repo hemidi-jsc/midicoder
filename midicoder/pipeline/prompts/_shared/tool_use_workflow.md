@@ -13,7 +13,7 @@
     WRONG format: get_dsl_section() or get_dsl_section({})
 
     The "section" parameter for get_dsl_section must be a non-empty string.
-    The "yaml_content" parameter for validate_contract_yaml must be your actual YAML string.
+    The "yaml_content" parameter for validate_contract_yaml, verify_structural_fidelity, and cross_check_category must be your actual YAML string.
     The "pack_id" parameter for get_pack must be a string like "CP01".
   </critical_parameter_rule>
 
@@ -45,10 +45,16 @@
     <!-- Step 5: Validate (MANDATORY — DO NOT SKIP) -->
     5. Call validate_contract_yaml(yaml_content="YOUR_FULL_YAML_STRING_HERE").
        EXAMPLE: {"yaml_content": "entities:\n  - id: user\n    description: User entity\n    fields: [...]"}
-       - If valid=true, go to step 6.
+       - If valid=true, go to step 5.5.
        - If valid=false, FIX the errors from the error message, then call validate_contract_yaml again with FIXED YAML.
        - Repeat until valid=true (max 5 tries).
        - CRITICAL: Do NOT output YAML text before valid=true.
+
+    <!-- Step 5.5: Structural Fidelity Check (MANDATORY) -->
+    5.5. Call verify_structural_fidelity(yaml_content="YOUR_FULL_YAML_STRING_HERE").
+         - If has_drifts=false, go to step 6.
+         - If has_drifts=true, FIX the missing fields/inputs listed in the drifts, then go back to step 5.
+         - Repeat until has_drifts=false (max 3 tries).
 
     <!-- Step 6: Cross-check (MANDATORY if category references other entities) -->
     6. If your category references others, call cross_check_category(yaml_content="YOUR_FULL_YAML_STRING_HERE").
@@ -65,6 +71,7 @@
     - list_packs() — lists all packs. No parameters.
     - get_pack(pack_id) — returns pack details. REQUIRED: {"pack_id": "string"}
     - validate_contract_yaml(yaml_content) — validates YAML. REQUIRED: {"yaml_content": "string"}
+    - verify_structural_fidelity(yaml_content) — checks for missing fields/inputs vs analysis data. REQUIRED: {"yaml_content": "string"}
     - cross_check_category(yaml_content) — cross-checks references. REQUIRED: {"yaml_content": "string"}
     - get_generated_artifact(category) — gets saved artifact. REQUIRED: {"category": "string"}
   </available_tools>
